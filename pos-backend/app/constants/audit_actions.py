@@ -1,0 +1,84 @@
+"""
+Audit action string constants used by log_action().
+
+Every constant is a dot-separated lowercase string following the pattern
+resource.action or resource.action.outcome (see app_CLAUDE.md section 9.3).
+
+Add constants here as new stages are built. Never hardcode action strings
+in service files — always import from this module (CLAUDE.md absolute rule 8).
+"""
+
+# ── Phase 1 / Stage 2 — Portal Authentication ────────────────────────────────
+AUTH_LOGIN_SUCCESS = "auth.login.success"
+AUTH_LOGIN_FAILED = "auth.login.failed"
+AUTH_TOKEN_REFRESHED = "auth.token.refreshed"
+AUTH_LOGOUT = "auth.logout"
+
+# ── Phase 1 / Stage 3 — Hierarchy CRUD ───────────────────────────────────────
+GROUP_CREATED = "group.created"
+GROUP_UPDATED = "group.updated"
+GROUP_SUSPENDED = "group.suspended"
+GROUP_ACTIVATED = "group.activated"
+
+BRAND_CREATED = "brand.created"
+BRAND_UPDATED = "brand.updated"
+BRAND_SUSPENDED = "brand.suspended"
+BRAND_ACTIVATED = "brand.activated"
+
+SITE_CREATED = "site.created"
+SITE_UPDATED = "site.updated"
+SITE_SUSPENDED = "site.suspended"
+SITE_ACTIVATED = "site.activated"
+
+PORTAL_USER_CREATED = "portal_user.created"
+PORTAL_USER_SUSPENDED = "portal_user.suspended"
+PORTAL_USER_ACTIVATED = "portal_user.activated"
+
+# ── Phase 1 / Stage 4 — License Management ───────────────────────────────────
+LICENSE_CREATED = "license.created"
+LICENSE_UPDATED = "license.updated"
+LICENSE_ENABLED = "license.enabled"
+LICENSE_DISABLED = "license.disabled"
+LICENSE_EXPIRED = "license.expired"
+
+LICENSE_INVOICE_PAID = "license_invoice.paid"
+
+DEVICE_REGISTERED = "device.registered"
+DEVICE_DEREGISTERED = "device.deregistered"
+
+# ── Phase 2 / Stage 7 — POS Authentication ───────────────────────────────────
+POS_LOGIN_SUCCESS = "pos_auth.login.success"
+POS_LOGIN_FAILED = "pos_auth.login.failed"
+POS_LOGOUT = "pos_auth.logout"
+POS_PIN_SET = "pos_auth.pin.set"
+POS_PIN_RESET = "pos_auth.pin.reset"
+POS_PIN_VERIFIED = "pos_auth.pin.verified"
+
+USER_INVITED = "user.invited"
+USER_INVITE_ACCEPTED = "user.invite.accepted"
+
+# ── Phase 2 / Stage 8 — Product Catalog ──────────────────────────────────────
+PRODUCT_CREATED = "product.created"
+PRODUCT_UPDATED = "product.updated"
+PRODUCT_PRICE_CHANGED = "product.price.changed"  # Separate constant — high-value event
+PRODUCT_DEACTIVATED = "product.deactivated"
+PRODUCT_PHOTO_UPDATED = "product.photo.updated"
+
+CATEGORY_CREATED = "category.created"
+CATEGORY_UPDATED = "category.updated"
+CATEGORY_DELETED = "category.deleted"
+
+TAX_CATEGORY_CREATED = "tax_category.created"
+TAX_RATE_CREATED = "tax_rate.created"
+TAX_RATE_UPDATED = "tax_rate.updated"
+
+SITE_PRODUCT_OVERRIDE_SET = "site_product_override.set"
+SITE_PRODUCT_OVERRIDE_REMOVED = "site_product_override.removed"
+
+# ── Phase 3 / Stage 10 — Invoice Engine ──────────────────────────────────────
+INVOICE_CREATED = "invoice.created"
+INVOICE_LINE_ITEM_ADDED = "invoice.line_item.added"
+INVOICE_PAID = "invoice.paid"
+INVOICE_VOIDED = "invoice.voided"
+INVOICE_REFUNDED = "invoice.refunded"
+INVOICE_DISCOUNT_APPLIED = "invoice.discount.applied"
