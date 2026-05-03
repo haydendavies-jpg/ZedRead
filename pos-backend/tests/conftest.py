@@ -9,6 +9,7 @@ Database rules (tests_CLAUDE.md):
 """
 
 import os
+import uuid
 from collections.abc import AsyncGenerator
 
 import pytest_asyncio
@@ -21,7 +22,8 @@ from app.database import Base, get_db
 from app.main import app
 
 # Import all models so Base.metadata knows about them for create_all
-from app.models import AuditLog, Brand, Group, Site  # noqa: F401
+from app.models import AuditLog, Brand, Group, PortalUser, Site  # noqa: F401
+from app.utils.security import create_access_token, hash_password
 
 # ── Test database configuration ───────────────────────────────────────────────
 
@@ -31,7 +33,7 @@ TEST_DATABASE_URL: str = os.getenv(
 )
 
 # All table names in reverse FK dependency order — used for TRUNCATE CASCADE
-_ALL_TABLES = ["audit_logs", "sites", "brands", "groups"]
+_ALL_TABLES = ["audit_logs", "sites", "brands", "groups", "portal_users"]
 
 
 # ── Per-test session ──────────────────────────────────────────────────────────
@@ -121,8 +123,6 @@ async def test_group(db: AsyncSession) -> Group:
     Returns:
         Group: A saved, active Group instance.
     """
-    import uuid
-
     group = Group(id=uuid.uuid4(), name="Test Group", is_active=True)
     db.add(group)
     await db.commit()
@@ -138,8 +138,6 @@ async def test_brand(db: AsyncSession, test_group: Group) -> Brand:
     Returns:
         Brand: A saved, active Brand instance.
     """
-    import uuid
-
     brand = Brand(
         id=uuid.uuid4(),
         group_id=test_group.id,
@@ -160,8 +158,6 @@ async def test_site(db: AsyncSession, test_brand: Brand) -> Site:
     Returns:
         Site: A saved, active Site instance.
     """
-    import uuid
-
     site = Site(
         id=uuid.uuid4(),
         brand_id=test_brand.id,
@@ -172,3 +168,39 @@ async def test_site(db: AsyncSession, test_brand: Brand) -> Site:
     await db.commit()
     await db.refresh(site)
     return site
+
+
+@pytest_asyncio.fixture()
+async def test_portal_user(db: AsyncSession) -> PortalUser:
+    """
+    A persisted super_admin PortalUser row for use in auth-dependent tests.
+
+    The password is 'TestPassword123!' — use portal_auth_headers to get a token.
+
+    Returns:
+        PortalUser: A saved, active super_admin portal user.
+    """
+    user = PortalUser(
+        id=uuid.uuid4(),
+        email="admin@test.com",
+        password_hash=hash_password("TestPassword123!"),
+        name="Test Admin",
+        role="super_admin",
+        is_active=True,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture()
+async def portal_auth_headers(test_portal_user: PortalUser) -> dict[str, str]:
+    """
+    Authorization header dict carrying a valid access token for test_portal_user.
+
+    Returns:
+        dict[str, str]: {"Authorization": "Bearer <token>"}
+    """
+    token = create_access_token(str(test_portal_user.id), test_portal_user.role)
+    return {"Authorization": f"Bearer {token}"}

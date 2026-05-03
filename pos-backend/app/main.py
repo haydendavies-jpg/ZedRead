@@ -10,6 +10,7 @@ from sqlalchemy import text
 from app.database import engine
 from app.logging_config import configure_logging
 from app.middleware.logging import RequestLoggingMiddleware
+from app.routes import portal_auth
 
 # Configure structlog before the app starts accepting requests
 configure_logging()
@@ -51,6 +52,10 @@ app = FastAPI(
 
 # Attach request ID middleware — must be added before any route middleware
 app.add_middleware(RequestLoggingMiddleware)
+
+# ── Routers ───────────────────────────────────────────────────────────────────
+
+app.include_router(portal_auth.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
