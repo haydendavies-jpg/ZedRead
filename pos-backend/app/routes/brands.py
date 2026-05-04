@@ -1,0 +1,76 @@
+"""Routes for Brand CRUD operations."""
+
+import uuid
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.models.portal_user import PortalUser
+from app.schemas.brand import BrandCreate, BrandResponse, BrandUpdate
+from app.services import brand_service
+from app.utils.dependencies import get_current_portal_user
+
+router = APIRouter(prefix="/brands", tags=["brands"])
+
+
+@router.get("/", response_model=list[BrandResponse])
+async def list_brands(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    _: PortalUser = Depends(get_current_portal_user),
+) -> list[BrandResponse]:
+    """List all brands with pagination."""
+    return await brand_service.list_brands(db, skip=skip, limit=limit)
+
+
+@router.get("/{brand_id}", response_model=BrandResponse)
+async def get_brand(
+    brand_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: PortalUser = Depends(get_current_portal_user),
+) -> BrandResponse:
+    """Fetch a single brand by ID."""
+    return await brand_service.get_brand(db, brand_id)
+
+
+@router.post("/", response_model=BrandResponse, status_code=201)
+async def create_brand(
+    payload: BrandCreate,
+    db: AsyncSession = Depends(get_db),
+    actor: PortalUser = Depends(get_current_portal_user),
+) -> BrandResponse:
+    """Create a new brand. Auto-creates an 'Uncategorised' system category."""
+    return await brand_service.create_brand(db, payload, actor)
+
+
+@router.patch("/{brand_id}", response_model=BrandResponse)
+async def update_brand(
+    brand_id: uuid.UUID,
+    payload: BrandUpdate,
+    db: AsyncSession = Depends(get_db),
+    actor: PortalUser = Depends(get_current_portal_user),
+) -> BrandResponse:
+    """Update a brand's name."""
+    return await brand_service.update_brand(db, brand_id, payload, actor)
+
+
+@router.post("/{brand_id}/suspend", response_model=BrandResponse)
+async def suspend_brand(
+    brand_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    actor: PortalUser = Depends(get_current_portal_user),
+) -> BrandResponse:
+    """Suspend a brand (set is_active = False)."""
+    return await brand_service.suspend_brand(db, brand_id, actor)
+
+
+@router.post("/{brand_id}/activate", response_model=BrandResponse)
+async def activate_brand(
+    brand_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    actor: PortalUser = Depends(get_current_portal_user),
+) -> BrandResponse:
+    """Activate a previously suspended brand."""
+    return await brand_service.activate_brand(db, brand_id, actor)

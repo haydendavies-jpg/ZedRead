@@ -22,7 +22,7 @@ from app.database import Base, get_db
 from app.main import app
 
 # Import all models so Base.metadata knows about them for create_all
-from app.models import AuditLog, Brand, Group, PortalUser, Site  # noqa: F401
+from app.models import AuditLog, Brand, Category, Group, PortalUser, Site  # noqa: F401
 from app.utils.security import create_access_token, hash_password
 
 # ── Test database configuration ───────────────────────────────────────────────
@@ -33,7 +33,7 @@ TEST_DATABASE_URL: str = os.getenv(
 )
 
 # All table names in reverse FK dependency order — used for TRUNCATE CASCADE
-_ALL_TABLES = ["audit_logs", "sites", "brands", "groups", "portal_users"]
+_ALL_TABLES = ["audit_logs", "categories", "sites", "brands", "groups", "portal_users"]
 
 
 # ── Per-test session ──────────────────────────────────────────────────────────
