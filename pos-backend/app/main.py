@@ -52,7 +52,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow the portal origin (and localhost for local dev).
+# Attach request ID middleware first (innermost — runs after CORS)
+app.add_middleware(RequestLoggingMiddleware)
+
+# CORS must be outermost — added last so it processes requests first.
+# Handles preflight OPTIONS before any other middleware sees the request.
 # PORTAL_ORIGIN env var set in Railway; falls back to localhost for dev.
 _portal_origin = os.getenv("PORTAL_ORIGIN", "http://localhost:5173")
 app.add_middleware(
@@ -62,9 +66,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Attach request ID middleware — must be added before any route middleware
-app.add_middleware(RequestLoggingMiddleware)
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 
