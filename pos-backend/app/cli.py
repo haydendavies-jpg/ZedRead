@@ -43,13 +43,19 @@ def _get_database_url() -> str:
     )
 
 
-async def _bootstrap_super_admin_async() -> None:
+async def _bootstrap_super_admin_async(non_interactive: bool = False) -> None:
     """
     Core async logic for the bootstrap-super-admin command.
 
     Creates the first super_admin portal user.
     Exits with an error if a super_admin already exists to prevent duplicates.
+
+    Args:
+        non_interactive: When True, reads BOOTSTRAP_EMAIL, BOOTSTRAP_NAME,
+                         BOOTSTRAP_PASSWORD from environment instead of prompting.
     """
+    import os
+
     engine = create_async_engine(_get_database_url(), echo=False)
     session_factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -59,17 +65,31 @@ async def _bootstrap_super_admin_async() -> None:
             select(PortalUser).where(PortalUser.role == PortalUserRole.SUPER_ADMIN.value)
         )
         if existing.scalar_one_or_none() is not None:
-            log.error("bootstrap.refused", reason="super_admin already exists")
-            typer.echo("ERROR: A super_admin already exists. Bootstrap can only run once.")
-            raise typer.Exit(code=1)
+            log.info("bootstrap.skipped", reason="super_admin already exists")
+            typer.echo("INFO: A super_admin already exists — skipping bootstrap.")
+            return  # Not an error when running from startup script
 
-        # Collect credentials interactively — never pass passwords as CLI args (rule 15)
-        typer.echo("Creating super admin portal user.")
-        email = typer.prompt("Email")
-        name = typer.prompt("Name")
-        # getpass hides input so the password is never visible in terminal history
-        password = getpass.getpass("Password: ")
-        confirm = getpass.getpass("Confirm password: ")
+        if non_interactive:
+            # Read from environment variables — safe for CI/Railway one-off jobs
+            email = os.environ.get("BOOTSTRAP_EMAIL", "")
+            name = os.environ.get("BOOTSTRAP_NAME", "")
+            password = os.environ.get("BOOTSTRAP_PASSWORD", "")
+            confirm = password
+
+            if not email or not name or not password:
+                typer.echo(
+                    "ERROR: --non-interactive requires BOOTSTRAP_EMAIL, BOOTSTRAP_NAME, "
+                    "and BOOTSTRAP_PASSWORD environment variables to be set."
+                )
+                raise typer.Exit(code=1)
+        else:
+            # Collect credentials interactively — never pass passwords as CLI args (rule 15)
+            typer.echo("Creating super admin portal user.")
+            email = typer.prompt("Email")
+            name = typer.prompt("Name")
+            # getpass hides input so the password is never visible in terminal history
+            password = getpass.getpass("Password: ")
+            confirm = getpass.getpass("Confirm password: ")
 
         if password != confirm:
             typer.echo("ERROR: Passwords do not match.")
@@ -113,14 +133,22 @@ async def _bootstrap_super_admin_async() -> None:
 
 
 @cli.command(name="bootstrap-super-admin")
-def bootstrap_super_admin() -> None:
+def bootstrap_super_admin(
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        help="Read credentials from BOOTSTRAP_EMAIL, BOOTSTRAP_NAME, BOOTSTRAP_PASSWORD env vars.",
+    ),
+) -> None:
     """
     Create the initial super_admin portal user.
 
-    Prompts for email, name, and password interactively.
+    Interactive mode (default): prompts for email, name, and password.
+    Non-interactive mode (--non-interactive): reads BOOTSTRAP_EMAIL,
+    BOOTSTRAP_NAME, and BOOTSTRAP_PASSWORD from environment variables.
     Refuses to run if a super_admin already exists.
     """
-    asyncio.run(_bootstrap_super_admin_async())
+    asyncio.run(_bootstrap_super_admin_async(non_interactive=non_interactive))
 
 
 if __name__ == "__main__":
