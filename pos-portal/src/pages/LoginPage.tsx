@@ -14,7 +14,6 @@ export function LoginPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    setError(null)
     setLoading(true)
     try {
       await login(email, password)

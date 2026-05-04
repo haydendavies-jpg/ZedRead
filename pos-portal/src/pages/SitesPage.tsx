@@ -93,6 +93,7 @@ export function SitesPage() {
               <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
                 <th className="px-4 py-3">ID</th>
                 <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Brand ID</th>
                 <th className="px-4 py-3">Brand</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Actions</th>
@@ -103,6 +104,7 @@ export function SitesPage() {
                 <tr key={s.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3"><EntityIdChip id={s.id} /></td>
                   <td className="px-4 py-3 font-medium text-gray-900">{s.name}</td>
+                  <td className="px-4 py-3"><EntityIdChip id={s.brand_id} /></td>
                   <td className="px-4 py-3 text-gray-500">{brandName(s.brand_id)}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={s.is_active ? 'active' : 'suspended'} />
@@ -160,7 +162,7 @@ export function SitesPage() {
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => { setShowCreate(false); setEditing(null) }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
-              <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg">
+              <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
                 {editing ? 'Save' : 'Create'}
               </button>
             </div>
