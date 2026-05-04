@@ -1,11 +1,8 @@
 [build]
-# Railway static site service — builds the Vite app and serves dist/
 builder = "nixpacks"
 buildCommand = "npm install && npm run build"
 
 [deploy]
-# Serve the Vite output directory as static files
-staticDir = "dist"
-
-# SPA routing — all paths fall back to index.html so React Router works
-startCommand = ""
+# serve handles SPA routing: -s redirects all unknown paths to index.html
+# so React Router works correctly on direct URL loads and refreshes.
+startCommand = "npx serve dist -s --listen tcp://0.0.0.0:$PORT"
