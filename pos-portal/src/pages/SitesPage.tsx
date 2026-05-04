@@ -93,6 +93,7 @@ export function SitesPage() {
               <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
                 <th className="px-4 py-3">ID</th>
                 <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Brand ID</th>
                 <th className="px-4 py-3">Brand</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Actions</th>
@@ -103,12 +104,8 @@ export function SitesPage() {
                 <tr key={s.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3"><EntityIdChip id={s.id} /></td>
                   <td className="px-4 py-3 font-medium text-gray-900">{s.name}</td>
-                  <td className="px-4 py-3 text-gray-500">
-                    <div className="flex flex-col gap-0.5">
-                      <span>{brandName(s.brand_id)}</span>
-                      <EntityIdChip id={s.brand_id} />
-                    </div>
-                  </td>
+                  <td className="px-4 py-3"><EntityIdChip id={s.brand_id} /></td>
+                  <td className="px-4 py-3 text-gray-500">{brandName(s.brand_id)}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={s.is_active ? 'active' : 'suspended'} />
                   </td>
