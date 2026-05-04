@@ -11,8 +11,9 @@ alembic upgrade head
 
 if [ -n "$BOOTSTRAP_EMAIL" ] && [ -n "$BOOTSTRAP_NAME" ] && [ -n "$BOOTSTRAP_PASSWORD" ]; then
   echo "[start] BOOTSTRAP_* vars detected — running non-interactive bootstrap…"
+  # Single-command Typer app: the function IS the root command, no subcommand name needed
   # || true so a bootstrap failure never prevents server startup
-  python -m app.cli bootstrap-super-admin --non-interactive || echo "[start] Bootstrap failed — see error above; server will still start"
+  python -m app.cli --non-interactive || echo "[start] Bootstrap failed — see error above; server will still start"
 fi
 
 echo "[start] Starting uvicorn on port ${PORT:-8000}…"
