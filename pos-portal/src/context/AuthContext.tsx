@@ -56,14 +56,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchCurrentUser])
 
   const login = useCallback(async (email: string, password: string) => {
-    const { data } = await api.post('/portal-auth/login', { email, password })
+    const { data } = await api.post('/auth/portal/login', { email, password })
     setTokens(data.access_token, data.refresh_token)
     await fetchCurrentUser()
   }, [fetchCurrentUser])
 
   const logout = useCallback(async () => {
     try {
-      await api.post('/portal-auth/logout')
+      await api.post('/auth/portal/logout')
     } finally {
       clearTokens()
       setUser(null)
