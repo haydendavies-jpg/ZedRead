@@ -103,7 +103,12 @@ export function BrandsPage() {
                 <tr key={b.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3"><EntityIdChip id={b.id} /></td>
                   <td className="px-4 py-3 font-medium text-gray-900">{b.name}</td>
-                  <td className="px-4 py-3 text-gray-500">{groupName(b.group_id)}</td>
+                  <td className="px-4 py-3 text-gray-500">
+                    <div className="flex flex-col gap-0.5">
+                      <span>{groupName(b.group_id)}</span>
+                      <EntityIdChip id={b.group_id} />
+                    </div>
+                  </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={b.is_active ? 'active' : 'suspended'} />
                   </td>
