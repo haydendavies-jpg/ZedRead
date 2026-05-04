@@ -22,7 +22,7 @@ from app.database import Base, get_db
 from app.main import app
 
 # Import all models so Base.metadata knows about them for create_all
-from app.models import AuditLog, Brand, Category, Group, PortalUser, Site  # noqa: F401
+from app.models import AuditLog, Brand, Category, Group, License, LicenseInvoice, PortalUser, PosDevice, Site  # noqa: F401
 from app.utils.security import create_access_token, hash_password
 
 # ── Test database configuration ───────────────────────────────────────────────
@@ -33,7 +33,17 @@ TEST_DATABASE_URL: str = os.getenv(
 )
 
 # All table names in reverse FK dependency order — used for TRUNCATE CASCADE
-_ALL_TABLES = ["audit_logs", "categories", "sites", "brands", "groups", "portal_users"]
+_ALL_TABLES = [
+    "audit_logs",
+    "pos_devices",
+    "license_invoices",
+    "licenses",
+    "categories",
+    "sites",
+    "brands",
+    "groups",
+    "portal_users",
+]
 
 
 # ── Per-test session ──────────────────────────────────────────────────────────
@@ -204,3 +214,51 @@ async def portal_auth_headers(test_portal_user: PortalUser) -> dict[str, str]:
     """
     token = create_access_token(str(test_portal_user.id), test_portal_user.role)
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture()
+async def test_license(db: AsyncSession, test_site: Site) -> License:
+    """
+    A persisted active License row for test_site.
+
+    Returns:
+        License: A saved, active License instance.
+    """
+    from datetime import datetime, timezone, timedelta
+
+    lic = License(
+        id=uuid.uuid4(),
+        site_id=test_site.id,
+        plan_name="starter",
+        status="active",
+        monthly_fee_cents=9900,
+        is_trial=False,
+        starts_at=datetime.now(tz=timezone.utc),
+        expires_at=datetime.now(tz=timezone.utc) + timedelta(days=365),
+    )
+    db.add(lic)
+    await db.commit()
+    await db.refresh(lic)
+    return lic
+
+
+@pytest_asyncio.fixture()
+async def test_device(db: AsyncSession, test_site: Site, test_license: License) -> PosDevice:
+    """
+    A persisted active PosDevice row linked to test_site and test_license.
+
+    Returns:
+        PosDevice: A saved, active PosDevice instance.
+    """
+    device = PosDevice(
+        id=uuid.uuid4(),
+        site_id=test_site.id,
+        license_id=test_license.id,
+        device_name="Test Terminal",
+        device_token="unique-test-token-abc123",
+        is_active=True,
+    )
+    db.add(device)
+    await db.commit()
+    await db.refresh(device)
+    return device
