@@ -91,7 +91,7 @@ api.interceptors.response.use(
       const refresh = getRefreshToken()
       if (!refresh) throw new Error('No refresh token')
 
-      const { data } = await axios.post(`${BASE_URL}/portal-auth/refresh`, {
+      const { data } = await axios.post(`${BASE_URL}/auth/portal/refresh`, {
         refresh_token: refresh,
       })
 
