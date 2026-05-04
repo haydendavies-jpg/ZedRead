@@ -1,9 +1,11 @@
 """FastAPI application entry point — app factory, middleware, router registration."""
 
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
@@ -48,6 +50,17 @@ app = FastAPI(
     description="Multi-tenant point-of-sale backend.",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+# CORS — allow the portal origin (and localhost for local dev).
+# PORTAL_ORIGIN env var set in Railway; falls back to localhost for dev.
+_portal_origin = os.getenv("PORTAL_ORIGIN", "http://localhost:5173")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[_portal_origin],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Attach request ID middleware — must be added before any route middleware
