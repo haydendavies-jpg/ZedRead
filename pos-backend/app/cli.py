@@ -56,7 +56,7 @@ async def _bootstrap_super_admin_async(non_interactive: bool = False) -> None:
     """
     import os
 
-    engine = create_async_engine(_get_database_url(), echo=False)
+    engine = create_async_engine(_get_database_url(), echo=False, connect_args={"statement_cache_size": 0})
     session_factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
     async with session_factory() as db:

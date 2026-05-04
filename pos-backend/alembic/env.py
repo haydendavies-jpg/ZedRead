@@ -68,7 +68,8 @@ async def run_migrations_online() -> None:
     asyncpg requires the async engine path — the standard sync engine will not
     work with postgresql+asyncpg URLs.
     """
-    connectable = create_async_engine(DATABASE_URL)
+    # statement_cache_size=0 required for Supabase Transaction pooler (PgBouncer)
+    connectable = create_async_engine(DATABASE_URL, connect_args={"statement_cache_size": 0})
 
     async with connectable.connect() as connection:
         # run_sync wraps the sync Alembic migration runner inside the async context
