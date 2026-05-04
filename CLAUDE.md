@@ -65,6 +65,7 @@ Logging is present from Stage 1 and grows with the system.
 ## Sub-rules
 - Code style, naming, and FastAPI patterns: see **app/CLAUDE.md**
 - Testing rules: see **tests/CLAUDE.md**
+- Portal (React) style, components, and brand: see **pos-portal/CLAUDE.md**
 
 ## Absolute rules — no exceptions
 
