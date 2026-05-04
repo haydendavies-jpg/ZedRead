@@ -13,11 +13,14 @@ DATABASE_URL: str = os.getenv(
     "postgresql+asyncpg://zedread:zedread@localhost:5432/zedread",
 )
 
-# Single engine instance shared across the application lifetime
+# Single engine instance shared across the application lifetime.
+# statement_cache_size=0 is required when using Supabase's Transaction pooler
+# (PgBouncer in transaction mode), which does not support asyncpg prepared statements.
 engine = create_async_engine(
     DATABASE_URL,
-    echo=False,          # Set True locally to log all SQL (too noisy for prod)
-    pool_pre_ping=True,  # Verify connections before use to handle stale pool entries
+    echo=False,
+    pool_pre_ping=True,
+    connect_args={"statement_cache_size": 0},
 )
 
 # Session factory — each request gets its own session via get_db()

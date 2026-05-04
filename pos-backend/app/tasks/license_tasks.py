@@ -38,7 +38,7 @@ def _get_session_factory() -> async_sessionmaker[AsyncSession]:
         "DATABASE_URL",
         "postgresql+asyncpg://postgres:postgres@localhost:5432/zedread",
     )
-    engine = create_async_engine(database_url, echo=False, poolclass=NullPool)
+    engine = create_async_engine(database_url, echo=False, poolclass=NullPool, connect_args={"statement_cache_size": 0})
     return async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
 
