@@ -18,7 +18,7 @@ export function Layout() {
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
       isActive
-        ? 'bg-indigo-50 text-indigo-700'
+        ? 'bg-brand-50 text-brand-800'
         : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
     }`
 
@@ -27,8 +27,8 @@ export function Layout() {
       {/* Sidebar */}
       <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
         <div className="px-4 py-5 border-b border-gray-100">
-          <span className="font-semibold text-gray-900">ZedRead</span>
-          <p className="text-xs text-gray-400 mt-0.5">Portal</p>
+          <span className="font-bold text-brand-800" style={{ fontFamily: "'Lora', serif", fontSize: '1.2rem' }}>ZedRead</span>
+          <p className="text-xs text-gray-400 mt-0.5 tracking-widest uppercase" style={{ fontSize: '0.6rem' }}>POS You Can Count On</p>
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-1">

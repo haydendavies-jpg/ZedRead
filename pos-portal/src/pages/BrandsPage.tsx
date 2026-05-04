@@ -78,7 +78,7 @@ export function BrandsPage() {
         <h1 className="text-xl font-semibold text-gray-900">Brands</h1>
         <button
           onClick={openCreate}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          className="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
         >
           + New Brand
         </button>
@@ -110,7 +110,7 @@ export function BrandsPage() {
                     <StatusBadge status={b.is_active ? 'active' : 'suspended'} />
                   </td>
                   <td className="px-4 py-3 flex gap-2">
-                    <button onClick={() => openEdit(b)} className="text-indigo-600 hover:underline text-xs">Edit</button>
+                    <button onClick={() => openEdit(b)} className="text-brand-600 hover:underline text-xs">Edit</button>
                     {b.is_active ? (
                       <button onClick={() => suspendMutation.mutate(b.id)} className="text-amber-600 hover:underline text-xs">Suspend</button>
                     ) : (
@@ -140,7 +140,7 @@ export function BrandsPage() {
                   value={groupId}
                   onChange={(e) => setGroupId(e.target.value)}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
                   {groups.map((g) => (
                     <option key={g.id} value={g.id}>{g.name}</option>
@@ -155,14 +155,14 @@ export function BrandsPage() {
                 onChange={(e) => setName(e.target.value)}
                 required
                 autoFocus
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="Burger Chain"
               />
             </div>
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => { setShowCreate(false); setEditing(null) }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
-              <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
+              <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
                 {editing ? 'Save' : 'Create'}
               </button>
             </div>

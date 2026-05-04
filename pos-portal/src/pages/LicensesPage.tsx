@@ -86,7 +86,7 @@ export function LicensesPage() {
         <h1 className="text-xl font-semibold text-gray-900">Licenses</h1>
         <button
           onClick={openCreate}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          className="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
         >
           + New License
         </button>
@@ -115,7 +115,7 @@ export function LicensesPage() {
                   <td className="px-4 py-3 text-gray-700">{siteName(l.site_id)}</td>
                   <td className="px-4 py-3 font-medium text-gray-900">
                     {l.plan_name}
-                    {l.is_trial && <span className="ml-1 text-xs text-indigo-500">(trial)</span>}
+                    {l.is_trial && <span className="ml-1 text-xs text-brand-500">(trial)</span>}
                   </td>
                   <td className="px-4 py-3 text-gray-600">{formatCents(l.monthly_fee_cents)}</td>
                   <td className="px-4 py-3 text-gray-500">{new Date(l.expires_at).toLocaleDateString()}</td>
@@ -150,7 +150,7 @@ export function LicensesPage() {
                 value={form.site_id}
                 onChange={(e) => setForm({ ...form, site_id: e.target.value })}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
                 {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
@@ -161,7 +161,7 @@ export function LicensesPage() {
                 value={form.plan_name}
                 onChange={(e) => setForm({ ...form, plan_name: e.target.value })}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="starter"
               />
             </div>
@@ -173,7 +173,7 @@ export function LicensesPage() {
                 value={form.monthly_fee_cents}
                 onChange={(e) => setForm({ ...form, monthly_fee_cents: e.target.value })}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -184,7 +184,7 @@ export function LicensesPage() {
                   value={form.starts_at}
                   onChange={(e) => setForm({ ...form, starts_at: e.target.value })}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
               <div>
@@ -194,7 +194,7 @@ export function LicensesPage() {
                   value={form.expires_at}
                   onChange={(e) => setForm({ ...form, expires_at: e.target.value })}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
             </div>
@@ -210,7 +210,7 @@ export function LicensesPage() {
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
-              <button type="submit" disabled={createMutation.isPending} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">Create</button>
+              <button type="submit" disabled={createMutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">Create</button>
             </div>
           </form>
         </Modal>

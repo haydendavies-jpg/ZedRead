@@ -63,7 +63,7 @@ export function GroupsPage() {
         <h1 className="text-xl font-semibold text-gray-900">Groups</h1>
         <button
           onClick={openCreate}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          className="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
         >
           + New Group
         </button>
@@ -93,7 +93,7 @@ export function GroupsPage() {
                   </td>
                   <td className="px-4 py-3 text-gray-400">{new Date(g.created_at).toLocaleDateString()}</td>
                   <td className="px-4 py-3 flex gap-2">
-                    <button onClick={() => openEdit(g)} className="text-indigo-600 hover:underline text-xs">Edit</button>
+                    <button onClick={() => openEdit(g)} className="text-brand-600 hover:underline text-xs">Edit</button>
                     {g.is_active ? (
                       <button onClick={() => suspendMutation.mutate(g.id)} className="text-amber-600 hover:underline text-xs">Suspend</button>
                     ) : (
@@ -124,14 +124,14 @@ export function GroupsPage() {
                 required
                 minLength={1}
                 autoFocus
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="Acme Corp"
               />
             </div>
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => { setShowCreate(false); setEditing(null) }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
-              <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
+              <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
                 {editing ? 'Save' : 'Create'}
               </button>
             </div>

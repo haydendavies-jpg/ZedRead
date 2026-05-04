@@ -1,4 +1,19 @@
+@import url('https://fonts.googleapis.com/css2?family=Lora:wght@600;700&display=swap');
 @import "tailwindcss";
+
+@theme {
+  --color-brand-50:  #fdf2f4;
+  --color-brand-100: #fce7ea;
+  --color-brand-200: #f8c9d0;
+  --color-brand-300: #f19fac;
+  --color-brand-400: #e56e82;
+  --color-brand-500: #c94060;
+  --color-brand-600: #a82040;
+  --color-brand-700: #8a1c35;
+  --color-brand-800: #7b1d2a;
+  --color-brand-900: #5c1520;
+  --color-brand-950: #3d0e16;
+}
 
 body {
   margin: 0;

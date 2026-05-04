@@ -69,7 +69,7 @@ export function PortalUsersPage() {
         </div>
         <button
           onClick={() => { setForm({ email: '', name: '', password: '', role: 'admin' }); setFormError(null); setShowCreate(true) }}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          className="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
         >
           + New User
         </button>
@@ -96,7 +96,7 @@ export function PortalUsersPage() {
                   <td className="px-4 py-3"><EntityIdChip id={u.id} /></td>
                   <td className="px-4 py-3 font-medium text-gray-900">
                     {u.name}
-                    {u.id === me?.id && <span className="ml-1 text-xs text-indigo-400">(you)</span>}
+                    {u.id === me?.id && <span className="ml-1 text-xs text-brand-400">(you)</span>}
                   </td>
                   <td className="px-4 py-3 text-gray-500">{u.email}</td>
                   <td className="px-4 py-3">
@@ -135,7 +135,7 @@ export function PortalUsersPage() {
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 required
                 autoFocus
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="Jane Smith"
               />
             </div>
@@ -146,7 +146,7 @@ export function PortalUsersPage() {
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="jane@example.com"
               />
             </div>
@@ -158,7 +158,7 @@ export function PortalUsersPage() {
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 required
                 minLength={12}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
             <div>
@@ -166,7 +166,7 @@ export function PortalUsersPage() {
               <select
                 value={form.role}
                 onChange={(e) => setForm({ ...form, role: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
                 {ROLES.map((r) => (
                   <option key={r} value={r}>{r.replace('_', ' ')}</option>
@@ -176,7 +176,7 @@ export function PortalUsersPage() {
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
-              <button type="submit" disabled={createMutation.isPending} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">Create</button>
+              <button type="submit" disabled={createMutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">Create</button>
             </div>
           </form>
         </Modal>
