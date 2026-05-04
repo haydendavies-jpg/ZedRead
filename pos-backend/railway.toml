@@ -1,0 +1,12 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Railway injects $PORT automatically — Dockerfile CMD uses it
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+# Health check — Railway will restart the service if this fails
+healthcheckPath = "/health"
+healthcheckTimeout = 30

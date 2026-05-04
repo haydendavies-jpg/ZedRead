@@ -1,0 +1,11 @@
+[build]
+# Railway static site service — builds the Vite app and serves dist/
+builder = "nixpacks"
+buildCommand = "npm install && npm run build"
+
+[deploy]
+# Serve the Vite output directory as static files
+staticDir = "dist"
+
+# SPA routing — all paths fall back to index.html so React Router works
+startCommand = ""
