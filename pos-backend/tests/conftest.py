@@ -22,8 +22,24 @@ from app.database import Base, get_db
 from app.main import app
 
 # Import all models so Base.metadata knows about them for create_all
-from app.models import AuditLog, Brand, Category, Group, License, LicenseInvoice, PortalUser, PosDevice, Site  # noqa: F401
-from app.utils.security import create_access_token, hash_password
+from app.models import (  # noqa: F401
+    AccessProfile,
+    AuditLog,
+    Brand,
+    Category,
+    Group,
+    License,
+    LicenseInvoice,
+    POSUser,
+    PortalUser,
+    PosDevice,
+    Site,
+    UserAccessGrant,
+    UserInvite,
+    UserPIN,
+    UserPOSSession,
+)
+from app.utils.security import create_access_token, create_pos_access_token, hash_password
 
 # ── Test database configuration ───────────────────────────────────────────────
 
@@ -35,6 +51,12 @@ TEST_DATABASE_URL: str = os.getenv(
 # All table names in reverse FK dependency order — used for TRUNCATE CASCADE
 _ALL_TABLES = [
     "audit_logs",
+    "user_pos_sessions",
+    "user_pins",
+    "user_invites",
+    "user_access_grants",
+    "pos_users",
+    "access_profiles",
     "pos_devices",
     "license_invoices",
     "licenses",
@@ -262,3 +284,104 @@ async def test_device(db: AsyncSession, test_site: Site, test_license: License) 
     await db.commit()
     await db.refresh(device)
     return device
+
+
+# ── Stage 7 fixtures ──────────────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture()
+async def test_access_profile(db: AsyncSession, test_brand: Brand) -> AccessProfile:
+    """
+    A persisted non-system AccessProfile row for test_brand.
+
+    Returns:
+        AccessProfile: A saved, active AccessProfile instance.
+    """
+    profile = AccessProfile(
+        id=uuid.uuid4(),
+        brand_id=test_brand.id,
+        name="Cashier",
+        is_system=False,
+        is_active=True,
+    )
+    db.add(profile)
+    await db.commit()
+    await db.refresh(profile)
+    return profile
+
+
+@pytest_asyncio.fixture()
+async def test_pos_user(db: AsyncSession, test_brand: Brand) -> POSUser:
+    """
+    A persisted active POSUser row for test_brand.
+
+    The password is 'POSPassword123!' — use pos_auth_headers to get a token.
+
+    Returns:
+        POSUser: A saved, active POSUser instance.
+    """
+    user = POSUser(
+        id=uuid.uuid4(),
+        brand_id=test_brand.id,
+        name="Test POS User",
+        email="posuser@test.com",
+        password_hash=hash_password("POSPassword123!"),
+        is_active=True,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture()
+async def test_access_grant(
+    db: AsyncSession,
+    test_pos_user: POSUser,
+    test_site: Site,
+    test_access_profile: AccessProfile,
+) -> UserAccessGrant:
+    """
+    A persisted active UserAccessGrant linking test_pos_user to test_site
+    with test_access_profile.
+
+    Returns:
+        UserAccessGrant: A saved, active grant instance.
+    """
+    grant = UserAccessGrant(
+        id=uuid.uuid4(),
+        user_id=test_pos_user.id,
+        site_id=test_site.id,
+        access_profile_id=test_access_profile.id,
+        granted_by_id=None,
+        is_active=True,
+    )
+    db.add(grant)
+    await db.commit()
+    await db.refresh(grant)
+    return grant
+
+
+@pytest_asyncio.fixture()
+async def pos_auth_headers(
+    test_pos_user: POSUser,
+    test_site: Site,
+    test_access_grant: UserAccessGrant,
+) -> dict[str, str]:
+    """
+    Authorization header dict carrying a valid POS access token for test_pos_user.
+
+    Also ensures the access grant exists (depends on test_access_grant) so
+    the resolve_access dependency succeeds for tests using this fixture.
+
+    Returns:
+        dict[str, str]: {"Authorization": "Bearer <pos_access_token>"}
+    """
+    import uuid as _uuid
+    jti = str(_uuid.uuid4())
+    token = create_pos_access_token(
+        user_id=str(test_pos_user.id),
+        site_id=str(test_site.id),
+        jti=jti,
+    )
+    return {"Authorization": f"Bearer {token}"}
