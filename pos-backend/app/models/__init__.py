@@ -7,12 +7,22 @@ from app.models.category import Category
 from app.models.group import Group
 from app.models.license import License
 from app.models.license_invoice import LicenseInvoice
+from app.models.modifier_group import ModifierGroup
+from app.models.modifier_option import ModifierOption
 from app.models.portal_user import PortalUser
 from app.models.pos_device import PosDevice
 from app.models.pos_user import POSUser
 from app.models.product import Product
+from app.models.product_attribute_type import ProductAttributeType
+from app.models.product_attribute_value import ProductAttributeValue
+from app.models.product_combo_group import ProductComboGroup
+from app.models.product_combo_option import ProductComboOption
+from app.models.product_modifier_group_link import ProductModifierGroupLink
+from app.models.product_variant import ProductVariant
+from app.models.product_variant_attribute import ProductVariantAttribute
 from app.models.site import Site
 from app.models.site_product_override import SiteProductOverride
+from app.models.site_variant_override import SiteVariantOverride
 from app.models.tax_category import TaxCategory
 from app.models.tax_rate import TaxRate
 from app.models.user_access_grant import UserAccessGrant
@@ -28,12 +38,22 @@ __all__ = [
     "Group",
     "License",
     "LicenseInvoice",
+    "ModifierGroup",
+    "ModifierOption",
     "PortalUser",
     "PosDevice",
     "POSUser",
     "Product",
+    "ProductAttributeType",
+    "ProductAttributeValue",
+    "ProductComboGroup",
+    "ProductComboOption",
+    "ProductModifierGroupLink",
+    "ProductVariant",
+    "ProductVariantAttribute",
     "Site",
     "SiteProductOverride",
+    "SiteVariantOverride",
     "TaxCategory",
     "TaxRate",
     "UserAccessGrant",

@@ -149,14 +149,18 @@ async def create_invite(
         },
     )
 
-    # Send email — if this raises, the transaction is not committed
-    await send_invite_email(
-        to_email=payload.email,
-        inviter_name=actor.name,
-        brand_name=brand_name,
-        site_name=site.name,
-        token=token,
-    )
+    # Send email — if this raises, explicitly rollback and re-raise (rule 14)
+    try:
+        await send_invite_email(
+            to_email=payload.email,
+            inviter_name=actor.name,
+            brand_name=brand_name,
+            site_name=site.name,
+            token=token,
+        )
+    except Exception:
+        await db.rollback()
+        raise
 
     await db.commit()
     await db.refresh(invite)

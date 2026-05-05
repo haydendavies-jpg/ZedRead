@@ -160,16 +160,21 @@ async def test_create_invite_duplicate_pending_returns_409(
 async def test_create_invite_email_failure_rolls_back(
     client, db, pos_auth_headers, test_site, test_access_profile
 ):
-    """If Resend email send fails, the invite row is not committed to the DB."""
-    with patch(_SEND_EMAIL_PATH, new_callable=AsyncMock, side_effect=Exception("resend error")):
-        response = await client.post(
-            "/invites",
-            json=_invite_payload(test_site.id, test_access_profile.id),
-            headers=pos_auth_headers,
-        )
+    """If Resend email send fails, the invite row is not committed to the DB.
 
-    # Route should propagate as 500 (unhandled exception from email layer)
-    assert response.status_code == 500
+    httpx's ASGITransport re-raises unhandled server exceptions in the test
+    process, so we catch the propagated exception and verify the rollback.
+    """
+    with patch(_SEND_EMAIL_PATH, new_callable=AsyncMock, side_effect=Exception("resend error")):
+        try:
+            await client.post(
+                "/invites",
+                json=_invite_payload(test_site.id, test_access_profile.id),
+                headers=pos_auth_headers,
+            )
+        except Exception as exc:
+            # Expected — the email failure propagates through the test transport
+            assert "resend error" in str(exc)
 
     result = await db.execute(
         select(UserInvite).where(UserInvite.email == "newstaff@test.com")

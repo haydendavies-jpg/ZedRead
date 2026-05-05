@@ -76,6 +76,21 @@ TAX_RATE_UPDATED = "tax_rate.updated"
 SITE_PRODUCT_OVERRIDE_SET = "site_product_override.set"
 SITE_PRODUCT_OVERRIDE_REMOVED = "site_product_override.removed"
 
+VARIANT_CREATED = "variant.created"
+VARIANT_UPDATED = "variant.updated"
+VARIANT_DEACTIVATED = "variant.deactivated"
+
+MODIFIER_GROUP_CREATED = "modifier_group.created"
+MODIFIER_GROUP_UPDATED = "modifier_group.updated"
+MODIFIER_OPTION_CREATED = "modifier_option.created"
+MODIFIER_OPTION_UPDATED = "modifier_option.updated"
+PRODUCT_MODIFIER_LINKED = "product.modifier.linked"
+PRODUCT_MODIFIER_UNLINKED = "product.modifier.unlinked"
+
+COMBO_GROUP_CREATED = "combo_group.created"
+COMBO_OPTION_ADDED = "combo_option.added"
+COMBO_OPTION_REMOVED = "combo_option.removed"
+
 # ── Phase 3 / Stage 10 — Invoice Engine ──────────────────────────────────────
 INVOICE_CREATED = "invoice.created"
 INVOICE_LINE_ITEM_ADDED = "invoice.line_item.added"

@@ -4,7 +4,8 @@ import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+import structlog
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -12,10 +13,12 @@ from sqlalchemy import text
 from app.database import engine
 from app.logging_config import configure_logging
 from app.middleware.logging import RequestLoggingMiddleware
-from app.routes import brands, groups, license_invoices, licenses, portal_auth, portal_users, pos_auth, pos_devices, products, site_overrides, sites, tax, user_invites
+from app.routes import brands, combos, groups, license_invoices, licenses, modifiers, portal_auth, portal_users, pos_auth, pos_devices, products, site_overrides, sites, tax, user_invites, variants
 
 # Configure structlog before the app starts accepting requests
 configure_logging()
+
+log = structlog.get_logger(__name__)
 
 
 @asynccontextmanager
@@ -82,6 +85,39 @@ app.include_router(user_invites.router)
 app.include_router(tax.router)
 app.include_router(products.router)
 app.include_router(site_overrides.router)
+app.include_router(variants.router)
+app.include_router(modifiers.router)
+app.include_router(combos.router)
+
+
+# ── Global exception handler ──────────────────────────────────────────────────
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """
+    Catch-all handler for unhandled exceptions.
+
+    Logs at ERROR level (rule 14) and returns a generic 500 response.
+    Prevents raw exception tracebacks from leaking to API consumers.
+
+    Args:
+        request: The incoming request.
+        exc: The unhandled exception.
+
+    Returns:
+        JSONResponse: 500 with a generic error message.
+    """
+    log.error(
+        "unhandled_exception",
+        exc_type=type(exc).__name__,
+        exc=str(exc),
+        path=request.url.path,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Internal server error"},
+    )
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
