@@ -12,7 +12,7 @@ from sqlalchemy import text
 from app.database import engine
 from app.logging_config import configure_logging
 from app.middleware.logging import RequestLoggingMiddleware
-from app.routes import brands, groups, license_invoices, licenses, portal_auth, portal_users, pos_devices, sites
+from app.routes import brands, groups, license_invoices, licenses, portal_auth, portal_users, pos_auth, pos_devices, sites
 
 # Configure structlog before the app starts accepting requests
 configure_logging()
@@ -70,6 +70,7 @@ app.add_middleware(
 # ── Routers ───────────────────────────────────────────────────────────────────
 
 app.include_router(portal_auth.router)
+app.include_router(pos_auth.router)
 app.include_router(groups.router)
 app.include_router(brands.router)
 app.include_router(sites.router)

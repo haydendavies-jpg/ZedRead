@@ -22,6 +22,7 @@ from app.models.brand import Brand
 from app.models.category import Category
 from app.models.portal_user import PortalUser
 from app.schemas.brand import BrandCreate, BrandUpdate
+from app.services.access_profile_service import seed_system_profiles
 from app.services.audit_service import log_action
 
 log = structlog.get_logger(__name__)
@@ -130,6 +131,9 @@ async def create_brand(
         is_active=True,
     )
     db.add(uncategorised)
+
+    # Seed the 4 system access profiles (Manager, Supervisor, Cashier, Kitchen)
+    await seed_system_profiles(db, brand.id)
 
     await log_action(
         db=db,
