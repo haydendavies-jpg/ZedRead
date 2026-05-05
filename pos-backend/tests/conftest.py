@@ -28,10 +28,15 @@ from app.models import (  # noqa: F401
     Brand,
     Category,
     Group,
+    Invoice,
+    InvoiceLineItem,
+    InvoiceLineModifier,
+    InvoiceTaxBreakdown,
     License,
     LicenseInvoice,
     ModifierGroup,
     ModifierOption,
+    Payment,
     POSUser,
     PortalUser,
     PosDevice,
@@ -65,6 +70,12 @@ TEST_DATABASE_URL: str = os.getenv(
 # All table names in reverse FK dependency order — used for TRUNCATE CASCADE
 _ALL_TABLES = [
     "audit_logs",
+    # Stage 10 — invoices (must precede products/users they reference)
+    "payments",
+    "invoice_tax_breakdowns",
+    "invoice_line_modifiers",
+    "invoice_line_items",
+    "invoices",
     "user_pos_sessions",
     "user_pins",
     "user_invites",

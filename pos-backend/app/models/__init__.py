@@ -5,10 +5,15 @@ from app.models.audit_log import AuditLog
 from app.models.brand import Brand
 from app.models.category import Category
 from app.models.group import Group
+from app.models.invoice import Invoice
+from app.models.invoice_line_item import InvoiceLineItem
+from app.models.invoice_line_modifier import InvoiceLineModifier
+from app.models.invoice_tax_breakdown import InvoiceTaxBreakdown
 from app.models.license import License
 from app.models.license_invoice import LicenseInvoice
 from app.models.modifier_group import ModifierGroup
 from app.models.modifier_option import ModifierOption
+from app.models.payment import Payment
 from app.models.portal_user import PortalUser
 from app.models.pos_device import PosDevice
 from app.models.pos_user import POSUser
@@ -36,10 +41,15 @@ __all__ = [
     "Brand",
     "Category",
     "Group",
+    "Invoice",
+    "InvoiceLineItem",
+    "InvoiceLineModifier",
+    "InvoiceTaxBreakdown",
     "License",
     "LicenseInvoice",
     "ModifierGroup",
     "ModifierOption",
+    "Payment",
     "PortalUser",
     "PosDevice",
     "POSUser",
