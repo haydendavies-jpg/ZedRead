@@ -60,6 +60,96 @@ from app.models import (  # noqa: F401
 )
 from app.utils.security import create_access_token, create_pos_access_token, hash_password
 
+# ── Reporting view DDL ────────────────────────────────────────────────────────
+# CREATE OR REPLACE VIEW so the fixture is idempotent across test runs.
+# Mirrors 0010_create_reporting_views.py exactly.
+
+_REPORTING_VIEWS = [
+    """
+    CREATE OR REPLACE VIEW vw_daily_sales AS
+    SELECT i.brand_id, i.site_id, DATE(i.created_at) AS sale_date,
+           COUNT(*) AS invoice_count,
+           COALESCE(SUM(i.subtotal_cents), 0) AS subtotal_cents,
+           COALESCE(SUM(i.tax_cents), 0) AS tax_cents,
+           COALESCE(SUM(i.discount_cents), 0) AS discount_cents,
+           COALESCE(SUM(i.total_cents), 0) AS total_cents
+    FROM invoices i
+    WHERE i.status = 'paid' AND i.invoice_type = 'sale'
+    GROUP BY i.brand_id, i.site_id, DATE(i.created_at)
+    """,
+    """
+    CREATE OR REPLACE VIEW vw_product_revenue AS
+    SELECT ili.product_id, ili.product_name, i.brand_id, i.site_id,
+           SUM(ili.quantity) AS total_units,
+           COALESCE(SUM(ili.subtotal_cents), 0) AS revenue_cents,
+           COALESCE(SUM(ili.tax_cents), 0) AS tax_cents
+    FROM invoice_line_items ili
+    JOIN invoices i ON ili.invoice_id = i.id
+    WHERE i.status = 'paid' AND i.invoice_type = 'sale'
+    GROUP BY ili.product_id, ili.product_name, i.brand_id, i.site_id
+    """,
+    """
+    CREATE OR REPLACE VIEW vw_payment_methods AS
+    SELECT p.method, i.brand_id, i.site_id,
+           COUNT(*) AS payment_count,
+           COALESCE(SUM(p.amount_cents), 0) AS total_amount_cents
+    FROM payments p
+    JOIN invoices i ON p.invoice_id = i.id
+    WHERE i.invoice_type = 'sale'
+    GROUP BY p.method, i.brand_id, i.site_id
+    """,
+    """
+    CREATE OR REPLACE VIEW vw_tax_collected AS
+    SELECT itb.tax_rate_name, itb.rate_percent, itb.tax_model, i.brand_id, i.site_id,
+           COALESCE(SUM(itb.taxable_amount_cents), 0) AS taxable_amount_cents,
+           COALESCE(SUM(itb.tax_amount_cents), 0) AS tax_amount_cents
+    FROM invoice_tax_breakdowns itb
+    JOIN invoices i ON itb.invoice_id = i.id
+    WHERE i.status = 'paid' AND i.invoice_type = 'sale'
+    GROUP BY itb.tax_rate_name, itb.rate_percent, itb.tax_model, i.brand_id, i.site_id
+    """,
+    """
+    CREATE OR REPLACE VIEW vw_hourly_sales AS
+    SELECT i.brand_id, i.site_id,
+           EXTRACT(HOUR FROM i.created_at)::INTEGER AS hour_of_day,
+           COUNT(*) AS invoice_count,
+           COALESCE(SUM(i.total_cents), 0) AS total_cents
+    FROM invoices i
+    WHERE i.status = 'paid' AND i.invoice_type = 'sale'
+    GROUP BY i.brand_id, i.site_id, EXTRACT(HOUR FROM i.created_at)
+    """,
+    """
+    CREATE OR REPLACE VIEW vw_modifier_popularity AS
+    SELECT ilm.modifier_name, i.brand_id,
+           COUNT(*) AS usage_count,
+           COALESCE(SUM(ilm.price_delta_cents), 0) AS total_revenue_impact_cents
+    FROM invoice_line_modifiers ilm
+    JOIN invoice_line_items ili ON ilm.line_item_id = ili.id
+    JOIN invoices i ON ili.invoice_id = i.id
+    WHERE i.status = 'paid' AND i.invoice_type = 'sale'
+    GROUP BY ilm.modifier_name, i.brand_id
+    """,
+    """
+    CREATE OR REPLACE VIEW vw_invoice_detail AS
+    SELECT i.id, i.brand_id, i.site_id, i.created_by_id, i.invoice_type, i.status,
+           i.subtotal_cents, i.tax_cents, i.discount_cents, i.total_cents,
+           i.refund_of_id, i.is_refunded, i.voided_at, i.paid_at, i.created_at,
+           s.name AS site_name, b.name AS brand_name
+    FROM invoices i
+    JOIN sites s ON i.site_id = s.id
+    JOIN brands b ON i.brand_id = b.id
+    """,
+    """
+    CREATE OR REPLACE VIEW vw_refund_summary AS
+    SELECT i.brand_id, i.site_id, DATE(i.created_at) AS refund_date,
+           COUNT(*) AS refund_count,
+           COALESCE(SUM(ABS(i.total_cents)), 0) AS refund_total_cents
+    FROM invoices i
+    WHERE i.invoice_type = 'refund'
+    GROUP BY i.brand_id, i.site_id, DATE(i.created_at)
+    """,
+]
+
 # ── Test database configuration ───────────────────────────────────────────────
 
 TEST_DATABASE_URL: str = os.getenv(
@@ -135,6 +225,9 @@ async def db() -> AsyncGenerator[AsyncSession, None]:
     # Ensure schema exists (idempotent — skips tables that already exist)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Views are not detected by create_all — create them explicitly
+        for view_sql in _REPORTING_VIEWS:
+            await conn.execute(text(view_sql.strip()))
 
     session_factory = async_sessionmaker(
         bind=engine,

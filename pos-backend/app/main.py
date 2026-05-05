@@ -13,7 +13,7 @@ from sqlalchemy import text
 from app.database import engine
 from app.logging_config import configure_logging
 from app.middleware.logging import RequestLoggingMiddleware
-from app.routes import brands, combos, groups, invoices, license_invoices, licenses, modifiers, portal_auth, portal_users, pos_auth, pos_devices, products, site_overrides, sites, tax, user_invites, variants
+from app.routes import brands, combos, groups, invoices, license_invoices, licenses, modifiers, portal_auth, portal_users, pos_auth, pos_devices, products, reports, site_overrides, sites, tax, user_invites, variants
 
 # Configure structlog before the app starts accepting requests
 configure_logging()
@@ -89,6 +89,7 @@ app.include_router(variants.router)
 app.include_router(modifiers.router)
 app.include_router(combos.router)
 app.include_router(invoices.router)
+app.include_router(reports.router)
 
 
 # ── Global exception handler ──────────────────────────────────────────────────
