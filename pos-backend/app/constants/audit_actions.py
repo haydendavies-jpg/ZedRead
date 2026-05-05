@@ -69,6 +69,7 @@ CATEGORY_UPDATED = "category.updated"
 CATEGORY_DELETED = "category.deleted"
 
 TAX_CATEGORY_CREATED = "tax_category.created"
+TAX_CATEGORY_UPDATED = "tax_category.updated"
 TAX_RATE_CREATED = "tax_rate.created"
 TAX_RATE_UPDATED = "tax_rate.updated"
 

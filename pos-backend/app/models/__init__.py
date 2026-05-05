@@ -10,7 +10,11 @@ from app.models.license_invoice import LicenseInvoice
 from app.models.portal_user import PortalUser
 from app.models.pos_device import PosDevice
 from app.models.pos_user import POSUser
+from app.models.product import Product
 from app.models.site import Site
+from app.models.site_product_override import SiteProductOverride
+from app.models.tax_category import TaxCategory
+from app.models.tax_rate import TaxRate
 from app.models.user_access_grant import UserAccessGrant
 from app.models.user_invite import UserInvite
 from app.models.user_pin import UserPIN
@@ -27,7 +31,11 @@ __all__ = [
     "PortalUser",
     "PosDevice",
     "POSUser",
+    "Product",
     "Site",
+    "SiteProductOverride",
+    "TaxCategory",
+    "TaxRate",
     "UserAccessGrant",
     "UserInvite",
     "UserPIN",

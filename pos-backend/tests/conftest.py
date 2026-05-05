@@ -33,7 +33,11 @@ from app.models import (  # noqa: F401
     POSUser,
     PortalUser,
     PosDevice,
+    Product,
     Site,
+    SiteProductOverride,
+    TaxCategory,
+    TaxRate,
     UserAccessGrant,
     UserInvite,
     UserPIN,
@@ -60,7 +64,11 @@ _ALL_TABLES = [
     "pos_devices",
     "license_invoices",
     "licenses",
+    "site_product_overrides",
+    "products",
     "categories",
+    "tax_rates",
+    "tax_categories",
     "sites",
     "brands",
     "groups",
@@ -385,3 +393,72 @@ async def pos_auth_headers(
         jti=jti,
     )
     return {"Authorization": f"Bearer {token}"}
+
+
+# ── Stage 8 fixtures ──────────────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture()
+async def test_tax_category(db: AsyncSession, test_brand: Brand) -> TaxCategory:
+    """
+    A persisted TaxCategory row for test_brand.
+
+    Returns:
+        TaxCategory: A saved, active TaxCategory instance.
+    """
+    tax_cat = TaxCategory(
+        id=uuid.uuid4(),
+        brand_id=test_brand.id,
+        name="Standard",
+        is_active=True,
+    )
+    db.add(tax_cat)
+    await db.commit()
+    await db.refresh(tax_cat)
+    return tax_cat
+
+
+@pytest_asyncio.fixture()
+async def test_product(db: AsyncSession, test_brand: Brand, test_site: Site) -> Product:
+    """
+    A persisted active Product row for test_brand.
+
+    Belongs to the first category found for test_brand (the auto-seeded
+    Uncategorised category created when test_brand is used in create_brand).
+    Falls back to creating a direct category if none exists.
+
+    Returns:
+        Product: A saved, active Product instance.
+    """
+    from sqlalchemy import select as _select
+
+    cat_result = await db.execute(
+        _select(Category).where(Category.brand_id == test_brand.id).limit(1)
+    )
+    cat = cat_result.scalar_one_or_none()
+    if cat is None:
+        cat = Category(
+            id=uuid.uuid4(),
+            brand_id=test_brand.id,
+            name="Uncategorised",
+            is_system=True,
+            is_active=True,
+        )
+        db.add(cat)
+        await db.flush()
+
+    product = Product(
+        id=uuid.uuid4(),
+        brand_id=test_brand.id,
+        category_id=cat.id,
+        tax_category_id=None,
+        name="Test Burger",
+        description=None,
+        base_price_cents=1500,
+        display_order=0,
+        is_active=True,
+    )
+    db.add(product)
+    await db.commit()
+    await db.refresh(product)
+    return product
