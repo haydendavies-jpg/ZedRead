@@ -101,6 +101,31 @@ def create_access_token(user_id: str, role: str) -> str:
     )
 
 
+def create_pos_access_token(user_id: str, site_id: str, jti: str) -> str:
+    """
+    Create a short-lived access JWT for an authenticated POS terminal user.
+
+    Embeds site_id and jti so the token is self-contained — the dependency
+    can verify site access without an extra query parameter.
+
+    Args:
+        user_id: The POS user's UUID as a string.
+        site_id: The site UUID the user authenticated against.
+        jti: Pre-generated UUID string used as the token ID (matches the
+             user_pos_sessions.token_jti column for revocation support).
+
+    Returns:
+        str: A signed POS access JWT.
+    """
+    return _make_token(
+        subject=user_id,
+        token_type="pos_access",
+        expires_delta=timedelta(minutes=_ACCESS_TOKEN_MINUTES),
+        # jti is passed explicitly so it matches the session row written to DB
+        extra_claims={"site_id": site_id, "jti": jti},
+    )
+
+
 def create_refresh_token(user_id: str) -> str:
     """
     Create a long-lived refresh JWT for obtaining new access tokens.

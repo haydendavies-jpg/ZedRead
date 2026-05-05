@@ -73,3 +73,17 @@ class PortalUserRole(str, Enum):
     SUPER_ADMIN = "super_admin"
     ADMIN = "admin"
     RESELLER = "reseller"
+
+
+class SystemAccessProfile(str, Enum):
+    """
+    Names of the four system access profiles seeded for every new brand.
+
+    These are created automatically by seed_system_profiles() in
+    access_profile_service.py and cannot be deleted (is_system=True).
+    """
+
+    MANAGER = "Manager"
+    SUPERVISOR = "Supervisor"
+    CASHIER = "Cashier"
+    KITCHEN = "Kitchen"
