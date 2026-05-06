@@ -523,6 +523,123 @@ async def pos_auth_headers(
     return {"Authorization": f"Bearer {token}"}
 
 
+# ── Stage 13 fixtures ────────────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture()
+async def test_manager_profile(db: AsyncSession, test_brand: Brand) -> AccessProfile:
+    """
+    A persisted Manager-like AccessProfile with can_access_portal=True for test_brand.
+
+    Used by management auth tests.
+
+    Returns:
+        AccessProfile: A saved, portal-capable access profile.
+    """
+    profile = AccessProfile(
+        id=uuid.uuid4(),
+        brand_id=test_brand.id,
+        name="Manager",
+        is_system=True,
+        is_active=True,
+        can_access_portal=True,
+    )
+    db.add(profile)
+    await db.commit()
+    await db.refresh(profile)
+    return profile
+
+
+@pytest_asyncio.fixture()
+async def test_portal_grant(
+    db: AsyncSession,
+    test_pos_user: POSUser,
+    test_site: Site,
+    test_manager_profile: AccessProfile,
+) -> UserAccessGrant:
+    """
+    A persisted active site-scope UserAccessGrant for test_pos_user with a
+    portal-capable Manager profile.
+
+    Used by management auth tests.
+
+    Returns:
+        UserAccessGrant: A saved, active site-scope grant.
+    """
+    grant = UserAccessGrant(
+        id=uuid.uuid4(),
+        user_id=test_pos_user.id,
+        scope="site",
+        site_id=test_site.id,
+        brand_id=None,
+        group_id=None,
+        access_profile_id=test_manager_profile.id,
+        granted_by_id=None,
+        is_active=True,
+    )
+    db.add(grant)
+    await db.commit()
+    await db.refresh(grant)
+    return grant
+
+
+@pytest_asyncio.fixture()
+async def test_brand_grant(
+    db: AsyncSession,
+    test_pos_user: POSUser,
+    test_brand: Brand,
+    test_manager_profile: AccessProfile,
+) -> UserAccessGrant:
+    """
+    A persisted active brand-scope UserAccessGrant for test_pos_user.
+
+    Used by management auth tests for multi-grant and brand-scope scenarios.
+
+    Returns:
+        UserAccessGrant: A saved, active brand-scope grant.
+    """
+    grant = UserAccessGrant(
+        id=uuid.uuid4(),
+        user_id=test_pos_user.id,
+        scope="brand",
+        site_id=None,
+        brand_id=test_brand.id,
+        group_id=None,
+        access_profile_id=test_manager_profile.id,
+        granted_by_id=None,
+        is_active=True,
+    )
+    db.add(grant)
+    await db.commit()
+    await db.refresh(grant)
+    return grant
+
+
+@pytest_asyncio.fixture()
+async def mgmt_auth_headers(
+    test_pos_user: POSUser,
+    test_portal_grant: UserAccessGrant,
+) -> dict[str, str]:
+    """
+    Authorization header dict carrying a valid management access token for
+    test_pos_user with a site-scope grant.
+
+    Returns:
+        dict[str, str]: {"Authorization": "Bearer <mgmt_access_token>"}
+    """
+    from app.utils.security import create_mgmt_access_token
+
+    token = create_mgmt_access_token(
+        user_id=str(test_pos_user.id),
+        scope=test_portal_grant.scope,
+        grant_id=str(test_portal_grant.id),
+        site_id=str(test_portal_grant.site_id) if test_portal_grant.site_id else None,
+        brand_id=str(test_portal_grant.brand_id) if test_portal_grant.brand_id else None,
+        group_id=str(test_portal_grant.group_id) if test_portal_grant.group_id else None,
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
 # ── Stage 8 fixtures ──────────────────────────────────────────────────────────
 
 

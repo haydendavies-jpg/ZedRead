@@ -146,6 +146,64 @@ def create_refresh_token(user_id: str) -> str:
     )
 
 
+def create_mgmt_access_token(
+    user_id: str,
+    scope: str,
+    grant_id: str,
+    site_id: str | None,
+    brand_id: str | None,
+    group_id: str | None,
+) -> str:
+    """
+    Create a management access JWT for backend portal authentication.
+
+    Embeds the grant_id so resolve_management_access() can load the grant
+    in one query without re-resolving scope. Expiry is 60 minutes — longer
+    than the 15-min POS terminal token because portal sessions are interactive.
+
+    Args:
+        user_id: The POS user's UUID string.
+        scope: Grant scope value — 'site', 'brand', or 'group'.
+        grant_id: UUID of the active UserAccessGrant that authorises this session.
+        site_id: Site UUID string (set only when scope='site').
+        brand_id: Brand UUID string (set only when scope='brand' or 'site').
+        group_id: Group UUID string (set only when scope='group').
+
+    Returns:
+        str: A signed management access JWT.
+    """
+    extra: dict = {"scope": scope, "grant_id": grant_id}
+    if site_id:
+        extra["site_id"] = site_id
+    if brand_id:
+        extra["brand_id"] = brand_id
+    if group_id:
+        extra["group_id"] = group_id
+    return _make_token(
+        subject=user_id,
+        token_type="mgmt_access",
+        expires_delta=timedelta(minutes=60),
+        extra_claims=extra,
+    )
+
+
+def create_mgmt_refresh_token(user_id: str) -> str:
+    """
+    Create a long-lived refresh JWT for management portal session renewal.
+
+    Args:
+        user_id: The POS user's UUID string.
+
+    Returns:
+        str: A signed management refresh JWT.
+    """
+    return _make_token(
+        subject=user_id,
+        token_type="mgmt_refresh",
+        expires_delta=timedelta(days=_REFRESH_TOKEN_DAYS),
+    )
+
+
 def decode_token(token: str, expected_type: str) -> dict:
     """
     Decode and validate a JWT, checking its type claim.
