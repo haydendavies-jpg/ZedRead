@@ -21,7 +21,10 @@ const MGMT_NAV = [
 ]
 
 /** Nav items shown to brand/group scope management users only. */
-const MGMT_BRAND_NAV = [{ to: '/management/users', label: 'Users & Grants' }]
+const MGMT_BRAND_NAV = [
+  { to: '/management/overrides', label: 'Site Overrides' },
+  { to: '/management/users', label: 'Users & Grants' },
+]
 
 export function Layout() {
   const { user, logout } = useAuth()

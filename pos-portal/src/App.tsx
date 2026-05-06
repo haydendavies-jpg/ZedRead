@@ -20,11 +20,13 @@ import { BrandsPage } from './pages/BrandsPage'
 import { SitesPage } from './pages/SitesPage'
 import { LicensesPage } from './pages/LicensesPage'
 import { PortalUsersPage } from './pages/PortalUsersPage'
+import { BrandDetailPage } from './pages/brands/BrandDetailPage'
 import { ProductsPage } from './pages/management/ProductsPage'
 import { CategoriesPage } from './pages/management/CategoriesPage'
 import { TaxPage } from './pages/management/TaxPage'
 import { ReportsPage } from './pages/management/ReportsPage'
 import { UsersPage } from './pages/management/UsersPage'
+import { SiteOverridesPage } from './pages/management/SiteOverridesPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -71,6 +73,14 @@ export default function App() {
                 }
               />
               <Route
+                path="brands/:brandId"
+                element={
+                  <PrivateRoute requirePortalUser>
+                    <BrandDetailPage />
+                  </PrivateRoute>
+                }
+              />
+              <Route
                 path="sites"
                 element={
                   <PrivateRoute requirePortalUser>
@@ -101,6 +111,7 @@ export default function App() {
               <Route path="management/tax" element={<TaxPage />} />
               <Route path="management/reports" element={<ReportsPage />} />
               <Route path="management/users" element={<UsersPage />} />
+              <Route path="management/overrides" element={<SiteOverridesPage />} />
             </Route>
 
             {/* Catch-all */}
