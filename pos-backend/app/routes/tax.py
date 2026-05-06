@@ -15,7 +15,7 @@ from app.schemas.tax import (
     TaxRateUpdate,
 )
 from app.services import tax_service
-from app.utils.dependencies import POSAccess, resolve_access
+from app.utils.dependencies import CatalogAccess, resolve_catalog_access
 
 router = APIRouter(prefix="/tax", tags=["tax"])
 
@@ -31,7 +31,8 @@ router = APIRouter(prefix="/tax", tags=["tax"])
 async def list_tax_categories(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> list[TaxCategoryResponse]:
     """
@@ -46,7 +47,7 @@ async def list_tax_categories(
     Returns:
         list[TaxCategoryResponse]: Tax categories for the brand.
     """
-    cats = await tax_service.list_tax_categories(db, access.user.brand_id, skip, limit)
+    cats = await tax_service.list_tax_categories(db, access.effective_brand_id(brand_id), skip, limit)
     return [TaxCategoryResponse.model_validate(c) for c in cats]
 
 
@@ -57,7 +58,8 @@ async def list_tax_categories(
 )
 async def create_tax_category(
     payload: TaxCategoryCreate,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> TaxCategoryResponse:
     """
@@ -65,13 +67,13 @@ async def create_tax_category(
 
     Args:
         payload: Tax category creation data.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         TaxCategoryResponse: The created category.
     """
-    cat = await tax_service.create_tax_category(db, access.user.brand_id, payload, access.user)
+    cat = await tax_service.create_tax_category(db, access.effective_brand_id(brand_id), payload, access.actor_user)
     return TaxCategoryResponse.model_validate(cat)
 
 
@@ -83,7 +85,8 @@ async def create_tax_category(
 async def update_tax_category(
     tax_category_id: uuid.UUID,
     payload: TaxCategoryUpdate,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> TaxCategoryResponse:
     """
@@ -92,14 +95,14 @@ async def update_tax_category(
     Args:
         tax_category_id: UUID of the category to update.
         payload: Fields to update.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         TaxCategoryResponse: The updated category.
     """
     cat = await tax_service.update_tax_category(
-        db, access.user.brand_id, tax_category_id, payload, access.user
+        db, access.effective_brand_id(brand_id), tax_category_id, payload, access.actor_user
     )
     return TaxCategoryResponse.model_validate(cat)
 
@@ -116,7 +119,8 @@ async def list_tax_rates(
     tax_category_id: uuid.UUID,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> list[TaxRateResponse]:
     """
@@ -126,14 +130,14 @@ async def list_tax_rates(
         tax_category_id: UUID of the parent tax category.
         skip: Pagination offset.
         limit: Maximum number of rates to return.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         list[TaxRateResponse]: Active rates for the category.
     """
     rates = await tax_service.list_tax_rates(
-        db, access.user.brand_id, tax_category_id, skip, limit
+        db, access.effective_brand_id(brand_id), tax_category_id, skip, limit
     )
     return [TaxRateResponse.model_validate(r) for r in rates]
 
@@ -146,7 +150,8 @@ async def list_tax_rates(
 async def create_tax_rate(
     tax_category_id: uuid.UUID,
     payload: TaxRateCreate,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> TaxRateResponse:
     """
@@ -155,14 +160,14 @@ async def create_tax_rate(
     Args:
         tax_category_id: UUID of the parent tax category.
         payload: Rate data (name, rate_percent, tax_model).
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         TaxRateResponse: The created rate.
     """
     rate = await tax_service.create_tax_rate(
-        db, access.user.brand_id, tax_category_id, payload, access.user
+        db, access.effective_brand_id(brand_id), tax_category_id, payload, access.actor_user
     )
     return TaxRateResponse.model_validate(rate)
 
@@ -175,7 +180,8 @@ async def create_tax_rate(
 async def update_tax_rate(
     tax_rate_id: uuid.UUID,
     payload: TaxRateUpdate,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> TaxRateResponse:
     """
@@ -184,13 +190,13 @@ async def update_tax_rate(
     Args:
         tax_rate_id: UUID of the rate to update.
         payload: Fields to update.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         TaxRateResponse: The updated rate.
     """
     rate = await tax_service.update_tax_rate(
-        db, access.user.brand_id, tax_rate_id, payload, access.user
+        db, access.effective_brand_id(brand_id), tax_rate_id, payload, access.actor_user
     )
     return TaxRateResponse.model_validate(rate)

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate
 from app.services import product_service
-from app.utils.dependencies import POSAccess, resolve_access
+from app.utils.dependencies import CatalogAccess, resolve_catalog_access
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -18,7 +18,8 @@ async def list_products(
     category_id: uuid.UUID | None = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> list[ProductResponse]:
     """
@@ -30,14 +31,14 @@ async def list_products(
         category_id: Optional category filter.
         skip: Pagination offset.
         limit: Maximum number of products to return.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         list[ProductResponse]: Active products ordered by display_order then name.
     """
     products = await product_service.list_products(
-        db, access.user.brand_id, category_id, skip, limit
+        db, access.effective_brand_id(brand_id), category_id, skip, limit
     )
     return [ProductResponse.model_validate(p) for p in products]
 
@@ -45,7 +46,8 @@ async def list_products(
 @router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
 async def create_product(
     payload: ProductCreate,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> ProductResponse:
     """
@@ -53,20 +55,21 @@ async def create_product(
 
     Args:
         payload: Product creation data.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         ProductResponse: The created product.
     """
-    product = await product_service.create_product(db, access.user.brand_id, payload, access.user)
+    product = await product_service.create_product(db, access.effective_brand_id(brand_id), payload, access.actor_user)
     return ProductResponse.model_validate(product)
 
 
 @router.get("/{product_id}", response_model=ProductResponse, status_code=status.HTTP_200_OK)
 async def get_product(
     product_id: uuid.UUID,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> ProductResponse:
     """
@@ -74,13 +77,13 @@ async def get_product(
 
     Args:
         product_id: UUID of the product to fetch.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         ProductResponse: The product.
     """
-    product = await product_service.get_product(db, access.user.brand_id, product_id)
+    product = await product_service.get_product(db, access.effective_brand_id(brand_id), product_id)
     return ProductResponse.model_validate(product)
 
 
@@ -88,7 +91,8 @@ async def get_product(
 async def update_product(
     product_id: uuid.UUID,
     payload: ProductUpdate,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> ProductResponse:
     """
@@ -97,14 +101,14 @@ async def update_product(
     Args:
         product_id: UUID of the product to update.
         payload: Fields to update.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         ProductResponse: The updated product.
     """
     product = await product_service.update_product(
-        db, access.user.brand_id, product_id, payload, access.user
+        db, access.effective_brand_id(brand_id), product_id, payload, access.actor_user
     )
     return ProductResponse.model_validate(product)
 
@@ -114,7 +118,8 @@ async def update_product(
 )
 async def deactivate_product(
     product_id: uuid.UUID,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> ProductResponse:
     """
@@ -122,14 +127,14 @@ async def deactivate_product(
 
     Args:
         product_id: UUID of the product to deactivate.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         ProductResponse: The deactivated product.
     """
     product = await product_service.deactivate_product(
-        db, access.user.brand_id, product_id, access.user
+        db, access.effective_brand_id(brand_id), product_id, access.actor_user
     )
     return ProductResponse.model_validate(product)
 
@@ -142,7 +147,8 @@ async def deactivate_product(
 async def upload_photo(
     product_id: uuid.UUID,
     file: UploadFile,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> ProductResponse:
     """
@@ -154,13 +160,13 @@ async def upload_photo(
     Args:
         product_id: UUID of the product to attach the photo to.
         file: The uploaded image file.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         ProductResponse: The product with the updated photo_url.
     """
     product = await product_service.upload_photo(
-        db, access.user.brand_id, product_id, file, access.user
+        db, access.effective_brand_id(brand_id), product_id, file, access.actor_user
     )
     return ProductResponse.model_validate(product)

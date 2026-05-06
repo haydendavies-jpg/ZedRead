@@ -111,6 +111,45 @@ class CatalogAccess:
             return self.mgmt_access.user
         return self.portal_access  # type: ignore[return-value]
 
+    def effective_brand_id(self, brand_id_param: "uuid.UUID | None" = None) -> uuid.UUID:
+        """
+        Resolve the effective brand_id for a catalog or report request.
+
+        For POS and site/brand-scope management: brand_id comes from the token.
+        For group-scope management and portal admin: brand_id must be supplied
+        via the brand_id_param (a query parameter on the route).
+
+        Args:
+            brand_id_param: Optional brand_id from a query parameter.
+
+        Returns:
+            uuid.UUID: The resolved brand_id for this request.
+
+        Raises:
+            HTTPException: 422 if group/portal access is used without brand_id_param.
+        """
+        from fastapi import HTTPException, status  # local to avoid circular import
+
+        if self.pos_access:
+            return self.pos_access.user.brand_id
+        if self.mgmt_access:
+            if self.mgmt_access.brand:
+                return self.mgmt_access.brand.id
+            # group-scope: brand must come from query param
+            if not brand_id_param:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="brand_id query parameter required for group-scope management access",
+                )
+            return brand_id_param
+        # portal_access: brand must come from query param
+        if not brand_id_param:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="brand_id query parameter required for portal admin access",
+            )
+        return brand_id_param
+
 log = structlog.get_logger(__name__)
 
 # Extracts the Bearer token from the Authorization header

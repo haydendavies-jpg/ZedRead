@@ -9,7 +9,7 @@ from app.database import get_db
 from app.schemas.product import ResolvedProduct, SiteProductOverrideResponse, SiteProductOverrideSet
 from app.services import site_override_service
 from app.services.product_resolver import resolve_products_for_site
-from app.utils.dependencies import POSAccess, resolve_access
+from app.utils.dependencies import CatalogAccess, resolve_catalog_access
 
 router = APIRouter(prefix="/site-overrides", tags=["site-overrides"])
 
@@ -24,7 +24,8 @@ async def get_resolved_catalog(
     category_id: uuid.UUID | None = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=500),
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> list[ResolvedProduct]:
     """
@@ -39,14 +40,14 @@ async def get_resolved_catalog(
         category_id: Optional category filter.
         skip: Pagination offset.
         limit: Maximum products to return.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         list[ResolvedProduct]: Products visible to the site with effective prices.
     """
     return await resolve_products_for_site(
-        db, access.user.brand_id, site_id, category_id
+        db, access.effective_brand_id(brand_id), site_id, category_id
     )
 
 
@@ -59,7 +60,8 @@ async def set_override(
     site_id: uuid.UUID,
     product_id: uuid.UUID,
     payload: SiteProductOverrideSet,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> SiteProductOverrideResponse:
     """
@@ -73,14 +75,14 @@ async def set_override(
         site_id: The site to apply the override for.
         product_id: The product to override.
         payload: Override data.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         SiteProductOverrideResponse: The created or updated override.
     """
     override = await site_override_service.set_override(
-        db, access.user.brand_id, site_id, product_id, payload, access.user
+        db, access.effective_brand_id(brand_id), site_id, product_id, payload, access.actor_user
     )
     return SiteProductOverrideResponse.model_validate(override)
 
@@ -93,7 +95,8 @@ async def set_override(
 async def remove_override(
     site_id: uuid.UUID,
     product_id: uuid.UUID,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """
@@ -102,9 +105,9 @@ async def remove_override(
     Args:
         site_id: The site whose override to remove.
         product_id: The product whose override to remove.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
     """
     await site_override_service.remove_override(
-        db, access.user.brand_id, site_id, product_id, access.user
+        db, access.effective_brand_id(brand_id), site_id, product_id, access.actor_user
     )

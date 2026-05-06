@@ -22,7 +22,7 @@ from app.services.modifier_service import (
     update_modifier_group,
     update_modifier_option,
 )
-from app.utils.dependencies import POSAccess, resolve_access
+from app.utils.dependencies import CatalogAccess, resolve_catalog_access
 
 router = APIRouter(tags=["modifiers"])
 
@@ -38,7 +38,8 @@ router = APIRouter(tags=["modifiers"])
 async def list_brand_modifier_groups(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> list[ModifierGroupResponse]:
     """
@@ -47,13 +48,13 @@ async def list_brand_modifier_groups(
     Args:
         skip: Pagination offset.
         limit: Maximum rows to return.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         list[ModifierGroupResponse]: Active modifier groups ordered by name.
     """
-    groups = await list_modifier_groups(db, access.user.brand_id, skip, limit)
+    groups = await list_modifier_groups(db, access.effective_brand_id(brand_id), skip, limit)
     return [ModifierGroupResponse.model_validate(g) for g in groups]
 
 
@@ -64,7 +65,8 @@ async def list_brand_modifier_groups(
 )
 async def create_brand_modifier_group(
     payload: ModifierGroupCreate,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> ModifierGroupResponse:
     """
@@ -72,13 +74,13 @@ async def create_brand_modifier_group(
 
     Args:
         payload: Modifier group creation data.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         ModifierGroupResponse: The newly created modifier group.
     """
-    group = await create_modifier_group(db, access.user.brand_id, payload, access.user)
+    group = await create_modifier_group(db, access.effective_brand_id(brand_id), payload, access.actor_user)
     return ModifierGroupResponse.model_validate(group)
 
 
@@ -90,7 +92,8 @@ async def create_brand_modifier_group(
 async def update_brand_modifier_group(
     group_id: uuid.UUID,
     payload: ModifierGroupUpdate,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> ModifierGroupResponse:
     """
@@ -99,13 +102,13 @@ async def update_brand_modifier_group(
     Args:
         group_id: UUID of the modifier group to update.
         payload: Fields to update.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         ModifierGroupResponse: The updated modifier group.
     """
-    group = await update_modifier_group(db, access.user.brand_id, group_id, payload, access.user)
+    group = await update_modifier_group(db, access.effective_brand_id(brand_id), group_id, payload, access.actor_user)
     return ModifierGroupResponse.model_validate(group)
 
 
@@ -121,7 +124,8 @@ async def list_group_options(
     group_id: uuid.UUID,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> list[ModifierOptionResponse]:
     """
@@ -131,13 +135,13 @@ async def list_group_options(
         group_id: UUID of the modifier group.
         skip: Pagination offset.
         limit: Maximum rows to return.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         list[ModifierOptionResponse]: Active options ordered by display_order then name.
     """
-    options = await list_modifier_options(db, access.user.brand_id, group_id, skip, limit)
+    options = await list_modifier_options(db, access.effective_brand_id(brand_id), group_id, skip, limit)
     return [ModifierOptionResponse.model_validate(o) for o in options]
 
 
@@ -149,7 +153,8 @@ async def list_group_options(
 async def create_group_option(
     group_id: uuid.UUID,
     payload: ModifierOptionCreate,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> ModifierOptionResponse:
     """
@@ -158,13 +163,13 @@ async def create_group_option(
     Args:
         group_id: UUID of the parent modifier group.
         payload: Option creation data.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         ModifierOptionResponse: The newly created option.
     """
-    option = await create_modifier_option(db, access.user.brand_id, group_id, payload, access.user)
+    option = await create_modifier_option(db, access.effective_brand_id(brand_id), group_id, payload, access.actor_user)
     return ModifierOptionResponse.model_validate(option)
 
 
@@ -176,7 +181,8 @@ async def create_group_option(
 async def update_group_option(
     option_id: uuid.UUID,
     payload: ModifierOptionUpdate,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> ModifierOptionResponse:
     """
@@ -185,13 +191,13 @@ async def update_group_option(
     Args:
         option_id: UUID of the modifier option to update.
         payload: Fields to update.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         ModifierOptionResponse: The updated option.
     """
-    option = await update_modifier_option(db, access.user.brand_id, option_id, payload, access.user)
+    option = await update_modifier_option(db, access.effective_brand_id(brand_id), option_id, payload, access.actor_user)
     return ModifierOptionResponse.model_validate(option)
 
 
@@ -233,7 +239,8 @@ class ModifierLinkResponse(BaseModel):
 async def link_product_modifier(
     product_id: uuid.UUID,
     payload: ModifierLinkCreate,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> ModifierLinkResponse:
     """
@@ -242,7 +249,7 @@ async def link_product_modifier(
     Args:
         product_id: UUID of the product.
         payload: Modifier group to link and its display order.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
@@ -250,11 +257,11 @@ async def link_product_modifier(
     """
     link = await link_modifier_group(
         db,
-        access.user.brand_id,
+        access.effective_brand_id(brand_id),
         product_id,
         payload.modifier_group_id,
         payload.display_order,
-        access.user,
+        access.actor_user,
     )
     return ModifierLinkResponse.model_validate(link)
 
@@ -267,7 +274,8 @@ async def link_product_modifier(
 async def unlink_product_modifier(
     product_id: uuid.UUID,
     group_id: uuid.UUID,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """
@@ -276,7 +284,7 @@ async def unlink_product_modifier(
     Args:
         product_id: UUID of the product.
         group_id: UUID of the modifier group to unlink.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
     """
-    await unlink_modifier_group(db, access.user.brand_id, product_id, group_id, access.user)
+    await unlink_modifier_group(db, access.effective_brand_id(brand_id), product_id, group_id, access.actor_user)

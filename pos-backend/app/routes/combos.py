@@ -17,7 +17,7 @@ from app.services.combo_service import (
     list_combo_options,
     remove_combo_option,
 )
-from app.utils.dependencies import POSAccess, resolve_access
+from app.utils.dependencies import CatalogAccess, resolve_catalog_access
 
 router = APIRouter(prefix="/products/{product_id}/combos", tags=["combos"])
 
@@ -31,7 +31,8 @@ async def list_product_combo_groups(
     product_id: uuid.UUID,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> list[ComboGroupResponse]:
     """
@@ -41,13 +42,13 @@ async def list_product_combo_groups(
         product_id: UUID of the parent product.
         skip: Pagination offset.
         limit: Maximum rows to return.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         list[ComboGroupResponse]: Combo groups ordered by display_order.
     """
-    groups = await list_combo_groups(db, access.user.brand_id, product_id, skip, limit)
+    groups = await list_combo_groups(db, access.effective_brand_id(brand_id), product_id, skip, limit)
     return [ComboGroupResponse.model_validate(g) for g in groups]
 
 
@@ -59,7 +60,8 @@ async def list_product_combo_groups(
 async def create_product_combo_group(
     product_id: uuid.UUID,
     payload: ComboGroupCreate,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> ComboGroupResponse:
     """
@@ -68,13 +70,13 @@ async def create_product_combo_group(
     Args:
         product_id: UUID of the parent product.
         payload: Combo group creation data.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         ComboGroupResponse: The newly created combo group.
     """
-    group = await create_combo_group(db, access.user.brand_id, product_id, payload, access.user)
+    group = await create_combo_group(db, access.effective_brand_id(brand_id), product_id, payload, access.actor_user)
     return ComboGroupResponse.model_validate(group)
 
 
@@ -88,7 +90,8 @@ async def list_combo_group_options(
     group_id: uuid.UUID,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> list[ComboOptionResponse]:
     """
@@ -99,7 +102,7 @@ async def list_combo_group_options(
         group_id: UUID of the combo group.
         skip: Pagination offset.
         limit: Maximum rows to return.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
@@ -118,7 +121,8 @@ async def add_combo_group_option(
     product_id: uuid.UUID,
     group_id: uuid.UUID,
     payload: ComboOptionCreate,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> ComboOptionResponse:
     """
@@ -128,13 +132,13 @@ async def add_combo_group_option(
         product_id: UUID of the parent product (used for URL consistency).
         group_id: UUID of the combo group to add the option to.
         payload: Option data (product_id, price_delta_cents).
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
         ComboOptionResponse: The created option.
     """
-    option = await add_combo_option(db, access.user.brand_id, group_id, payload, access.user)
+    option = await add_combo_option(db, access.effective_brand_id(brand_id), group_id, payload, access.actor_user)
     return ComboOptionResponse.model_validate(option)
 
 
@@ -147,7 +151,8 @@ async def remove_combo_group_option(
     product_id: uuid.UUID,
     group_id: uuid.UUID,
     option_id: uuid.UUID,
-    access: POSAccess = Depends(resolve_access),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """
@@ -157,7 +162,7 @@ async def remove_combo_group_option(
         product_id: UUID of the parent product (used for URL consistency).
         group_id: UUID of the combo group (used for URL consistency).
         option_id: UUID of the option to remove.
-        access: Resolved POS access.
+        access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
     """
-    await remove_combo_option(db, access.user.brand_id, option_id, access.user)
+    await remove_combo_option(db, access.effective_brand_id(brand_id), option_id, access.actor_user)
