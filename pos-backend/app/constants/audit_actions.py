@@ -93,6 +93,14 @@ COMBO_OPTION_REMOVED = "combo_option.removed"
 
 # ── Phase 3 / Stage 10 — Invoice Engine ──────────────────────────────────────
 INVOICE_CREATED = "invoice.created"
+
+# ── Phase 4 / Stage 13 — Management Access ───────────────────────────────────
+MGMT_LOGIN_SUCCESS = "mgmt_auth.login.success"
+MGMT_LOGIN_FAILED = "mgmt_auth.login.failed"
+MGMT_TOKEN_ISSUED = "mgmt_auth.token.issued"
+ACCESS_GRANT_CREATED = "access_grant.created"
+ACCESS_GRANT_REVOKED = "access_grant.revoked"
+ACCESS_PROFILE_PORTAL_UPDATED = "access_profile.portal_access.updated"
 INVOICE_LINE_ITEM_ADDED = "invoice.line_item.added"
 INVOICE_PAID = "invoice.paid"
 INVOICE_VOIDED = "invoice.voided"

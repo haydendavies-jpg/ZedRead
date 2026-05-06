@@ -154,7 +154,9 @@ _REPORTING_VIEWS = [
 
 TEST_DATABASE_URL: str = os.getenv(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://test:test@localhost:5433/zedread_test",
+    # Port 5432 — local PostgreSQL instance (not Docker; Docker unavailable in this env).
+    # Override via TEST_DATABASE_URL env var if your setup differs.
+    "postgresql+asyncpg://test:test@localhost:5432/zedread_test",
 )
 
 # All table names in reverse FK dependency order — used for TRUNCATE CASCADE

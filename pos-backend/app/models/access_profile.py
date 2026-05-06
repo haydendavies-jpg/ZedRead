@@ -51,6 +51,12 @@ class AccessProfile(Base):
         default=True,
         comment="False when the profile is soft-deleted",
     )
+    can_access_portal: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="True when holders of this profile may log into the management portal",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
