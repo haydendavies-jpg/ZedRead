@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/** Manages the cart / invoice builder screen: line items, payment, total display. */
+/** Manages the cart / invoice builder screen: accumulates line items from the catalog. */
 @HiltViewModel
 class CartViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -29,16 +29,15 @@ class CartViewModel @Inject constructor(
     private val _lineItems = MutableStateFlow<List<LineItemDto>>(emptyList())
     val lineItems: StateFlow<List<LineItemDto>> = _lineItems.asStateFlow()
 
-    /** Computed total across all line items (subtotal + tax). */
-    val totalCents: Long
-        get() = _lineItems.value.sumOf { it.subtotalCents + it.taxCents }
+    /** Computed total in cents across all line items (subtotal + tax). */
+    val totalCents: Long get() = _lineItems.value.sumOf { it.subtotalCents + it.taxCents }
 
     // ── Add item state ─────────────────────────────────────────────────────────
 
     private val _addItemState = MutableStateFlow<AddItemState>(AddItemState.Idle)
     val addItemState: StateFlow<AddItemState> = _addItemState.asStateFlow()
 
-    /** Add a product to the open invoice. Appends to [lineItems] on success. */
+    /** Add a product (with optional modifiers) to the open invoice. */
     fun addItem(productId: String, quantity: Int = 1, modifierIds: List<String> = emptyList()) {
         _addItemState.value = AddItemState.Loading
         viewModelScope.launch {
@@ -56,26 +55,6 @@ class CartViewModel @Inject constructor(
     }
 
     fun resetAddItemState() { _addItemState.value = AddItemState.Idle }
-
-    // ── Payment state ──────────────────────────────────────────────────────────
-
-    private val _paymentState = MutableStateFlow<PaymentState>(PaymentState.Idle)
-    val paymentState: StateFlow<PaymentState> = _paymentState.asStateFlow()
-
-    /** Pay the invoice. For split payments, call with partial amounts; final call completes. */
-    fun pay(method: String, amountCents: Long) {
-        _paymentState.value = PaymentState.Loading
-        viewModelScope.launch {
-            runCatching { invoiceRepo.pay(invoiceId, method, amountCents) }
-                .onSuccess { dto ->
-                    _paymentState.value = if (dto.status == "paid") PaymentState.Complete
-                                         else PaymentState.PartiallyPaid(dto.totalCents - dto.subtotalCents)
-                }
-                .onFailure { e ->
-                    _paymentState.value = PaymentState.Error(e.message ?: "Payment failed")
-                }
-        }
-    }
 }
 
 sealed class AddItemState {
@@ -83,12 +62,4 @@ sealed class AddItemState {
     object Loading : AddItemState()
     object Done : AddItemState()
     data class Error(val message: String) : AddItemState()
-}
-
-sealed class PaymentState {
-    object Idle : PaymentState()
-    object Loading : PaymentState()
-    object Complete : PaymentState()
-    data class PartiallyPaid(val remainingCents: Long) : PaymentState()
-    data class Error(val message: String) : PaymentState()
 }

@@ -10,6 +10,8 @@ import com.zedread.pos.ui.screens.auth.PinSetScreen
 import com.zedread.pos.ui.screens.auth.SiteSelectorScreen
 import com.zedread.pos.ui.screens.cart.CartScreen
 import com.zedread.pos.ui.screens.catalog.CatalogScreen
+import com.zedread.pos.ui.screens.payment.PaymentScreen
+import com.zedread.pos.ui.screens.switchuser.SwitchUserScreen
 
 /** Top-level Compose navigation graph covering every screen in the POS terminal. */
 @Composable
@@ -29,7 +31,6 @@ fun PosNavHost() {
         composable(Screen.SiteSelector.route) {
             SiteSelectorScreen(
                 onSiteSelected = {
-                    // Clear back-stack so Back can't return to login/site-selector.
                     navController.navigate(Screen.PinEntry.route) {
                         popUpTo(Screen.Login.route) { inclusive = true }
                     }
@@ -63,17 +64,38 @@ fun PosNavHost() {
                 onProceedToCart = { invoiceId ->
                     navController.navigate(Screen.Cart.route + "/$invoiceId")
                 },
+                onSwitchUser = { navController.navigate(Screen.SwitchUser.route) },
             )
         }
 
         composable(Screen.Cart.route + "/{invoiceId}") { backStackEntry ->
+            val invoiceId = backStackEntry.arguments?.getString("invoiceId") ?: ""
             CartScreen(
-                invoiceId = backStackEntry.arguments?.getString("invoiceId") ?: "",
-                onPaymentComplete = {
+                invoiceId = invoiceId,
+                onProceedToPayment = { totalCents ->
+                    navController.navigate(Screen.Payment.route + "/$invoiceId/$totalCents")
+                },
+            )
+        }
+
+        composable(Screen.Payment.route + "/{invoiceId}/{totalCents}") {
+            PaymentScreen(
+                onPaymentComplete = { _ ->
                     navController.navigate(Screen.Catalog.route) {
                         popUpTo(Screen.Catalog.route) { inclusive = false }
                     }
                 },
+            )
+        }
+
+        composable(Screen.SwitchUser.route) {
+            SwitchUserScreen(
+                onSwitched = {
+                    navController.navigate(Screen.PinEntry.route) {
+                        popUpTo(Screen.Catalog.route) { inclusive = false }
+                    }
+                },
+                onCancel = { navController.popBackStack() },
             )
         }
     }
@@ -87,4 +109,6 @@ sealed class Screen(val route: String) {
     object PinSet : Screen("pin_set")
     object Catalog : Screen("catalog")
     object Cart : Screen("cart")
+    object Payment : Screen("payment")
+    object SwitchUser : Screen("switch_user")
 }

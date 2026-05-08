@@ -11,9 +11,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
@@ -32,11 +36,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.zedread.pos.ui.viewmodel.CatalogViewModel
 import com.zedread.pos.ui.viewmodel.InvoiceCreateState
 
-/** Product catalog screen — category tabs + product grid, pull-to-refresh. */
+/** Product catalog screen — category tabs + product grid, pull-to-refresh, switch-user icon. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CatalogScreen(
     onProceedToCart: (invoiceId: String) -> Unit,
+    onSwitchUser: () -> Unit,
     viewModel: CatalogViewModel = hiltViewModel(),
 ) {
     val categories by viewModel.categories.collectAsState()
@@ -54,7 +59,14 @@ fun CatalogScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Menu") })
+            TopAppBar(
+                title = { Text("Menu") },
+                actions = {
+                    IconButton(onClick = onSwitchUser) {
+                        Icon(Icons.Default.Person, contentDescription = "Switch operator")
+                    }
+                },
+            )
         },
     ) { innerPadding ->
         Column(
@@ -62,8 +74,6 @@ fun CatalogScreen(
                 .padding(innerPadding)
                 .fillMaxSize(),
         ) {
-            // ── Category tabs ────────────────────────────────────────────────
-            val allTabIndex = 0
             val selectedIndex = if (selectedCatId == null) 0
                                 else categories.indexOfFirst { it.id == selectedCatId } + 1
 
@@ -82,7 +92,6 @@ fun CatalogScreen(
                 }
             }
 
-            // ── Product grid with pull-to-refresh ────────────────────────────
             PullToRefreshBox(
                 isRefreshing = isRefreshing,
                 onRefresh = { viewModel.refresh() },
@@ -103,10 +112,7 @@ fun CatalogScreen(
                             ProductCard(
                                 name = product.name,
                                 priceCents = product.basePriceCents,
-                                onClick = {
-                                    // Tapping any product opens a draft invoice.
-                                    viewModel.startInvoice()
-                                },
+                                onClick = { viewModel.startInvoice() },
                             )
                         }
                     }
@@ -122,13 +128,8 @@ fun CatalogScreen(
     }
 }
 
-/** Single product tile in the grid. */
 @Composable
-private fun ProductCard(
-    name: String,
-    priceCents: Long,
-    onClick: () -> Unit,
-) {
+private fun ProductCard(name: String, priceCents: Long, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -136,16 +137,11 @@ private fun ProductCard(
     ) {
         Column(Modifier.padding(12.dp)) {
             Text(name, style = MaterialTheme.typography.titleSmall)
-            Text(
-                formatCents(priceCents),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            Text(formatCents(priceCents), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
         }
     }
 }
 
-/** Format a cent value as a dollar string (e.g. 1099 → "$10.99"). */
 private fun formatCents(cents: Long): String {
     val dollars = cents / 100
     val remainder = cents % 100

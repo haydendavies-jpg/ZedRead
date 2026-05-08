@@ -14,43 +14,28 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.zedread.pos.data.api.LineItemDto
 import com.zedread.pos.ui.viewmodel.CartViewModel
-import com.zedread.pos.ui.viewmodel.PaymentState
 
-/** Invoice builder screen — line items list, total, and payment method selector. */
+/** Invoice builder screen — displays line items, running total, and navigates to payment. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CartScreen(
     invoiceId: String,
-    onPaymentComplete: () -> Unit,
+    onProceedToPayment: (totalCents: Long) -> Unit,
     viewModel: CartViewModel = hiltViewModel(),
 ) {
     val lineItems by viewModel.lineItems.collectAsState()
-    val paymentState by viewModel.paymentState.collectAsState()
-    var showPaymentSheet by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState()
-
-    LaunchedEffect(paymentState) {
-        if (paymentState is PaymentState.Complete) onPaymentComplete()
-    }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Current Order") }) },
@@ -60,9 +45,7 @@ fun CartScreen(
                 .padding(innerPadding)
                 .fillMaxSize(),
         ) {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-            ) {
+            LazyColumn(modifier = Modifier.weight(1f)) {
                 if (lineItems.isEmpty()) {
                     item {
                         Text(
@@ -77,7 +60,6 @@ fun CartScreen(
 
             HorizontalDivider()
 
-            // ── Total + payment button ────────────────────────────────────────
             Column(Modifier.padding(16.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -93,63 +75,18 @@ fun CartScreen(
 
                 Spacer(Modifier.height(12.dp))
 
-                if (paymentState is PaymentState.Error) {
-                    Text(
-                        (paymentState as PaymentState.Error).message,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
-
                 Button(
-                    onClick = { showPaymentSheet = true },
-                    enabled = lineItems.isNotEmpty() && paymentState !is PaymentState.Loading,
+                    onClick = { onProceedToPayment(viewModel.totalCents) },
+                    enabled = lineItems.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Pay")
-                }
-            }
-        }
-
-        // ── Payment method bottom sheet ───────────────────────────────────────
-        if (showPaymentSheet) {
-            ModalBottomSheet(
-                onDismissRequest = { showPaymentSheet = false },
-                sheetState = sheetState,
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text("Choose Payment Method", style = MaterialTheme.typography.titleMedium)
-
-                    Button(
-                        onClick = {
-                            showPaymentSheet = false
-                            viewModel.pay("cash", viewModel.totalCents)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Cash") }
-
-                    OutlinedButton(
-                        onClick = {
-                            showPaymentSheet = false
-                            viewModel.pay("card", viewModel.totalCents)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Card") }
-
-                    Spacer(Modifier.height(16.dp))
+                    Text("Proceed to Payment")
                 }
             }
         }
     }
 }
 
-/** A single line item row showing product name, quantity, and subtotal. */
 @Composable
 private fun LineItemRow(item: LineItemDto) {
     Row(
@@ -167,10 +104,7 @@ private fun LineItemRow(item: LineItemDto) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Text(
-            formatCents(item.subtotalCents + item.taxCents),
-            style = MaterialTheme.typography.bodyLarge,
-        )
+        Text(formatCents(item.subtotalCents + item.taxCents), style = MaterialTheme.typography.bodyLarge)
     }
     HorizontalDivider()
 }
