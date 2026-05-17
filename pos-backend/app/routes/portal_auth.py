@@ -17,7 +17,6 @@ from app.schemas.portal_auth import (
 )
 from app.services import management_auth_service, portal_auth_service
 from app.services.audit_service import log_action
-from app.constants.audit_actions import AUTH_LOGIN_SUCCESS
 from app.utils.dependencies import get_current_portal_user
 from app.utils.security import hash_password, verify_password
 
@@ -123,9 +122,8 @@ async def change_password(
     user.password_hash = hash_password(payload.new_password)
 
     await log_action(
-        db,
-        actor_id=str(user.id),
-        actor_type="user",
+        db=db,
+        actor_id=user.id,
         actor_email=user.email,
         actor_name=user.name,
         action="auth.password.changed",
