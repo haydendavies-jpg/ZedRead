@@ -493,3 +493,71 @@ await db.commit()  # Both commit together or both roll back
 
 `log_action()` must snapshot `actor_email` and `actor_name` at the time of the action.
 For system jobs (nightly expiry), use `actor_type = 'system'`.
+
+### 10.1 — `log_action()` calling convention (CRITICAL)
+
+`log_action()` uses a bare `*` in its signature — **every parameter is keyword-only**.
+Passing `db` positionally raises `TypeError` at runtime with no compile-time warning.
+
+```python
+# Correct — all keyword arguments
+await log_action(
+    db=db,
+    actor_id=actor.id,          # uuid.UUID — NOT str(actor.id)
+    actor_email=actor.email,
+    actor_name=actor.name,
+    action=USER_CREATED,
+    entity_type="pos_user",
+    entity_id=str(user.id),     # entity_id IS a str
+    after_state={"name": user.name},
+)
+
+# Wrong — positional db raises TypeError
+await log_action(db, actor_id=actor.id, ...)
+
+# Wrong — str(actor.id) raises validation error (expects uuid.UUID)
+await log_action(db=db, actor_id=str(actor.id), ...)
+
+# Wrong — string actor_type raises AttributeError
+await log_action(db=db, actor_type="user", ...)  # omit entirely; default is ActorType.USER
+```
+
+Key types:
+- `db` → `AsyncSession` (keyword-only)
+- `actor_id` → `uuid.UUID | None` (pass `actor.id` directly, never `str(actor.id)`)
+- `actor_type` → `ActorType` enum — omit for user actions (defaults to `ActorType.USER`); set `ActorType.SYSTEM` for Celery jobs
+- `entity_id` → `str` (convert with `str(obj.id)`)
+
+---
+
+## 11 — Pydantic v2 Response Schema UUID Rules
+
+ORM models using `UUID(as_uuid=True)` return Python `uuid.UUID` objects.
+Pydantic v2 with `from_attributes=True` does **not** coerce `uuid.UUID` to `str` — if the
+schema field is typed `str`, serialization raises a `ValidationError` at response time.
+The insert succeeds in the database but the HTTP response is a 500, so `onSuccess` never
+fires on the frontend.
+
+**Always type UUID fields as `uuid.UUID` in response schemas.** FastAPI serializes them to
+JSON strings automatically.
+
+```python
+import uuid
+from pydantic import BaseModel
+
+# Correct — uuid.UUID; FastAPI serializes to string in JSON
+class UserOut(BaseModel):
+    id: uuid.UUID
+    brand_id: uuid.UUID
+    name: str
+    is_active: bool
+    model_config = {"from_attributes": True}
+
+# Wrong — str field fails when ORM returns uuid.UUID object
+class UserOut(BaseModel):
+    id: str        # ValidationError at serialization time
+    brand_id: str  # Same problem
+```
+
+This bug is silent: the DB write succeeds, the record exists in Supabase, but the frontend
+receives a 500 and `onError` fires instead of `onSuccess`.

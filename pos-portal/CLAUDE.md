@@ -86,6 +86,68 @@ not wrapping the modal itself.
 
 ---
 
+## Mutation error handling — invalidate on onError too (CRITICAL)
+
+Write mutations must call `invalidateQueries` in **both** `onSuccess` and `onError`.
+
+The backend can successfully write to the database but fail during response serialization
+(e.g. a Pydantic type mismatch on the response model). When this happens the server returns
+a 500, `onSuccess` never fires, and the list never re-fetches — so the user sees stale data
+even though the record was created. This is the hardest class of bug to diagnose because
+Supabase shows the row but the portal shows an error and an empty list.
+
+```tsx
+const createMutation = useMutation({
+  mutationFn: (body) => api.post('/pos-users', body),
+  onSuccess: () => {
+    invalidateList()
+    setShowCreate(false)
+    resetForm()
+  },
+  onError: (e: any) => {
+    invalidateList() // re-fetch so DB-written records appear even if response serialization failed
+    setFormError(e?.response?.data?.detail ?? 'Failed to create user.')
+  },
+})
+```
+
+---
+
+## Filter patterns
+
+Every list page has client-side filters. All filtering happens against already-fetched data —
+no extra API calls. Show a count chip `X of Y` and a "Clear filters" link.
+
+```tsx
+const filtered = items.filter((item) => {
+  if (search && !item.name.toLowerCase().includes(search.toLowerCase())) return false
+  if (statusFilter === 'active' && !item.is_active) return false
+  if (statusFilter === 'inactive' && item.is_active) return false
+  return true
+})
+
+const hasFilters = search || statusFilter
+
+// In JSX:
+{hasFilters && (
+  <button
+    onClick={() => { setSearch(''); setStatusFilter('') }}
+    className="text-xs text-gray-400 hover:text-gray-600"
+  >
+    Clear filters
+  </button>
+)}
+<span className="text-xs text-gray-400 ml-auto">{filtered.length} of {items.length}</span>
+```
+
+Filter controls use a slightly smaller padding than form inputs:
+
+```tsx
+className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+```
+
+---
+
 ## File locations
 
 | What | Where |

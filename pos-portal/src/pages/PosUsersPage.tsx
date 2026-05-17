@@ -14,6 +14,7 @@ interface PosUser {
   name: string
   email: string
   is_active: boolean
+  assigned_sites: string[]
 }
 
 interface AccessProfile {
@@ -68,6 +69,7 @@ export function PosUsersPage() {
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [siteFilter, setSiteFilter] = useState('')
 
   // ── Create user state ─────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false)
@@ -92,14 +94,19 @@ export function PosUsersPage() {
       setShowCreate(false)
       setName(''); setEmail(''); setPassword('')
     },
-    onError: (e: any) =>
-      setCreateError(e?.response?.data?.detail ?? 'Failed to create user.'),
+    onError: (e: any) => {
+      invalidateUsers() // re-fetch so DB-written users appear even if response serialization failed
+      setCreateError(e?.response?.data?.detail ?? 'Failed to create user.')
+    },
   })
 
   const grantMutation = useMutation({
     mutationFn: (body: { user_id: string; site_id: string; access_profile_id: string }) =>
       api.post('/access-grants', { ...body, scope: 'site' }),
-    onSuccess: () => { setGrantUser(null) },
+    onSuccess: () => {
+      invalidateUsers()
+      setGrantUser(null)
+    },
     onError: (e: any) =>
       setGrantError(e?.response?.data?.detail ?? 'Failed to create grant.'),
   })
@@ -143,10 +150,11 @@ export function PosUsersPage() {
     }
     if (statusFilter === 'active' && !u.is_active) return false
     if (statusFilter === 'inactive' && u.is_active) return false
+    if (siteFilter && !u.assigned_sites.includes(siteFilter)) return false
     return true
   })
 
-  const hasFilters = search || statusFilter
+  const hasFilters = search || statusFilter || siteFilter
 
   return (
     <div className="p-6">
@@ -160,7 +168,7 @@ export function PosUsersPage() {
         <div className="flex items-center gap-3">
           <select
             value={brandId}
-            onChange={(e) => { setSelectedBrandId(e.target.value); setSearch(''); setStatusFilter('') }}
+            onChange={(e) => { setSelectedBrandId(e.target.value); setSearch(''); setStatusFilter(''); setSiteFilter('') }}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             {brands.map((b) => (
@@ -194,9 +202,19 @@ export function PosUsersPage() {
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
         </select>
+        <select
+          value={siteFilter}
+          onChange={(e) => setSiteFilter(e.target.value)}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        >
+          <option value="">All sites</option>
+          {brandSites.map((s) => (
+            <option key={s.id} value={s.name}>{s.name}</option>
+          ))}
+        </select>
         {hasFilters && (
           <button
-            onClick={() => { setSearch(''); setStatusFilter('') }}
+            onClick={() => { setSearch(''); setStatusFilter(''); setSiteFilter('') }}
             className="text-xs text-gray-400 hover:text-gray-600"
           >
             Clear filters
@@ -217,6 +235,7 @@ export function PosUsersPage() {
                 <th className="px-4 py-3">ID</th>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Email</th>
+                <th className="px-4 py-3">Sites</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Actions</th>
               </tr>
@@ -227,6 +246,22 @@ export function PosUsersPage() {
                   <td className="px-4 py-3"><EntityIdChip id={u.id} /></td>
                   <td className="px-4 py-3 font-medium text-gray-900">{u.name}</td>
                   <td className="px-4 py-3 text-gray-500">{u.email}</td>
+                  <td className="px-4 py-3">
+                    {u.assigned_sites.length === 0 ? (
+                      <span className="text-xs text-gray-400">None</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {u.assigned_sites.map((site) => (
+                          <span
+                            key={site}
+                            className="inline-block px-2 py-0.5 rounded bg-gray-100 text-gray-600 text-xs"
+                          >
+                            {site}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={u.is_active ? 'active' : 'disabled'} />
                   </td>
@@ -250,7 +285,7 @@ export function PosUsersPage() {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                  <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
                     {users.length === 0 ? 'No POS users yet. Create one above.' : 'No users match the current filters.'}
                   </td>
                 </tr>
