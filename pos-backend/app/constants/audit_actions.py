@@ -54,6 +54,9 @@ POS_PIN_SET = "pos_auth.pin.set"
 POS_PIN_RESET = "pos_auth.pin.reset"
 POS_PIN_VERIFIED = "pos_auth.pin.verified"
 
+USER_CREATED = "user.created"
+USER_UPDATED = "user.updated"
+USER_DEACTIVATED = "user.deactivated"
 USER_INVITED = "user.invited"
 USER_INVITE_ACCEPTED = "user.invite.accepted"
 

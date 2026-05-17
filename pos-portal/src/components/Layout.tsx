@@ -10,7 +10,10 @@ const PORTAL_ADMIN_NAV = [
   { to: '/licenses', label: 'Licenses' },
 ]
 
-const PORTAL_SUPER_ADMIN_NAV = [{ to: '/portal-users', label: 'Portal Users' }]
+const PORTAL_SUPER_ADMIN_NAV = [
+  { to: '/portal-users', label: 'Portal Users' },
+  { to: '/pos-users', label: 'POS Users' },
+]
 
 /** Nav items shown to all management users. */
 const MGMT_NAV = [

@@ -150,3 +150,39 @@ async def revoke_grant(
         management_access=access.mgmt_access,
         portal_user=access.portal_access,
     )
+
+
+# ── Access profiles listing (for portal admin UI) ─────────────────────────────
+
+from app.models.access_profile import AccessProfile as AccessProfileModel
+from pydantic import BaseModel
+from sqlalchemy import select
+from app.utils.dependencies import get_current_portal_user
+
+class AccessProfileOut(BaseModel):
+    """Minimal access profile response for dropdowns."""
+    id: str
+    name: str
+    is_system: bool
+    can_access_portal: bool
+    model_config = {"from_attributes": True}
+
+profiles_router = APIRouter(prefix="/access-profiles", tags=["access-profiles"])
+
+@profiles_router.get("", response_model=list[AccessProfileOut])
+async def list_access_profiles(
+    brand_id: str,
+    skip: int = 0,
+    limit: int = 200,
+    db: AsyncSession = Depends(get_db),
+    actor=Depends(get_current_portal_user),
+):
+    """List access profiles for a brand. Requires portal JWT."""
+    result = await db.execute(
+        select(AccessProfileModel)
+        .where(AccessProfileModel.brand_id == brand_id, AccessProfileModel.is_active == True)
+        .offset(skip)
+        .limit(limit)
+        .order_by(AccessProfileModel.name)
+    )
+    return result.scalars().all()

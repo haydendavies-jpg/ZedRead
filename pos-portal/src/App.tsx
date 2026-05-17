@@ -27,6 +27,7 @@ import { TaxPage } from './pages/management/TaxPage'
 import { ReportsPage } from './pages/management/ReportsPage'
 import { UsersPage } from './pages/management/UsersPage'
 import { SiteOverridesPage } from './pages/management/SiteOverridesPage'
+import { PosUsersPage } from './pages/PosUsersPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -99,8 +100,16 @@ export default function App() {
               <Route
                 path="portal-users"
                 element={
-                  <PrivateRoute requireSuperAdmin>
+                  <PrivateRoute requirePortalUser>
                     <PortalUsersPage />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="pos-users"
+                element={
+                  <PrivateRoute requirePortalUser>
+                    <PosUsersPage />
                   </PrivateRoute>
                 }
               />
