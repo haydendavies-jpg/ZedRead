@@ -141,8 +141,6 @@ export function PosUsersPage() {
     grantMutation.mutate({ user_id: grantUser.id, site_id: grantSiteId, access_profile_id: grantProfileId })
   }
 
-  const activeBrandName = brands.find((b) => b.id === brandId)?.name ?? ''
-
   const filtered = users.filter((u) => {
     if (search) {
       const q = search.toLowerCase()
@@ -157,41 +155,34 @@ export function PosUsersPage() {
   const hasFilters = search || statusFilter || siteFilter
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">POS Users</h1>
-          {activeBrandName && (
-            <p className="text-sm text-gray-500 mt-0.5">Brand: {activeBrandName}</p>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          <select
-            value={brandId}
-            onChange={(e) => { setSelectedBrandId(e.target.value); setSearch(''); setStatusFilter(''); setSiteFilter('') }}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-          >
-            {brands.map((b) => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </select>
-          <button
-            onClick={openCreate}
-            disabled={!brandId}
-            className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-          >
-            + New User
-          </button>
-        </div>
+    <div className="p-4 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h1 className="text-xl font-semibold text-gray-900">POS Users</h1>
+        <button
+          onClick={openCreate}
+          disabled={!brandId}
+          className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+        >
+          + New User
+        </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <select
+          value={brandId}
+          onChange={(e) => { setSelectedBrandId(e.target.value); setSearch(''); setStatusFilter(''); setSiteFilter('') }}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        >
+          {brands.map((b) => (
+            <option key={b.id} value={b.id}>{b.name}</option>
+          ))}
+        </select>
         <input
           type="text"
           placeholder="Search name or email…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-56"
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-48"
         />
         <select
           value={statusFilter}
@@ -228,8 +219,8 @@ export function PosUsersPage() {
       {isLoading ? (
         <div className="text-gray-400 text-sm">Loading…</div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
                 <th className="px-4 py-3">ID</th>
@@ -294,6 +285,7 @@ export function PosUsersPage() {
           </table>
         </div>
       )}
+
 
       {/* ── Create user modal ─────────────────────────────────────────────── */}
       {showCreate && (

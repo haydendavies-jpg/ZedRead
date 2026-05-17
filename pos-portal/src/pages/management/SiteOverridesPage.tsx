@@ -74,15 +74,15 @@ function SiteOverridesInner() {
   }
 
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-gray-900">Site Overrides</h1>
         <div>
           <label className="text-xs text-gray-500 mr-2">Site</label>
           <select
             value={selectedSiteId ?? ''}
             onChange={(e) => setSelectedSiteId(e.target.value || null)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="">Select site…</option>
             {sites.map((s) => (
@@ -99,8 +99,8 @@ function SiteOverridesInner() {
       ) : isLoading ? (
         <p className="text-sm text-gray-400">Loading…</p>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <table className="w-full text-sm min-w-[540px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Product</th>
@@ -119,7 +119,7 @@ function SiteOverridesInner() {
                   </td>
                   <td className="px-4 py-3 text-right text-gray-700">
                     {p.override_price_cents != null
-                      ? <span className="font-medium text-indigo-600">{centsToDisplay(p.override_price_cents)}</span>
+                      ? <span className="font-medium text-brand-600">{centsToDisplay(p.override_price_cents)}</span>
                       : '—'
                     }
                   </td>
@@ -133,7 +133,7 @@ function SiteOverridesInner() {
                   <td className="px-4 py-3 text-right space-x-2">
                     <button
                       onClick={() => setEditingProduct(p)}
-                      className="text-indigo-600 hover:text-indigo-800 text-xs font-medium"
+                      className="text-brand-600 hover:text-brand-800 text-xs font-medium"
                     >
                       Override
                     </button>
@@ -229,7 +229,7 @@ function OverrideFormModal({ product, siteId, brandId, onClose, onSaved }: Overr
             onChange={(e) => setPriceStr(e.target.value)}
             disabled={excluded}
             placeholder={`Base: ${(product.effective_price_cents / 100).toFixed(2)}`}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-400"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-gray-50 disabled:text-gray-400"
           />
         </div>
 
@@ -238,7 +238,7 @@ function OverrideFormModal({ product, siteId, brandId, onClose, onSaved }: Overr
             type="checkbox"
             checked={excluded}
             onChange={(e) => { setExcluded(e.target.checked); if (e.target.checked) setPriceStr('') }}
-            className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
           />
           <span className="text-sm text-gray-700">Exclude this product from this site</span>
         </label>
@@ -256,7 +256,7 @@ function OverrideFormModal({ product, siteId, brandId, onClose, onSaved }: Overr
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            className="px-4 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
           >
             {saving ? 'Saving…' : 'Save override'}
           </button>

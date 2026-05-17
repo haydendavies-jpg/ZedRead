@@ -148,6 +148,45 @@ className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-n
 
 ---
 
+## Mobile / responsive design (REQUIRED on every page)
+
+Every page must work on a 375px-wide screen. Apply these patterns consistently:
+
+### Page wrapper
+```tsx
+<div className="p-4 sm:p-6">
+```
+
+### Page header row
+```tsx
+<div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+```
+Use `flex-wrap` so the title and action button stack vertically on narrow screens.
+
+### Filter bar
+```tsx
+<div className="flex flex-wrap items-center gap-2 mb-4">
+```
+Filters already use `flex-wrap` — keep it. On mobile each filter becomes full-width if needed.
+
+### Table container — always wrap in overflow-x-auto
+```tsx
+<div className="overflow-x-auto rounded-xl border border-gray-200">
+  <table className="w-full text-sm min-w-[600px]">
+    ...
+  </table>
+</div>
+```
+`min-w-[600px]` (or appropriate value) keeps column widths sensible; the outer `overflow-x-auto` allows horizontal scroll on mobile rather than breaking the layout.
+
+### Layout sidebar (mobile)
+The sidebar collapses on mobile. A hamburger button (`☰`) in the top-left of the main area toggles it. When open, the sidebar overlays content (fixed position). Backdrop click closes it.
+
+### Modal
+`Modal.tsx` already uses `mx-4 max-w-md w-full` — this is correct. Do not remove `mx-4`.
+
+---
+
 ## File locations
 
 | What | Where |

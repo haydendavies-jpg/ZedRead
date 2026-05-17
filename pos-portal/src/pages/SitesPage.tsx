@@ -87,8 +87,8 @@ export function SitesPage() {
   const hasFilters = search || brandFilter || statusFilter
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-4">
+    <div className="p-4 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h1 className="text-xl font-semibold text-gray-900">Sites</h1>
         <button
           onClick={openCreate}
@@ -141,8 +141,8 @@ export function SitesPage() {
       {isLoading ? (
         <div className="text-gray-400 text-sm">Loading…</div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <table className="w-full text-sm min-w-[600px]">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
                 <th className="px-4 py-3">ID</th>
