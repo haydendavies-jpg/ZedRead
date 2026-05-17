@@ -22,7 +22,14 @@ interface AuthContextValue {
   /** Non-null when POS user logged in with multiple grants; cleared after selectGrant(). */
   pendingGrants: GrantSummary[] | null
   pendingUserId: string | null
-  login: (email: string, password: string) => Promise<void>
+  /**
+   * Attempt login. Returns 'direct' when tokens were issued immediately (portal
+   * user or single-grant POS user) so the caller can navigate away. Returns
+   * 'grant_selection' when the POS user has multiple grants and must pick one
+   * via selectGrant() — the caller should NOT navigate; LoginPage re-renders
+   * with the GrantSelectorView automatically.
+   */
+  login: (email: string, password: string) => Promise<'direct' | 'grant_selection'>
   /** Call after the user picks a grant from pendingGrants. Completes the login. */
   selectGrant: (grantId: string, password: string) => Promise<void>
   logout: () => Promise<void>
@@ -96,7 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     restoreSession()
   }, [restoreSession])
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string): Promise<'direct' | 'grant_selection'> => {
     const { data } = await api.post<UnifiedLoginResponse>('/auth/portal/login', { email, password })
 
     if (data.access_token && data.refresh_token) {
@@ -114,11 +121,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(portalUser)
         setTokenType('portal_access')
       }
+      return 'direct'
     } else if (data.available_grants && data.user_id) {
       // Multi-grant POS user — need scope selection before completing login
       setPendingGrants(data.available_grants)
       setPendingUserId(data.user_id)
+      return 'grant_selection'
     }
+    // Fallback — should not be reached with a well-formed API response
+    return 'grant_selection'
   }, [])
 
   /** Complete login after the user selects a grant from the scope selector. */

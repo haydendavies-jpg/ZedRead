@@ -86,6 +86,7 @@ These 15 rules apply to every task in every stage:
 13. Every list route must support pagination with `skip` and `limit`.
 14. Never catch an exception and do nothing — log it at ERROR and re-raise.
 15. Never commit `.env` files, never store plaintext passwords, tokens, or PINs.
+16. Every portal page must be mobile-friendly: use `overflow-x-auto` on all table containers, responsive padding (`p-4 sm:p-6`), and `flex-wrap` on header/filter rows so they stack on narrow screens. Test layouts at 375px width before marking a task complete.
 
 Additional rules:
 - Never build SQL with f-strings or string concatenation.

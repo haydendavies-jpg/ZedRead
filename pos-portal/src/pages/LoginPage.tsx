@@ -19,9 +19,10 @@ export function LoginPage() {
     setLoading(true)
     setError(null)
     try {
-      await login(email, password)
-      // pendingGrants will be non-null if multi-grant — handled below without navigating
-      if (!pendingGrants) navigate('/')
+      const result = await login(email, password)
+      // 'direct' → tokens issued; navigate to dashboard
+      // 'grant_selection' → pendingGrants set; LoginPage re-renders with GrantSelectorView
+      if (result === 'direct') navigate('/')
     } catch {
       setError('Invalid email or password.')
     } finally {
@@ -143,7 +144,7 @@ function GrantSelectorView({ grants, onSelect, loading, error }: GrantSelectorVi
                 key={g.grant_id}
                 onClick={() => onSelect(g)}
                 disabled={loading}
-                className="w-full text-left px-4 py-3 border border-gray-200 rounded-lg hover:border-indigo-400 hover:bg-indigo-50 disabled:opacity-50 transition-colors"
+                className="w-full text-left px-4 py-3 border border-gray-200 rounded-lg hover:border-brand-500 hover:bg-brand-50 disabled:opacity-50 transition-colors"
               >
                 <p className="text-sm font-medium text-gray-900">{g.scope_name}</p>
                 <p className="text-xs text-gray-500 mt-0.5 capitalize">

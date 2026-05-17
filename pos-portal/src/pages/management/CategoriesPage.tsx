@@ -36,12 +36,12 @@ export function CategoriesPage() {
   }
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h1 className="text-xl font-semibold text-gray-900">Categories</h1>
         <button
           onClick={() => setShowCreate(true)}
-          className="px-3 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors"
+          className="px-3 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 transition-colors"
         >
           Add category
         </button>
@@ -50,8 +50,8 @@ export function CategoriesPage() {
       {isLoading ? (
         <p className="text-sm text-gray-400">Loading…</p>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <table className="w-full text-sm min-w-[400px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
@@ -73,7 +73,7 @@ export function CategoriesPage() {
                       <>
                         <button
                           onClick={() => setEditing(c)}
-                          className="text-indigo-600 hover:text-indigo-800 text-xs font-medium"
+                          className="text-brand-600 hover:text-brand-800 text-xs font-medium"
                         >
                           Rename
                         </button>
@@ -158,7 +158,7 @@ function CategoryFormModal({ category, brandId, onClose, onSaved }: CategoryForm
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoFocus
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
         {error && (
@@ -173,7 +173,7 @@ function CategoryFormModal({ category, brandId, onClose, onSaved }: CategoryForm
           <button
             onClick={handleSave}
             disabled={saving || !name}
-            className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            className="px-4 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
           >
             {saving ? 'Saving…' : 'Save'}
           </button>

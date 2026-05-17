@@ -53,12 +53,12 @@ export function ProductsPage() {
   }
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h1 className="text-xl font-semibold text-gray-900">Products</h1>
         <button
           onClick={() => setShowCreate(true)}
-          className="px-3 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors"
+          className="px-3 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 transition-colors"
         >
           Add product
         </button>
@@ -67,8 +67,8 @@ export function ProductsPage() {
       {isLoading ? (
         <p className="text-sm text-gray-400">Loading…</p>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <table className="w-full text-sm min-w-[500px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
@@ -88,7 +88,7 @@ export function ProductsPage() {
                   <td className="px-4 py-3 text-right space-x-2">
                     <button
                       onClick={() => setEditing(p)}
-                      className="text-indigo-600 hover:text-indigo-800 text-xs font-medium"
+                      className="text-brand-600 hover:text-brand-800 text-xs font-medium"
                     >
                       Edit
                     </button>
@@ -194,7 +194,7 @@ function ProductFormModal({ product, brandId, categories, taxCategories, onClose
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
 
@@ -206,7 +206,7 @@ function ProductFormModal({ product, brandId, categories, taxCategories, onClose
             min="0"
             value={priceStr}
             onChange={(e) => setPriceStr(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
 
@@ -215,7 +215,7 @@ function ProductFormModal({ product, brandId, categories, taxCategories, onClose
           <select
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             {categories.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
@@ -228,7 +228,7 @@ function ProductFormModal({ product, brandId, categories, taxCategories, onClose
           <select
             value={taxCategoryId}
             onChange={(e) => setTaxCategoryId(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="">None</option>
             {taxCategories.map((t) => (
@@ -243,7 +243,7 @@ function ProductFormModal({ product, brandId, categories, taxCategories, onClose
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={2}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
 
@@ -260,7 +260,7 @@ function ProductFormModal({ product, brandId, categories, taxCategories, onClose
           <button
             onClick={handleSave}
             disabled={saving || !name}
-            className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            className="px-4 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
           >
             {saving ? 'Saving…' : 'Save'}
           </button>

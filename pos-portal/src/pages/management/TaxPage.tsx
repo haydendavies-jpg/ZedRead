@@ -44,14 +44,14 @@ export function TaxPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-6">
       {/* Tax categories */}
       <div>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <h1 className="text-xl font-semibold text-gray-900">Tax categories</h1>
           <button
             onClick={() => setShowCreateCat(true)}
-            className="px-3 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors"
+            className="px-3 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 transition-colors"
           >
             Add category
           </button>
@@ -60,8 +60,8 @@ export function TaxPage() {
         {isLoading ? (
           <p className="text-sm text-gray-400">Loading…</p>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-xl border border-gray-200">
+            <table className="w-full text-sm min-w-[400px]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
@@ -73,7 +73,7 @@ export function TaxPage() {
                 {taxCategories.map((c) => (
                   <tr
                     key={c.id}
-                    className={`hover:bg-gray-50 cursor-pointer ${selectedCat?.id === c.id ? 'bg-indigo-50' : ''}`}
+                    className={`hover:bg-gray-50 cursor-pointer ${selectedCat?.id === c.id ? 'bg-brand-50' : ''}`}
                     onClick={() => setSelectedCat(c.id === selectedCat?.id ? null : c)}
                   >
                     <td className="px-4 py-3 font-medium text-gray-900">{c.name}</td>
@@ -108,20 +108,20 @@ export function TaxPage() {
       {/* Rates for selected category */}
       {selectedCat && (
         <div>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <h2 className="text-lg font-medium text-gray-800">
               Rates — {selectedCat.name}
             </h2>
             <button
               onClick={() => setShowCreateRate(true)}
-              className="px-3 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors"
+              className="px-3 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 transition-colors"
             >
               Add rate
             </button>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-xl border border-gray-200">
+            <table className="w-full text-sm min-w-[400px]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
@@ -209,7 +209,7 @@ function TaxCategoryFormModal({ brandId, onClose, onSaved }: { brandId: string; 
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoFocus
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
         {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
@@ -218,7 +218,7 @@ function TaxCategoryFormModal({ brandId, onClose, onSaved }: { brandId: string; 
           <button
             onClick={handleSave}
             disabled={saving || !name}
-            className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            className="px-4 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
           >
             {saving ? 'Saving…' : 'Save'}
           </button>
@@ -265,7 +265,7 @@ function TaxRateFormModal({ taxCategoryId, onClose, onSaved }: { taxCategoryId: 
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoFocus
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -277,7 +277,7 @@ function TaxRateFormModal({ taxCategoryId, onClose, onSaved }: { taxCategoryId: 
               min="0"
               value={rate}
               onChange={(e) => setRate(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
           <div>
@@ -285,7 +285,7 @@ function TaxRateFormModal({ taxCategoryId, onClose, onSaved }: { taxCategoryId: 
             <select
               value={model}
               onChange={(e) => setModel(e.target.value as typeof model)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             >
               <option value="exclusive">Exclusive</option>
               <option value="inclusive">Inclusive</option>
@@ -299,7 +299,7 @@ function TaxRateFormModal({ taxCategoryId, onClose, onSaved }: { taxCategoryId: 
           <button
             onClick={handleSave}
             disabled={saving || !name || !rate}
-            className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            className="px-4 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
           >
             {saving ? 'Saving…' : 'Save'}
           </button>

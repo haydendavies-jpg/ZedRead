@@ -84,7 +84,7 @@ export function ReportsPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-6">
       {/* Controls */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <h1 className="text-xl font-semibold text-gray-900">Daily Sales Report</h1>
@@ -95,7 +95,7 @@ export function ReportsPage() {
               <select
                 value={selectedSiteId ?? ''}
                 onChange={(e) => setSelectedSiteId(e.target.value || null)}
-                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
                 <option value="">Select site…</option>
                 {sites.map((s) => (
@@ -110,7 +110,7 @@ export function ReportsPage() {
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
           <div>
@@ -119,7 +119,7 @@ export function ReportsPage() {
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
         </div>
@@ -149,8 +149,8 @@ export function ReportsPage() {
           ) : error ? (
             <p className="text-sm text-red-500">Failed to load report data.</p>
           ) : (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto rounded-xl border border-gray-200">
+              <table className="w-full text-sm min-w-[480px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
