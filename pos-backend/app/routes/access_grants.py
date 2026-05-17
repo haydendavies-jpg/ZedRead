@@ -190,7 +190,7 @@ async def list_access_profiles(
         select(AccessProfileModel).where(
             AccessProfileModel.brand_id == brand_id,
             AccessProfileModel.is_system.is_(True),
-        )
+        ).limit(1)
     )
     if system_check.scalar_one_or_none() is None:
         await seed_system_profiles(db, uuid.UUID(brand_id))
