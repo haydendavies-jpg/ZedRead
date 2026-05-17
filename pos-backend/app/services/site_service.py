@@ -46,20 +46,35 @@ async def list_sites(
     db: AsyncSession,
     skip: int = 0,
     limit: int = 50,
+    name: str | None = None,
+    brand_id: uuid.UUID | None = None,
+    is_active: bool | None = None,
 ) -> list[Site]:
     """
-    Return a paginated list of all sites.
+    Return a paginated list of all sites with optional filters.
 
     Args:
         db: Active database session.
         skip: Number of records to skip (offset).
         limit: Maximum number of records to return.
+        name: Optional substring filter on Site.name (case-insensitive).
+        brand_id: Optional exact-match filter on Site.brand_id.
+        is_active: Optional exact-match filter on Site.is_active.
 
     Returns:
         list[Site]: The requested page of sites.
     """
+    conditions: list = []
+    if name is not None:
+        # Case-insensitive partial match using SQL ILIKE
+        conditions.append(Site.name.ilike(f"%{name}%"))
+    if brand_id is not None:
+        conditions.append(Site.brand_id == brand_id)
+    if is_active is not None:
+        conditions.append(Site.is_active == is_active)
+
     result = await db.execute(
-        select(Site).order_by(Site.created_at.desc()).offset(skip).limit(limit)
+        select(Site).where(*conditions).order_by(Site.created_at.desc()).offset(skip).limit(limit)
     )
     return list(result.scalars().all())
 

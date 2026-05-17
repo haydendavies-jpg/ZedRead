@@ -53,20 +53,35 @@ async def list_brands(
     db: AsyncSession,
     skip: int = 0,
     limit: int = 50,
+    name: str | None = None,
+    group_id: uuid.UUID | None = None,
+    is_active: bool | None = None,
 ) -> list[Brand]:
     """
-    Return a paginated list of all brands.
+    Return a paginated list of all brands with optional filters.
 
     Args:
         db: Active database session.
         skip: Number of records to skip (offset).
         limit: Maximum number of records to return.
+        name: Optional substring filter on Brand.name (case-insensitive).
+        group_id: Optional exact-match filter on Brand.group_id.
+        is_active: Optional exact-match filter on Brand.is_active.
 
     Returns:
         list[Brand]: The requested page of brands.
     """
+    conditions: list = []
+    if name is not None:
+        # Case-insensitive partial match using SQL ILIKE
+        conditions.append(Brand.name.ilike(f"%{name}%"))
+    if group_id is not None:
+        conditions.append(Brand.group_id == group_id)
+    if is_active is not None:
+        conditions.append(Brand.is_active == is_active)
+
     result = await db.execute(
-        select(Brand).order_by(Brand.created_at.desc()).offset(skip).limit(limit)
+        select(Brand).where(*conditions).order_by(Brand.created_at.desc()).offset(skip).limit(limit)
     )
     return list(result.scalars().all())
 

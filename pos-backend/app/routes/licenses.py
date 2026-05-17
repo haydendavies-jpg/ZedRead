@@ -18,11 +18,13 @@ router = APIRouter(prefix="/licenses", tags=["licenses"])
 async def list_licenses(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
+    site_id: uuid.UUID | None = Query(default=None, description="Filter by site ID"),
+    status: str | None = Query(default=None, description="Exact-match filter on license status"),
     db: AsyncSession = Depends(get_db),
     _: PortalUser = Depends(get_current_portal_user),
 ) -> list[LicenseResponse]:
-    """List all licenses with pagination."""
-    return await license_service.list_licenses(db, skip=skip, limit=limit)
+    """List all licenses with pagination and optional filters."""
+    return await license_service.list_licenses(db, skip=skip, limit=limit, site_id=site_id, status=status)
 
 
 @router.get("/{license_id}", response_model=LicenseResponse)

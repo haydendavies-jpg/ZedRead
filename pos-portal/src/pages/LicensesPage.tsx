@@ -27,6 +27,10 @@ export function LicensesPage() {
   const { data: licenses = [], isLoading } = useQuery({ queryKey: ['licenses'], queryFn: fetchLicenses })
   const { data: sites = [] } = useQuery({ queryKey: ['sites'], queryFn: fetchSites })
 
+  const [siteFilter, setSiteFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [trialFilter, setTrialFilter] = useState('')
+
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState({
     site_id: '',
@@ -80,9 +84,19 @@ export function LicensesPage() {
     })
   }
 
+  const filtered = licenses.filter((l) => {
+    if (siteFilter && l.site_id !== siteFilter) return false
+    if (statusFilter && l.status !== statusFilter) return false
+    if (trialFilter === 'trial' && !l.is_trial) return false
+    if (trialFilter === 'paid' && l.is_trial) return false
+    return true
+  })
+
+  const hasFilters = siteFilter || statusFilter || trialFilter
+
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold text-gray-900">Licenses</h1>
         <button
           onClick={openCreate}
@@ -90,6 +104,49 @@ export function LicensesPage() {
         >
           + New License
         </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <select
+          value={siteFilter}
+          onChange={(e) => setSiteFilter(e.target.value)}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        >
+          <option value="">All sites</option>
+          {sites.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        >
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="disabled">Disabled</option>
+          <option value="expired">Expired</option>
+        </select>
+        <select
+          value={trialFilter}
+          onChange={(e) => setTrialFilter(e.target.value)}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        >
+          <option value="">Trial &amp; paid</option>
+          <option value="trial">Trial only</option>
+          <option value="paid">Paid only</option>
+        </select>
+        {hasFilters && (
+          <button
+            onClick={() => { setSiteFilter(''); setStatusFilter(''); setTrialFilter('') }}
+            className="text-xs text-gray-400 hover:text-gray-600"
+          >
+            Clear filters
+          </button>
+        )}
+        <span className="text-xs text-gray-400 ml-auto">
+          {filtered.length} of {licenses.length}
+        </span>
       </div>
 
       {isLoading ? (
@@ -109,7 +166,7 @@ export function LicensesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {licenses.map((l) => (
+              {filtered.map((l) => (
                 <tr key={l.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3"><EntityIdChip id={l.id} /></td>
                   <td className="px-4 py-3 text-gray-700">{siteName(l.site_id)}</td>
@@ -133,8 +190,10 @@ export function LicensesPage() {
                   </td>
                 </tr>
               ))}
-              {licenses.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No licenses yet.</td></tr>
+              {filtered.length === 0 && (
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                  {licenses.length === 0 ? 'No licenses yet.' : 'No licenses match the current filters.'}
+                </td></tr>
               )}
             </tbody>
           </table>
@@ -210,7 +269,7 @@ export function LicensesPage() {
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
-              <button type="submit" disabled={createMutation.isPending} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">Create</button>
+              <button type="submit" disabled={createMutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">Create</button>
             </div>
           </form>
         </Modal>

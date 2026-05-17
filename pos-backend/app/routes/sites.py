@@ -18,11 +18,14 @@ router = APIRouter(prefix="/sites", tags=["sites"])
 async def list_sites(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
+    name: str | None = Query(default=None, description="Case-insensitive substring filter on site name"),
+    brand_id: uuid.UUID | None = Query(default=None, description="Filter by parent brand ID"),
+    is_active: bool | None = Query(default=None, description="Filter by active/inactive status"),
     db: AsyncSession = Depends(get_db),
     _: PortalUser = Depends(get_current_portal_user),
 ) -> list[SiteResponse]:
-    """List all sites with pagination."""
-    return await site_service.list_sites(db, skip=skip, limit=limit)
+    """List all sites with pagination and optional filters."""
+    return await site_service.list_sites(db, skip=skip, limit=limit, name=name, brand_id=brand_id, is_active=is_active)
 
 
 @router.get("/{site_id}", response_model=SiteResponse)

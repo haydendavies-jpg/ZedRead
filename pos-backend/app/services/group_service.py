@@ -46,20 +46,31 @@ async def list_groups(
     db: AsyncSession,
     skip: int = 0,
     limit: int = 50,
+    name: str | None = None,
+    is_active: bool | None = None,
 ) -> list[Group]:
     """
-    Return a paginated list of all groups.
+    Return a paginated list of all groups with optional filters.
 
     Args:
         db: Active database session.
         skip: Number of records to skip (offset).
         limit: Maximum number of records to return.
+        name: Optional substring filter on Group.name (case-insensitive).
+        is_active: Optional exact-match filter on Group.is_active.
 
     Returns:
         list[Group]: The requested page of groups.
     """
+    conditions: list = []
+    if name is not None:
+        # Case-insensitive partial match using SQL ILIKE
+        conditions.append(Group.name.ilike(f"%{name}%"))
+    if is_active is not None:
+        conditions.append(Group.is_active == is_active)
+
     result = await db.execute(
-        select(Group).order_by(Group.created_at.desc()).offset(skip).limit(limit)
+        select(Group).where(*conditions).order_by(Group.created_at.desc()).offset(skip).limit(limit)
     )
     return list(result.scalars().all())
 

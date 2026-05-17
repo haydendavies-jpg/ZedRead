@@ -66,6 +66,9 @@ export function PosUsersPage() {
 
   const brandSites = sites.filter((s) => s.brand_id === brandId)
 
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+
   // ── Create user state ─────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false)
   const [name, setName] = useState('')
@@ -133,9 +136,21 @@ export function PosUsersPage() {
 
   const activeBrandName = brands.find((b) => b.id === brandId)?.name ?? ''
 
+  const filtered = users.filter((u) => {
+    if (search) {
+      const q = search.toLowerCase()
+      if (!u.name.toLowerCase().includes(q) && !u.email.toLowerCase().includes(q)) return false
+    }
+    if (statusFilter === 'active' && !u.is_active) return false
+    if (statusFilter === 'inactive' && u.is_active) return false
+    return true
+  })
+
+  const hasFilters = search || statusFilter
+
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">POS Users</h1>
           {activeBrandName && (
@@ -145,7 +160,7 @@ export function PosUsersPage() {
         <div className="flex items-center gap-3">
           <select
             value={brandId}
-            onChange={(e) => setSelectedBrandId(e.target.value)}
+            onChange={(e) => { setSelectedBrandId(e.target.value); setSearch(''); setStatusFilter('') }}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             {brands.map((b) => (
@@ -160,6 +175,36 @@ export function PosUsersPage() {
             + New User
           </button>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <input
+          type="text"
+          placeholder="Search name or email…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-56"
+        />
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        >
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        {hasFilters && (
+          <button
+            onClick={() => { setSearch(''); setStatusFilter('') }}
+            className="text-xs text-gray-400 hover:text-gray-600"
+          >
+            Clear filters
+          </button>
+        )}
+        <span className="text-xs text-gray-400 ml-auto">
+          {filtered.length} of {users.length}
+        </span>
       </div>
 
       {isLoading ? (
@@ -177,7 +222,7 @@ export function PosUsersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {users.map((u) => (
+              {filtered.map((u) => (
                 <tr key={u.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3"><EntityIdChip id={u.id} /></td>
                   <td className="px-4 py-3 font-medium text-gray-900">{u.name}</td>
@@ -203,10 +248,10 @@ export function PosUsersPage() {
                   </td>
                 </tr>
               ))}
-              {users.length === 0 && (
+              {filtered.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                    No POS users yet. Create one above.
+                    {users.length === 0 ? 'No POS users yet. Create one above.' : 'No users match the current filters.'}
                   </td>
                 </tr>
               )}

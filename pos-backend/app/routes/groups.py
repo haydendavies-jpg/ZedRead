@@ -18,11 +18,13 @@ router = APIRouter(prefix="/groups", tags=["groups"])
 async def list_groups(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
+    name: str | None = Query(default=None, description="Case-insensitive substring filter on group name"),
+    is_active: bool | None = Query(default=None, description="Filter by active/inactive status"),
     db: AsyncSession = Depends(get_db),
     _: PortalUser = Depends(get_current_portal_user),
 ) -> list[GroupResponse]:
-    """List all groups with pagination."""
-    return await group_service.list_groups(db, skip=skip, limit=limit)
+    """List all groups with pagination and optional filters."""
+    return await group_service.list_groups(db, skip=skip, limit=limit, name=name, is_active=is_active)
 
 
 @router.get("/{group_id}", response_model=GroupResponse)

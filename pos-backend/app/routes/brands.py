@@ -18,11 +18,14 @@ router = APIRouter(prefix="/brands", tags=["brands"])
 async def list_brands(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
+    name: str | None = Query(default=None, description="Case-insensitive substring filter on brand name"),
+    group_id: uuid.UUID | None = Query(default=None, description="Filter by parent group ID"),
+    is_active: bool | None = Query(default=None, description="Filter by active/inactive status"),
     db: AsyncSession = Depends(get_db),
     _: PortalUser = Depends(get_current_portal_user),
 ) -> list[BrandResponse]:
-    """List all brands with pagination."""
-    return await brand_service.list_brands(db, skip=skip, limit=limit)
+    """List all brands with pagination and optional filters."""
+    return await brand_service.list_brands(db, skip=skip, limit=limit, name=name, group_id=group_id, is_active=is_active)
 
 
 @router.get("/{brand_id}", response_model=BrandResponse)

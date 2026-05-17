@@ -17,6 +17,9 @@ export function GroupsPage() {
   const qc = useQueryClient()
   const { data: groups = [], isLoading } = useQuery({ queryKey: ['groups'], queryFn: fetchGroups })
 
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing] = useState<Group | null>(null)
   const [name, setName] = useState('')
@@ -57,9 +60,16 @@ export function GroupsPage() {
     else createMutation.mutate(name)
   }
 
+  const filtered = groups.filter((g) => {
+    if (search && !g.name.toLowerCase().includes(search.toLowerCase())) return false
+    if (statusFilter === 'active' && !g.is_active) return false
+    if (statusFilter === 'suspended' && g.is_active) return false
+    return true
+  })
+
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold text-gray-900">Groups</h1>
         <button
           onClick={openCreate}
@@ -67,6 +77,36 @@ export function GroupsPage() {
         >
           + New Group
         </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <input
+          type="text"
+          placeholder="Search by name…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-56"
+        />
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        >
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="suspended">Suspended</option>
+        </select>
+        {(search || statusFilter) && (
+          <button
+            onClick={() => { setSearch(''); setStatusFilter('') }}
+            className="text-xs text-gray-400 hover:text-gray-600"
+          >
+            Clear filters
+          </button>
+        )}
+        <span className="text-xs text-gray-400 ml-auto">
+          {filtered.length} of {groups.length}
+        </span>
       </div>
 
       {isLoading ? (
@@ -84,7 +124,7 @@ export function GroupsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {groups.map((g) => (
+              {filtered.map((g) => (
                 <tr key={g.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3"><EntityIdChip id={g.id} /></td>
                   <td className="px-4 py-3 font-medium text-gray-900">{g.name}</td>
@@ -102,8 +142,10 @@ export function GroupsPage() {
                   </td>
                 </tr>
               ))}
-              {groups.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No groups yet.</td></tr>
+              {filtered.length === 0 && (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                  {groups.length === 0 ? 'No groups yet.' : 'No groups match the current filters.'}
+                </td></tr>
               )}
             </tbody>
           </table>
@@ -131,7 +173,7 @@ export function GroupsPage() {
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => { setShowCreate(false); setEditing(null) }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
-              <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
+              <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
                 {editing ? 'Save' : 'Create'}
               </button>
             </div>

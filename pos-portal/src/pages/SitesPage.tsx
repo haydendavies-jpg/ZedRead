@@ -23,6 +23,10 @@ export function SitesPage() {
   const { data: sites = [], isLoading } = useQuery({ queryKey: ['sites'], queryFn: fetchSites })
   const { data: brands = [] } = useQuery({ queryKey: ['brands'], queryFn: fetchBrands })
 
+  const [search, setSearch] = useState('')
+  const [brandFilter, setBrandFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing] = useState<Site | null>(null)
   const [name, setName] = useState('')
@@ -72,9 +76,19 @@ export function SitesPage() {
     else createMutation.mutate({ name, brand_id: brandId })
   }
 
+  const filtered = sites.filter((s) => {
+    if (search && !s.name.toLowerCase().includes(search.toLowerCase())) return false
+    if (brandFilter && s.brand_id !== brandFilter) return false
+    if (statusFilter === 'active' && !s.is_active) return false
+    if (statusFilter === 'suspended' && s.is_active) return false
+    return true
+  })
+
+  const hasFilters = search || brandFilter || statusFilter
+
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold text-gray-900">Sites</h1>
         <button
           onClick={openCreate}
@@ -82,6 +96,46 @@ export function SitesPage() {
         >
           + New Site
         </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <input
+          type="text"
+          placeholder="Search by name…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-56"
+        />
+        <select
+          value={brandFilter}
+          onChange={(e) => setBrandFilter(e.target.value)}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        >
+          <option value="">All brands</option>
+          {brands.map((b) => (
+            <option key={b.id} value={b.id}>{b.name}</option>
+          ))}
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        >
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="suspended">Suspended</option>
+        </select>
+        {hasFilters && (
+          <button
+            onClick={() => { setSearch(''); setBrandFilter(''); setStatusFilter('') }}
+            className="text-xs text-gray-400 hover:text-gray-600"
+          >
+            Clear filters
+          </button>
+        )}
+        <span className="text-xs text-gray-400 ml-auto">
+          {filtered.length} of {sites.length}
+        </span>
       </div>
 
       {isLoading ? (
@@ -100,7 +154,7 @@ export function SitesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {sites.map((s) => (
+              {filtered.map((s) => (
                 <tr key={s.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3"><EntityIdChip id={s.id} /></td>
                   <td className="px-4 py-3 font-medium text-gray-900">{s.name}</td>
@@ -119,8 +173,10 @@ export function SitesPage() {
                   </td>
                 </tr>
               ))}
-              {sites.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No sites yet.</td></tr>
+              {filtered.length === 0 && (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                  {sites.length === 0 ? 'No sites yet.' : 'No sites match the current filters.'}
+                </td></tr>
               )}
             </tbody>
           </table>
@@ -162,7 +218,7 @@ export function SitesPage() {
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => { setShowCreate(false); setEditing(null) }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
-              <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
+              <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
                 {editing ? 'Save' : 'Create'}
               </button>
             </div>

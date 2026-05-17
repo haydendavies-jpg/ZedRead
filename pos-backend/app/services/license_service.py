@@ -48,20 +48,30 @@ async def list_licenses(
     db: AsyncSession,
     skip: int = 0,
     limit: int = 50,
+    site_id: uuid.UUID | None = None,
+    status: str | None = None,
 ) -> list[License]:
     """
-    Return a paginated list of all licenses.
+    Return a paginated list of all licenses with optional filters.
 
     Args:
         db: Active database session.
         skip: Number of rows to skip.
         limit: Maximum rows to return.
+        site_id: Optional exact-match filter on License.site_id.
+        status: Optional exact-match filter on License.status.
 
     Returns:
         list[License]: The requested page of licenses.
     """
+    conditions: list = []
+    if site_id is not None:
+        conditions.append(License.site_id == site_id)
+    if status is not None:
+        conditions.append(License.status == status)
+
     result = await db.execute(
-        select(License).order_by(License.created_at.desc()).offset(skip).limit(limit)
+        select(License).where(*conditions).order_by(License.created_at.desc()).offset(skip).limit(limit)
     )
     return list(result.scalars().all())
 

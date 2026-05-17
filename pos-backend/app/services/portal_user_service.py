@@ -45,20 +45,35 @@ async def list_portal_users(
     db: AsyncSession,
     skip: int = 0,
     limit: int = 50,
+    email: str | None = None,
+    role: str | None = None,
+    is_active: bool | None = None,
 ) -> list[PortalUser]:
     """
-    Return a paginated list of all portal users.
+    Return a paginated list of all portal users with optional filters.
 
     Args:
         db: Active database session.
         skip: Number of records to skip.
         limit: Maximum records to return.
+        email: Optional substring filter on PortalUser.email (case-insensitive).
+        role: Optional exact-match filter on PortalUser.role.
+        is_active: Optional exact-match filter on PortalUser.is_active.
 
     Returns:
         list[PortalUser]: The requested page of portal users.
     """
+    conditions: list = []
+    if email is not None:
+        # Case-insensitive partial match using SQL ILIKE
+        conditions.append(PortalUser.email.ilike(f"%{email}%"))
+    if role is not None:
+        conditions.append(PortalUser.role == role)
+    if is_active is not None:
+        conditions.append(PortalUser.is_active == is_active)
+
     result = await db.execute(
-        select(PortalUser).order_by(PortalUser.created_at.desc()).offset(skip).limit(limit)
+        select(PortalUser).where(*conditions).order_by(PortalUser.created_at.desc()).offset(skip).limit(limit)
     )
     return list(result.scalars().all())
 

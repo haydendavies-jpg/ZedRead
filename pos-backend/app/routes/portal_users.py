@@ -18,11 +18,14 @@ router = APIRouter(prefix="/portal-users", tags=["portal-users"])
 async def list_portal_users(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
+    email: str | None = Query(default=None, description="Case-insensitive substring filter on email address"),
+    role: str | None = Query(default=None, description="Exact-match filter on user role"),
+    is_active: bool | None = Query(default=None, description="Filter by active/inactive status"),
     db: AsyncSession = Depends(get_db),
     _: PortalUser = Depends(require_super_admin),
 ) -> list[PortalUserResponse]:
-    """List all portal users. Super admin only."""
-    return await portal_user_service.list_portal_users(db, skip=skip, limit=limit)
+    """List all portal users with optional filters. Super admin only."""
+    return await portal_user_service.list_portal_users(db, skip=skip, limit=limit, email=email, role=role, is_active=is_active)
 
 
 @router.get("/{user_id}", response_model=PortalUserResponse)
