@@ -3,8 +3,21 @@
 ## Test database
 
 Never use the development or production database.
-Use the async test engine fixture from `tests/conftest.py` — port 5433, database `zedread_test`.
+Use the async test engine fixture from `tests/conftest.py` — database `zedread_test`.
 Never mock the database. Use real queries against the real test schema.
+
+**Port:** Docker is not available in this environment. PostgreSQL runs on the local host at
+**port 5432** (not 5433). Always run tests with the env var override:
+
+```bash
+TEST_DATABASE_URL="postgresql+asyncpg://test:test@localhost:5432/zedread_test" python -m pytest
+```
+
+If the schema is stale after a model change, drop and recreate it:
+
+```bash
+psql -U test -h localhost -p 5432 zedread_test -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+```
 
 ```python
 # tests/conftest.py — required setup
@@ -12,7 +25,8 @@ import pytest
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from app.database import Base
 
-TEST_DB_URL = 'postgresql+asyncpg://test:test@localhost:5433/zedread_test'
+# Default in conftest.py is 5433 (Docker) — always override via TEST_DATABASE_URL env var
+TEST_DB_URL = 'postgresql+asyncpg://test:test@localhost:5432/zedread_test'
 
 @pytest.fixture(scope='session')
 async def db_engine():
