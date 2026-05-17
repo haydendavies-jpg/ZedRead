@@ -1,13 +1,12 @@
-"""Portal authentication routes: login, token refresh, and management scope selection.
+"""Portal authentication routes: login, token refresh, management scope selection, and change password."""
 
-These routes do not require an existing authenticated session — they are the
-entry points for creating one.
-"""
-
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.portal_user import PortalUser
 from app.schemas.portal_auth import (
     LoginRequest,
     ManagementTokenRequest,
@@ -17,6 +16,10 @@ from app.schemas.portal_auth import (
     UnifiedLoginResponse,
 )
 from app.services import management_auth_service, portal_auth_service
+from app.services.audit_service import log_action
+from app.constants.audit_actions import AUTH_LOGIN_SUCCESS
+from app.utils.dependencies import get_current_portal_user
+from app.utils.security import hash_password, verify_password
 
 router = APIRouter(prefix="/auth/portal", tags=["portal-auth"])
 
@@ -80,3 +83,55 @@ async def mgmt_refresh(
     grants, returns available_grants instead of tokens so the client can re-select.
     """
     return await management_auth_service.refresh_management_token(db, payload.refresh_token)
+
+
+class ChangePasswordRequest(BaseModel):
+    """Request body for the change-password endpoint."""
+
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    payload: ChangePasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    actor: PortalUser = Depends(get_current_portal_user),
+) -> None:
+    """
+    Change the authenticated portal user's password.
+
+    Requires the current password for verification — prevents an attacker with
+    a stolen session token from locking the user out.
+    New password must be at least 8 characters.
+    """
+    if len(payload.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="New password must be at least 8 characters.",
+        )
+
+    result = await db.execute(select(PortalUser).where(PortalUser.id == actor.id))
+    user = result.scalar_one()
+
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Current password is incorrect.",
+        )
+
+    user.password_hash = hash_password(payload.new_password)
+
+    await log_action(
+        db,
+        actor_id=str(user.id),
+        actor_type="user",
+        actor_email=user.email,
+        actor_name=user.name,
+        action="auth.password.changed",
+        entity_type="portal_user",
+        entity_id=str(user.id),
+        after_state={"password_changed": True},
+    )
+
+    await db.commit()

@@ -1,7 +1,9 @@
 /** Application shell: sidebar nav + main content area. Adapts based on JWT type. */
 
+import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth, isPortalUser, isMgmtUser } from '../context/AuthContext'
+import { ChangePasswordModal } from '../pages/ChangePasswordPage'
 
 const PORTAL_ADMIN_NAV = [
   { to: '/groups', label: 'Groups' },
@@ -39,6 +41,7 @@ export function Layout() {
         : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
     }`
 
+  const [showChangePassword, setShowChangePassword] = useState(false)
   const mgmtUser = isMgmtUser(user) ? user : null
   const portalUser = isPortalUser(user) ? user : null
   const isBrandOrGroupScope = mgmtUser && (mgmtUser.scope === 'brand' || mgmtUser.scope === 'group')
@@ -111,13 +114,25 @@ export function Layout() {
         <div className="px-4 py-4 border-t border-gray-100">
           <p className="text-xs text-gray-500 truncate">{user?.email}</p>
           <p className="text-xs text-gray-400 capitalize">{scopeLabel}</p>
-          <button
-            onClick={logout}
-            className="mt-2 text-xs text-red-500 hover:text-red-700 transition-colors"
-          >
-            Sign out
-          </button>
+          <div className="mt-2 flex gap-3">
+            <button
+              onClick={() => setShowChangePassword(true)}
+              className="text-xs text-brand-600 hover:text-brand-800 transition-colors"
+            >
+              Change password
+            </button>
+            <button
+              onClick={logout}
+              className="text-xs text-red-500 hover:text-red-700 transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
+
+        {showChangePassword && (
+          <ChangePasswordModal onClose={() => setShowChangePassword(false)} />
+        )}
       </aside>
 
       {/* Main content */}
