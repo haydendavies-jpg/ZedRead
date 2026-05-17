@@ -6,7 +6,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.audit_actions import USER_CREATED, USER_UPDATED
+from app.constants.audit_actions import USER_CREATED, USER_DEACTIVATED
 from app.database import get_db
 from app.models.pos_user import POSUser
 from app.services.audit_service import log_action
@@ -82,15 +82,14 @@ async def create_pos_user(
     await db.flush()
 
     await log_action(
-        db,
-        actor_id=str(actor.id),
-        actor_type="user",
+        db=db,
+        actor_id=actor.id,
         actor_email=actor.email,
         actor_name=actor.name,
         action=USER_CREATED,
         entity_type="pos_user",
         entity_id=str(user.id),
-        after_state={"name": user.name, "email": user.email, "brand_id": user.brand_id},
+        after_state={"name": user.name, "email": user.email, "brand_id": str(user.brand_id)},
     )
 
     await db.commit()
@@ -112,12 +111,11 @@ async def deactivate_pos_user(
 
     user.is_active = False
     await log_action(
-        db,
-        actor_id=str(actor.id),
-        actor_type="user",
+        db=db,
+        actor_id=actor.id,
         actor_email=actor.email,
         actor_name=actor.name,
-        action=USER_UPDATED,
+        action=USER_DEACTIVATED,
         entity_type="pos_user",
         entity_id=str(user.id),
         after_state={"is_active": False},
