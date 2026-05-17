@@ -157,13 +157,13 @@ export function BrandsPage() {
             <tbody className="divide-y divide-gray-50">
               {filtered.map((b) => (
                 <tr key={b.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3"><EntityIdChip id={b.id} /></td>
+                  <td className="px-4 py-3"><EntityIdChip id={b.id} ref={b.ref} /></td>
                   <td className="px-4 py-3 font-medium text-gray-900">
                     <Link to={`/brands/${b.id}`} className="hover:text-brand-600 transition-colors">
                       {b.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3"><EntityIdChip id={b.group_id} /></td>
+                  <td className="px-4 py-3"><EntityIdChip id={b.group_id} ref={groups.find((g) => g.id === b.group_id)?.ref} /></td>
                   <td className="px-4 py-3 text-gray-500">{groupName(b.group_id)}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={b.is_active ? 'active' : 'suspended'} />

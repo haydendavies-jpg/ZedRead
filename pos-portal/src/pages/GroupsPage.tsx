@@ -126,7 +126,7 @@ export function GroupsPage() {
             <tbody className="divide-y divide-gray-50">
               {filtered.map((g) => (
                 <tr key={g.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3"><EntityIdChip id={g.id} /></td>
+                  <td className="px-4 py-3"><EntityIdChip id={g.id} ref={g.ref} /></td>
                   <td className="px-4 py-3 font-medium text-gray-900">{g.name}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={g.is_active ? 'active' : 'suspended'} />

@@ -1,4 +1,4 @@
-"""Routes for POS user management — list, create, deactivate."""
+"""Routes for POS user management — list, create, edit, deactivate."""
 
 import uuid
 
@@ -8,8 +8,9 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.audit_actions import USER_CREATED, USER_DEACTIVATED
+from app.constants.audit_actions import USER_CREATED, USER_DEACTIVATED, USER_UPDATED
 from app.database import get_db
+from app.models.access_profile import AccessProfile
 from app.models.pos_user import POSUser
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
@@ -23,15 +24,18 @@ router = APIRouter(prefix="/pos-users", tags=["pos-users"])
 
 
 class PosUserOut(BaseModel):
-    """POS user response schema — includes active site assignments."""
+    """POS user response schema — includes active site assignments and portal access flag."""
 
     id: uuid.UUID
+    ref: str
     brand_id: uuid.UUID
     name: str
     email: str
     is_active: bool
     # Names of sites the user currently has an active grant for
     assigned_sites: list[str] = []
+    # True when at least one active grant uses a portal-capable access profile
+    has_portal_access: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -45,17 +49,33 @@ class PosUserCreate(BaseModel):
     password: str
 
 
+class PosUserUpdate(BaseModel):
+    """Request body for editing a POS user — all fields optional."""
+
+    name: str | None = None
+    email: EmailStr | None = None
+
+
 async def _attach_sites(
     db: AsyncSession,
     users: list[POSUser],
 ) -> list[PosUserOut]:
-    """Fetch active site grants for a batch of users and return PosUserOut objects."""
+    """
+    Fetch active site grants and portal access flag for a batch of users.
+
+    Args:
+        db: Active database session.
+        users: List of POSUser ORM objects to enrich.
+
+    Returns:
+        list[PosUserOut]: Enriched user response objects.
+    """
     if not users:
         return []
 
     user_ids = [u.id for u in users]
 
-    # Single joined query — no N+1
+    # Site names via site-scope grants — single joined query (no N+1)
     grants_q = (
         select(UserAccessGrant.user_id, Site.name)
         .join(Site, UserAccessGrant.site_id == Site.id)
@@ -66,19 +86,35 @@ async def _attach_sites(
         )
     )
     grants_result = await db.execute(grants_q)
-
     sites_by_user: dict[uuid.UUID, list[str]] = {}
     for user_id, site_name in grants_result:
         sites_by_user.setdefault(user_id, []).append(site_name)
 
+    # Portal access flag — any active grant whose profile has can_access_portal=True
+    portal_q = (
+        select(UserAccessGrant.user_id)
+        .join(AccessProfile, UserAccessGrant.access_profile_id == AccessProfile.id)
+        .where(
+            UserAccessGrant.user_id.in_(user_ids),
+            UserAccessGrant.is_active.is_(True),
+            AccessProfile.can_access_portal.is_(True),
+            AccessProfile.is_active.is_(True),
+        )
+        .distinct()
+    )
+    portal_result = await db.execute(portal_q)
+    portal_users: set[uuid.UUID] = {row[0] for row in portal_result}
+
     return [
         PosUserOut(
             id=u.id,
+            ref=u.ref,
             brand_id=u.brand_id,
             name=u.name,
             email=u.email,
             is_active=u.is_active,
             assigned_sites=sorted(sites_by_user.get(u.id, [])),
+            has_portal_access=u.id in portal_users,
         )
         for u in users
     ]
@@ -93,7 +129,7 @@ async def list_pos_users(
     db: AsyncSession = Depends(get_db),
     actor=Depends(get_current_portal_user),
 ):
-    """List POS users for a brand, optionally filtered to those with a grant for a specific site."""
+    """List POS users for a brand, optionally filtered to those with a site grant."""
     q = select(POSUser).where(POSUser.brand_id == brand_id)
 
     if site_id:
@@ -120,7 +156,6 @@ async def create_pos_user(
     actor=Depends(get_current_portal_user),
 ):
     """Create a new POS user. Requires portal JWT."""
-    # Check for duplicate email
     existing = await db.execute(select(POSUser).where(POSUser.email == body.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
@@ -147,15 +182,60 @@ async def create_pos_user(
 
     await db.commit()
     await db.refresh(user)
-    # New user has no grants yet
     return PosUserOut(
         id=user.id,
+        ref=user.ref,
         brand_id=user.brand_id,
         name=user.name,
         email=user.email,
         is_active=user.is_active,
         assigned_sites=[],
+        has_portal_access=False,
     )
+
+
+@router.patch("/{user_id}", response_model=PosUserOut)
+async def update_pos_user(
+    user_id: str,
+    body: PosUserUpdate,
+    db: AsyncSession = Depends(get_db),
+    actor=Depends(get_current_portal_user),
+):
+    """Edit a POS user's name and/or email. Requires portal JWT."""
+    result = await db.execute(select(POSUser).where(POSUser.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    before: dict = {"name": user.name, "email": user.email}
+
+    if body.name is not None:
+        user.name = body.name
+    if body.email is not None:
+        # Check for email conflict with another user
+        dup = await db.execute(
+            select(POSUser).where(POSUser.email == body.email, POSUser.id != user.id)
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
+        user.email = body.email
+
+    await log_action(
+        db=db,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        action=USER_UPDATED,
+        entity_type="pos_user",
+        entity_id=str(user.id),
+        before_state=before,
+        after_state={"name": user.name, "email": user.email},
+    )
+
+    await db.commit()
+    await db.refresh(user)
+    result_list = await _attach_sites(db, [user])
+    return result_list[0]
 
 
 @router.patch("/{user_id}/deactivate", response_model=PosUserOut)

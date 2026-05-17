@@ -24,6 +24,7 @@ class GroupResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: uuid.UUID
+    ref: str
     name: str
     is_active: bool
     created_at: datetime

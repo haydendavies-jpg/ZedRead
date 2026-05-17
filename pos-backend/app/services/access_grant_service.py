@@ -23,6 +23,7 @@ from app.constants.audit_actions import (
 from app.constants.statuses import ActorType, GrantScope
 from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
+from app.models.group import Group
 from app.models.portal_user import PortalUser
 from app.models.pos_user import POSUser
 from app.models.site import Site
@@ -261,8 +262,34 @@ async def create_grant(
             detail="An active grant already exists for this user at this scope/entity",
         )
 
+    # Enforce single-group constraint: a user may only be in one group.
+    # If creating a group-scope grant, verify no other group-scope grant exists
+    # for a different group.
+    if payload.scope == GrantScope.SITE and payload.site_id:
+        site_r = await db.execute(select(Site).where(Site.id == payload.site_id))
+        _site = site_r.scalar_one_or_none()
+        if _site:
+            brand_r = await db.execute(select(Brand).where(Brand.id == _site.brand_id))
+            _brand = brand_r.scalar_one_or_none()
+            if _brand:
+                existing_group_r = await db.execute(
+                    select(UserAccessGrant).where(
+                        UserAccessGrant.user_id == payload.user_id,
+                        UserAccessGrant.scope == GrantScope.GROUP,
+                        UserAccessGrant.is_active == True,  # noqa: E712
+                        UserAccessGrant.group_id != _brand.group_id,
+                    )
+                )
+                if existing_group_r.scalar_one_or_none():
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="User already belongs to a different group. A POS user can only belong to one group.",
+                    )
+
     actor = management_access.user if management_access else portal_user
     assert actor is not None
+
+    granted_by = actor.id if isinstance(actor, POSUser) else None
 
     grant = UserAccessGrant(
         id=uuid.uuid4(),
@@ -272,7 +299,7 @@ async def create_grant(
         brand_id=payload.brand_id,
         group_id=payload.group_id,
         access_profile_id=payload.access_profile_id,
-        granted_by_id=actor.id if isinstance(actor, POSUser) else None,
+        granted_by_id=granted_by,
         is_active=True,
     )
     db.add(grant)
@@ -292,6 +319,103 @@ async def create_grant(
             "access_profile_id": str(payload.access_profile_id),
         },
     )
+
+    # Auto-create brand and group grants when assigning to a site.
+    # This ensures the user is visible at all hierarchy levels and can
+    # access the portal at brand/group scope if the profile allows it.
+    if payload.scope == GrantScope.SITE and payload.site_id:
+        site_r2 = await db.execute(select(Site).where(Site.id == payload.site_id))
+        site = site_r2.scalar_one_or_none()
+        if site:
+            # Brand-scope grant — upsert only if no active brand grant exists for this brand
+            brand_dup_r = await db.execute(
+                select(UserAccessGrant).where(
+                    UserAccessGrant.user_id == payload.user_id,
+                    UserAccessGrant.scope == GrantScope.BRAND,
+                    UserAccessGrant.brand_id == site.brand_id,
+                    UserAccessGrant.is_active == True,  # noqa: E712
+                )
+            )
+            if not brand_dup_r.scalar_one_or_none():
+                brand_grant = UserAccessGrant(
+                    id=uuid.uuid4(),
+                    user_id=payload.user_id,
+                    scope=GrantScope.BRAND,
+                    brand_id=site.brand_id,
+                    access_profile_id=payload.access_profile_id,
+                    granted_by_id=granted_by,
+                    is_active=True,
+                )
+                db.add(brand_grant)
+                await log_action(
+                    db=db,
+                    action=ACCESS_GRANT_CREATED,
+                    entity_type="user_access_grant",
+                    entity_id=str(brand_grant.id),
+                    actor_type=ActorType.USER,
+                    actor_id=actor.id,
+                    actor_email=actor.email,
+                    actor_name=actor.name,
+                    after_state={
+                        "user_id": str(payload.user_id),
+                        "scope": GrantScope.BRAND,
+                        "brand_id": str(site.brand_id),
+                        "access_profile_id": str(payload.access_profile_id),
+                        "auto_created": True,
+                    },
+                )
+                log.info(
+                    "access_grant.brand.auto_created",
+                    user_id=str(payload.user_id),
+                    brand_id=str(site.brand_id),
+                )
+
+            # Group-scope grant — upsert only if no active group grant exists
+            brand_r2 = await db.execute(select(Brand).where(Brand.id == site.brand_id))
+            brand = brand_r2.scalar_one_or_none()
+            if brand:
+                group_dup_r = await db.execute(
+                    select(UserAccessGrant).where(
+                        UserAccessGrant.user_id == payload.user_id,
+                        UserAccessGrant.scope == GrantScope.GROUP,
+                        UserAccessGrant.group_id == brand.group_id,
+                        UserAccessGrant.is_active == True,  # noqa: E712
+                    )
+                )
+                if not group_dup_r.scalar_one_or_none():
+                    group_grant = UserAccessGrant(
+                        id=uuid.uuid4(),
+                        user_id=payload.user_id,
+                        scope=GrantScope.GROUP,
+                        group_id=brand.group_id,
+                        access_profile_id=payload.access_profile_id,
+                        granted_by_id=granted_by,
+                        is_active=True,
+                    )
+                    db.add(group_grant)
+                    await log_action(
+                        db=db,
+                        action=ACCESS_GRANT_CREATED,
+                        entity_type="user_access_grant",
+                        entity_id=str(group_grant.id),
+                        actor_type=ActorType.USER,
+                        actor_id=actor.id,
+                        actor_email=actor.email,
+                        actor_name=actor.name,
+                        after_state={
+                            "user_id": str(payload.user_id),
+                            "scope": GrantScope.GROUP,
+                            "group_id": str(brand.group_id),
+                            "access_profile_id": str(payload.access_profile_id),
+                            "auto_created": True,
+                        },
+                    )
+                    log.info(
+                        "access_grant.group.auto_created",
+                        user_id=str(payload.user_id),
+                        group_id=str(brand.group_id),
+                    )
+
     await db.commit()
     await db.refresh(grant)
 

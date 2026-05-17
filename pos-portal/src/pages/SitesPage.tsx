@@ -156,9 +156,9 @@ export function SitesPage() {
             <tbody className="divide-y divide-gray-50">
               {filtered.map((s) => (
                 <tr key={s.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3"><EntityIdChip id={s.id} /></td>
+                  <td className="px-4 py-3"><EntityIdChip id={s.id} ref={s.ref} /></td>
                   <td className="px-4 py-3 font-medium text-gray-900">{s.name}</td>
-                  <td className="px-4 py-3"><EntityIdChip id={s.brand_id} /></td>
+                  <td className="px-4 py-3"><EntityIdChip id={s.brand_id} ref={brands.find((b) => b.id === s.brand_id)?.ref} /></td>
                   <td className="px-4 py-3 text-gray-500">{brandName(s.brand_id)}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={s.is_active ? 'active' : 'suspended'} />

@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,6 +33,13 @@ class POSUser(Base):
         nullable=False,
         index=True,
         comment="Parent brand — POS users are scoped to a brand, not a group",
+    )
+    ref: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        unique=True,
+        server_default=text("'USR-' || LPAD(nextval('pos_users_ref_seq')::text, 6, '0')"),
+        comment="Human-readable reference ID, e.g. USR-000001",
     )
     name: Mapped[str] = mapped_column(
         String(255),

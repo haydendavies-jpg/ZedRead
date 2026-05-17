@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, DateTime, String, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,6 +26,13 @@ class PortalUser(Base):
         UUID(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
+    )
+    ref: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        unique=True,
+        server_default=text("'PTL-' || LPAD(nextval('portal_users_ref_seq')::text, 6, '0')"),
+        comment="Human-readable reference ID, e.g. PTL-000001",
     )
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     # Argon2 password hash — never store plaintext (rule 15)
