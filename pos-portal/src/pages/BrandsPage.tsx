@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/axios'
 import type { Brand, Group } from '../types'
+import { Link } from 'react-router-dom'
 import { EntityIdChip } from '../components/EntityIdChip'
 import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
@@ -103,7 +104,11 @@ export function BrandsPage() {
               {brands.map((b) => (
                 <tr key={b.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3"><EntityIdChip id={b.id} /></td>
-                  <td className="px-4 py-3 font-medium text-gray-900">{b.name}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    <Link to={`/brands/${b.id}`} className="hover:text-indigo-600 transition-colors">
+                      {b.name}
+                    </Link>
+                  </td>
                   <td className="px-4 py-3"><EntityIdChip id={b.group_id} /></td>
                   <td className="px-4 py-3 text-gray-500">{groupName(b.group_id)}</td>
                   <td className="px-4 py-3">
@@ -162,7 +167,7 @@ export function BrandsPage() {
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => { setShowCreate(false); setEditing(null) }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
-              <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
+              <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
                 {editing ? 'Save' : 'Create'}
               </button>
             </div>

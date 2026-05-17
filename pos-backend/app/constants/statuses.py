@@ -87,3 +87,17 @@ class SystemAccessProfile(str, Enum):
     SUPERVISOR = "Supervisor"
     CASHIER = "Cashier"
     KITCHEN = "Kitchen"
+
+
+class GrantScope(str, Enum):
+    """
+    Scope level of a UserAccessGrant.
+
+    SITE: grant covers a single site (original behaviour).
+    BRAND: grant covers all sites within a brand (portal management access).
+    GROUP: grant covers all brands and sites within a group (portal management access).
+    """
+
+    SITE = "site"
+    BRAND = "brand"
+    GROUP = "group"

@@ -1,0 +1,479 @@
+"""Business logic for POS user access grant management.
+
+Scope enforcement rules:
+  group-scope management user  → can create brand-scope or site-scope grants
+                                  within their group
+  brand-scope management user  → can create site-scope grants within their brand
+  site-scope management user   → cannot create grants (read-only)
+  portal admin                 → full authority (bypasses scope checks)
+"""
+
+import uuid
+
+import structlog
+from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.constants.audit_actions import (
+    ACCESS_GRANT_CREATED,
+    ACCESS_GRANT_REVOKED,
+    ACCESS_PROFILE_PORTAL_UPDATED,
+)
+from app.constants.statuses import ActorType, GrantScope
+from app.models.access_profile import AccessProfile
+from app.models.brand import Brand
+from app.models.portal_user import PortalUser
+from app.models.pos_user import POSUser
+from app.models.site import Site
+from app.models.user_access_grant import UserAccessGrant
+from app.schemas.access_grant import AccessGrantCreate, AccessGrantUpdate
+from app.services.audit_service import log_action
+from app.utils.dependencies import ManagementAccess
+
+log = structlog.get_logger(__name__)
+
+
+async def _load_grant_with_authority(
+    db: AsyncSession,
+    grant_id: uuid.UUID,
+    management_access: ManagementAccess | None,
+    portal_user: PortalUser | None,
+) -> UserAccessGrant:
+    """
+    Load a grant and verify the caller has authority over it.
+
+    Portal users have full authority. Management users must have the grant
+    within their scope (site/brand/group boundary check).
+
+    Args:
+        db: Active session.
+        grant_id: The grant to load.
+        management_access: Set if caller is a management JWT user.
+        portal_user: Set if caller is a portal admin.
+
+    Returns:
+        UserAccessGrant: The verified grant.
+
+    Raises:
+        HTTPException: 404 if not found, 403 if outside caller's scope.
+    """
+    result = await db.execute(
+        select(UserAccessGrant).where(UserAccessGrant.id == grant_id)
+    )
+    grant = result.scalar_one_or_none()
+    if grant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grant not found")
+
+    if portal_user:
+        return grant  # Portal admin has full authority
+
+    # Management user — verify the grant is within their scope
+    assert management_access is not None  # one of the two must be set
+    await _assert_grant_in_scope(db, grant, management_access)
+    return grant
+
+
+async def _assert_grant_in_scope(
+    db: AsyncSession,
+    grant: UserAccessGrant,
+    access: ManagementAccess,
+) -> None:
+    """
+    Raise HTTP 403 if the grant is outside the management user's scope.
+
+    Args:
+        db: Active session.
+        grant: The grant to check.
+        access: The management user's access context.
+
+    Raises:
+        HTTPException: 403 if the grant is not within the caller's scope.
+    """
+    scope = access.scope
+
+    if scope == GrantScope.SITE:
+        # Site-scope users can only see their own site's grants
+        if grant.site_id != access.site.id:  # type: ignore[union-attr]
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Grant is outside your scope")
+
+    elif scope == GrantScope.BRAND:
+        # Brand-scope users can see all grants within their brand
+        brand_id = access.brand.id  # type: ignore[union-attr]
+        if grant.scope == GrantScope.SITE and grant.site_id:
+            site_r = await db.execute(select(Site).where(Site.id == grant.site_id))
+            site = site_r.scalar_one_or_none()
+            if not site or site.brand_id != brand_id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Grant is outside your brand scope")
+        elif grant.scope == GrantScope.BRAND:
+            if grant.brand_id != brand_id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Grant is outside your brand scope")
+        else:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Grant is outside your brand scope")
+
+    elif scope == GrantScope.GROUP:
+        # Group-scope users can see all grants within their group
+        group_id = access.group.id  # type: ignore[union-attr]
+        if grant.scope == GrantScope.GROUP:
+            if grant.group_id != group_id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Grant is outside your group scope")
+        elif grant.scope == GrantScope.BRAND and grant.brand_id:
+            brand_r = await db.execute(select(Brand).where(Brand.id == grant.brand_id))
+            brand = brand_r.scalar_one_or_none()
+            if not brand or brand.group_id != group_id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Grant is outside your group scope")
+        elif grant.scope == GrantScope.SITE and grant.site_id:
+            site_r = await db.execute(select(Site).where(Site.id == grant.site_id))
+            site = site_r.scalar_one_or_none()
+            if not site:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Grant is outside your group scope")
+            brand_r = await db.execute(select(Brand).where(Brand.id == site.brand_id))
+            brand = brand_r.scalar_one_or_none()
+            if not brand or brand.group_id != group_id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Grant is outside your group scope")
+
+
+async def list_grants(
+    db: AsyncSession,
+    management_access: ManagementAccess | None,
+    portal_user: PortalUser | None,
+    brand_id_param: uuid.UUID | None,
+    skip: int,
+    limit: int,
+) -> list[UserAccessGrant]:
+    """
+    List active access grants within the caller's authority.
+
+    Portal users must supply brand_id_param to scope the results.
+    Group-scope management users see all grants in their group.
+    Brand-scope users see all grants in their brand.
+    Site-scope users see only grants for their site.
+
+    Args:
+        db: Active session.
+        management_access: Set for management JWT callers.
+        portal_user: Set for portal admin callers.
+        brand_id_param: Optional brand_id filter (required for portal/group-scope).
+        skip: Pagination offset.
+        limit: Maximum results.
+
+    Returns:
+        list[UserAccessGrant]: Matching grants.
+    """
+    query = select(UserAccessGrant).where(UserAccessGrant.is_active == True)  # noqa: E712
+
+    if portal_user:
+        if brand_id_param:
+            # Portal admin filtered to a brand
+            sites_sq = select(Site.id).where(Site.brand_id == brand_id_param)
+            query = query.where(
+                (UserAccessGrant.brand_id == brand_id_param) |
+                UserAccessGrant.site_id.in_(sites_sq)
+            )
+        # else: no filter — return all (expensive, but valid for portal admin)
+
+    elif management_access:
+        scope = management_access.scope
+        if scope == GrantScope.SITE:
+            query = query.where(UserAccessGrant.site_id == management_access.site.id)  # type: ignore[union-attr]
+        elif scope == GrantScope.BRAND:
+            brand_id = management_access.brand.id  # type: ignore[union-attr]
+            sites_sq = select(Site.id).where(Site.brand_id == brand_id)
+            query = query.where(
+                (UserAccessGrant.brand_id == brand_id) |
+                UserAccessGrant.site_id.in_(sites_sq)
+            )
+        elif scope == GrantScope.GROUP:
+            group_id = management_access.group.id  # type: ignore[union-attr]
+            brands_sq = select(Brand.id).where(Brand.group_id == group_id)
+            sites_sq = select(Site.id).where(Site.brand_id.in_(brands_sq))
+            query = query.where(
+                (UserAccessGrant.group_id == group_id) |
+                UserAccessGrant.brand_id.in_(brands_sq) |
+                UserAccessGrant.site_id.in_(sites_sq)
+            )
+
+    result = await db.execute(query.offset(skip).limit(limit))
+    return list(result.scalars().all())
+
+
+async def create_grant(
+    db: AsyncSession,
+    management_access: ManagementAccess | None,
+    portal_user: PortalUser | None,
+    payload: AccessGrantCreate,
+) -> UserAccessGrant:
+    """
+    Create a new access grant, enforcing scope authority rules.
+
+    Args:
+        db: Active session.
+        management_access: Set for management JWT callers.
+        portal_user: Set for portal admin callers.
+        payload: Grant creation data.
+
+    Returns:
+        UserAccessGrant: The created grant.
+
+    Raises:
+        HTTPException: 403 if the caller lacks authority for the requested scope.
+        HTTPException: 404 if the target user or profile does not exist.
+        HTTPException: 409 if an active grant already exists for the same user/scope/entity.
+    """
+    # Verify the target user exists and belongs to a brand in scope
+    user_r = await db.execute(select(POSUser).where(POSUser.id == payload.user_id))
+    target_user = user_r.scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target POS user not found")
+
+    # Verify the access profile exists and is active
+    profile_r = await db.execute(
+        select(AccessProfile).where(
+            AccessProfile.id == payload.access_profile_id,
+            AccessProfile.is_active == True,  # noqa: E712
+        )
+    )
+    access_profile = profile_r.scalar_one_or_none()
+    if not access_profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Access profile not found or inactive")
+
+    # Enforce scope authority if the caller is a management user (not portal admin)
+    if management_access:
+        await _assert_create_authority(db, management_access, payload)
+
+    # Check for duplicate active grant
+    dup_filter = [
+        UserAccessGrant.user_id == payload.user_id,
+        UserAccessGrant.scope == payload.scope,
+        UserAccessGrant.is_active == True,  # noqa: E712
+    ]
+    if payload.scope == "site":
+        dup_filter.append(UserAccessGrant.site_id == payload.site_id)
+    elif payload.scope == "brand":
+        dup_filter.append(UserAccessGrant.brand_id == payload.brand_id)
+    elif payload.scope == "group":
+        dup_filter.append(UserAccessGrant.group_id == payload.group_id)
+
+    dup_r = await db.execute(select(UserAccessGrant).where(*dup_filter))
+    if dup_r.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An active grant already exists for this user at this scope/entity",
+        )
+
+    actor = management_access.user if management_access else portal_user
+    assert actor is not None
+
+    grant = UserAccessGrant(
+        id=uuid.uuid4(),
+        user_id=payload.user_id,
+        scope=payload.scope,
+        site_id=payload.site_id,
+        brand_id=payload.brand_id,
+        group_id=payload.group_id,
+        access_profile_id=payload.access_profile_id,
+        granted_by_id=actor.id if isinstance(actor, POSUser) else None,
+        is_active=True,
+    )
+    db.add(grant)
+
+    await log_action(
+        db=db,
+        action=ACCESS_GRANT_CREATED,
+        entity_type="user_access_grant",
+        entity_id=str(grant.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        after_state={
+            "user_id": str(payload.user_id),
+            "scope": payload.scope,
+            "access_profile_id": str(payload.access_profile_id),
+        },
+    )
+    await db.commit()
+    await db.refresh(grant)
+
+    log.info(
+        "access_grant.created",
+        grant_id=str(grant.id),
+        user_id=str(payload.user_id),
+        scope=payload.scope,
+    )
+    return grant
+
+
+async def _assert_create_authority(
+    db: AsyncSession,
+    access: ManagementAccess,
+    payload: AccessGrantCreate,
+) -> None:
+    """
+    Enforce that the management user has authority to create this grant.
+
+    Group-scope → can create site or brand-scope grants within their group.
+    Brand-scope → can create site-scope grants within their brand.
+    Site-scope  → cannot create any grant.
+
+    Args:
+        db: Active session.
+        access: The caller's management access context.
+        payload: The grant creation request.
+
+    Raises:
+        HTTPException: 403 if the caller lacks the authority.
+    """
+    caller_scope = access.scope
+
+    if caller_scope == GrantScope.SITE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Site-scope users cannot create access grants",
+        )
+
+    if caller_scope == GrantScope.BRAND:
+        if payload.scope != GrantScope.SITE:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Brand-scope users can only create site-scope grants",
+            )
+        # Verify the site is within the caller's brand
+        if payload.site_id:
+            site_r = await db.execute(select(Site).where(Site.id == payload.site_id))
+            site = site_r.scalar_one_or_none()
+            if not site or site.brand_id != access.brand.id:  # type: ignore[union-attr]
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Site is not within your brand",
+                )
+
+    elif caller_scope == GrantScope.GROUP:
+        if payload.scope == GrantScope.GROUP:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Group-scope users cannot create group-scope grants",
+            )
+        group_id = access.group.id  # type: ignore[union-attr]
+
+        if payload.scope == GrantScope.BRAND and payload.brand_id:
+            brand_r = await db.execute(select(Brand).where(Brand.id == payload.brand_id))
+            brand = brand_r.scalar_one_or_none()
+            if not brand or brand.group_id != group_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Brand is not within your group",
+                )
+        elif payload.scope == GrantScope.SITE and payload.site_id:
+            site_r = await db.execute(select(Site).where(Site.id == payload.site_id))
+            site = site_r.scalar_one_or_none()
+            if not site:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Site not found",
+                )
+            brand_r = await db.execute(select(Brand).where(Brand.id == site.brand_id))
+            brand = brand_r.scalar_one_or_none()
+            if not brand or brand.group_id != group_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Site is not within your group",
+                )
+
+
+async def update_grant(
+    db: AsyncSession,
+    grant_id: uuid.UUID,
+    payload: AccessGrantUpdate,
+    management_access: ManagementAccess | None,
+    portal_user: PortalUser | None,
+) -> UserAccessGrant:
+    """
+    Update the access profile on a grant.
+
+    Args:
+        db: Active session.
+        grant_id: Grant to update.
+        payload: New access_profile_id.
+        management_access: Set for management JWT callers.
+        portal_user: Set for portal admin callers.
+
+    Returns:
+        UserAccessGrant: The updated grant.
+    """
+    grant = await _load_grant_with_authority(db, grant_id, management_access, portal_user)
+
+    # Verify new profile exists and is in the same brand scope
+    profile_r = await db.execute(
+        select(AccessProfile).where(
+            AccessProfile.id == payload.access_profile_id,
+            AccessProfile.is_active == True,  # noqa: E712
+        )
+    )
+    new_profile = profile_r.scalar_one_or_none()
+    if not new_profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Access profile not found or inactive")
+
+    actor = management_access.user if management_access else portal_user
+    assert actor is not None
+
+    old_profile_id = grant.access_profile_id
+    grant.access_profile_id = payload.access_profile_id
+
+    await log_action(
+        db=db,
+        action=ACCESS_PROFILE_PORTAL_UPDATED,
+        entity_type="user_access_grant",
+        entity_id=str(grant.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"access_profile_id": str(old_profile_id)},
+        after_state={"access_profile_id": str(payload.access_profile_id)},
+    )
+    await db.commit()
+    await db.refresh(grant)
+
+    log.info("access_grant.updated", grant_id=str(grant.id))
+    return grant
+
+
+async def revoke_grant(
+    db: AsyncSession,
+    grant_id: uuid.UUID,
+    management_access: ManagementAccess | None,
+    portal_user: PortalUser | None,
+) -> None:
+    """
+    Soft-delete a grant (set is_active=False).
+
+    Args:
+        db: Active session.
+        grant_id: Grant to revoke.
+        management_access: Set for management JWT callers.
+        portal_user: Set for portal admin callers.
+    """
+    grant = await _load_grant_with_authority(db, grant_id, management_access, portal_user)
+
+    if not grant.is_active:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Grant is already revoked")
+
+    actor = management_access.user if management_access else portal_user
+    assert actor is not None
+
+    grant.is_active = False
+
+    await log_action(
+        db=db,
+        action=ACCESS_GRANT_REVOKED,
+        entity_type="user_access_grant",
+        entity_id=str(grant.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+    )
+    await db.commit()
+
+    log.info("access_grant.revoked", grant_id=str(grant.id))

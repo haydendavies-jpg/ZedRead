@@ -4,10 +4,15 @@
  * Request interceptor: attaches Bearer token from localStorage.
  * Response interceptor: on 401, queues concurrent requests and retries after
  * a single token refresh (prevents multiple simultaneous refresh race conditions).
+ *
+ * Token-type awareness: management JWTs use /auth/portal/mgmt-refresh;
+ * portal JWTs use /auth/portal/refresh. The token type is stored alongside
+ * tokens so the interceptor can pick the right endpoint.
  */
 
 import axios from 'axios'
 import type { AxiosRequestConfig } from 'axios'
+import type { TokenType } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
 
@@ -20,15 +25,19 @@ export const api = axios.create({
 
 export const getAccessToken = () => localStorage.getItem('access_token')
 export const getRefreshToken = () => localStorage.getItem('refresh_token')
+export const getTokenType = (): TokenType | null =>
+  localStorage.getItem('token_type') as TokenType | null
 
-export const setTokens = (access: string, refresh: string) => {
+export const setTokens = (access: string, refresh: string, tokenType: TokenType) => {
   localStorage.setItem('access_token', access)
   localStorage.setItem('refresh_token', refresh)
+  localStorage.setItem('token_type', tokenType)
 }
 
 export const clearTokens = () => {
   localStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')
+  localStorage.removeItem('token_type')
 }
 
 // ── Request interceptor — attach access token ──────────────────────────────────
@@ -59,6 +68,17 @@ const drainQueue = (token: string | null, error: unknown) => {
   })
   pendingQueue = []
 }
+
+/** Pick the correct refresh endpoint based on the stored token type. */
+const refreshEndpoint = (): string => {
+  const t = getTokenType()
+  return t === 'mgmt_access'
+    ? `${BASE_URL}/auth/portal/mgmt-refresh`
+    : `${BASE_URL}/auth/portal/refresh`
+}
+
+/** Field name for the refresh token body — matches both refresh schemas. */
+const refreshBody = () => ({ refresh_token: getRefreshToken() })
 
 api.interceptors.response.use(
   (response) => response,
@@ -91,11 +111,10 @@ api.interceptors.response.use(
       const refresh = getRefreshToken()
       if (!refresh) throw new Error('No refresh token')
 
-      const { data } = await axios.post(`${BASE_URL}/auth/portal/refresh`, {
-        refresh_token: refresh,
-      })
+      const tokenType = getTokenType() ?? 'portal_access'
+      const { data } = await axios.post(refreshEndpoint(), refreshBody())
 
-      setTokens(data.access_token, data.refresh_token)
+      setTokens(data.access_token, data.refresh_token, tokenType)
       drainQueue(data.access_token, null)
 
       if (original.headers) original.headers.Authorization = `Bearer ${data.access_token}`

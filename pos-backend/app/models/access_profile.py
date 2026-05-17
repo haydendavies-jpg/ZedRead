@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM model for access profiles (permission templates seeded per brand)."""
+"""SQLAlchemy ORM model for access profiles controlling POS user permissions."""
 
 import uuid
 from datetime import datetime
@@ -12,14 +12,11 @@ from app.database import Base
 
 class AccessProfile(Base):
     """
-    An AccessProfile is a named permission template that controls what a POS
-    user can do at the terminal (e.g. apply discounts, void invoices).
+    Defines a named permission tier for POS users within a brand.
 
-    Four system profiles are automatically seeded when a Brand is created:
-    Manager, Supervisor, Cashier, Kitchen. These cannot be deleted
-    (is_system=True). Custom profiles may be added in a future stage.
-
-    A user is linked to a profile per Site via UserAccessGrant.
+    Four system profiles (Manager, Supervisor, Cashier, Kitchen) are seeded
+    automatically when a brand is created. Additional custom profiles can be
+    created by brand admins. System profiles cannot be deleted (is_system=True).
     """
 
     __tablename__ = "access_profiles"
@@ -35,27 +32,39 @@ class AccessProfile(Base):
         ForeignKey("brands.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
-        comment="Each brand owns its own set of access profiles",
+        comment="Brand this profile belongs to — profiles are not shared across brands",
     )
     name: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
-        comment="Display name — e.g. 'Manager', 'Cashier'",
+        comment="Human-readable profile name, e.g. 'Manager', 'Cashier'",
     )
     is_system: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=False,
-        comment="True for the 4 auto-seeded profiles; prevents deletion",
+        comment="True for the 4 auto-seeded system profiles — these cannot be deleted",
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=True,
-        comment="Inactive profiles cannot be assigned to new grants",
+        comment="False when the profile is soft-deleted",
+    )
+    can_access_portal: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="True when holders of this profile may log into the management portal",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
     )

@@ -22,23 +22,178 @@ from app.database import Base, get_db
 from app.main import app
 
 # Import all models so Base.metadata knows about them for create_all
-from app.models import AuditLog, Brand, Category, Group, License, LicenseInvoice, PortalUser, PosDevice, Site  # noqa: F401
-from app.utils.security import create_access_token, hash_password
+from app.models import (  # noqa: F401
+    AccessProfile,
+    AuditLog,
+    Brand,
+    Category,
+    Group,
+    Invoice,
+    InvoiceLineItem,
+    InvoiceLineModifier,
+    InvoiceTaxBreakdown,
+    License,
+    LicenseInvoice,
+    ModifierGroup,
+    ModifierOption,
+    Payment,
+    POSUser,
+    PortalUser,
+    PosDevice,
+    Product,
+    ProductAttributeType,
+    ProductAttributeValue,
+    ProductComboGroup,
+    ProductComboOption,
+    ProductModifierGroupLink,
+    ProductVariant,
+    ProductVariantAttribute,
+    Site,
+    SiteProductOverride,
+    SiteVariantOverride,
+    TaxCategory,
+    TaxRate,
+    UserAccessGrant,
+    UserInvite,
+    UserPIN,
+    UserPOSSession,
+)
+from app.utils.security import create_access_token, create_pos_access_token, hash_password
+
+# ── Reporting view DDL ────────────────────────────────────────────────────────
+# CREATE OR REPLACE VIEW so the fixture is idempotent across test runs.
+# Mirrors 0010_create_reporting_views.py exactly.
+
+_REPORTING_VIEWS = [
+    """
+    CREATE OR REPLACE VIEW vw_daily_sales AS
+    SELECT i.brand_id, i.site_id, DATE(i.created_at) AS sale_date,
+           COUNT(*) AS invoice_count,
+           COALESCE(SUM(i.subtotal_cents), 0) AS subtotal_cents,
+           COALESCE(SUM(i.tax_cents), 0) AS tax_cents,
+           COALESCE(SUM(i.discount_cents), 0) AS discount_cents,
+           COALESCE(SUM(i.total_cents), 0) AS total_cents
+    FROM invoices i
+    WHERE i.status = 'paid' AND i.invoice_type = 'sale'
+    GROUP BY i.brand_id, i.site_id, DATE(i.created_at)
+    """,
+    """
+    CREATE OR REPLACE VIEW vw_product_revenue AS
+    SELECT ili.product_id, ili.product_name, i.brand_id, i.site_id,
+           SUM(ili.quantity) AS total_units,
+           COALESCE(SUM(ili.subtotal_cents), 0) AS revenue_cents,
+           COALESCE(SUM(ili.tax_cents), 0) AS tax_cents
+    FROM invoice_line_items ili
+    JOIN invoices i ON ili.invoice_id = i.id
+    WHERE i.status = 'paid' AND i.invoice_type = 'sale'
+    GROUP BY ili.product_id, ili.product_name, i.brand_id, i.site_id
+    """,
+    """
+    CREATE OR REPLACE VIEW vw_payment_methods AS
+    SELECT p.method, i.brand_id, i.site_id,
+           COUNT(*) AS payment_count,
+           COALESCE(SUM(p.amount_cents), 0) AS total_amount_cents
+    FROM payments p
+    JOIN invoices i ON p.invoice_id = i.id
+    WHERE i.invoice_type = 'sale'
+    GROUP BY p.method, i.brand_id, i.site_id
+    """,
+    """
+    CREATE OR REPLACE VIEW vw_tax_collected AS
+    SELECT itb.tax_rate_name, itb.rate_percent, itb.tax_model, i.brand_id, i.site_id,
+           COALESCE(SUM(itb.taxable_amount_cents), 0) AS taxable_amount_cents,
+           COALESCE(SUM(itb.tax_amount_cents), 0) AS tax_amount_cents
+    FROM invoice_tax_breakdowns itb
+    JOIN invoices i ON itb.invoice_id = i.id
+    WHERE i.status = 'paid' AND i.invoice_type = 'sale'
+    GROUP BY itb.tax_rate_name, itb.rate_percent, itb.tax_model, i.brand_id, i.site_id
+    """,
+    """
+    CREATE OR REPLACE VIEW vw_hourly_sales AS
+    SELECT i.brand_id, i.site_id,
+           EXTRACT(HOUR FROM i.created_at)::INTEGER AS hour_of_day,
+           COUNT(*) AS invoice_count,
+           COALESCE(SUM(i.total_cents), 0) AS total_cents
+    FROM invoices i
+    WHERE i.status = 'paid' AND i.invoice_type = 'sale'
+    GROUP BY i.brand_id, i.site_id, EXTRACT(HOUR FROM i.created_at)
+    """,
+    """
+    CREATE OR REPLACE VIEW vw_modifier_popularity AS
+    SELECT ilm.modifier_name, i.brand_id,
+           COUNT(*) AS usage_count,
+           COALESCE(SUM(ilm.price_delta_cents), 0) AS total_revenue_impact_cents
+    FROM invoice_line_modifiers ilm
+    JOIN invoice_line_items ili ON ilm.line_item_id = ili.id
+    JOIN invoices i ON ili.invoice_id = i.id
+    WHERE i.status = 'paid' AND i.invoice_type = 'sale'
+    GROUP BY ilm.modifier_name, i.brand_id
+    """,
+    """
+    CREATE OR REPLACE VIEW vw_invoice_detail AS
+    SELECT i.id, i.brand_id, i.site_id, i.created_by_id, i.invoice_type, i.status,
+           i.subtotal_cents, i.tax_cents, i.discount_cents, i.total_cents,
+           i.refund_of_id, i.is_refunded, i.voided_at, i.paid_at, i.created_at,
+           s.name AS site_name, b.name AS brand_name
+    FROM invoices i
+    JOIN sites s ON i.site_id = s.id
+    JOIN brands b ON i.brand_id = b.id
+    """,
+    """
+    CREATE OR REPLACE VIEW vw_refund_summary AS
+    SELECT i.brand_id, i.site_id, DATE(i.created_at) AS refund_date,
+           COUNT(*) AS refund_count,
+           COALESCE(SUM(ABS(i.total_cents)), 0) AS refund_total_cents
+    FROM invoices i
+    WHERE i.invoice_type = 'refund'
+    GROUP BY i.brand_id, i.site_id, DATE(i.created_at)
+    """,
+]
 
 # ── Test database configuration ───────────────────────────────────────────────
 
 TEST_DATABASE_URL: str = os.getenv(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://test:test@localhost:5433/zedread_test",
+    # Port 5432 — local PostgreSQL instance (not Docker; Docker unavailable in this env).
+    # Override via TEST_DATABASE_URL env var if your setup differs.
+    "postgresql+asyncpg://test:test@localhost:5432/zedread_test",
 )
 
 # All table names in reverse FK dependency order — used for TRUNCATE CASCADE
 _ALL_TABLES = [
     "audit_logs",
+    # Stage 10 — invoices (must precede products/users they reference)
+    "payments",
+    "invoice_tax_breakdowns",
+    "invoice_line_modifiers",
+    "invoice_line_items",
+    "invoices",
+    "user_pos_sessions",
+    "user_pins",
+    "user_invites",
+    "user_access_grants",
+    "pos_users",
+    "access_profiles",
     "pos_devices",
     "license_invoices",
     "licenses",
+    # Stage 9 — variants, modifiers, combos (must precede products)
+    "product_combo_options",
+    "product_combo_groups",
+    "product_modifier_group_links",
+    "modifier_options",
+    "modifier_groups",
+    "site_variant_overrides",
+    "product_variant_attributes",
+    "product_variants",
+    "product_attribute_values",
+    "product_attribute_types",
+    # Stage 8
+    "site_product_overrides",
+    "products",
     "categories",
+    "tax_rates",
+    "tax_categories",
     "sites",
     "brands",
     "groups",
@@ -72,6 +227,9 @@ async def db() -> AsyncGenerator[AsyncSession, None]:
     # Ensure schema exists (idempotent — skips tables that already exist)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Views are not detected by create_all — create them explicitly
+        for view_sql in _REPORTING_VIEWS:
+            await conn.execute(text(view_sql.strip()))
 
     session_factory = async_sessionmaker(
         bind=engine,
@@ -262,3 +420,290 @@ async def test_device(db: AsyncSession, test_site: Site, test_license: License) 
     await db.commit()
     await db.refresh(device)
     return device
+
+
+# ── Stage 7 fixtures ──────────────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture()
+async def test_access_profile(db: AsyncSession, test_brand: Brand) -> AccessProfile:
+    """
+    A persisted non-system AccessProfile row for test_brand.
+
+    Returns:
+        AccessProfile: A saved, active AccessProfile instance.
+    """
+    profile = AccessProfile(
+        id=uuid.uuid4(),
+        brand_id=test_brand.id,
+        name="Cashier",
+        is_system=False,
+        is_active=True,
+    )
+    db.add(profile)
+    await db.commit()
+    await db.refresh(profile)
+    return profile
+
+
+@pytest_asyncio.fixture()
+async def test_pos_user(db: AsyncSession, test_brand: Brand) -> POSUser:
+    """
+    A persisted active POSUser row for test_brand.
+
+    The password is 'POSPassword123!' — use pos_auth_headers to get a token.
+
+    Returns:
+        POSUser: A saved, active POSUser instance.
+    """
+    user = POSUser(
+        id=uuid.uuid4(),
+        brand_id=test_brand.id,
+        name="Test POS User",
+        email="posuser@test.com",
+        password_hash=hash_password("POSPassword123!"),
+        is_active=True,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture()
+async def test_access_grant(
+    db: AsyncSession,
+    test_pos_user: POSUser,
+    test_site: Site,
+    test_access_profile: AccessProfile,
+) -> UserAccessGrant:
+    """
+    A persisted active UserAccessGrant linking test_pos_user to test_site
+    with test_access_profile.
+
+    Returns:
+        UserAccessGrant: A saved, active grant instance.
+    """
+    grant = UserAccessGrant(
+        id=uuid.uuid4(),
+        user_id=test_pos_user.id,
+        site_id=test_site.id,
+        access_profile_id=test_access_profile.id,
+        granted_by_id=None,
+        is_active=True,
+    )
+    db.add(grant)
+    await db.commit()
+    await db.refresh(grant)
+    return grant
+
+
+@pytest_asyncio.fixture()
+async def pos_auth_headers(
+    test_pos_user: POSUser,
+    test_site: Site,
+    test_access_grant: UserAccessGrant,
+) -> dict[str, str]:
+    """
+    Authorization header dict carrying a valid POS access token for test_pos_user.
+
+    Also ensures the access grant exists (depends on test_access_grant) so
+    the resolve_access dependency succeeds for tests using this fixture.
+
+    Returns:
+        dict[str, str]: {"Authorization": "Bearer <pos_access_token>"}
+    """
+    import uuid as _uuid
+    jti = str(_uuid.uuid4())
+    token = create_pos_access_token(
+        user_id=str(test_pos_user.id),
+        site_id=str(test_site.id),
+        jti=jti,
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+# ── Stage 13 fixtures ────────────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture()
+async def test_manager_profile(db: AsyncSession, test_brand: Brand) -> AccessProfile:
+    """
+    A persisted Manager-like AccessProfile with can_access_portal=True for test_brand.
+
+    Used by management auth tests.
+
+    Returns:
+        AccessProfile: A saved, portal-capable access profile.
+    """
+    profile = AccessProfile(
+        id=uuid.uuid4(),
+        brand_id=test_brand.id,
+        name="Manager",
+        is_system=True,
+        is_active=True,
+        can_access_portal=True,
+    )
+    db.add(profile)
+    await db.commit()
+    await db.refresh(profile)
+    return profile
+
+
+@pytest_asyncio.fixture()
+async def test_portal_grant(
+    db: AsyncSession,
+    test_pos_user: POSUser,
+    test_site: Site,
+    test_manager_profile: AccessProfile,
+) -> UserAccessGrant:
+    """
+    A persisted active site-scope UserAccessGrant for test_pos_user with a
+    portal-capable Manager profile.
+
+    Used by management auth tests.
+
+    Returns:
+        UserAccessGrant: A saved, active site-scope grant.
+    """
+    grant = UserAccessGrant(
+        id=uuid.uuid4(),
+        user_id=test_pos_user.id,
+        scope="site",
+        site_id=test_site.id,
+        brand_id=None,
+        group_id=None,
+        access_profile_id=test_manager_profile.id,
+        granted_by_id=None,
+        is_active=True,
+    )
+    db.add(grant)
+    await db.commit()
+    await db.refresh(grant)
+    return grant
+
+
+@pytest_asyncio.fixture()
+async def test_brand_grant(
+    db: AsyncSession,
+    test_pos_user: POSUser,
+    test_brand: Brand,
+    test_manager_profile: AccessProfile,
+) -> UserAccessGrant:
+    """
+    A persisted active brand-scope UserAccessGrant for test_pos_user.
+
+    Used by management auth tests for multi-grant and brand-scope scenarios.
+
+    Returns:
+        UserAccessGrant: A saved, active brand-scope grant.
+    """
+    grant = UserAccessGrant(
+        id=uuid.uuid4(),
+        user_id=test_pos_user.id,
+        scope="brand",
+        site_id=None,
+        brand_id=test_brand.id,
+        group_id=None,
+        access_profile_id=test_manager_profile.id,
+        granted_by_id=None,
+        is_active=True,
+    )
+    db.add(grant)
+    await db.commit()
+    await db.refresh(grant)
+    return grant
+
+
+@pytest_asyncio.fixture()
+async def mgmt_auth_headers(
+    test_pos_user: POSUser,
+    test_portal_grant: UserAccessGrant,
+) -> dict[str, str]:
+    """
+    Authorization header dict carrying a valid management access token for
+    test_pos_user with a site-scope grant.
+
+    Returns:
+        dict[str, str]: {"Authorization": "Bearer <mgmt_access_token>"}
+    """
+    from app.utils.security import create_mgmt_access_token
+
+    token = create_mgmt_access_token(
+        user_id=str(test_pos_user.id),
+        scope=test_portal_grant.scope,
+        grant_id=str(test_portal_grant.id),
+        site_id=str(test_portal_grant.site_id) if test_portal_grant.site_id else None,
+        brand_id=str(test_portal_grant.brand_id) if test_portal_grant.brand_id else None,
+        group_id=str(test_portal_grant.group_id) if test_portal_grant.group_id else None,
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+# ── Stage 8 fixtures ──────────────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture()
+async def test_tax_category(db: AsyncSession, test_brand: Brand) -> TaxCategory:
+    """
+    A persisted TaxCategory row for test_brand.
+
+    Returns:
+        TaxCategory: A saved, active TaxCategory instance.
+    """
+    tax_cat = TaxCategory(
+        id=uuid.uuid4(),
+        brand_id=test_brand.id,
+        name="Standard",
+        is_active=True,
+    )
+    db.add(tax_cat)
+    await db.commit()
+    await db.refresh(tax_cat)
+    return tax_cat
+
+
+@pytest_asyncio.fixture()
+async def test_product(db: AsyncSession, test_brand: Brand, test_site: Site) -> Product:
+    """
+    A persisted active Product row for test_brand.
+
+    Belongs to the first category found for test_brand (the auto-seeded
+    Uncategorised category created when test_brand is used in create_brand).
+    Falls back to creating a direct category if none exists.
+
+    Returns:
+        Product: A saved, active Product instance.
+    """
+    from sqlalchemy import select as _select
+
+    cat_result = await db.execute(
+        _select(Category).where(Category.brand_id == test_brand.id).limit(1)
+    )
+    cat = cat_result.scalar_one_or_none()
+    if cat is None:
+        cat = Category(
+            id=uuid.uuid4(),
+            brand_id=test_brand.id,
+            name="Uncategorised",
+            is_system=True,
+            is_active=True,
+        )
+        db.add(cat)
+        await db.flush()
+
+    product = Product(
+        id=uuid.uuid4(),
+        brand_id=test_brand.id,
+        category_id=cat.id,
+        tax_category_id=None,
+        name="Test Burger",
+        description=None,
+        base_price_cents=1500,
+        display_order=0,
+        is_active=True,
+    )
+    db.add(product)
+    await db.commit()
+    await db.refresh(product)
+    return product

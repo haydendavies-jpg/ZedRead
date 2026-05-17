@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM model for POS user invite tokens."""
+"""SQLAlchemy ORM model for POS user invitations sent via email."""
 
 import uuid
 from datetime import datetime
@@ -12,11 +12,15 @@ from app.database import Base
 
 class UserInvite(Base):
     """
-    A one-time invite token sent to a new POS user via email.
+    A pending email invitation for a new POS user.
 
-    The invite link contains the token. When accepted, the user sets their
-    password and a UserAccessGrant is created for the specified site and
-    access profile. The token is single-use and expires after a set period.
+    When a brand admin sends an invite, a row is created here with a unique
+    token. The invitee clicks the link, accepts the invite, and a POSUser +
+    UserAccessGrant row are created in the same transaction. The invite is
+    then marked is_accepted=True.
+
+    Invites expire at expires_at — the acceptance route checks this before
+    processing.
     """
 
     __tablename__ = "user_invites"
@@ -32,50 +36,50 @@ class UserInvite(Base):
         ForeignKey("brands.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        comment="The brand the new user will belong to",
+        comment="Brand the invitee will be a member of",
     )
     site_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("sites.id", ondelete="CASCADE"),
         nullable=False,
-        comment="The site the user will be granted access to on acceptance",
+        comment="Site the invitee will be granted access to",
     )
     access_profile_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("access_profiles.id", ondelete="RESTRICT"),
         nullable=False,
-        comment="The access profile to assign when the invite is accepted",
+        comment="Access profile the invitee will receive on acceptance",
     )
     invited_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("portal_users.id", ondelete="SET NULL"),
+        ForeignKey("pos_users.id", ondelete="SET NULL"),
         nullable=True,
-        comment="Portal user who sent the invite",
+        comment="POS user who sent the invite, or NULL if sent by a portal admin",
     )
     email: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
         index=True,
-        comment="Email address the invite was sent to",
+        comment="Email address the invitation was sent to",
     )
-    # Cryptographically random token included in the invite link
+    # Secure random token embedded in the invite link — never derived from user data
     token: Mapped[str] = mapped_column(
-        String(128),
+        String(255),
         unique=True,
         nullable=False,
         index=True,
-        comment="Unique secret token included in the invite URL",
+        comment="Unique random token embedded in the invite URL",
     )
     is_accepted: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=False,
-        comment="True once the invitee has set their password and created their account",
+        comment="True once the invitee has accepted and created their account",
     )
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        comment="Token is invalid after this time",
+        comment="UTC timestamp after which the invite link is no longer valid",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

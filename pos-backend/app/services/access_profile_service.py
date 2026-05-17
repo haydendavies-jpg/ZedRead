@@ -57,12 +57,15 @@ async def seed_system_profiles(
             )
             continue
 
+        # Manager profile gets portal access by default; others start without it
+        can_access_portal = profile_name == SystemAccessProfile.MANAGER
         profile = AccessProfile(
             id=uuid.uuid4(),
             brand_id=brand_id,
             name=profile_name.value,
             is_system=True,
             is_active=True,
+            can_access_portal=can_access_portal,
         )
         db.add(profile)
         created.append(profile)

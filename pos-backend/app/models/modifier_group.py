@@ -1,0 +1,71 @@
+"""SQLAlchemy ORM model for modifier groups (e.g. Add-ons, Sauce choice)."""
+
+import uuid
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.database import Base
+
+
+class ModifierGroup(Base):
+    """
+    A named group of optional or required add-ons for products.
+
+    Examples: "Extra Toppings" (optional, max 3), "Choose a sauce" (required, exactly 1).
+
+    min_selections / max_selections control how many options the cashier must
+    choose from this group when adding a product to an order.
+    """
+
+    __tablename__ = "modifier_groups"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        comment="Primary key — UUID generated at insert time",
+    )
+    brand_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("brands.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Brand this modifier group belongs to — not shared across brands",
+    )
+    name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        comment="Display name shown on the POS, e.g. 'Extra Toppings'",
+    )
+    min_selections: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Minimum number of options the cashier must choose (0 = optional)",
+    )
+    max_selections: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        comment="Maximum number of options the cashier may choose",
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        comment="False when soft-deleted; inactive groups are excluded from POS",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )

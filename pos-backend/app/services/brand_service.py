@@ -121,6 +121,7 @@ async def create_brand(
 
     brand = Brand(id=uuid.uuid4(), group_id=payload.group_id, name=payload.name, is_active=True)
     db.add(brand)
+    await db.flush()  # Brand must be in DB before Category and AccessProfile FK inserts
 
     # Auto-create the system 'Uncategorised' category for every new brand
     uncategorised = Category(
