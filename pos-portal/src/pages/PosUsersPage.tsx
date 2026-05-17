@@ -21,14 +21,6 @@ interface AccessProfile {
   name: string
 }
 
-interface AccessGrant {
-  id: string
-  user_id: string
-  site_id: string
-  access_profile_id: string
-  is_active: boolean
-}
-
 async function fetchBrands(): Promise<Brand[]> {
   const { data } = await api.get('/brands/', { params: { limit: 200 } })
   return data
