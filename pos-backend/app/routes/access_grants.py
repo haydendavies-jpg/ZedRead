@@ -161,7 +161,7 @@ from app.utils.dependencies import get_current_portal_user
 
 class AccessProfileOut(BaseModel):
     """Minimal access profile response for dropdowns."""
-    id: str
+    id: uuid.UUID
     name: str
     is_system: bool
     can_access_portal: bool
