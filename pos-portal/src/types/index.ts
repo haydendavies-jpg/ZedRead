@@ -59,6 +59,7 @@ export interface MgmtUser {
 
 export interface Group {
   id: string
+  ref: string
   name: string
   is_active: boolean
   created_at: string
@@ -67,6 +68,7 @@ export interface Group {
 
 export interface Brand {
   id: string
+  ref: string
   group_id: string
   name: string
   is_active: boolean
@@ -76,6 +78,7 @@ export interface Brand {
 
 export interface Site {
   id: string
+  ref: string
   brand_id: string
   name: string
   is_active: boolean
@@ -109,6 +112,7 @@ export interface LicenseInvoice {
 
 export interface PortalUser {
   id: string
+  ref: string
   email: string
   name: string
   role: 'super_admin' | 'admin' | 'reseller'
@@ -181,10 +185,12 @@ export interface AccessProfile {
 
 export interface POSUser {
   id: string
+  ref: string
   brand_id: string
   name: string
   email: string
   is_active: boolean
+  has_portal_access: boolean
   created_at: string
 }
 

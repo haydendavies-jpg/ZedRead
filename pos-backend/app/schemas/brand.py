@@ -25,6 +25,7 @@ class BrandResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: uuid.UUID
+    ref: str
     group_id: uuid.UUID
     name: str
     is_active: bool

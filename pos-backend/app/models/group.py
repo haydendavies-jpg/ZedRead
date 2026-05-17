@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, DateTime, String, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,6 +25,13 @@ class Group(Base):
         primary_key=True,
         default=uuid.uuid4,
         comment="Primary key — UUID generated at insert time",
+    )
+    ref: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        unique=True,
+        server_default=text("'GRO-' || LPAD(nextval('groups_ref_seq')::text, 6, '0')"),
+        comment="Human-readable reference ID, e.g. GRO-000001",
     )
     name: Mapped[str] = mapped_column(
         String(255),

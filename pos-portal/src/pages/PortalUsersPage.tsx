@@ -150,7 +150,7 @@ export function PortalUsersPage() {
             <tbody className="divide-y divide-gray-50">
               {filtered.map((u) => (
                 <tr key={u.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3"><EntityIdChip id={u.id} /></td>
+                  <td className="px-4 py-3"><EntityIdChip id={u.id} ref={u.ref} /></td>
                   <td className="px-4 py-3 font-medium text-gray-900">
                     {u.name}
                     {u.id === me?.id && <span className="ml-1 text-xs text-brand-400">(you)</span>}

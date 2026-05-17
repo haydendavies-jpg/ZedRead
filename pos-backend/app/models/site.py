@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,6 +32,13 @@ class Site(Base):
         nullable=False,
         index=True,
         comment="Parent brand — cannot delete a brand while sites exist",
+    )
+    ref: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        unique=True,
+        server_default=text("'SIT-' || LPAD(nextval('sites_ref_seq')::text, 6, '0')"),
+        comment="Human-readable reference ID, e.g. SIT-000001",
     )
     name: Mapped[str] = mapped_column(
         String(255),

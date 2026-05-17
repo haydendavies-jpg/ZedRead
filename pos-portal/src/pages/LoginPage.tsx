@@ -23,8 +23,8 @@ export function LoginPage() {
       // 'direct' → tokens issued; navigate to dashboard
       // 'grant_selection' → pendingGrants set; LoginPage re-renders with GrantSelectorView
       if (result === 'direct') navigate('/')
-    } catch {
-      setError('Invalid email or password.')
+    } catch (err: any) {
+      setError(err?.response?.data?.detail ?? 'Invalid email or password.')
     } finally {
       setLoading(false)
     }

@@ -28,6 +28,7 @@ class PortalUserResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: uuid.UUID
+    ref: str
     email: str
     name: str
     role: str

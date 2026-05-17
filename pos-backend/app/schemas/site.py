@@ -25,6 +25,7 @@ class SiteResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: uuid.UUID
+    ref: str
     brand_id: uuid.UUID
     name: str
     is_active: bool
