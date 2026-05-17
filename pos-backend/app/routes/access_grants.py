@@ -177,10 +177,28 @@ async def list_access_profiles(
     db: AsyncSession = Depends(get_db),
     actor=Depends(get_current_portal_user),
 ):
-    """List access profiles for a brand. Requires portal JWT."""
+    """List access profiles for a brand. Requires portal JWT.
+
+    Lazily seeds system profiles (Manager, Supervisor, Cashier, Kitchen) on first
+    call for any brand that predates the seeding feature, so the dropdown is never
+    empty even if the startup seed step did not run.
+    """
+    from app.services.access_profile_service import seed_system_profiles
+
+    # Seed missing system profiles on demand so legacy brands always show profiles
+    system_check = await db.execute(
+        select(AccessProfileModel).where(
+            AccessProfileModel.brand_id == brand_id,
+            AccessProfileModel.is_system.is_(True),
+        )
+    )
+    if system_check.scalar_one_or_none() is None:
+        await seed_system_profiles(db, uuid.UUID(brand_id))
+        await db.commit()
+
     result = await db.execute(
         select(AccessProfileModel)
-        .where(AccessProfileModel.brand_id == brand_id, AccessProfileModel.is_active == True)
+        .where(AccessProfileModel.brand_id == brand_id, AccessProfileModel.is_active.is_(True))
         .offset(skip)
         .limit(limit)
         .order_by(AccessProfileModel.name)
