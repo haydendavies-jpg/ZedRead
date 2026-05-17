@@ -18,7 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.constants.audit_actions import PORTAL_USER_CREATED
 from app.constants.statuses import ActorType, PortalUserRole
 from app.logging_config import configure_logging
+from app.models.brand import Brand
 from app.models.portal_user import PortalUser
+from app.services.access_profile_service import seed_system_profiles
 from app.services.audit_service import log_action
 from app.utils.security import hash_password
 
@@ -130,6 +132,34 @@ async def _bootstrap_super_admin_async(non_interactive: bool = False) -> None:
 
     log.info("bootstrap.complete", email=email)
     typer.echo(f"Super admin created: {email}")
+
+
+async def _seed_all_profiles_async() -> None:
+    """Seed system access profiles for every brand that is missing them."""
+    engine = create_async_engine(_get_database_url(), echo=False, connect_args={"statement_cache_size": 0})
+    session_factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with session_factory() as db:
+        result = await db.execute(select(Brand))
+        brands = result.scalars().all()
+
+        for brand in brands:
+            created = await seed_system_profiles(db, brand.id)
+            if created:
+                await db.commit()
+                typer.echo(f"Seeded {len(created)} profile(s) for brand '{brand.name}'")
+
+    await engine.dispose()
+    typer.echo("Profile seeding complete.")
+
+
+@cli.command(name="seed-all-profiles")
+def seed_all_profiles() -> None:
+    """Ensure every brand has its system access profiles (Manager, Supervisor, Cashier, Kitchen).
+
+    Idempotent — safe to run on every startup.
+    """
+    asyncio.run(_seed_all_profiles_async())
 
 
 @cli.command(name="bootstrap-super-admin")
