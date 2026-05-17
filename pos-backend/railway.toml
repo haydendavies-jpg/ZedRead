@@ -9,4 +9,4 @@ restartPolicyMaxRetries = 3
 
 # Health check — Railway will restart the service if this fails
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 120
