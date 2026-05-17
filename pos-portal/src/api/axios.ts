@@ -90,6 +90,12 @@ api.interceptors.response.use(
       return Promise.reject(error)
     }
 
+    // No refresh token stored — we're not authenticated yet (e.g. login page).
+    // Pass the original error through so the caller can read response.data.detail.
+    if (!getRefreshToken()) {
+      return Promise.reject(error)
+    }
+
     original._retry = true
 
     if (isRefreshing) {
