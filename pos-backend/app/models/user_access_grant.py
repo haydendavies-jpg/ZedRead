@@ -104,6 +104,11 @@ class UserAccessGrant(Base):
         server_default="false",
         comment="True for the user's primary/default site grant; auto-set on first grant creation",
     )
+    backend_role: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Backend/portal access level for this grant. NULL means no backend access.",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

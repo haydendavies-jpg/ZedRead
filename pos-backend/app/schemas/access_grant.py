@@ -19,6 +19,7 @@ class AccessGrantResponse(BaseModel):
     granted_by_id: uuid.UUID | None
     is_active: bool
     is_default: bool
+    backend_role: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -57,6 +58,14 @@ class AccessGrantCreate(BaseModel):
 
 
 class AccessGrantUpdate(BaseModel):
-    """Payload for updating the access profile on an existing grant."""
+    """
+    Payload for updating an existing grant.
 
-    access_profile_id: uuid.UUID
+    Both fields are optional — supply only the one(s) you want to change.
+    Presence in model_fields_set controls which fields are written, so
+    sending ``{"backend_role": null}`` explicitly clears the backend role
+    while omitting the key leaves the existing value unchanged.
+    """
+
+    access_profile_id: uuid.UUID | None = None
+    backend_role: str | None = None
