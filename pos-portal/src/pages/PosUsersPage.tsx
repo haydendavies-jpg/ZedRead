@@ -125,12 +125,6 @@ export function PosUsersPage() {
     queryFn: () => fetchPosUsers(selectedBrandId),
   })
 
-  const { data: profiles = [] } = useQuery({
-    queryKey: ['access-profiles', selectedBrandId],
-    queryFn: () => fetchProfiles(selectedBrandId),
-    enabled: !!selectedBrandId,
-  })
-
   const brandSites = selectedBrandId ? sites.filter((s) => s.brand_id === selectedBrandId) : sites
 
   // ── Page-level filters ────────────────────────────────────────────────────
