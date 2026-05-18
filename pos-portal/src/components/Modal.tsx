@@ -6,9 +6,11 @@ interface Props {
   title: string
   onClose: () => void
   children: React.ReactNode
+  /** When true, uses a wider max-width (4xl) and makes the inner content scrollable. */
+  wide?: boolean
 }
 
-export function Modal({ title, onClose, children }: Props) {
+export function Modal({ title, onClose, children, wide = false }: Props) {
   // Close on Escape key
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -18,11 +20,11 @@ export function Modal({ title, onClose, children }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 overflow-y-auto py-6"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6"
+        className={`bg-white rounded-xl shadow-xl w-full mx-4 p-6 ${wide ? 'max-w-4xl' : 'max-w-md'}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
