@@ -140,6 +140,33 @@ const hasFilters = search || statusFilter
 <span className="text-xs text-gray-400 ml-auto">{filtered.length} of {items.length}</span>
 ```
 
+### Filter label placement — label ABOVE the control
+
+Filter labels must always appear **above** the input or select, never inline beside it.
+Use a `<div>` wrapper with `flex flex-col gap-1` and a `<label>` with `text-xs font-medium text-gray-500`.
+
+```tsx
+// ✅ Correct — label above
+<div className="flex flex-col gap-1">
+  <label className="text-xs font-medium text-gray-500">Status</label>
+  <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500">
+    <option value="">Any</option>
+    <option value="active">Active</option>
+    <option value="inactive">Inactive</option>
+  </select>
+</div>
+
+// ❌ Wrong — label inline beside control
+<label className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
+  Status
+  <select ...>...</select>
+</label>
+```
+
+The filter bar wraps these `<div>` columns in a `flex flex-wrap items-end gap-3` container
+(`items-end` keeps controls bottom-aligned when labels cause different heights).
+
 Filter controls use a slightly smaller padding than form inputs:
 
 ```tsx

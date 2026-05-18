@@ -1,14 +1,21 @@
-"""Routes for POS user management — list, create, edit, deactivate."""
+"""Routes for POS user management — list, create, edit, deactivate, set PIN, list grants."""
 
+import re
 import uuid
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.audit_actions import USER_CREATED, USER_DEACTIVATED, USER_UPDATED
+from app.constants.audit_actions import (
+    USER_BACKEND_ROLE_UPDATED,
+    USER_CREATED,
+    USER_DEACTIVATED,
+    USER_PIN_ADMIN_SET,
+    USER_UPDATED,
+)
 from app.database import get_db
 from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
@@ -16,6 +23,7 @@ from app.models.group import Group
 from app.models.pos_user import POSUser
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
+from app.models.user_pin import UserPIN
 from app.services.audit_service import log_action
 from app.utils.dependencies import get_current_portal_user
 from app.utils.security import hash_password
@@ -23,6 +31,9 @@ from app.utils.security import hash_password
 log = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/pos-users", tags=["pos-users"])
+
+# Valid backend role values — all carry full permissions for now
+_BACKEND_ROLES = {"admin", "users", "reporting"}
 
 
 class SiteGrantSummary(BaseModel):
@@ -46,6 +57,7 @@ class PosUserOut(BaseModel):
     group_name: str = ""
     name: str
     email: str
+    backend_role: str | None = None
     is_active: bool
     # Active site-scope grants with grant ID, site info, and default flag
     site_grants: list[SiteGrantSummary] = []
@@ -69,6 +81,45 @@ class PosUserUpdate(BaseModel):
 
     name: str | None = None
     email: EmailStr | None = None
+    backend_role: str | None = None  # Use sentinel to distinguish "not supplied" from "clear"
+
+    model_config = {"from_attributes": True}
+
+
+class SetPinRequest(BaseModel):
+    """Request body for an admin setting a POS user's PIN."""
+
+    pin: str
+
+    @field_validator("pin")
+    @classmethod
+    def validate_pin(cls, v: str) -> str:
+        """Enforce 4–6 digit numeric PIN."""
+        if not re.fullmatch(r"\d{4,6}", v):
+            raise ValueError("PIN must be 4–6 digits")
+        return v
+
+
+class EnrichedGrantOut(BaseModel):
+    """Full grant row enriched with scope entity names, for the edit-user panel."""
+
+    grant_id: uuid.UUID
+    scope: str
+    # Site scope fields
+    site_id: uuid.UUID | None = None
+    site_name: str | None = None
+    # Brand scope fields (present for site- and brand-scope grants)
+    brand_id: uuid.UUID | None = None
+    brand_name: str | None = None
+    # Group scope fields (present for all grants)
+    group_id: uuid.UUID | None = None
+    group_name: str | None = None
+    # Access profile
+    access_profile_id: uuid.UUID
+    access_profile_name: str
+    can_access_portal: bool
+    is_default: bool
+    is_active: bool
 
 
 async def _attach_sites(
@@ -151,6 +202,7 @@ async def _attach_sites(
             group_name=brand_info.get(u.brand_id, ("", ""))[1],
             name=u.name,
             email=u.email,
+            backend_role=u.backend_role,
             is_active=u.is_active,
             site_grants=grants_by_user.get(u.id, []),
             has_portal_access=u.id in portal_users,
@@ -229,10 +281,140 @@ async def create_pos_user(
         brand_id=user.brand_id,
         name=user.name,
         email=user.email,
+        backend_role=user.backend_role,
         is_active=user.is_active,
         site_grants=[],
         has_portal_access=False,
     )
+
+
+@router.get("/{user_id}/grants", response_model=list[EnrichedGrantOut])
+async def list_user_grants(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    actor=Depends(get_current_portal_user),
+):
+    """
+    List all active access grants for a POS user, enriched with scope entity names.
+
+    Returns site, brand, and group grants with human-readable names so the
+    edit-user panel can display a rich grants table without extra lookups.
+
+    Args:
+        user_id: UUID of the POS user.
+
+    Returns:
+        list[EnrichedGrantOut]: All active grants enriched with entity names.
+    """
+    # Verify user exists
+    user_r = await db.execute(select(POSUser).where(POSUser.id == user_id))
+    if user_r.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    grants_r = await db.execute(
+        select(UserAccessGrant)
+        .where(
+            UserAccessGrant.user_id == user_id,
+            UserAccessGrant.is_active.is_(True),
+        )
+        .order_by(UserAccessGrant.scope, UserAccessGrant.created_at)
+    )
+    grants = list(grants_r.scalars().all())
+
+    if not grants:
+        return []
+
+    # Batch-load all site/brand/group/profile IDs referenced by the grants
+    site_ids = {g.site_id for g in grants if g.site_id}
+    brand_ids = {g.brand_id for g in grants if g.brand_id}
+    group_ids = {g.group_id for g in grants if g.group_id}
+    profile_ids = {g.access_profile_id for g in grants}
+
+    # Fetch site → (name, brand_id) mapping
+    site_info: dict[uuid.UUID, tuple[str, uuid.UUID]] = {}
+    if site_ids:
+        sr = await db.execute(select(Site.id, Site.name, Site.brand_id).where(Site.id.in_(site_ids)))
+        for s_id, s_name, s_brand_id in sr:
+            site_info[s_id] = (s_name, s_brand_id)
+            brand_ids.add(s_brand_id)  # ensure we load the site's brand too
+
+    # Fetch brand → (name, group_id) mapping
+    brand_info: dict[uuid.UUID, tuple[str, uuid.UUID]] = {}
+    if brand_ids:
+        br = await db.execute(select(Brand.id, Brand.name, Brand.group_id).where(Brand.id.in_(brand_ids)))
+        for b_id, b_name, b_group_id in br:
+            brand_info[b_id] = (b_name, b_group_id)
+            group_ids.add(b_group_id)
+
+    # Fetch group → name mapping
+    group_info: dict[uuid.UUID, str] = {}
+    if group_ids:
+        gr = await db.execute(select(Group.id, Group.name).where(Group.id.in_(group_ids)))
+        for g_id, g_name in gr:
+            group_info[g_id] = g_name
+
+    # Fetch profile → (name, can_access_portal) mapping
+    profile_info: dict[uuid.UUID, tuple[str, bool]] = {}
+    if profile_ids:
+        pr = await db.execute(
+            select(AccessProfile.id, AccessProfile.name, AccessProfile.can_access_portal)
+            .where(AccessProfile.id.in_(profile_ids))
+        )
+        for p_id, p_name, p_cap in pr:
+            profile_info[p_id] = (p_name, p_cap)
+
+    result: list[EnrichedGrantOut] = []
+    for g in grants:
+        # Resolve site, brand, group names from the grant's FK
+        resolved_site_id = g.site_id
+        resolved_site_name: str | None = None
+        resolved_brand_id = g.brand_id
+        resolved_brand_name: str | None = None
+        resolved_group_id = g.group_id
+        resolved_group_name: str | None = None
+
+        if g.scope == "site" and g.site_id:
+            s_name, s_brand_id = site_info.get(g.site_id, ("", None))  # type: ignore[assignment]
+            resolved_site_name = s_name or None
+            if s_brand_id:
+                resolved_brand_id = s_brand_id
+                b_name, b_group_id = brand_info.get(s_brand_id, ("", None))  # type: ignore[assignment]
+                resolved_brand_name = b_name or None
+                if b_group_id:
+                    resolved_group_id = b_group_id
+                    resolved_group_name = group_info.get(b_group_id)
+
+        elif g.scope == "brand" and g.brand_id:
+            b_name, b_group_id = brand_info.get(g.brand_id, ("", None))  # type: ignore[assignment]
+            resolved_brand_name = b_name or None
+            if b_group_id:
+                resolved_group_id = b_group_id
+                resolved_group_name = group_info.get(b_group_id)
+
+        elif g.scope == "group" and g.group_id:
+            resolved_group_name = group_info.get(g.group_id)
+
+        p_name, p_cap = profile_info.get(g.access_profile_id, ("", False))
+
+        result.append(
+            EnrichedGrantOut(
+                grant_id=g.id,
+                scope=g.scope,
+                site_id=resolved_site_id,
+                site_name=resolved_site_name,
+                brand_id=resolved_brand_id,
+                brand_name=resolved_brand_name,
+                group_id=resolved_group_id,
+                group_name=resolved_group_name,
+                access_profile_id=g.access_profile_id,
+                access_profile_name=p_name,
+                can_access_portal=p_cap,
+                is_default=g.is_default,
+                is_active=g.is_active,
+            )
+        )
+
+    return result
 
 
 @router.patch("/{user_id}", response_model=PosUserOut)
@@ -242,13 +424,13 @@ async def update_pos_user(
     db: AsyncSession = Depends(get_db),
     actor=Depends(get_current_portal_user),
 ):
-    """Edit a POS user's name and/or email. Requires portal JWT."""
+    """Edit a POS user's name, email, and/or backend_role. Requires portal JWT."""
     result = await db.execute(select(POSUser).where(POSUser.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    before: dict = {"name": user.name, "email": user.email}
+    before: dict = {"name": user.name, "email": user.email, "backend_role": user.backend_role}
 
     if body.name is not None:
         user.name = body.name
@@ -261,6 +443,28 @@ async def update_pos_user(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
         user.email = body.email
 
+    # backend_role uses a special sentinel: the field is present in the model
+    # but we only update when the key was explicitly provided in the request body
+    if "backend_role" in body.model_fields_set:
+        if body.backend_role is not None and body.backend_role not in _BACKEND_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"backend_role must be one of: {sorted(_BACKEND_ROLES)} or null",
+            )
+        if user.backend_role != body.backend_role:
+            await log_action(
+                db=db,
+                actor_id=actor.id,
+                actor_email=actor.email,
+                actor_name=actor.name,
+                action=USER_BACKEND_ROLE_UPDATED,
+                entity_type="pos_user",
+                entity_id=str(user.id),
+                before_state={"backend_role": user.backend_role},
+                after_state={"backend_role": body.backend_role},
+            )
+        user.backend_role = body.backend_role
+
     await log_action(
         db=db,
         actor_id=actor.id,
@@ -270,13 +474,66 @@ async def update_pos_user(
         entity_type="pos_user",
         entity_id=str(user.id),
         before_state=before,
-        after_state={"name": user.name, "email": user.email},
+        after_state={"name": user.name, "email": user.email, "backend_role": user.backend_role},
     )
 
     await db.commit()
     await db.refresh(user)
     result_list = await _attach_sites(db, [user])
     return result_list[0]
+
+
+@router.post("/{user_id}/set-pin", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def set_pin_for_user(
+    user_id: str,
+    body: SetPinRequest,
+    db: AsyncSession = Depends(get_db),
+    actor=Depends(get_current_portal_user),
+):
+    """
+    Admin endpoint: set or reset a POS user's PIN.
+
+    Creates the UserPIN row if it doesn't exist; updates it otherwise.
+    The PIN is stored as an argon2 hash — the raw PIN is never persisted.
+
+    Args:
+        user_id: UUID of the POS user to set the PIN for.
+        body: Contains the raw PIN (4–6 digits).
+    """
+    user_r = await db.execute(select(POSUser).where(POSUser.id == user_id))
+    user = user_r.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    pin_r = await db.execute(select(UserPIN).where(UserPIN.user_id == user_id))
+    pin_row = pin_r.scalar_one_or_none()
+
+    new_hash = hash_password(body.pin)
+
+    if pin_row:
+        pin_row.pin_hash = new_hash
+        # Admin-set PIN does not force a reset — it replaces the PIN cleanly
+        pin_row.is_pin_reset_required = False
+    else:
+        pin_row = UserPIN(
+            user_id=user.id,
+            pin_hash=new_hash,
+            is_pin_reset_required=False,
+        )
+        db.add(pin_row)
+
+    await log_action(
+        db=db,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        action=USER_PIN_ADMIN_SET,
+        entity_type="pos_user",
+        entity_id=str(user.id),
+        after_state={"set_by_admin": True},
+    )
+
+    await db.commit()
 
 
 @router.patch("/{user_id}/deactivate", response_model=PosUserOut)

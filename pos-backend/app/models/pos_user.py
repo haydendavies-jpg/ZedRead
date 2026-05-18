@@ -59,6 +59,13 @@ class POSUser(Base):
         nullable=False,
         comment="Argon2 hash of the user's password",
     )
+    # Portal/backend access level — separate from POS terminal access profile
+    # Values: 'admin' | 'users' | 'reporting'; NULL = no backend/portal access
+    backend_role: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Backend/portal access level. NULL means no backend access.",
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
