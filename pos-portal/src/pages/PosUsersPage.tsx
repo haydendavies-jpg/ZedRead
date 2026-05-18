@@ -8,6 +8,15 @@ import { EntityIdChip } from '../components/EntityIdChip'
 import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
 
+interface SiteGrant {
+  grant_id: string
+  site_id: string
+  site_name: string
+  is_default: boolean
+  access_profile_name: string
+  can_access_portal: boolean
+}
+
 interface PosUser {
   id: string
   ref: string
@@ -15,7 +24,7 @@ interface PosUser {
   name: string
   email: string
   is_active: boolean
-  assigned_sites: string[]
+  site_grants: SiteGrant[]
   has_portal_access: boolean
 }
 
@@ -139,6 +148,12 @@ export function PosUsersPage() {
     onSuccess: invalidateUsers,
   })
 
+  const setDefaultMutation = useMutation({
+    mutationFn: (grantId: string) => api.post(`/access-grants/${grantId}/set-default`),
+    onSuccess: invalidateUsers,
+    onError: (e: any) => alert(e?.response?.data?.detail ?? 'Failed to set primary site.'),
+  })
+
   const openCreate = () => {
     setName(''); setEmail(''); setPassword(''); setCreateError(null)
     setShowCreate(true)
@@ -185,7 +200,7 @@ export function PosUsersPage() {
     }
     if (statusFilter === 'active' && !u.is_active) return false
     if (statusFilter === 'inactive' && u.is_active) return false
-    if (siteFilter && !u.assigned_sites.includes(siteFilter)) return false
+    if (siteFilter && !u.site_grants.some((g) => g.site_name === siteFilter)) return false
     if (portalFilter === 'yes' && !u.has_portal_access) return false
     if (portalFilter === 'no' && u.has_portal_access) return false
     return true
@@ -287,16 +302,24 @@ export function PosUsersPage() {
                   <td className="px-4 py-3 font-medium text-gray-900">{u.name}</td>
                   <td className="px-4 py-3 text-gray-500">{u.email}</td>
                   <td className="px-4 py-3">
-                    {u.assigned_sites.length === 0 ? (
+                    {u.site_grants.length === 0 ? (
                       <span className="text-xs text-gray-400">None</span>
                     ) : (
                       <div className="flex flex-wrap gap-1">
-                        {u.assigned_sites.map((site) => (
-                          <span
-                            key={site}
-                            className="inline-block px-2 py-0.5 rounded bg-gray-100 text-gray-600 text-xs"
-                          >
-                            {site}
+                        {u.site_grants.map((g) => (
+                          <span key={g.grant_id} className="inline-flex items-center gap-1">
+                            <span className={`inline-block px-2 py-0.5 rounded text-xs ${g.is_default ? 'bg-brand-50 text-brand-700 font-medium' : 'bg-gray-100 text-gray-600'}`}>
+                              {g.is_default ? '★ ' : ''}{g.site_name}
+                            </span>
+                            {!g.is_default && (
+                              <button
+                                onClick={() => setDefaultMutation.mutate(g.grant_id)}
+                                className="text-gray-400 hover:text-brand-600 text-xs"
+                                title="Set as primary site"
+                              >
+                                Set primary
+                              </button>
+                            )}
                           </span>
                         ))}
                       </div>

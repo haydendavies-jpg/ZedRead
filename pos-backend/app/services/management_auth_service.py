@@ -276,7 +276,35 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
             user_name=pos_user.name,
         )
 
-    # Multiple grants → return list for scope selection (no token yet)
+    # Multiple grants — check for a default grant and auto-issue if found
+    default_grants = [(g, p) for g, p in grant_rows if g.is_default]
+    if default_grants:
+        grant, _ = default_grants[0]
+        access, refresh = _build_mgmt_token(pos_user, grant)
+        await log_action(
+            db=db,
+            action=MGMT_LOGIN_SUCCESS,
+            entity_type="pos_user",
+            entity_id=str(pos_user.id),
+            actor_type=ActorType.USER,
+            actor_id=pos_user.id,
+            actor_email=pos_user.email,
+            actor_name=pos_user.name,
+        )
+        await db.commit()
+        log.info(
+            "auth.portal.mgmt.login.success.default_grant",
+            user_id=str(pos_user.id),
+            scope=grant.scope,
+        )
+        return UnifiedLoginResponse(
+            access_token=access,
+            refresh_token=refresh,
+            user_id=pos_user.id,
+            user_name=pos_user.name,
+        )
+
+    # No default set → return list for manual scope selection (no token yet)
     summaries: list[GrantSummary] = []
     for grant, profile in grant_rows:
         name = await _scope_name(db, grant)
@@ -469,7 +497,31 @@ async def refresh_management_token(
             user_name=pos_user.name,
         )
 
-    # Multiple grants still exist — caller must re-select via management-token
+    # Multiple grants — honour the default grant if set
+    default_grants = [(g, p) for g, p in grant_rows if g.is_default]
+    if default_grants:
+        grant, _ = default_grants[0]
+        new_access, new_refresh = _build_mgmt_token(pos_user, grant)
+        await log_action(
+            db=db,
+            action=AUTH_TOKEN_REFRESHED,
+            entity_type="pos_user",
+            entity_id=str(pos_user.id),
+            actor_type=ActorType.USER,
+            actor_id=pos_user.id,
+            actor_email=pos_user.email,
+            actor_name=pos_user.name,
+        )
+        await db.commit()
+        log.info("auth.portal.mgmt.token.refreshed.default_grant", user_id=str(pos_user.id))
+        return UnifiedLoginResponse(
+            access_token=new_access,
+            refresh_token=new_refresh,
+            user_id=pos_user.id,
+            user_name=pos_user.name,
+        )
+
+    # No default — caller must re-select via management-token
     summaries: list[GrantSummary] = []
     for grant, profile in grant_rows:
         name = await _scope_name(db, grant)

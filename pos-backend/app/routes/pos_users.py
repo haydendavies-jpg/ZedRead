@@ -23,8 +23,19 @@ log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/pos-users", tags=["pos-users"])
 
 
+class SiteGrantSummary(BaseModel):
+    """Minimal site grant info embedded in PosUserOut for the portal UI."""
+
+    grant_id: uuid.UUID
+    site_id: uuid.UUID
+    site_name: str
+    is_default: bool
+    access_profile_name: str
+    can_access_portal: bool
+
+
 class PosUserOut(BaseModel):
-    """POS user response schema — includes active site assignments and portal access flag."""
+    """POS user response schema — includes active site grants and portal access flag."""
 
     id: uuid.UUID
     ref: str
@@ -32,8 +43,8 @@ class PosUserOut(BaseModel):
     name: str
     email: str
     is_active: bool
-    # Names of sites the user currently has an active grant for
-    assigned_sites: list[str] = []
+    # Active site-scope grants with grant ID, site info, and default flag
+    site_grants: list[SiteGrantSummary] = []
     # True when at least one active grant uses a portal-capable access profile
     has_portal_access: bool = False
 
@@ -63,6 +74,9 @@ async def _attach_sites(
     """
     Fetch active site grants and portal access flag for a batch of users.
 
+    Returns full SiteGrantSummary objects (including grant_id and is_default) so
+    the portal UI can show the primary site and offer a "Set primary" action.
+
     Args:
         db: Active database session.
         users: List of POSUser ORM objects to enrich.
@@ -75,35 +89,42 @@ async def _attach_sites(
 
     user_ids = [u.id for u in users]
 
-    # Site names via site-scope grants — single joined query (no N+1)
+    # Site grants — single joined query returning grant + site + profile info
     grants_q = (
-        select(UserAccessGrant.user_id, Site.name)
+        select(
+            UserAccessGrant.user_id,
+            UserAccessGrant.id,
+            UserAccessGrant.site_id,
+            UserAccessGrant.is_default,
+            Site.name,
+            AccessProfile.name,
+            AccessProfile.can_access_portal,
+        )
         .join(Site, UserAccessGrant.site_id == Site.id)
+        .join(AccessProfile, UserAccessGrant.access_profile_id == AccessProfile.id)
         .where(
             UserAccessGrant.user_id.in_(user_ids),
             UserAccessGrant.scope == "site",
             UserAccessGrant.is_active.is_(True),
         )
+        .order_by(UserAccessGrant.is_default.desc(), Site.name)
     )
     grants_result = await db.execute(grants_q)
-    sites_by_user: dict[uuid.UUID, list[str]] = {}
-    for user_id, site_name in grants_result:
-        sites_by_user.setdefault(user_id, []).append(site_name)
-
-    # Portal access flag — any active grant whose profile has can_access_portal=True
-    portal_q = (
-        select(UserAccessGrant.user_id)
-        .join(AccessProfile, UserAccessGrant.access_profile_id == AccessProfile.id)
-        .where(
-            UserAccessGrant.user_id.in_(user_ids),
-            UserAccessGrant.is_active.is_(True),
-            AccessProfile.can_access_portal.is_(True),
-            AccessProfile.is_active.is_(True),
+    grants_by_user: dict[uuid.UUID, list[SiteGrantSummary]] = {}
+    portal_users: set[uuid.UUID] = set()
+    for (user_id, grant_id, site_id, is_default, site_name, profile_name, cap) in grants_result:
+        grants_by_user.setdefault(user_id, []).append(
+            SiteGrantSummary(
+                grant_id=grant_id,
+                site_id=site_id,
+                site_name=site_name,
+                is_default=is_default,
+                access_profile_name=profile_name,
+                can_access_portal=cap,
+            )
         )
-        .distinct()
-    )
-    portal_result = await db.execute(portal_q)
-    portal_users: set[uuid.UUID] = {row[0] for row in portal_result}
+        if cap:
+            portal_users.add(user_id)
 
     return [
         PosUserOut(
@@ -113,7 +134,7 @@ async def _attach_sites(
             name=u.name,
             email=u.email,
             is_active=u.is_active,
-            assigned_sites=sorted(sites_by_user.get(u.id, [])),
+            site_grants=grants_by_user.get(u.id, []),
             has_portal_access=u.id in portal_users,
         )
         for u in users
@@ -189,7 +210,7 @@ async def create_pos_user(
         name=user.name,
         email=user.email,
         is_active=user.is_active,
-        assigned_sites=[],
+        site_grants=[],
         has_portal_access=False,
     )
 

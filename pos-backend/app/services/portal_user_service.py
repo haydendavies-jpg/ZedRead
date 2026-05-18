@@ -11,6 +11,7 @@ from app.constants.audit_actions import (
     PORTAL_USER_ACTIVATED,
     PORTAL_USER_CREATED,
     PORTAL_USER_SUSPENDED,
+    PORTAL_USER_UPDATED,
 )
 from app.models.portal_user import PortalUser
 from app.schemas.portal_user import PortalUserCreate, PortalUserUpdate
@@ -183,7 +184,7 @@ async def update_portal_user(
 
     await log_action(
         db=db,
-        action=PORTAL_USER_CREATED,  # Re-using closest constant — update action not pre-defined
+        action=PORTAL_USER_UPDATED,
         entity_type="portal_user",
         entity_id=str(user.id),
         actor_id=actor.id,
