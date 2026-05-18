@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
+    ACCESS_GRANT_BACKEND_ROLE_UPDATED,
     ACCESS_GRANT_CREATED,
     ACCESS_GRANT_DEFAULT_SET,
     ACCESS_GRANT_REVOKED,
@@ -522,6 +523,9 @@ async def _assert_create_authority(
                 )
 
 
+_BACKEND_ROLES = {"admin", "users", "reporting"}
+
+
 async def update_grant(
     db: AsyncSession,
     grant_id: uuid.UUID,
@@ -530,12 +534,15 @@ async def update_grant(
     portal_user: PortalUser | None,
 ) -> UserAccessGrant:
     """
-    Update the access profile on a grant.
+    Update the POS access profile and/or backend role on an existing grant.
+
+    Both fields are optional — only fields present in model_fields_set are
+    written, so callers can update one or both independently.
 
     Args:
         db: Active session.
         grant_id: Grant to update.
-        payload: New access_profile_id.
+        payload: Fields to update (access_profile_id and/or backend_role).
         management_access: Set for management JWT callers.
         portal_user: Set for portal admin callers.
 
@@ -544,35 +551,60 @@ async def update_grant(
     """
     grant = await _load_grant_with_authority(db, grant_id, management_access, portal_user)
 
-    # Verify new profile exists and is in the same brand scope
-    profile_r = await db.execute(
-        select(AccessProfile).where(
-            AccessProfile.id == payload.access_profile_id,
-            AccessProfile.is_active == True,  # noqa: E712
-        )
-    )
-    new_profile = profile_r.scalar_one_or_none()
-    if not new_profile:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Access profile not found or inactive")
-
     actor = management_access.user if management_access else portal_user
     assert actor is not None
 
-    old_profile_id = grant.access_profile_id
-    grant.access_profile_id = payload.access_profile_id
+    # Update POS access profile when explicitly supplied
+    if "access_profile_id" in payload.model_fields_set and payload.access_profile_id is not None:
+        profile_r = await db.execute(
+            select(AccessProfile).where(
+                AccessProfile.id == payload.access_profile_id,
+                AccessProfile.is_active == True,  # noqa: E712
+            )
+        )
+        new_profile = profile_r.scalar_one_or_none()
+        if not new_profile:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Access profile not found or inactive")
 
-    await log_action(
-        db=db,
-        action=ACCESS_PROFILE_PORTAL_UPDATED,
-        entity_type="user_access_grant",
-        entity_id=str(grant.id),
-        actor_type=ActorType.USER,
-        actor_id=actor.id,
-        actor_email=actor.email,
-        actor_name=actor.name,
-        before_state={"access_profile_id": str(old_profile_id)},
-        after_state={"access_profile_id": str(payload.access_profile_id)},
-    )
+        old_profile_id = grant.access_profile_id
+        grant.access_profile_id = payload.access_profile_id
+
+        await log_action(
+            db=db,
+            action=ACCESS_PROFILE_PORTAL_UPDATED,
+            entity_type="user_access_grant",
+            entity_id=str(grant.id),
+            actor_type=ActorType.USER,
+            actor_id=actor.id,
+            actor_email=actor.email,
+            actor_name=actor.name,
+            before_state={"access_profile_id": str(old_profile_id)},
+            after_state={"access_profile_id": str(payload.access_profile_id)},
+        )
+
+    # Update backend_role when explicitly supplied (None clears it)
+    if "backend_role" in payload.model_fields_set:
+        if payload.backend_role is not None and payload.backend_role not in _BACKEND_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"backend_role must be one of: {sorted(_BACKEND_ROLES)} or null",
+            )
+        old_role = grant.backend_role
+        grant.backend_role = payload.backend_role
+
+        await log_action(
+            db=db,
+            action=ACCESS_GRANT_BACKEND_ROLE_UPDATED,
+            entity_type="user_access_grant",
+            entity_id=str(grant.id),
+            actor_type=ActorType.USER,
+            actor_id=actor.id,
+            actor_email=actor.email,
+            actor_name=actor.name,
+            before_state={"backend_role": old_role},
+            after_state={"backend_role": payload.backend_role},
+        )
+
     await db.commit()
     await db.refresh(grant)
 

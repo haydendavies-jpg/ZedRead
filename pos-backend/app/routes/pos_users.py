@@ -123,19 +123,21 @@ class EnrichedGrantOut(BaseModel):
 
 
 class GroupScopeEntry(BaseModel):
-    """One brand or site row in the group-access overview, with current grant state."""
+    """One row in the group-access overview: group, brand, or site with current grant state."""
 
-    scope: str  # 'brand' or 'site'
-    brand_id: uuid.UUID
-    brand_name: str
+    scope: str  # 'group', 'brand', or 'site'
+    # NULL for group-scope rows; set for brand and site rows
+    brand_id: uuid.UUID | None = None
+    brand_name: str | None = None
     site_id: uuid.UUID | None = None
     site_name: str | None = None
-    # Null means no active grant (no access)
+    # NULL means no active grant for this scope/entity
     grant_id: uuid.UUID | None = None
     access_profile_id: uuid.UUID | None = None
     access_profile_name: str | None = None
     can_access_portal: bool = False
     is_default: bool = False
+    backend_role: str | None = None
 
 
 class GroupAccessOut(BaseModel):
@@ -495,17 +497,19 @@ async def get_user_group_access(
     for s in sites:
         sites_by_brand.setdefault(s.brand_id, []).append(s)
 
-    # Fetch all active brand- and site-scope grants for this user
+    # Fetch all active grants for this user (group, brand, and site scope)
     grants_r = await db.execute(
         select(UserAccessGrant).where(
             UserAccessGrant.user_id == user_id,
-            UserAccessGrant.scope.in_(["brand", "site"]),
             UserAccessGrant.is_active.is_(True),
         )
     )
     grants = list(grants_r.scalars().all())
 
     # Build grant lookups
+    group_grant: UserAccessGrant | None = next(
+        (g for g in grants if g.scope == "group" and g.group_id == group.id), None
+    )
     brand_grant: dict[uuid.UUID, UserAccessGrant] = {g.brand_id: g for g in grants if g.brand_id}
     site_grant: dict[uuid.UUID, UserAccessGrant] = {g.site_id: g for g in grants if g.site_id}
 
@@ -521,6 +525,14 @@ async def get_user_group_access(
             profile_info[p_id] = (p_name, p_cap)
 
     entries: list[GroupScopeEntry] = []
+
+    # Group row always first — backend role for the whole group scope
+    entries.append(GroupScopeEntry(
+        scope="group",
+        grant_id=group_grant.id if group_grant else None,
+        backend_role=group_grant.backend_role if group_grant else None,
+    ))
+
     for b in brands:
         bg = brand_grant.get(b.id)
         p_name, p_cap = profile_info.get(bg.access_profile_id, (None, False)) if bg else (None, False)
@@ -533,6 +545,7 @@ async def get_user_group_access(
             access_profile_name=p_name,
             can_access_portal=p_cap,
             is_default=False,
+            backend_role=bg.backend_role if bg else None,
         ))
 
         for s in sites_by_brand.get(b.id, []):
@@ -549,6 +562,7 @@ async def get_user_group_access(
                 access_profile_name=sp_name,
                 can_access_portal=sp_cap,
                 is_default=sg.is_default if sg else False,
+                backend_role=sg.backend_role if sg else None,
             ))
 
     return GroupAccessOut(group_id=group.id, group_name=group.name, entries=entries)

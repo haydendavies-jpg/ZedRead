@@ -40,9 +40,9 @@ interface AccessProfile {
 }
 
 interface GroupScopeEntry {
-  scope: 'brand' | 'site'
-  brand_id: string
-  brand_name: string
+  scope: 'group' | 'brand' | 'site'
+  brand_id: string | null
+  brand_name: string | null
   site_id: string | null
   site_name: string | null
   grant_id: string | null
@@ -50,6 +50,7 @@ interface GroupScopeEntry {
   access_profile_name: string | null
   can_access_portal: boolean
   is_default: boolean
+  backend_role: string | null
 }
 
 interface GroupAccess {
@@ -130,7 +131,6 @@ export function PosUsersPage() {
   const [editUser, setEditUser] = useState<PosUser | null>(null)
   const [editName, setEditName] = useState('')
   const [editEmail, setEditEmail] = useState('')
-  const [editBackendRole, setEditBackendRole] = useState<string>('')
   const [editError, setEditError] = useState<string | null>(null)
 
   // PIN section
@@ -175,8 +175,8 @@ export function PosUsersPage() {
   })
 
   const editMutation = useMutation({
-    mutationFn: ({ id, name, email, backend_role }: { id: string; name: string; email: string; backend_role: string | null }) =>
-      api.patch(`/pos-users/${id}`, { name, email, backend_role }),
+    mutationFn: ({ id, name, email }: { id: string; name: string; email: string }) =>
+      api.patch(`/pos-users/${id}`, { name, email }),
     onSuccess: () => {
       invalidateUsers()
       setEditError(null)
@@ -205,7 +205,13 @@ export function PosUsersPage() {
     mutationFn: (body: { user_id: string; scope: string; site_id?: string; brand_id?: string; access_profile_id: string }) =>
       api.post('/access-grants', body),
     onSuccess: () => { invalidateUsers(); invalidateAccess() },
-    onError: (e: any) => { invalidateUsers(); invalidateAccess(); alert(e?.response?.data?.detail ?? 'Failed to assign access.') },
+    onError: (e: any) => {
+      invalidateUsers(); invalidateAccess()
+      // 409 = grant already exists and was auto-created; just refetch, no alert needed
+      if (e?.response?.status !== 409) {
+        alert(e?.response?.data?.detail ?? 'Failed to assign access.')
+      }
+    },
   })
 
   const revokeGrantMutation = useMutation({
@@ -219,6 +225,13 @@ export function PosUsersPage() {
       api.patch(`/access-grants/${grantId}`, { access_profile_id: profileId }),
     onSuccess: () => { invalidateUsers(); invalidateAccess() },
     onError: (e: any) => { invalidateUsers(); invalidateAccess(); alert(e?.response?.data?.detail ?? 'Failed to update access.') },
+  })
+
+  const updateGrantBackendRoleMutation = useMutation({
+    mutationFn: ({ grantId, backendRole }: { grantId: string; backendRole: string | null }) =>
+      api.patch(`/access-grants/${grantId}`, { backend_role: backendRole }),
+    onSuccess: () => { invalidateUsers(); invalidateAccess() },
+    onError: (e: any) => { invalidateUsers(); invalidateAccess(); alert(e?.response?.data?.detail ?? 'Failed to update backend access.') },
   })
 
   const setDefaultMutation = useMutation({
@@ -241,7 +254,6 @@ export function PosUsersPage() {
   const openEdit = (user: PosUser) => {
     setEditName(user.name)
     setEditEmail(user.email)
-    setEditBackendRole(user.backend_role ?? '')
     setEditError(null)
     setPinValue(''); setPinError(null); setPinSuccess(false)
     setAccessSearch('')
@@ -258,7 +270,7 @@ export function PosUsersPage() {
     e.preventDefault()
     if (!editUser) return
     setEditError(null)
-    editMutation.mutate({ id: editUser.id, name: editName, email: editEmail, backend_role: editBackendRole || null })
+    editMutation.mutate({ id: editUser.id, name: editName, email: editEmail })
   }
 
   const handleSetPin = (e: React.FormEvent) => {
@@ -269,22 +281,25 @@ export function PosUsersPage() {
     setPinMutation.mutate({ userId: editUser.id, pin: pinValue })
   }
 
-  /** Called when a user changes the POS access dropdown for a brand or site row. */
+  /** Called when the POS access dropdown changes for a brand or site row. */
   const handleAccessChange = (entry: GroupScopeEntry, newProfileId: string) => {
     if (!editUser) return
     if (!newProfileId && entry.grant_id) {
-      // Remove access
       revokeGrantMutation.mutate(entry.grant_id)
     } else if (newProfileId && !entry.grant_id) {
-      // Assign access
       const body: any = { user_id: editUser.id, scope: entry.scope, access_profile_id: newProfileId }
       if (entry.scope === 'site') body.site_id = entry.site_id
       else body.brand_id = entry.brand_id
       addGrantMutation.mutate(body)
     } else if (newProfileId && entry.grant_id && newProfileId !== entry.access_profile_id) {
-      // Change profile
       updateGrantProfileMutation.mutate({ grantId: entry.grant_id, profileId: newProfileId })
     }
+  }
+
+  /** Called when the Backend Access dropdown changes for any row. */
+  const handleBackendRoleChange = (entry: GroupScopeEntry, newRole: string) => {
+    if (!editUser || !entry.grant_id) return
+    updateGrantBackendRoleMutation.mutate({ grantId: entry.grant_id, backendRole: newRole || null })
   }
 
   // ── Filtered data ─────────────────────────────────────────────────────────
@@ -304,6 +319,7 @@ export function PosUsersPage() {
   const hasFilters = search || statusFilter || siteFilter || portalFilter
 
   const filteredEntries = (groupAccess?.entries ?? []).filter((e) => {
+    if (e.scope === 'group') return true  // group row always visible
     if (!accessSearch) return true
     const q = accessSearch.toLowerCase()
     return (e.brand_name?.toLowerCase().includes(q) || e.site_name?.toLowerCase().includes(q))
@@ -536,17 +552,6 @@ export function PosUsersPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Backend Access Level</label>
-                  <select value={editBackendRole} onChange={(e) => setEditBackendRole(e.target.value)}
-                    className="w-full sm:w-48 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500">
-                    <option value="">No backend access</option>
-                    {BACKEND_ROLES.map((r) => (
-                      <option key={r.value} value={r.value}>{r.label}</option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-400 mt-1">Controls access to this management portal.</p>
-                </div>
                 {editError && <p className="text-sm text-red-600">{editError}</p>}
                 <div className="flex justify-end">
                   <button type="submit" disabled={editMutation.isPending}
@@ -604,67 +609,116 @@ export function PosUsersPage() {
               </div>
 
               <div className="overflow-x-auto rounded-lg border border-gray-200">
-                <table className="w-full text-sm min-w-[560px]">
+                <table className="w-full text-sm min-w-[680px]">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
                       <th className="px-3 py-2">Brand</th>
                       <th className="px-3 py-2">Site</th>
                       <th className="px-3 py-2">POS Access</th>
+                      <th className="px-3 py-2">Backend Access</th>
                       <th className="px-3 py-2"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {accessLoading ? (
-                      <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400 text-xs">Loading…</td></tr>
+                      <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400 text-xs">Loading…</td></tr>
                     ) : filteredEntries.length === 0 ? (
-                      <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400 text-xs">
+                      <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400 text-xs">
                         {(groupAccess?.entries ?? []).length === 0 ? 'No brands or sites found in this group.' : 'No results match the search.'}
                       </td></tr>
-                    ) : filteredEntries.map((entry) => (
-                      <tr key={`${entry.scope}-${entry.site_id ?? entry.brand_id}`}
-                        className={`hover:bg-gray-50 ${entry.scope === 'site' ? 'bg-white' : 'bg-gray-50/60'}`}>
-                        <td className="px-3 py-2 text-xs text-gray-700">
-                          {entry.scope === 'brand' ? (
-                            <span className="font-medium">{entry.brand_name}</span>
-                          ) : (
-                            <span className="text-gray-400 pl-3">↳ {entry.brand_name}</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-xs text-gray-700">
-                          {entry.site_name ?? <span className="text-gray-400 italic">All sites</span>}
-                        </td>
-                        <td className="px-3 py-2">
-                          <select
-                            value={entry.access_profile_id ?? ''}
-                            onChange={(e) => handleAccessChange(entry, e.target.value)}
-                            className={`px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 ${
-                              entry.access_profile_id
-                                ? 'border-gray-200 text-gray-700'
-                                : 'border-gray-200 text-gray-400'
-                            }`}
-                          >
-                            <option value="">No access</option>
-                            {editUserProfiles.map((p) => (
-                              <option key={p.id} value={p.id}>{p.name}{p.can_access_portal ? ' · Portal' : ''}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="px-3 py-2">
-                          {entry.scope === 'site' && entry.grant_id && (
-                            entry.is_default ? (
-                              <span className="text-xs text-brand-600 font-medium">★ Primary</span>
+                    ) : filteredEntries.map((entry) => {
+                      const rowKey = entry.scope === 'group'
+                        ? 'group'
+                        : `${entry.scope}-${entry.site_id ?? entry.brand_id}`
+
+                      if (entry.scope === 'group') {
+                        return (
+                          <tr key={rowKey} className="bg-brand-50/40 border-b border-gray-200">
+                            <td className="px-3 py-2 text-xs font-semibold text-brand-800" colSpan={2}>
+                              {groupAccess?.group_name ?? 'Group'} <span className="font-normal text-gray-400">(group-level)</span>
+                            </td>
+                            <td className="px-3 py-2 text-xs text-gray-400">—</td>
+                            <td className="px-3 py-2">
+                              {entry.grant_id ? (
+                                <select
+                                  value={entry.backend_role ?? ''}
+                                  onChange={(e) => handleBackendRoleChange(entry, e.target.value)}
+                                  className={`px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 ${entry.backend_role ? 'border-gray-200 text-gray-700' : 'border-gray-200 text-gray-400'}`}
+                                >
+                                  <option value="">No access</option>
+                                  {BACKEND_ROLES.map((r) => (
+                                    <option key={r.value} value={r.value}>{r.label}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <span className="text-xs text-gray-400">Assign a site first</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2" />
+                          </tr>
+                        )
+                      }
+
+                      return (
+                        <tr key={rowKey}
+                          className={`hover:bg-gray-50 ${entry.scope === 'site' ? 'bg-white' : 'bg-gray-50/60'}`}>
+                          <td className="px-3 py-2 text-xs text-gray-700">
+                            {entry.scope === 'brand' ? (
+                              <span className="font-medium">{entry.brand_name}</span>
                             ) : (
-                              <button
-                                onClick={() => setDefaultMutation.mutate(entry.grant_id!)}
-                                className="text-xs text-gray-400 hover:text-brand-600"
+                              <span className="text-gray-400 pl-3">↳ {entry.brand_name}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-700">
+                            {entry.site_name ?? <span className="text-gray-400 italic">All sites</span>}
+                          </td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={entry.access_profile_id ?? ''}
+                              onChange={(e) => handleAccessChange(entry, e.target.value)}
+                              className={`px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 ${
+                                entry.access_profile_id ? 'border-gray-200 text-gray-700' : 'border-gray-200 text-gray-400'
+                              }`}
+                            >
+                              <option value="">No access</option>
+                              {editUserProfiles.map((p) => (
+                                <option key={p.id} value={p.id}>{p.name}{p.can_access_portal ? ' · Portal' : ''}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2">
+                            {entry.grant_id ? (
+                              <select
+                                value={entry.backend_role ?? ''}
+                                onChange={(e) => handleBackendRoleChange(entry, e.target.value)}
+                                className={`px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 ${entry.backend_role ? 'border-gray-200 text-gray-700' : 'border-gray-200 text-gray-400'}`}
                               >
-                                Set primary
-                              </button>
-                            )
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                                <option value="">No access</option>
+                                {BACKEND_ROLES.map((r) => (
+                                  <option key={r.value} value={r.value}>{r.label}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            {entry.scope === 'site' && entry.grant_id && (
+                              entry.is_default ? (
+                                <span className="text-xs text-brand-600 font-medium">★ Primary</span>
+                              ) : (
+                                <button
+                                  onClick={() => setDefaultMutation.mutate(entry.grant_id!)}
+                                  className="text-xs text-gray-400 hover:text-brand-600"
+                                >
+                                  Set primary
+                                </button>
+                              )
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
