@@ -39,25 +39,23 @@ interface AccessProfile {
   can_access_portal: boolean
 }
 
-interface Group {
-  id: string
-  name: string
-}
-
-interface EnrichedGrant {
-  grant_id: string
-  scope: 'site' | 'brand' | 'group'
+interface GroupScopeEntry {
+  scope: 'brand' | 'site'
+  brand_id: string
+  brand_name: string
   site_id: string | null
   site_name: string | null
-  brand_id: string | null
-  brand_name: string | null
-  group_id: string | null
-  group_name: string | null
-  access_profile_id: string
-  access_profile_name: string
+  grant_id: string | null
+  access_profile_id: string | null
+  access_profile_name: string | null
   can_access_portal: boolean
   is_default: boolean
-  is_active: boolean
+}
+
+interface GroupAccess {
+  group_id: string
+  group_name: string
+  entries: GroupScopeEntry[]
 }
 
 // ── API helpers ───────────────────────────────────────────────────────────────
@@ -69,11 +67,6 @@ async function fetchBrands(): Promise<Brand[]> {
 
 async function fetchSites(): Promise<Site[]> {
   const { data } = await api.get('/sites/', { params: { limit: 200 } })
-  return data
-}
-
-async function fetchGroups(): Promise<Group[]> {
-  const { data } = await api.get('/groups/', { params: { limit: 200 } })
   return data
 }
 
@@ -90,8 +83,8 @@ async function fetchProfiles(brandId: string): Promise<AccessProfile[]> {
   return data
 }
 
-async function fetchUserGrants(userId: string): Promise<EnrichedGrant[]> {
-  const { data } = await api.get(`/pos-users/${userId}/grants`)
+async function fetchGroupAccess(userId: string): Promise<GroupAccess> {
+  const { data } = await api.get(`/pos-users/${userId}/group-access`)
   return data
 }
 
@@ -103,12 +96,6 @@ const BACKEND_ROLES = [
   { value: 'reporting', label: 'Reporting' },
 ]
 
-const SCOPE_LABELS: Record<string, string> = {
-  site: 'Site',
-  brand: 'Brand',
-  group: 'Group',
-}
-
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function PosUsersPage() {
@@ -116,7 +103,6 @@ export function PosUsersPage() {
 
   const { data: brands = [] } = useQuery({ queryKey: ['brands'], queryFn: fetchBrands })
   const { data: sites = [] } = useQuery({ queryKey: ['sites'], queryFn: fetchSites })
-  const { data: groups = [] } = useQuery({ queryKey: ['groups'], queryFn: fetchGroups })
 
   const [selectedBrandId, setSelectedBrandId] = useState('')
 
@@ -147,30 +133,22 @@ export function PosUsersPage() {
   const [editBackendRole, setEditBackendRole] = useState<string>('')
   const [editError, setEditError] = useState<string | null>(null)
 
-  // PIN section within edit modal
+  // PIN section
   const [pinValue, setPinValue] = useState('')
   const [pinError, setPinError] = useState<string | null>(null)
   const [pinSuccess, setPinSuccess] = useState(false)
 
-  // Grants section within edit modal
-  const [grantScopeFilter, setGrantScopeFilter] = useState('')
-  const [grantSearch, setGrantSearch] = useState('')
-
-  // Add-grant form within edit modal
-  const [addGrantScope, setAddGrantScope] = useState<'site' | 'brand' | 'group'>('site')
-  const [addGrantEntityId, setAddGrantEntityId] = useState('')
-  const [addGrantProfileId, setAddGrantProfileId] = useState('')
-  const [addGrantError, setAddGrantError] = useState<string | null>(null)
+  // Access table search
+  const [accessSearch, setAccessSearch] = useState('')
 
   // ── Queries for edit modal ────────────────────────────────────────────────
-  const { data: editGrants = [], isLoading: grantsLoading } = useQuery({
-    queryKey: ['user-grants', editUser?.id],
-    queryFn: () => fetchUserGrants(editUser!.id),
+  const { data: groupAccess, isLoading: accessLoading } = useQuery({
+    queryKey: ['group-access', editUser?.id],
+    queryFn: () => fetchGroupAccess(editUser!.id),
     enabled: !!editUser,
   })
 
-  // Profiles for the edit modal — keyed to the specific user's brand so they
-  // always load even when the page-level brand filter is set to "Any".
+  // Profiles for the edit modal — keyed to the specific user's brand
   const { data: editUserProfiles = [] } = useQuery({
     queryKey: ['access-profiles', editUser?.brand_id],
     queryFn: () => fetchProfiles(editUser!.brand_id),
@@ -178,7 +156,7 @@ export function PosUsersPage() {
   })
 
   const invalidateUsers = () => qc.invalidateQueries({ queryKey: ['pos-users', selectedBrandId] })
-  const invalidateGrants = () => qc.invalidateQueries({ queryKey: ['user-grants', editUser?.id] })
+  const invalidateAccess = () => qc.invalidateQueries({ queryKey: ['group-access', editUser?.id] })
 
   // ── Mutations ─────────────────────────────────────────────────────────────
   const createMutation = useMutation({
@@ -224,46 +202,28 @@ export function PosUsersPage() {
   })
 
   const addGrantMutation = useMutation({
-    mutationFn: (body: { user_id: string; scope: string; site_id?: string; brand_id?: string; group_id?: string; access_profile_id: string }) =>
+    mutationFn: (body: { user_id: string; scope: string; site_id?: string; brand_id?: string; access_profile_id: string }) =>
       api.post('/access-grants', body),
-    onSuccess: () => {
-      invalidateUsers()
-      invalidateGrants()
-      setAddGrantEntityId('')
-      setAddGrantError(null)
-    },
-    onError: (e: any) => {
-      invalidateUsers()
-      invalidateGrants()
-      setAddGrantError(e?.response?.data?.detail ?? 'Failed to add access.')
-    },
+    onSuccess: () => { invalidateUsers(); invalidateAccess() },
+    onError: (e: any) => { invalidateUsers(); invalidateAccess(); alert(e?.response?.data?.detail ?? 'Failed to assign access.') },
   })
 
   const revokeGrantMutation = useMutation({
     mutationFn: (grantId: string) => api.delete(`/access-grants/${grantId}`),
-    onSuccess: () => {
-      invalidateUsers()
-      invalidateGrants()
-    },
-    onError: (e: any) => alert(e?.response?.data?.detail ?? 'Failed to remove access.'),
+    onSuccess: () => { invalidateUsers(); invalidateAccess() },
+    onError: (e: any) => { invalidateUsers(); invalidateAccess(); alert(e?.response?.data?.detail ?? 'Failed to remove access.') },
   })
 
   const updateGrantProfileMutation = useMutation({
     mutationFn: ({ grantId, profileId }: { grantId: string; profileId: string }) =>
       api.patch(`/access-grants/${grantId}`, { access_profile_id: profileId }),
-    onSuccess: () => {
-      invalidateUsers()
-      invalidateGrants()
-    },
-    onError: (e: any) => alert(e?.response?.data?.detail ?? 'Failed to update access profile.'),
+    onSuccess: () => { invalidateUsers(); invalidateAccess() },
+    onError: (e: any) => { invalidateUsers(); invalidateAccess(); alert(e?.response?.data?.detail ?? 'Failed to update access.') },
   })
 
   const setDefaultMutation = useMutation({
     mutationFn: (grantId: string) => api.post(`/access-grants/${grantId}/set-default`),
-    onSuccess: () => {
-      invalidateUsers()
-      invalidateGrants()
-    },
+    onSuccess: () => { invalidateUsers(); invalidateAccess() },
     onError: (e: any) => alert(e?.response?.data?.detail ?? 'Failed to set primary site.'),
   })
 
@@ -284,8 +244,7 @@ export function PosUsersPage() {
     setEditBackendRole(user.backend_role ?? '')
     setEditError(null)
     setPinValue(''); setPinError(null); setPinSuccess(false)
-    setGrantScopeFilter(''); setGrantSearch('')
-    setAddGrantScope('site'); setAddGrantEntityId(''); setAddGrantProfileId(''); setAddGrantError(null)
+    setAccessSearch('')
     setEditUser(user)
   }
 
@@ -299,38 +258,33 @@ export function PosUsersPage() {
     e.preventDefault()
     if (!editUser) return
     setEditError(null)
-    editMutation.mutate({
-      id: editUser.id,
-      name: editName,
-      email: editEmail,
-      backend_role: editBackendRole || null,
-    })
+    editMutation.mutate({ id: editUser.id, name: editName, email: editEmail, backend_role: editBackendRole || null })
   }
 
   const handleSetPin = (e: React.FormEvent) => {
     e.preventDefault()
     if (!editUser) return
     setPinError(null)
-    if (!/^\d{4,6}$/.test(pinValue)) {
-      setPinError('PIN must be 4–6 digits.')
-      return
-    }
+    if (!/^\d{4,6}$/.test(pinValue)) { setPinError('PIN must be 4–6 digits.'); return }
     setPinMutation.mutate({ userId: editUser.id, pin: pinValue })
   }
 
-  const handleAddGrant = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!editUser || !addGrantEntityId || !addGrantProfileId) return
-    setAddGrantError(null)
-    const body: any = {
-      user_id: editUser.id,
-      scope: addGrantScope,
-      access_profile_id: addGrantProfileId,
+  /** Called when a user changes the POS access dropdown for a brand or site row. */
+  const handleAccessChange = (entry: GroupScopeEntry, newProfileId: string) => {
+    if (!editUser) return
+    if (!newProfileId && entry.grant_id) {
+      // Remove access
+      revokeGrantMutation.mutate(entry.grant_id)
+    } else if (newProfileId && !entry.grant_id) {
+      // Assign access
+      const body: any = { user_id: editUser.id, scope: entry.scope, access_profile_id: newProfileId }
+      if (entry.scope === 'site') body.site_id = entry.site_id
+      else body.brand_id = entry.brand_id
+      addGrantMutation.mutate(body)
+    } else if (newProfileId && entry.grant_id && newProfileId !== entry.access_profile_id) {
+      // Change profile
+      updateGrantProfileMutation.mutate({ grantId: entry.grant_id, profileId: newProfileId })
     }
-    if (addGrantScope === 'site') body.site_id = addGrantEntityId
-    else if (addGrantScope === 'brand') body.brand_id = addGrantEntityId
-    else body.group_id = addGrantEntityId
-    addGrantMutation.mutate(body)
   }
 
   // ── Filtered data ─────────────────────────────────────────────────────────
@@ -349,33 +303,11 @@ export function PosUsersPage() {
 
   const hasFilters = search || statusFilter || siteFilter || portalFilter
 
-  const filteredGrants = editGrants.filter((g) => {
-    if (grantScopeFilter && g.scope !== grantScopeFilter) return false
-    if (grantSearch) {
-      const q = grantSearch.toLowerCase()
-      const haystack = [g.site_name, g.brand_name, g.group_name].filter(Boolean).join(' ').toLowerCase()
-      if (!haystack.includes(q)) return false
-    }
-    return true
+  const filteredEntries = (groupAccess?.entries ?? []).filter((e) => {
+    if (!accessSearch) return true
+    const q = accessSearch.toLowerCase()
+    return (e.brand_name?.toLowerCase().includes(q) || e.site_name?.toLowerCase().includes(q))
   })
-
-  // Entities available for adding a new grant (exclude already-granted ones)
-  const grantedSiteIds = new Set(editGrants.filter((g) => g.scope === 'site').map((g) => g.site_id))
-  const grantedBrandIds = new Set(editGrants.filter((g) => g.scope === 'brand').map((g) => g.brand_id))
-  const grantedGroupIds = new Set(editGrants.filter((g) => g.scope === 'group').map((g) => g.group_id))
-
-  const availableSites = brandSites.filter((s) => !grantedSiteIds.has(s.id))
-  const availableBrands = brands.filter((b) => !grantedBrandIds.has(b.id))
-  const availableGroups = groups.filter((g) => !grantedGroupIds.has(g.id))
-
-  const entityOptions =
-    addGrantScope === 'site' ? availableSites :
-    addGrantScope === 'brand' ? availableBrands :
-    availableGroups
-
-  // profilesForEdit is used inside the edit modal — always sourced from the
-  // edit user's own brand, regardless of the page-level brand filter.
-  const profilesForEdit = editUserProfiles
 
   return (
     <div className="p-4 sm:p-6">
@@ -528,17 +460,9 @@ export function PosUsersPage() {
                     <StatusBadge status={u.is_active ? 'active' : 'disabled'} />
                   </td>
                   <td className="px-4 py-3 flex gap-3">
-                    <button
-                      onClick={() => openEdit(u)}
-                      className="text-brand-600 hover:underline text-xs"
-                    >
-                      Edit
-                    </button>
+                    <button onClick={() => openEdit(u)} className="text-brand-600 hover:underline text-xs">Edit</button>
                     {u.is_active && (
-                      <button
-                        onClick={() => deactivateMutation.mutate(u.id)}
-                        className="text-red-500 hover:underline text-xs"
-                      >
+                      <button onClick={() => deactivateMutation.mutate(u.id)} className="text-red-500 hover:underline text-xs">
                         Deactivate
                       </button>
                     )}
@@ -563,48 +487,27 @@ export function PosUsersPage() {
           <form onSubmit={handleCreate} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                autoFocus
+              <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                placeholder="Jane Smith"
-              />
+                placeholder="Jane Smith" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                placeholder="jane@example.com"
-              />
+                placeholder="jane@example.com" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={8}
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                placeholder="Min 8 characters"
-              />
+                placeholder="Min 8 characters" />
             </div>
             {createError && <p className="text-sm text-red-600">{createError}</p>}
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={createMutation.isPending}
-                className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
-              >
+              <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+              <button type="submit" disabled={createMutation.isPending}
+                className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
                 {createMutation.isPending ? 'Creating…' : 'Create'}
               </button>
             </div>
@@ -612,44 +515,31 @@ export function PosUsersPage() {
         </Modal>
       )}
 
-      {/* ── Edit user modal (wide — includes PIN, backend role, grants) ─────── */}
+      {/* ── Edit user modal ───────────────────────────────────────────────── */}
       {editUser && (
         <Modal title={`Edit — ${editUser.name}`} onClose={() => setEditUser(null)} wide>
           <div className="space-y-6">
 
-            {/* ── Section 1: User details ──────────────────────────────────── */}
+            {/* ── Section 1: User details ────────────────────────────────── */}
             <section>
               <h3 className="text-sm font-semibold text-gray-700 mb-3">User Details</h3>
               <form onSubmit={handleEditSave} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                    <input
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
+                    <input value={editName} onChange={(e) => setEditName(e.target.value)} required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input
-                      type="email"
-                      value={editEmail}
-                      onChange={(e) => setEditEmail(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
+                    <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
                   </div>
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Backend Access Level</label>
-                  <select
-                    value={editBackendRole}
-                    onChange={(e) => setEditBackendRole(e.target.value)}
-                    className="w-full sm:w-48 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  >
+                  <select value={editBackendRole} onChange={(e) => setEditBackendRole(e.target.value)}
+                    className="w-full sm:w-48 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500">
                     <option value="">No backend access</option>
                     {BACKEND_ROLES.map((r) => (
                       <option key={r.value} value={r.value}>{r.label}</option>
@@ -657,14 +547,10 @@ export function PosUsersPage() {
                   </select>
                   <p className="text-xs text-gray-400 mt-1">Controls access to this management portal.</p>
                 </div>
-
                 {editError && <p className="text-sm text-red-600">{editError}</p>}
                 <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={editMutation.isPending}
-                    className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
-                  >
+                  <button type="submit" disabled={editMutation.isPending}
+                    className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
                     {editMutation.isPending ? 'Saving…' : 'Save Details'}
                   </button>
                 </div>
@@ -673,29 +559,20 @@ export function PosUsersPage() {
 
             <hr className="border-gray-100" />
 
-            {/* ── Section 2: POS PIN ───────────────────────────────────────── */}
+            {/* ── Section 2: POS PIN ─────────────────────────────────────── */}
             <section>
               <h3 className="text-sm font-semibold text-gray-700 mb-1">POS PIN</h3>
               <p className="text-xs text-gray-400 mb-3">Set a PIN so the user can quickly switch sessions on the Android terminal without a full re-login.</p>
               <form onSubmit={handleSetPin} className="flex items-end gap-3">
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-medium text-gray-500">PIN (4–6 digits)</label>
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    pattern="\d{4,6}"
-                    value={pinValue}
+                  <input type="password" inputMode="numeric" pattern="\d{4,6}" value={pinValue}
                     onChange={(e) => { setPinValue(e.target.value); setPinError(null); setPinSuccess(false) }}
-                    placeholder="••••"
-                    maxLength={6}
-                    className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  />
+                    placeholder="••••" maxLength={6}
+                    className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
                 </div>
-                <button
-                  type="submit"
-                  disabled={setPinMutation.isPending || !pinValue}
-                  className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
-                >
+                <button type="submit" disabled={setPinMutation.isPending || !pinValue}
+                  className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
                   {setPinMutation.isPending ? 'Setting…' : 'Set PIN'}
                 </button>
                 {pinSuccess && <span className="text-xs text-green-600">PIN set successfully.</span>}
@@ -705,193 +582,96 @@ export function PosUsersPage() {
 
             <hr className="border-gray-100" />
 
-            {/* ── Section 3: Access grants ─────────────────────────────────── */}
+            {/* ── Section 3: Site & Scope Access ────────────────────────── */}
             <section>
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Site &amp; Scope Access</h3>
-
-              {/* Grant filters */}
-              <div className="flex flex-wrap items-end gap-3 mb-3">
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-gray-500">Scope</label>
-                  <select
-                    value={grantScopeFilter}
-                    onChange={(e) => setGrantScopeFilter(e.target.value)}
-                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  >
-                    <option value="">All scopes</option>
-                    <option value="site">Site</option>
-                    <option value="brand">Brand</option>
-                    <option value="group">Group</option>
-                  </select>
+              <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700">Site &amp; Scope Access</h3>
+                  {groupAccess && (
+                    <p className="text-xs text-gray-400 mt-0.5">Group: <span className="font-medium text-gray-600">{groupAccess.group_name}</span></p>
+                  )}
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-medium text-gray-500">Search</label>
                   <input
                     type="text"
-                    placeholder="Group, brand, or site…"
-                    value={grantSearch}
-                    onChange={(e) => setGrantSearch(e.target.value)}
+                    placeholder="Brand or site…"
+                    value={accessSearch}
+                    onChange={(e) => setAccessSearch(e.target.value)}
                     className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-44"
                   />
                 </div>
-                {(grantScopeFilter || grantSearch) && (
-                  <button
-                    onClick={() => { setGrantScopeFilter(''); setGrantSearch('') }}
-                    className="text-xs text-gray-400 hover:text-gray-600 self-end pb-1.5"
-                  >
-                    Clear
-                  </button>
-                )}
-                <span className="text-xs text-gray-400 ml-auto self-end pb-1.5">
-                  {filteredGrants.length} of {editGrants.length}
-                </span>
               </div>
 
-              {/* Grants table */}
-              <div className="overflow-x-auto rounded-lg border border-gray-200 mb-4">
-                <table className="w-full text-sm min-w-[620px]">
+              <div className="overflow-x-auto rounded-lg border border-gray-200">
+                <table className="w-full text-sm min-w-[560px]">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
-                      <th className="px-3 py-2">Scope</th>
-                      <th className="px-3 py-2">Group</th>
                       <th className="px-3 py-2">Brand</th>
                       <th className="px-3 py-2">Site</th>
                       <th className="px-3 py-2">POS Access</th>
-                      <th className="px-3 py-2">Actions</th>
+                      <th className="px-3 py-2"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {grantsLoading ? (
-                      <tr><td colSpan={6} className="px-3 py-4 text-center text-gray-400 text-xs">Loading…</td></tr>
-                    ) : filteredGrants.length === 0 ? (
-                      <tr><td colSpan={6} className="px-3 py-4 text-center text-gray-400 text-xs">
-                        {editGrants.length === 0 ? 'No access grants yet. Add one below.' : 'No grants match the filters.'}
+                    {accessLoading ? (
+                      <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400 text-xs">Loading…</td></tr>
+                    ) : filteredEntries.length === 0 ? (
+                      <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400 text-xs">
+                        {(groupAccess?.entries ?? []).length === 0 ? 'No brands or sites found in this group.' : 'No results match the search.'}
                       </td></tr>
-                    ) : filteredGrants.map((g) => (
-                      <tr key={g.grant_id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2">
-                          <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${
-                            g.scope === 'group' ? 'bg-purple-50 text-purple-700' :
-                            g.scope === 'brand' ? 'bg-blue-50 text-blue-700' :
-                            'bg-gray-100 text-gray-600'
-                          }`}>
-                            {SCOPE_LABELS[g.scope]}
-                          </span>
-                          {g.scope === 'site' && g.is_default && (
-                            <span className="ml-1 text-xs text-brand-600 font-medium">★ Primary</span>
+                    ) : filteredEntries.map((entry) => (
+                      <tr key={`${entry.scope}-${entry.site_id ?? entry.brand_id}`}
+                        className={`hover:bg-gray-50 ${entry.scope === 'site' ? 'bg-white' : 'bg-gray-50/60'}`}>
+                        <td className="px-3 py-2 text-xs text-gray-700">
+                          {entry.scope === 'brand' ? (
+                            <span className="font-medium">{entry.brand_name}</span>
+                          ) : (
+                            <span className="text-gray-400 pl-3">↳ {entry.brand_name}</span>
                           )}
                         </td>
-                        <td className="px-3 py-2 text-gray-500 text-xs">{g.group_name ?? '—'}</td>
-                        <td className="px-3 py-2 text-gray-600 text-xs">{g.brand_name ?? '—'}</td>
-                        <td className="px-3 py-2 text-gray-700 text-xs">{g.site_name ?? '—'}</td>
+                        <td className="px-3 py-2 text-xs text-gray-700">
+                          {entry.site_name ?? <span className="text-gray-400 italic">All sites</span>}
+                        </td>
                         <td className="px-3 py-2">
                           <select
-                            value={g.access_profile_id}
-                            onChange={(e) => updateGrantProfileMutation.mutate({ grantId: g.grant_id, profileId: e.target.value })}
-                            className="px-2 py-1 border border-gray-200 rounded text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                            value={entry.access_profile_id ?? ''}
+                            onChange={(e) => handleAccessChange(entry, e.target.value)}
+                            className={`px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 ${
+                              entry.access_profile_id
+                                ? 'border-gray-200 text-gray-700'
+                                : 'border-gray-200 text-gray-400'
+                            }`}
                           >
-                            {profilesForEdit.map((p) => (
-                              <option key={p.id} value={p.id}>{p.name}</option>
+                            <option value="">No access</option>
+                            {editUserProfiles.map((p) => (
+                              <option key={p.id} value={p.id}>{p.name}{p.can_access_portal ? ' · Portal' : ''}</option>
                             ))}
-                            {/* Fallback in case loaded profiles don't include the current one */}
-                            {!profilesForEdit.find((p) => p.id === g.access_profile_id) && (
-                              <option value={g.access_profile_id}>{g.access_profile_name}</option>
-                            )}
                           </select>
                         </td>
                         <td className="px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            {g.scope === 'site' && !g.is_default && (
+                          {entry.scope === 'site' && entry.grant_id && (
+                            entry.is_default ? (
+                              <span className="text-xs text-brand-600 font-medium">★ Primary</span>
+                            ) : (
                               <button
-                                onClick={() => setDefaultMutation.mutate(g.grant_id)}
+                                onClick={() => setDefaultMutation.mutate(entry.grant_id!)}
                                 className="text-xs text-gray-400 hover:text-brand-600"
-                                title="Set as primary site"
                               >
                                 Set primary
                               </button>
-                            )}
-                            <button
-                              onClick={() => revokeGrantMutation.mutate(g.grant_id)}
-                              className="text-xs text-red-500 hover:underline"
-                            >
-                              Remove
-                            </button>
-                          </div>
+                            )
+                          )}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-
-              {/* Add grant form */}
-              <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
-                <p className="text-xs font-medium text-gray-600 mb-3">Add Access</p>
-                <form onSubmit={handleAddGrant} className="flex flex-wrap items-end gap-3">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-gray-500">Scope</label>
-                    <select
-                      value={addGrantScope}
-                      onChange={(e) => { setAddGrantScope(e.target.value as 'site' | 'brand' | 'group'); setAddGrantEntityId('') }}
-                      className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    >
-                      <option value="site">Site</option>
-                      <option value="brand">Brand</option>
-                      <option value="group">Group</option>
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-gray-500">
-                      {addGrantScope === 'site' ? 'Site' : addGrantScope === 'brand' ? 'Brand' : 'Group'}
-                    </label>
-                    <select
-                      value={addGrantEntityId}
-                      onChange={(e) => setAddGrantEntityId(e.target.value)}
-                      required
-                      className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 min-w-[140px]"
-                    >
-                      <option value="">— Select —</option>
-                      {entityOptions.map((e) => (
-                        <option key={e.id} value={e.id}>{e.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-gray-500">POS Access</label>
-                    <select
-                      value={addGrantProfileId}
-                      onChange={(e) => setAddGrantProfileId(e.target.value)}
-                      required
-                      className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    >
-                      <option value="">— Profile —</option>
-                      {editUserProfiles.map((p) => (
-                        <option key={p.id} value={p.id}>{p.name}{p.can_access_portal ? ' · Portal' : ''}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={addGrantMutation.isPending || !addGrantEntityId || !addGrantProfileId}
-                    className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-1.5 rounded-lg self-end"
-                  >
-                    {addGrantMutation.isPending ? 'Adding…' : 'Add'}
-                  </button>
-                </form>
-                {addGrantError && <p className="text-sm text-red-600 mt-2">{addGrantError}</p>}
-              </div>
             </section>
 
-            {/* ── Footer close ─────────────────────────────────────────────── */}
             <div className="flex justify-end pt-2">
-              <button
-                type="button"
-                onClick={() => setEditUser(null)}
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
-              >
+              <button type="button" onClick={() => setEditUser(null)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
                 Close
               </button>
             </div>
