@@ -122,6 +122,30 @@ class EnrichedGrantOut(BaseModel):
     is_active: bool
 
 
+class GroupScopeEntry(BaseModel):
+    """One brand or site row in the group-access overview, with current grant state."""
+
+    scope: str  # 'brand' or 'site'
+    brand_id: uuid.UUID
+    brand_name: str
+    site_id: uuid.UUID | None = None
+    site_name: str | None = None
+    # Null means no active grant (no access)
+    grant_id: uuid.UUID | None = None
+    access_profile_id: uuid.UUID | None = None
+    access_profile_name: str | None = None
+    can_access_portal: bool = False
+    is_default: bool = False
+
+
+class GroupAccessOut(BaseModel):
+    """All brands and sites in the user's group with their current access state."""
+
+    group_id: uuid.UUID
+    group_name: str
+    entries: list[GroupScopeEntry]
+
+
 async def _attach_sites(
     db: AsyncSession,
     users: list[POSUser],
@@ -415,6 +439,119 @@ async def list_user_grants(
         )
 
     return result
+
+
+@router.get("/{user_id}/group-access", response_model=GroupAccessOut)
+async def get_user_group_access(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    actor=Depends(get_current_portal_user),
+):
+    """
+    Return all brands and sites in the user's group with their current grant state.
+
+    Every POS user belongs to exactly one group (derived from their brand).
+    Each entry shows the current POS access profile, or null if no access is
+    granted yet — so the portal can render the full access matrix rather than
+    just the rows that already have grants.
+
+    Args:
+        user_id: UUID of the POS user.
+
+    Returns:
+        GroupAccessOut: Group info plus one entry per brand and per site.
+    """
+    user_r = await db.execute(select(POSUser).where(POSUser.id == user_id))
+    user = user_r.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Resolve group via the user's brand
+    brand_r = await db.execute(select(Brand).where(Brand.id == user.brand_id))
+    user_brand = brand_r.scalar_one_or_none()
+    if not user_brand:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User's brand not found")
+
+    group_r = await db.execute(select(Group).where(Group.id == user_brand.group_id))
+    group = group_r.scalar_one_or_none()
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+
+    # Fetch all brands in the group
+    brands_r = await db.execute(
+        select(Brand).where(Brand.group_id == group.id, Brand.is_active.is_(True)).order_by(Brand.name)
+    )
+    brands = list(brands_r.scalars().all())
+    brand_ids = [b.id for b in brands]
+
+    # Fetch all active sites across those brands
+    sites_r = await db.execute(
+        select(Site).where(Site.brand_id.in_(brand_ids), Site.is_active.is_(True)).order_by(Site.name)
+    )
+    sites = list(sites_r.scalars().all())
+
+    # Build site lookup: brand_id → [sites]
+    sites_by_brand: dict[uuid.UUID, list[Site]] = {}
+    for s in sites:
+        sites_by_brand.setdefault(s.brand_id, []).append(s)
+
+    # Fetch all active brand- and site-scope grants for this user
+    grants_r = await db.execute(
+        select(UserAccessGrant).where(
+            UserAccessGrant.user_id == user_id,
+            UserAccessGrant.scope.in_(["brand", "site"]),
+            UserAccessGrant.is_active.is_(True),
+        )
+    )
+    grants = list(grants_r.scalars().all())
+
+    # Build grant lookups
+    brand_grant: dict[uuid.UUID, UserAccessGrant] = {g.brand_id: g for g in grants if g.brand_id}
+    site_grant: dict[uuid.UUID, UserAccessGrant] = {g.site_id: g for g in grants if g.site_id}
+
+    # Batch-fetch profiles for all referenced grants
+    profile_ids = {g.access_profile_id for g in grants}
+    profile_info: dict[uuid.UUID, tuple[str, bool]] = {}
+    if profile_ids:
+        pr = await db.execute(
+            select(AccessProfile.id, AccessProfile.name, AccessProfile.can_access_portal)
+            .where(AccessProfile.id.in_(profile_ids))
+        )
+        for p_id, p_name, p_cap in pr:
+            profile_info[p_id] = (p_name, p_cap)
+
+    entries: list[GroupScopeEntry] = []
+    for b in brands:
+        bg = brand_grant.get(b.id)
+        p_name, p_cap = profile_info.get(bg.access_profile_id, (None, False)) if bg else (None, False)
+        entries.append(GroupScopeEntry(
+            scope="brand",
+            brand_id=b.id,
+            brand_name=b.name,
+            grant_id=bg.id if bg else None,
+            access_profile_id=bg.access_profile_id if bg else None,
+            access_profile_name=p_name,
+            can_access_portal=p_cap,
+            is_default=False,
+        ))
+
+        for s in sites_by_brand.get(b.id, []):
+            sg = site_grant.get(s.id)
+            sp_name, sp_cap = profile_info.get(sg.access_profile_id, (None, False)) if sg else (None, False)
+            entries.append(GroupScopeEntry(
+                scope="site",
+                brand_id=b.id,
+                brand_name=b.name,
+                site_id=s.id,
+                site_name=s.name,
+                grant_id=sg.id if sg else None,
+                access_profile_id=sg.access_profile_id if sg else None,
+                access_profile_name=sp_name,
+                can_access_portal=sp_cap,
+                is_default=sg.is_default if sg else False,
+            ))
+
+    return GroupAccessOut(group_id=group.id, group_name=group.name, entries=entries)
 
 
 @router.patch("/{user_id}", response_model=PosUserOut)
