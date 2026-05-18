@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants.audit_actions import USER_CREATED, USER_DEACTIVATED, USER_UPDATED
 from app.database import get_db
 from app.models.access_profile import AccessProfile
+from app.models.brand import Brand
+from app.models.group import Group
 from app.models.pos_user import POSUser
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
@@ -35,11 +37,13 @@ class SiteGrantSummary(BaseModel):
 
 
 class PosUserOut(BaseModel):
-    """POS user response schema — includes active site grants and portal access flag."""
+    """POS user response schema — includes active site grants, brand/group info, and portal access flag."""
 
     id: uuid.UUID
     ref: str
     brand_id: uuid.UUID
+    brand_name: str = ""
+    group_name: str = ""
     name: str
     email: str
     is_active: bool
@@ -88,6 +92,18 @@ async def _attach_sites(
         return []
 
     user_ids = [u.id for u in users]
+    brand_ids = list({u.brand_id for u in users})
+
+    # Brand and group names — batch query so the portal table can show them
+    brand_q = (
+        select(Brand.id, Brand.name, Group.name)
+        .join(Group, Brand.group_id == Group.id)
+        .where(Brand.id.in_(brand_ids))
+    )
+    brand_result = await db.execute(brand_q)
+    brand_info: dict[uuid.UUID, tuple[str, str]] = {
+        row[0]: (row[1], row[2]) for row in brand_result
+    }
 
     # Site grants — single joined query returning grant + site + profile info
     grants_q = (
@@ -131,6 +147,8 @@ async def _attach_sites(
             id=u.id,
             ref=u.ref,
             brand_id=u.brand_id,
+            brand_name=brand_info.get(u.brand_id, ("", ""))[0],
+            group_name=brand_info.get(u.brand_id, ("", ""))[1],
             name=u.name,
             email=u.email,
             is_active=u.is_active,
@@ -143,15 +161,17 @@ async def _attach_sites(
 
 @router.get("", response_model=list[PosUserOut])
 async def list_pos_users(
-    brand_id: str,
+    brand_id: str | None = None,
     site_id: str | None = None,
     skip: int = 0,
     limit: int = 200,
     db: AsyncSession = Depends(get_db),
     actor=Depends(get_current_portal_user),
 ):
-    """List POS users for a brand, optionally filtered to those with a site grant."""
-    q = select(POSUser).where(POSUser.brand_id == brand_id)
+    """List POS users, optionally filtered by brand. Portal admin only. Omit brand_id to see all users."""
+    q = select(POSUser)
+    if brand_id:
+        q = q.where(POSUser.brand_id == brand_id)
 
     if site_id:
         # Subquery: only users with an active site-scope grant for this site
