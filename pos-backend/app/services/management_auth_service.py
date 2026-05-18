@@ -63,28 +63,30 @@ async def _load_pos_user(db: AsyncSession, email: str) -> POSUser | None:
 
 async def _portal_capable_grants(
     db: AsyncSession, user_id: uuid.UUID
-) -> list[tuple[UserAccessGrant, AccessProfile]]:
+) -> list[UserAccessGrant]:
     """
-    Return all active grants for the user whose access profile allows portal login.
+    Return all active grants for the user that have a backend_role set.
+
+    Portal login is gated on backend_role (per-grant) rather than on the
+    POS access profile's can_access_portal flag, so a POS user can have
+    backend access at any scope independently of their POS role tier.
 
     Args:
         db: Active session.
         user_id: POS user UUID.
 
     Returns:
-        list of (grant, profile) tuples.
+        list[UserAccessGrant]: Grants with a non-null backend_role.
     """
     result = await db.execute(
-        select(UserAccessGrant, AccessProfile)
-        .join(AccessProfile, UserAccessGrant.access_profile_id == AccessProfile.id)
+        select(UserAccessGrant)
         .where(
             UserAccessGrant.user_id == user_id,
             UserAccessGrant.is_active == True,  # noqa: E712
-            AccessProfile.can_access_portal == True,  # noqa: E712
-            AccessProfile.is_active == True,  # noqa: E712
+            UserAccessGrant.backend_role.isnot(None),
         )
     )
-    return result.all()
+    return list(result.scalars().all())
 
 
 async def _scope_name(
@@ -255,7 +257,7 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
 
     # Single grant → issue token immediately
     if len(grant_rows) == 1:
-        grant, _ = grant_rows[0]
+        grant = grant_rows[0]
         access, refresh = _build_mgmt_token(pos_user, grant)
         await log_action(
             db=db,
@@ -277,9 +279,9 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
         )
 
     # Multiple grants — check for a default grant and auto-issue if found
-    default_grants = [(g, p) for g, p in grant_rows if g.is_default]
+    default_grants = [g for g in grant_rows if g.is_default]
     if default_grants:
-        grant, _ = default_grants[0]
+        grant = default_grants[0]
         access, refresh = _build_mgmt_token(pos_user, grant)
         await log_action(
             db=db,
@@ -306,14 +308,18 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
 
     # No default set → return list for manual scope selection (no token yet)
     summaries: list[GrantSummary] = []
-    for grant, profile in grant_rows:
+    for grant in grant_rows:
         name = await _scope_name(db, grant)
+        prof_r = await db.execute(
+            select(AccessProfile).where(AccessProfile.id == grant.access_profile_id)
+        )
+        profile = prof_r.scalar_one_or_none()
         summaries.append(
             GrantSummary(
                 grant_id=grant.id,
                 scope=grant.scope,
                 scope_name=name,
-                access_profile_name=profile.name,
+                access_profile_name=profile.name if profile else "",
             )
         )
 
@@ -375,17 +381,11 @@ async def issue_management_token(
             detail="Grant not found or inactive",
         )
 
-    profile_result = await db.execute(
-        select(AccessProfile).where(
-            AccessProfile.id == grant.access_profile_id,
-            AccessProfile.can_access_portal == True,  # noqa: E712
-            AccessProfile.is_active == True,  # noqa: E712
-        )
-    )
-    if profile_result.scalar_one_or_none() is None:
+    # Portal access is gated on backend_role, not can_access_portal
+    if not grant.backend_role:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This access profile does not permit portal login",
+            detail="This grant does not have backend access configured",
         )
 
     access, refresh = _build_mgmt_token(pos_user, grant)
@@ -476,7 +476,7 @@ async def refresh_management_token(
         )
 
     if len(grant_rows) == 1:
-        grant, _ = grant_rows[0]
+        grant = grant_rows[0]
         new_access, new_refresh = _build_mgmt_token(pos_user, grant)
         await log_action(
             db=db,
@@ -498,9 +498,9 @@ async def refresh_management_token(
         )
 
     # Multiple grants — honour the default grant if set
-    default_grants = [(g, p) for g, p in grant_rows if g.is_default]
+    default_grants = [g for g in grant_rows if g.is_default]
     if default_grants:
-        grant, _ = default_grants[0]
+        grant = default_grants[0]
         new_access, new_refresh = _build_mgmt_token(pos_user, grant)
         await log_action(
             db=db,
@@ -523,14 +523,18 @@ async def refresh_management_token(
 
     # No default — caller must re-select via management-token
     summaries: list[GrantSummary] = []
-    for grant, profile in grant_rows:
+    for grant in grant_rows:
         name = await _scope_name(db, grant)
+        prof_r = await db.execute(
+            select(AccessProfile).where(AccessProfile.id == grant.access_profile_id)
+        )
+        profile = prof_r.scalar_one_or_none()
         summaries.append(
             GrantSummary(
                 grant_id=grant.id,
                 scope=grant.scope,
                 scope_name=name,
-                access_profile_name=profile.name,
+                access_profile_name=profile.name if profile else "",
             )
         )
     return UnifiedLoginResponse(
