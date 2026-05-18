@@ -47,8 +47,9 @@ async function fetchSites(): Promise<Site[]> {
 }
 
 async function fetchPosUsers(brandId: string): Promise<PosUser[]> {
-  if (!brandId) return []
-  const { data } = await api.get('/pos-users', { params: { brand_id: brandId, limit: 200 } })
+  const params: Record<string, unknown> = { limit: 200 }
+  if (brandId) params.brand_id = brandId
+  const { data } = await api.get('/pos-users', { params })
   return data
 }
 
