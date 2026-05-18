@@ -576,6 +576,7 @@ async def test_portal_grant(
         access_profile_id=test_manager_profile.id,
         granted_by_id=None,
         is_active=True,
+        backend_role="admin",  # backend_role gates portal login
     )
     db.add(grant)
     await db.commit()
@@ -608,6 +609,7 @@ async def test_brand_grant(
         access_profile_id=test_manager_profile.id,
         granted_by_id=None,
         is_active=True,
+        backend_role="admin",  # backend_role gates portal login
     )
     db.add(grant)
     await db.commit()
