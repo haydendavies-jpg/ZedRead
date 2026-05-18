@@ -451,16 +451,21 @@ export function PosUsersPage() {
           <form onSubmit={handleGrant} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Site</label>
-              <select
-                value={grantSiteId}
-                onChange={(e) => setGrantSiteId(e.target.value)}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-              >
-                {brandSites.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+              {brandSites.length === 0 ? (
+                <p className="text-sm text-gray-500 py-2">No sites found for this brand. Create a site first.</p>
+              ) : (
+                <select
+                  value={grantSiteId}
+                  onChange={(e) => setGrantSiteId(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  <option value="">— Select a site —</option>
+                  {brandSites.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Access Profile</label>

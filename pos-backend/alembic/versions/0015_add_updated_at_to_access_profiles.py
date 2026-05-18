@@ -20,18 +20,20 @@ depends_on = None
 
 
 def upgrade() -> None:
-    """Add updated_at to access_profiles, back-filling existing rows with created_at."""
-    op.add_column(
-        "access_profiles",
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.func.now(),
-        ),
-    )
-    # Back-fill existing rows so updated_at matches created_at
-    op.execute(sa.text("UPDATE access_profiles SET updated_at = created_at"))
+    """Add updated_at to access_profiles if missing, back-filling existing rows.
+
+    Uses IF NOT EXISTS so the migration is safe on fresh databases where
+    migration 0005 already created the column, and on production databases
+    where 0005 predates the column addition.
+    """
+    op.execute(sa.text(
+        "ALTER TABLE access_profiles ADD COLUMN IF NOT EXISTS updated_at"
+        " TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()"
+    ))
+    # Back-fill any rows where updated_at > created_at (i.e. just got the NOW() default)
+    op.execute(sa.text(
+        "UPDATE access_profiles SET updated_at = created_at WHERE updated_at > created_at"
+    ))
 
 
 def downgrade() -> None:
