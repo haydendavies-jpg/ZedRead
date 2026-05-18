@@ -29,6 +29,10 @@ export function PortalUsersPage() {
   const [form, setForm] = useState({ email: '', name: '', password: '', role: 'admin' as string })
   const [formError, setFormError] = useState<string | null>(null)
 
+  const [editUser, setEditUser] = useState<PortalUser | null>(null)
+  const [editForm, setEditForm] = useState({ name: '', role: '' })
+  const [editError, setEditError] = useState<string | null>(null)
+
   const invalidate = () => qc.invalidateQueries({ queryKey: ['portal-users'] })
 
   const createMutation = useMutation({
@@ -57,6 +61,26 @@ export function PortalUsersPage() {
     mutationFn: (id: string) => api.post(`/portal-users/${id}/activate`),
     onSuccess: invalidate,
   })
+
+  const editMutation = useMutation({
+    mutationFn: ({ id, name, role }: { id: string; name: string; role: string }) =>
+      api.patch(`/portal-users/${id}`, { name, role }),
+    onSuccess: () => {
+      invalidate()
+      setEditUser(null)
+    },
+    onError: (e: unknown) => {
+      invalidate()
+      const msg = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
+      setEditError(msg ?? 'Failed to update user.')
+    },
+  })
+
+  const openEdit = (u: PortalUser) => {
+    setEditForm({ name: u.name, role: u.role })
+    setEditError(null)
+    setEditUser(u)
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -163,6 +187,7 @@ export function PortalUsersPage() {
                     <StatusBadge status={u.is_active ? 'active' : 'suspended'} />
                   </td>
                   <td className="px-4 py-3 flex gap-2">
+                    <button onClick={() => openEdit(u)} className="text-brand-600 hover:underline text-xs">Edit</button>
                     {u.id !== me?.id && (
                       u.is_active ? (
                         <button onClick={() => suspendMutation.mutate(u.id)} className="text-amber-600 hover:underline text-xs">Suspend</button>
@@ -181,6 +206,46 @@ export function PortalUsersPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {editUser && (
+        <Modal title={`Edit — ${editUser.name}`} onClose={() => setEditUser(null)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              editMutation.mutate({ id: editUser.id, name: editForm.name, role: editForm.role })
+            }}
+            className="space-y-4"
+          >
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <input
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                required
+                autoFocus
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+              <select
+                value={editForm.role}
+                onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              >
+                {ROLES.map((r) => (
+                  <option key={r} value={r}>{r.replace('_', ' ')}</option>
+                ))}
+              </select>
+            </div>
+            {editError && <p className="text-sm text-red-600">{editError}</p>}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setEditUser(null)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+              <button type="submit" disabled={editMutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">Save</button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {showCreate && (

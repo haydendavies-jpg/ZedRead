@@ -152,6 +152,41 @@ async def revoke_grant(
     )
 
 
+@router.post("/{grant_id}/set-default", response_model=AccessGrantResponse, status_code=status.HTTP_200_OK)
+async def set_default_grant(
+    grant_id: uuid.UUID,
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> AccessGrantResponse:
+    """
+    Set a site-scope grant as the user's primary/default login entry point.
+
+    Clears is_default on all other active site-scope grants for the same user.
+    On next login, if the user has multiple portal-capable grants, the default
+    grant is selected automatically without showing the scope-selection screen.
+
+    Args:
+        grant_id: UUID of the site-scope grant to make default.
+        access: Resolved catalog access.
+        db: Active database session.
+
+    Returns:
+        AccessGrantResponse: The updated grant with is_default=True.
+    """
+    if access.pos_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Grant management requires a management or portal JWT",
+        )
+    grant = await access_grant_service.set_default_grant(
+        db,
+        grant_id=grant_id,
+        management_access=access.mgmt_access,
+        portal_user=access.portal_access,
+    )
+    return AccessGrantResponse.model_validate(grant)
+
+
 # ── Access profiles listing (for portal admin UI) ─────────────────────────────
 
 from app.models.access_profile import AccessProfile as AccessProfileModel

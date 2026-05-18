@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
     ACCESS_GRANT_CREATED,
+    ACCESS_GRANT_DEFAULT_SET,
     ACCESS_GRANT_REVOKED,
     ACCESS_PROFILE_PORTAL_UPDATED,
 )
@@ -291,6 +292,21 @@ async def create_grant(
 
     granted_by = actor.id if isinstance(actor, POSUser) else None
 
+    # Auto-set is_default=True when this is the user's first active site-scope grant.
+    # Subsequent site grants are non-default; admins can change the default via set_default_grant.
+    is_default = False
+    if payload.scope == GrantScope.SITE:
+        existing_site_r = await db.execute(
+            select(UserAccessGrant).where(
+                UserAccessGrant.user_id == payload.user_id,
+                UserAccessGrant.scope == GrantScope.SITE,
+                UserAccessGrant.is_active.is_(True),
+                UserAccessGrant.is_default.is_(True),
+            ).limit(1)
+        )
+        if existing_site_r.scalar_one_or_none() is None:
+            is_default = True
+
     grant = UserAccessGrant(
         id=uuid.uuid4(),
         user_id=payload.user_id,
@@ -301,6 +317,7 @@ async def create_grant(
         access_profile_id=payload.access_profile_id,
         granted_by_id=granted_by,
         is_active=True,
+        is_default=is_default,
     )
     db.add(grant)
 
@@ -601,3 +618,78 @@ async def revoke_grant(
     await db.commit()
 
     log.info("access_grant.revoked", grant_id=str(grant.id))
+
+
+async def set_default_grant(
+    db: AsyncSession,
+    grant_id: uuid.UUID,
+    management_access: ManagementAccess | None,
+    portal_user: PortalUser | None,
+) -> UserAccessGrant:
+    """
+    Set a site-scope grant as the user's default (primary) login entry point.
+
+    Clears is_default on all other active site-scope grants for the same user
+    before setting is_default=True on the target grant. This ensures exactly
+    one default at all times.
+
+    Args:
+        db: Active session.
+        grant_id: Grant to make the default.
+        management_access: Set for management JWT callers.
+        portal_user: Set for portal admin callers.
+
+    Returns:
+        UserAccessGrant: The updated grant with is_default=True.
+
+    Raises:
+        HTTPException: 404 if grant not found or out of scope.
+        HTTPException: 400 if the grant is not a site-scope grant.
+    """
+    grant = await _load_grant_with_authority(db, grant_id, management_access, portal_user)
+
+    if grant.scope != GrantScope.SITE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only site-scope grants can be set as default",
+        )
+    if not grant.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot set a revoked grant as default",
+        )
+
+    actor = management_access.user if management_access else portal_user
+    assert actor is not None
+
+    # Clear is_default on all other site-scope grants for this user
+    other_defaults_r = await db.execute(
+        select(UserAccessGrant).where(
+            UserAccessGrant.user_id == grant.user_id,
+            UserAccessGrant.scope == GrantScope.SITE,
+            UserAccessGrant.is_active.is_(True),
+            UserAccessGrant.is_default.is_(True),
+            UserAccessGrant.id != grant_id,
+        )
+    )
+    for other in other_defaults_r.scalars().all():
+        other.is_default = False
+
+    grant.is_default = True
+
+    await log_action(
+        db=db,
+        action=ACCESS_GRANT_DEFAULT_SET,
+        entity_type="user_access_grant",
+        entity_id=str(grant.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        after_state={"user_id": str(grant.user_id), "site_id": str(grant.site_id)},
+    )
+    await db.commit()
+    await db.refresh(grant)
+
+    log.info("access_grant.default_set", grant_id=str(grant.id), user_id=str(grant.user_id))
+    return grant

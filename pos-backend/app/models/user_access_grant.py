@@ -97,6 +97,13 @@ class UserAccessGrant(Base):
         default=True,
         comment="False when the grant has been revoked",
     )
+    is_default: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="True for the user's primary/default site grant; auto-set on first grant creation",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -18,6 +18,7 @@ class AccessGrantResponse(BaseModel):
     access_profile_id: uuid.UUID
     granted_by_id: uuid.UUID | None
     is_active: bool
+    is_default: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
