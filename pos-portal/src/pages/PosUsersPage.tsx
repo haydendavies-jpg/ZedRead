@@ -82,7 +82,6 @@ export function PosUsersPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [siteFilter, setSiteFilter] = useState('')
-  const [portalFilter, setPortalFilter] = useState('')
 
   // ── Create user state ─────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false)
@@ -201,12 +200,10 @@ export function PosUsersPage() {
     if (statusFilter === 'active' && !u.is_active) return false
     if (statusFilter === 'inactive' && u.is_active) return false
     if (siteFilter && !u.site_grants.some((g) => g.site_name === siteFilter)) return false
-    if (portalFilter === 'yes' && !u.has_portal_access) return false
-    if (portalFilter === 'no' && u.has_portal_access) return false
     return true
   })
 
-  const hasFilters = search || statusFilter || siteFilter || portalFilter
+  const hasFilters = search || statusFilter || siteFilter
 
   return (
     <div className="p-4 sm:p-6">
@@ -224,7 +221,7 @@ export function PosUsersPage() {
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <select
           value={brandId}
-          onChange={(e) => { setSelectedBrandId(e.target.value); setSearch(''); setStatusFilter(''); setSiteFilter(''); setPortalFilter('') }}
+          onChange={(e) => { setSelectedBrandId(e.target.value); setSearch(''); setStatusFilter(''); setSiteFilter('') }}
           className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
         >
           {brands.map((b) => (
@@ -257,18 +254,9 @@ export function PosUsersPage() {
             <option key={s.id} value={s.name}>{s.name}</option>
           ))}
         </select>
-        <select
-          value={portalFilter}
-          onChange={(e) => setPortalFilter(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-        >
-          <option value="">Any portal access</option>
-          <option value="yes">Portal access</option>
-          <option value="no">No portal access</option>
-        </select>
         {hasFilters && (
           <button
-            onClick={() => { setSearch(''); setStatusFilter(''); setSiteFilter(''); setPortalFilter('') }}
+            onClick={() => { setSearch(''); setStatusFilter(''); setSiteFilter('') }}
             className="text-xs text-gray-400 hover:text-gray-600"
           >
             Clear filters
@@ -469,13 +457,18 @@ export function PosUsersPage() {
       )}
 
       {/* ── Assign site modal ─────────────────────────────────────────────── */}
-      {grantUser && (
+      {grantUser && (() => {
+        const assignedSiteIds = new Set(grantUser.site_grants.map((g) => g.site_id))
+        const availableSites = brandSites.filter((s) => !assignedSiteIds.has(s.id))
+        return (
         <Modal title={`Assign Site — ${grantUser.name}`} onClose={() => setGrantUser(null)}>
           <form onSubmit={handleGrant} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Site</label>
               {brandSites.length === 0 ? (
                 <p className="text-sm text-gray-500 py-2">No sites found for this brand. Create a site first.</p>
+              ) : availableSites.length === 0 ? (
+                <p className="text-sm text-gray-500 py-2">This user already has access to all sites in this brand.</p>
               ) : (
                 <select
                   value={grantSiteId}
@@ -484,7 +477,7 @@ export function PosUsersPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
                   <option value="">— Select a site —</option>
-                  {brandSites.map((s) => (
+                  {availableSites.map((s) => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>
@@ -513,7 +506,7 @@ export function PosUsersPage() {
               </button>
               <button
                 type="submit"
-                disabled={grantMutation.isPending || !grantSiteId || !grantProfileId}
+                disabled={grantMutation.isPending || !grantSiteId || !grantProfileId || availableSites.length === 0}
                 className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
               >
                 {grantMutation.isPending ? 'Assigning…' : 'Assign'}
@@ -521,7 +514,8 @@ export function PosUsersPage() {
             </div>
           </form>
         </Modal>
-      )}
+        )
+      })()}
     </div>
   )
 }
