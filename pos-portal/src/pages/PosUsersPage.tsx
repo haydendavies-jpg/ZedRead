@@ -131,6 +131,14 @@ export function PosUsersPage() {
     enabled: !!selectedBrandId,
   })
 
+  // Profiles for the edit modal — keyed to the specific user's brand so they
+  // always load even when the page-level brand filter is set to "Any".
+  const { data: editUserProfiles = [] } = useQuery({
+    queryKey: ['access-profiles', editUser?.brand_id],
+    queryFn: () => fetchProfiles(editUser!.brand_id),
+    enabled: !!editUser,
+  })
+
   const brandSites = selectedBrandId ? sites.filter((s) => s.brand_id === selectedBrandId) : sites
 
   // ── Page-level filters ────────────────────────────────────────────────────
@@ -371,8 +379,9 @@ export function PosUsersPage() {
     addGrantScope === 'brand' ? availableBrands :
     availableGroups
 
-  // Profiles for grant profile-change inline selects — use the brand's profiles
-  const profilesForEdit = profiles
+  // profilesForEdit is used inside the edit modal — always sourced from the
+  // edit user's own brand, regardless of the page-level brand filter.
+  const profilesForEdit = editUserProfiles
 
   return (
     <div className="p-4 sm:p-6">
@@ -864,7 +873,7 @@ export function PosUsersPage() {
                       className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                     >
                       <option value="">— Profile —</option>
-                      {profiles.map((p) => (
+                      {editUserProfiles.map((p) => (
                         <option key={p.id} value={p.id}>{p.name}{p.can_access_portal ? ' · Portal' : ''}</option>
                       ))}
                     </select>
