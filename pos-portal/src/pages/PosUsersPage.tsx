@@ -21,6 +21,8 @@ interface PosUser {
   id: string
   ref: string
   brand_id: string
+  brand_name: string
+  group_name: string
   name: string
   email: string
   is_active: boolean
@@ -63,21 +65,19 @@ export function PosUsersPage() {
   const { data: sites = [] } = useQuery({ queryKey: ['sites'], queryFn: fetchSites })
 
   const [selectedBrandId, setSelectedBrandId] = useState('')
-  const brandId = selectedBrandId || brands[0]?.id || ''
 
   const { data: users = [], isLoading } = useQuery({
-    queryKey: ['pos-users', brandId],
-    queryFn: () => fetchPosUsers(brandId),
-    enabled: !!brandId,
+    queryKey: ['pos-users', selectedBrandId],
+    queryFn: () => fetchPosUsers(selectedBrandId),
   })
 
   const { data: profiles = [] } = useQuery({
-    queryKey: ['access-profiles', brandId],
-    queryFn: () => fetchProfiles(brandId),
-    enabled: !!brandId,
+    queryKey: ['access-profiles', selectedBrandId],
+    queryFn: () => fetchProfiles(selectedBrandId),
+    enabled: !!selectedBrandId,
   })
 
-  const brandSites = sites.filter((s) => s.brand_id === brandId)
+  const brandSites = selectedBrandId ? sites.filter((s) => s.brand_id === selectedBrandId) : sites
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -103,7 +103,7 @@ export function PosUsersPage() {
   const [grantProfileId, setGrantProfileId] = useState('')
   const [grantError, setGrantError] = useState<string | null>(null)
 
-  const invalidateUsers = () => qc.invalidateQueries({ queryKey: ['pos-users', brandId] })
+  const invalidateUsers = () => qc.invalidateQueries({ queryKey: ['pos-users', selectedBrandId] })
 
   const createMutation = useMutation({
     mutationFn: (body: { brand_id: string; name: string; email: string; password: string }) =>
@@ -112,6 +112,7 @@ export function PosUsersPage() {
       invalidateUsers()
       setShowCreate(false)
       setName(''); setEmail(''); setPassword('')
+      setCreateError(null)
     },
     onError: (e: any) => {
       invalidateUsers()
@@ -176,7 +177,7 @@ export function PosUsersPage() {
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault()
     setCreateError(null)
-    createMutation.mutate({ brand_id: brandId, name, email, password })
+    createMutation.mutate({ brand_id: selectedBrandId, name, email, password })
   }
 
   const handleEdit = (e: React.FormEvent) => {
@@ -214,7 +215,8 @@ export function PosUsersPage() {
         <h1 className="text-xl font-semibold text-gray-900">POS Users</h1>
         <button
           onClick={openCreate}
-          disabled={!brandId}
+          disabled={!selectedBrandId}
+          title={!selectedBrandId ? 'Select a brand first' : undefined}
           className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
         >
           + New User
@@ -222,50 +224,66 @@ export function PosUsersPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        <select
-          value={brandId}
-          onChange={(e) => { setSelectedBrandId(e.target.value); setSearch(''); setStatusFilter(''); setSiteFilter(''); setPortalFilter('') }}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-        >
-          {brands.map((b) => (
-            <option key={b.id} value={b.id}>{b.name}</option>
-          ))}
-        </select>
-        <input
-          type="text"
-          placeholder="Search name or email…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-48"
-        />
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-        >
-          <option value="">Any status</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-        </select>
-        <select
-          value={siteFilter}
-          onChange={(e) => setSiteFilter(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-        >
-          <option value="">Any site</option>
-          {brandSites.map((s) => (
-            <option key={s.id} value={s.name}>{s.name}</option>
-          ))}
-        </select>
-        <select
-          value={portalFilter}
-          onChange={(e) => setPortalFilter(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-        >
-          <option value="">Any portal access</option>
-          <option value="yes">Portal access</option>
-          <option value="no">No portal access</option>
-        </select>
+        <label className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
+          Brand
+          <select
+            value={selectedBrandId}
+            onChange={(e) => { setSelectedBrandId(e.target.value); setSearch(''); setStatusFilter(''); setSiteFilter(''); setPortalFilter('') }}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-900 font-normal focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="">Any</option>
+            {brands.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
+          Search
+          <input
+            type="text"
+            placeholder="Name or email…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-normal focus:outline-none focus:ring-2 focus:ring-brand-500 w-40"
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
+          Status
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-900 font-normal focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="">Any</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
+          Site
+          <select
+            value={siteFilter}
+            onChange={(e) => setSiteFilter(e.target.value)}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-900 font-normal focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="">Any</option>
+            {brandSites.map((s) => (
+              <option key={s.id} value={s.name}>{s.name}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
+          Portal
+          <select
+            value={portalFilter}
+            onChange={(e) => setPortalFilter(e.target.value)}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-900 font-normal focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="">Any</option>
+            <option value="yes">Has access</option>
+            <option value="no">No access</option>
+          </select>
+        </label>
         {hasFilters && (
           <button
             onClick={() => { setSearch(''); setStatusFilter(''); setSiteFilter(''); setPortalFilter('') }}
@@ -283,10 +301,12 @@ export function PosUsersPage() {
         <div className="text-gray-400 text-sm">Loading…</div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200">
-          <table className="w-full text-sm min-w-[720px]">
+          <table className="w-full text-sm min-w-[900px]">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
                 <th className="px-4 py-3">ID</th>
+                <th className="px-4 py-3">Group</th>
+                <th className="px-4 py-3">Brand</th>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Email</th>
                 <th className="px-4 py-3">Sites</th>
@@ -299,6 +319,8 @@ export function PosUsersPage() {
               {filtered.map((u) => (
                 <tr key={u.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3"><EntityIdChip id={u.id} ref={u.ref} /></td>
+                  <td className="px-4 py-3 text-gray-500">{u.group_name || <span className="text-gray-300">—</span>}</td>
+                  <td className="px-4 py-3 text-gray-700">{u.brand_name || <span className="text-gray-300">—</span>}</td>
                   <td className="px-4 py-3 font-medium text-gray-900">{u.name}</td>
                   <td className="px-4 py-3 text-gray-500">{u.email}</td>
                   <td className="px-4 py-3">
@@ -361,7 +383,7 @@ export function PosUsersPage() {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                  <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
                     {users.length === 0 ? 'No POS users yet. Create one above.' : 'No users match the current filters.'}
                   </td>
                 </tr>
@@ -469,13 +491,18 @@ export function PosUsersPage() {
       )}
 
       {/* ── Assign site modal ─────────────────────────────────────────────── */}
-      {grantUser && (
+      {grantUser && (() => {
+        const assignedSiteIds = new Set(grantUser.site_grants.map((g) => g.site_id))
+        const availableSites = brandSites.filter((s) => !assignedSiteIds.has(s.id))
+        return (
         <Modal title={`Assign Site — ${grantUser.name}`} onClose={() => setGrantUser(null)}>
           <form onSubmit={handleGrant} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Site</label>
               {brandSites.length === 0 ? (
                 <p className="text-sm text-gray-500 py-2">No sites found for this brand. Create a site first.</p>
+              ) : availableSites.length === 0 ? (
+                <p className="text-sm text-gray-500 py-2">This user already has access to all sites in this brand.</p>
               ) : (
                 <select
                   value={grantSiteId}
@@ -484,7 +511,7 @@ export function PosUsersPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
                   <option value="">— Select a site —</option>
-                  {brandSites.map((s) => (
+                  {availableSites.map((s) => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>
@@ -513,7 +540,7 @@ export function PosUsersPage() {
               </button>
               <button
                 type="submit"
-                disabled={grantMutation.isPending || !grantSiteId || !grantProfileId}
+                disabled={grantMutation.isPending || !grantSiteId || !grantProfileId || availableSites.length === 0}
                 className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
               >
                 {grantMutation.isPending ? 'Assigning…' : 'Assign'}
@@ -521,7 +548,8 @@ export function PosUsersPage() {
             </div>
           </form>
         </Modal>
-      )}
+        )
+      })()}
     </div>
   )
 }
