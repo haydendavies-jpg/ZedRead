@@ -435,18 +435,11 @@ async def resolve_management_access(
             detail="Access grant not found, revoked, or does not belong to this user",
         )
 
-    # Validate the access profile still has portal access
-    profile_result = await db.execute(
-        select(AccessProfile).where(
-            AccessProfile.id == grant.access_profile_id,
-            AccessProfile.is_active == True,  # noqa: E712
-        )
-    )
-    access_profile = profile_result.scalar_one_or_none()
-    if access_profile is None or not access_profile.can_access_portal:
+    # Portal access is gated on backend_role per grant, not access profile flag
+    if not grant.backend_role:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access profile does not permit portal login",
+            detail="This grant does not have backend access configured",
         )
 
     # Resolve scope entities
@@ -551,16 +544,9 @@ async def resolve_catalog_access(
         if not grant:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Grant revoked")
 
-        prof_r = await db.execute(
-            select(AccessProfile).where(
-                AccessProfile.id == grant.access_profile_id,
-                AccessProfile.can_access_portal == True,  # noqa: E712
-                AccessProfile.is_active == True,  # noqa: E712
-            )
-        )
-        access_profile = prof_r.scalar_one_or_none()
-        if not access_profile:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Profile lacks portal access")
+        # Portal access is gated on backend_role per grant, not access profile flag
+        if not grant.backend_role:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Grant does not have backend access configured")
 
         resolved_site: Site | None = None
         resolved_brand: Brand | None = None
