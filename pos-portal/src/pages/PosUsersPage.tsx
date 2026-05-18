@@ -131,14 +131,6 @@ export function PosUsersPage() {
     enabled: !!selectedBrandId,
   })
 
-  // Profiles for the edit modal — keyed to the specific user's brand so they
-  // always load even when the page-level brand filter is set to "Any".
-  const { data: editUserProfiles = [] } = useQuery({
-    queryKey: ['access-profiles', editUser?.brand_id],
-    queryFn: () => fetchProfiles(editUser!.brand_id),
-    enabled: !!editUser,
-  })
-
   const brandSites = selectedBrandId ? sites.filter((s) => s.brand_id === selectedBrandId) : sites
 
   // ── Page-level filters ────────────────────────────────────────────────────
@@ -180,6 +172,14 @@ export function PosUsersPage() {
   const { data: editGrants = [], isLoading: grantsLoading } = useQuery({
     queryKey: ['user-grants', editUser?.id],
     queryFn: () => fetchUserGrants(editUser!.id),
+    enabled: !!editUser,
+  })
+
+  // Profiles for the edit modal — keyed to the specific user's brand so they
+  // always load even when the page-level brand filter is set to "Any".
+  const { data: editUserProfiles = [] } = useQuery({
+    queryKey: ['access-profiles', editUser?.brand_id],
+    queryFn: () => fetchProfiles(editUser!.brand_id),
     enabled: !!editUser,
   })
 
