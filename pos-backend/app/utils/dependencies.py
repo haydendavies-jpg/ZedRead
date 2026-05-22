@@ -435,7 +435,14 @@ async def resolve_management_access(
             detail="Access grant not found, revoked, or does not belong to this user",
         )
 
-    # Validate the access profile still has portal access
+    # Portal access is gated on backend_role per grant, not access profile flag
+    if not grant.backend_role:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This grant does not have backend access configured",
+        )
+
+    # Still load the profile — needed to populate ManagementAccess.access_profile
     profile_result = await db.execute(
         select(AccessProfile).where(
             AccessProfile.id == grant.access_profile_id,
@@ -443,10 +450,10 @@ async def resolve_management_access(
         )
     )
     access_profile = profile_result.scalar_one_or_none()
-    if access_profile is None or not access_profile.can_access_portal:
+    if access_profile is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access profile does not permit portal login",
+            detail="Access profile not found or inactive",
         )
 
     # Resolve scope entities
@@ -551,16 +558,20 @@ async def resolve_catalog_access(
         if not grant:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Grant revoked")
 
+        # Portal access is gated on backend_role per grant, not access profile flag
+        if not grant.backend_role:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Grant does not have backend access configured")
+
+        # Load profile — required to populate ManagementAccess.access_profile
         prof_r = await db.execute(
             select(AccessProfile).where(
                 AccessProfile.id == grant.access_profile_id,
-                AccessProfile.can_access_portal == True,  # noqa: E712
                 AccessProfile.is_active == True,  # noqa: E712
             )
         )
         access_profile = prof_r.scalar_one_or_none()
         if not access_profile:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Profile lacks portal access")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access profile not found or inactive")
 
         resolved_site: Site | None = None
         resolved_brand: Brand | None = None
