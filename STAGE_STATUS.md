@@ -93,7 +93,7 @@ Last updated: 2026-05-22
 - [x] API deployed to Railway with `Dockerfile`
 - [x] `alembic upgrade head` runs on container startup
 - [x] PostgreSQL on Supabase (production)
-- [x] Portal deployed to Railway <!-- TODO: verify — README says Vercel but pos-portal/railway.toml exists -->
+- [x] Portal deployed to Railway
 - [x] structlog → Grafana Cloud Loki connected
 - [x] `railway.toml` configured
 

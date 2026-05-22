@@ -8,40 +8,42 @@ Multi-tenant POS platform. The hierarchy is **Group → Brand → Site**. A Grou
 
 ## Tech stack
 
-| Layer | Technology |
-|---|---|
-| Backend API | Python 3.12, FastAPI, SQLAlchemy (async), Alembic |
-| Database | PostgreSQL (Supabase in production) |
-| Task queue | Celery + Redis |
-| Portal frontend | React, TypeScript, Vite, Tailwind, React Router |
-| Android POS app | Kotlin, Jetpack Compose, Retrofit, Hilt, Room |
-| Logging | structlog → Grafana Cloud Loki |
-| Hosting | Railway (API), Vercel (portal), Supabase (DB) |
+| Layer | Technology | Hosting |
+|---|---|---|
+| Backend API | Python 3.12, FastAPI, SQLAlchemy (async), Alembic | Railway |
+| Database | PostgreSQL 16 | Supabase |
+| File storage | Product photos | Supabase Storage |
+| Task queue | Celery + Redis | Railway |
+| Portal frontend | React 19, TypeScript, Vite, Tailwind CSS 4, TanStack Query | Railway |
+| Android POS app | Kotlin, Jetpack Compose, Retrofit, Hilt, Room | — |
+| Logging | structlog → Grafana Cloud Loki | — |
+
+> If any of these change, update this table **and** `ARCHITECTURE.md`.
 
 ## Build phases
 
-| Phase | Stages | Deliverable |
-|---|---|---|
-| 1 — Foundation & Portal | 1–6 | Super admin portal, hierarchy management, license management. Live at Stage 6. |
-| 2 — POS Catalog | 7–9 | POS auth, product catalog, variants, modifiers, combos. |
-| 3 — Transactions | 10–12 | Invoice engine, payments, reporting. Full backend live at Stage 12. |
-| 4 — Android App | 13–14 | Complete POS Android application. |
+| Phase | Stages | Deliverable | Status |
+|---|---|---|---|
+| 1 — Foundation & Portal | 1–6 | Super admin portal, hierarchy management, license management | ✅ Complete |
+| 2 — POS Catalog | 7–9 | POS auth, product catalog, variants, modifiers, combos | ✅ Complete |
+| 3 — Transactions | 10–12 | Invoice engine, payments, reporting | ✅ Complete |
+| 4 — Android App | 13–14 | Complete POS Android application | 🚧 In Progress |
 
 ## Stage summary
 
 | # | Stage | What exists after |
 |---|---|---|
-| 1 | Project Setup + Logging | Folder structure, Docker, test harness, structlog, audit_logs table, log_action() helper |
+| 1 | Project Setup + Logging | Folder structure, Docker, test harness, structlog, `audit_logs` table, `log_action()` helper |
 | 2 | Portal Auth | Portal login, JWT, bootstrap CLI, auth audit logs |
 | 3 | Hierarchy CRUD API | Groups, brands, sites API with reseller filtering and audit logging |
-| 4 | License Management | Licenses, invoices, device registration, nightly expiry job |
+| 4 | License Management | Licenses, invoices, device registration, nightly expiry Celery job |
 | 5 | Portal Frontend | Working React portal for all CRUD and license management |
-| 6 | Deploy Phase 1 | **Portal live.** API on Railway, DB on Supabase, logs in Grafana Cloud |
+| 6 | Deploy Phase 1 | **Portal live.** API + portal on Railway, DB on Supabase, logs in Grafana Cloud |
 | 7 | POS Auth & Users | POS login, PIN, invite flow, access profiles, permission enforcement |
-| 8 | Product Catalog | Products, categories, tax config, site overrides, photo upload |
+| 8 | Product Catalog | Products, categories, tax config, site overrides, photo upload to Supabase Storage |
 | 9 | Variants, Modifiers, Combos | Advanced product features with circular reference protection |
 | 10 | Invoice Engine | Sales, payments, void, refund, split payments — all audit logged |
-| 11 | Reporting | 8 reporting views, scope-enforced API routes |
+| 11 | Reporting | 8 PostgreSQL reporting views, scope-enforced API routes |
 | 12 | Deploy Phase 2 | **Full backend live.** All routes available and tested |
 | 13 | Android — Auth & Catalog | Login, PIN, site selector, product grid, cart |
 | 14 | Android — Payments & Printing | Payments, docket printing, switch user, inline auth |
@@ -57,6 +59,7 @@ Multi-tenant POS platform. The hierarchy is **Group → Brand → Site**. A Grou
 docker compose up
 
 # Run database migrations
+cd pos-backend
 alembic upgrade head
 
 # Bootstrap the first super admin
@@ -67,7 +70,26 @@ pytest
 
 # Start the API
 uvicorn app.main:app --reload
+
+# Start the portal
+cd pos-portal
+npm install
+npm run dev
 ```
+
+## Documentation
+
+| File | What it covers |
+|---|---|
+| `ARCHITECTURE.md` | System overview, tech stack, tenant hierarchy, auth flows, deployment topology |
+| `DATA_MODEL.md` | All database tables, relationships, and design reasoning |
+| `DECISIONS.md` | Architecture Decision Records — key choices and why |
+| `STAGE_STATUS.md` | Per-stage build checklist — what is done, in progress, and upcoming |
+| `ROADMAP.md` | Phase breakdown and post-Phase 4 backlog |
+| `CLAUDE.md` | Project rules (absolute — all contributors must read) |
+| `pos-backend/app/CLAUDE.md` | Backend code style and FastAPI patterns |
+| `tests/CLAUDE.md` | Testing rules |
+| `pos-portal/CLAUDE.md` | React style, components, and brand |
 
 ## Design document
 
@@ -79,4 +101,4 @@ All features are specified in **pos_master_v5.docx**. Reference the relevant cha
 - Monetary values stored as integers in cents — never float
 - Every write operation calls `log_action()` in the same transaction
 - Every completed task must have tests
-- See `CLAUDE.md` for full project rules
+- See `CLAUDE.md` for the full list of absolute rules

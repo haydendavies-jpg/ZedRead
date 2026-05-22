@@ -2,6 +2,8 @@
 
 ADRs capture significant choices made during the design and build of this system. They are numbered in the rough order decisions were made. "Superseded" ADRs are kept for historical context.
 
+> **Keep README.md in sync.** When a decision changes the tech stack, hosting, or build tooling, update `README.md` and `ARCHITECTURE.md` in the same commit as the ADR.
+
 ---
 
 ## ADR-001 — Store all monetary values as integer cents (BIGINT)

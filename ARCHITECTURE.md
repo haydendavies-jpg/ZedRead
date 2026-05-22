@@ -1,5 +1,7 @@
 # ZedRead POS — Architecture Overview
 
+> **Keep README.md in sync.** When the tech stack, hosting, or deployment topology changes, update the tech stack table in `README.md` at the same time as this file.
+
 ## System Summary
 
 ZedRead is a multi-tenant Point-of-Sale platform composed of three independent tiers that communicate exclusively through the REST API:
@@ -7,7 +9,7 @@ ZedRead is a multi-tenant Point-of-Sale platform composed of three independent t
 | Tier | Technology | Hosting |
 |------|-----------|---------|
 | **Backend API** | Python 3.12 · FastAPI · SQLAlchemy (async) · PostgreSQL 16 | Railway |
-| **Super-Admin Portal** | React 19 · TypeScript · Vite · Tailwind CSS 4 · TanStack Query | Railway <!-- TODO: verify — README says Vercel but pos-portal/railway.toml exists --> |
+| **Super-Admin Portal** | React 19 · TypeScript · Vite · Tailwind CSS 4 · TanStack Query | Railway |
 | **Android POS App** | Kotlin · Jetpack Compose · Hilt · Retrofit · Room | Sideloaded APK / Play Store |
 
 Supporting infrastructure: Supabase (PostgreSQL managed + Storage), Celery + Redis (background jobs), Grafana Cloud Loki (structured log aggregation).
@@ -239,7 +241,7 @@ Git push → GitHub
   │     ├─ FastAPI (uvicorn, Dockerfile)
   │     │    └─ alembic upgrade head on startup
   │     └─ Celery worker (same image, different CMD)
-  └─► Railway (auto-deploy) <!-- TODO: verify — README says Vercel but pos-portal/railway.toml exists -->
+  └─► Railway (auto-deploy)
         └─ React SPA (pos-portal/)
 
 Supabase (external)
