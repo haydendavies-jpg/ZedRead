@@ -48,7 +48,7 @@ gantt
 | 3 | Hierarchy CRUD API | Groups/brands/sites with audit logging |
 | 4 | License management | Licenses, device registration, Celery nightly expiry |
 | 5 | React portal | All management pages, mobile-responsive |
-| **6** | **Deploy Phase 1** | **Portal live on Railway + Vercel** |
+| **6** | **Deploy Phase 1** | **Portal live on Railway** <!-- TODO: verify hosting — README says Vercel but pos-portal/railway.toml exists --> |
 
 **Exit criteria:** A super admin can log in, create a Group → Brand → Site tree, assign a license, and view the portal on a mobile device.
 

@@ -7,7 +7,7 @@ ZedRead is a multi-tenant Point-of-Sale platform composed of three independent t
 | Tier | Technology | Hosting |
 |------|-----------|---------|
 | **Backend API** | Python 3.12 · FastAPI · SQLAlchemy (async) · PostgreSQL 16 | Railway |
-| **Super-Admin Portal** | React 19 · TypeScript · Vite · Tailwind CSS 4 · TanStack Query | Vercel |
+| **Super-Admin Portal** | React 19 · TypeScript · Vite · Tailwind CSS 4 · TanStack Query | Railway <!-- TODO: verify — README says Vercel but pos-portal/railway.toml exists --> |
 | **Android POS App** | Kotlin · Jetpack Compose · Hilt · Retrofit · Room | Sideloaded APK / Play Store |
 
 Supporting infrastructure: Supabase (PostgreSQL managed + Storage), Celery + Redis (background jobs), Grafana Cloud Loki (structured log aggregation).
@@ -19,7 +19,7 @@ Supporting infrastructure: Supabase (PostgreSQL managed + Storage), Celery + Red
 ```mermaid
 graph TD
     subgraph "Client Tier"
-        A[React Super-Admin Portal<br/>Vercel]
+        A[React Super-Admin Portal<br/>Railway]
         B[Android POS Terminal<br/>Kotlin / Jetpack Compose]
     end
 
@@ -239,7 +239,7 @@ Git push → GitHub
   │     ├─ FastAPI (uvicorn, Dockerfile)
   │     │    └─ alembic upgrade head on startup
   │     └─ Celery worker (same image, different CMD)
-  └─► Vercel (auto-deploy)
+  └─► Railway (auto-deploy) <!-- TODO: verify — README says Vercel but pos-portal/railway.toml exists -->
         └─ React SPA (pos-portal/)
 
 Supabase (external)
