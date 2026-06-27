@@ -82,8 +82,8 @@ Ops: `user_pos_sessions`, `pos_devices`, `audit_logs` (immutable), `user_invites
 | Group | Top-level tenant, no parent |
 | Brand | Business under a Group; owns catalog, staff, access profiles |
 | Site | Location under a Brand; one license, one Android terminal |
-| POS User | Brand-scoped staff; logs into terminal; granted access to sites |
-| Portal User | Super-admin; unrelated to Brand/Site scoping |
+| POS User | Brand-scoped staff; logs into terminal; granted access to sites. **Target rename: "User" — see `ROLE_MODEL.md`** |
+| Portal User | Super-admin; unrelated to Brand/Site scoping. **Target rename: "SuperAdmin" — see `ROLE_MODEL.md`** |
 | Access Grant | Join record: user + scope (site/brand/group) + Access Profile |
 | Access Profile | Named permission tier (JSON perms) belonging to a Brand |
 | Management JWT | Issued to a POS user with portal access after they pick a scope/grant |
@@ -99,5 +99,10 @@ Ops: `user_pos_sessions`, `pos_devices`, `audit_logs` (immutable), `user_invites
 - Portal has no backend logic of its own — pure static SPA REST client.
 - Live code already covers invoices/modifiers/combos/reports (Phase 3 territory per CLAUDE.md rollout
   table) — if a summary claims an earlier active stage, reconcile against actual route/model inventory above.
+- `ROLE_MODEL.md` defines a target naming/role redesign (PortalUser→SuperAdmin, POSUser→User, 5 named
+  User roles, page-category permission hierarchy) that is **not yet implemented**. Code today still uses
+  `PortalUser`/`POSUser`/`backend_role` enum (`admin|users|reporting`) exactly as documented above, and
+  there is no page-category permission system anywhere in the codebase. Don't assume `ROLE_MODEL.md`
+  naming is live until this map is updated to match.
 
 *Last mapped: 2026-06-27. Re-verify against code if it has changed significantly since.*

@@ -25,6 +25,10 @@ Never implement features from future stages unless explicitly instructed.
 | 3 — Transactions | 10–12 | Invoice engine, payments, reporting, deploy |
 | 4 — Android App | 13–14 | Kotlin + Jetpack Compose POS application |
 
+**Flagged, unscheduled:** `ROLE_MODEL.md` defines a target user/role redesign (PortalUser→SuperAdmin,
+POSUser→User with 5 named roles, page-category permission hierarchy). It is not yet assigned to a stage —
+do not implement it until it's explicitly slotted into the rollout table above.
+
 ## Folder structure
 ```
 pos-backend/
