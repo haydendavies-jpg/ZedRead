@@ -15,6 +15,8 @@ import { AuthProvider, useAuth, isMgmtUser } from './context/AuthContext'
 import { PrivateRoute } from './components/PrivateRoute'
 import { Layout } from './components/Layout'
 import { LoginPage } from './pages/LoginPage'
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
+import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { GroupsPage } from './pages/GroupsPage'
 import { BrandsPage } from './pages/BrandsPage'
 import { SitesPage } from './pages/SitesPage'
@@ -45,6 +47,8 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
 
             <Route
               element={

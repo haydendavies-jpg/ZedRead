@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from app.database import engine
 from app.logging_config import configure_logging
@@ -97,7 +98,39 @@ app.include_router(profiles_router)
 app.include_router(categories.router)
 
 
-# ── Global exception handler ──────────────────────────────────────────────────
+# ── Global exception handlers ─────────────────────────────────────────────────
+
+
+@app.exception_handler(OperationalError)
+async def database_unavailable_handler(request: Request, exc: OperationalError) -> JSONResponse:
+    """
+    Catch DB connection failures (e.g. a paused Supabase project) before they
+    fall through to the generic 500 handler.
+
+    A paused Supabase project refuses new connections, which SQLAlchemy surfaces
+    as OperationalError. Without this handler the route raising the error would
+    bubble up as a bare 500 (or, on some proxies, an empty body that the
+    frontend misreads as invalid credentials on the login page).
+
+    Args:
+        request: The incoming request.
+        exc: The OperationalError raised while trying to reach the database.
+
+    Returns:
+        JSONResponse: 503 with a message that points at the actual cause.
+    """
+    log.error(
+        "database_unavailable",
+        exc_type=type(exc).__name__,
+        exc=str(exc),
+        path=request.url.path,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "detail": "Database is currently unreachable. If this persists, the Supabase project may be paused — check the Supabase dashboard to resume it."
+        },
+    )
 
 
 @app.exception_handler(Exception)

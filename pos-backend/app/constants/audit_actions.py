@@ -13,6 +13,9 @@ AUTH_LOGIN_SUCCESS = "auth.login.success"
 AUTH_LOGIN_FAILED = "auth.login.failed"
 AUTH_TOKEN_REFRESHED = "auth.token.refreshed"
 AUTH_LOGOUT = "auth.logout"
+AUTH_PASSWORD_RESET_REQUESTED = "auth.password_reset.requested"
+AUTH_PASSWORD_RESET_COMPLETED = "auth.password_reset.completed"
+AUTH_PASSWORD_CHANGED = "auth.password.changed"
 
 # ── Phase 1 / Stage 3 — Hierarchy CRUD ───────────────────────────────────────
 GROUP_CREATED = "group.created"

@@ -1,9 +1,32 @@
 /** Portal login page — handles portal users and multi-grant POS manager scope selection. */
 
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import type { GrantSummary } from '../types'
+
+/**
+ * Map a failed login request to a user-facing message.
+ *
+ * A 503 means the API reached us but couldn't reach the database — most
+ * commonly a paused Supabase project — so it gets a distinct message instead
+ * of being lumped in with "wrong password". No response at all (network
+ * error, proxy timeout) gets the same treatment since it's usually the same
+ * root cause manifesting before the API can even respond.
+ */
+function loginErrorMessage(err: any): string {
+  const status = err?.response?.status
+  if (status === 503) {
+    return (
+      err?.response?.data?.detail ??
+      'The database is temporarily unavailable. If this persists, the Supabase project may be paused.'
+    )
+  }
+  if (!err?.response) {
+    return 'Could not reach the server. Please check your connection and try again.'
+  }
+  return err?.response?.data?.detail ?? 'Invalid email or password.'
+}
 
 export function LoginPage() {
   const { login, selectGrant, pendingGrants } = useAuth()
@@ -24,7 +47,7 @@ export function LoginPage() {
       // 'grant_selection' → pendingGrants set; LoginPage re-renders with GrantSelectorView
       if (result === 'direct') navigate('/')
     } catch (err: any) {
-      setError(err?.response?.data?.detail ?? 'Invalid email or password.')
+      setError(loginErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -104,6 +127,12 @@ export function LoginPage() {
             >
               {loading ? 'Signing in…' : 'Sign in'}
             </button>
+
+            <p className="text-center">
+              <Link to="/forgot-password" className="text-xs text-brand-600 hover:underline">
+                Forgot password?
+              </Link>
+            </p>
           </form>
         </div>
       </div>
