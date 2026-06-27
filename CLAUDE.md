@@ -8,6 +8,12 @@ Multi-tenant hierarchy: Group → Brand → Site.
 **pos_master_v5.docx** — reference the relevant chapter before implementing any feature.
 Never implement a feature that contradicts the design document without flagging it first.
 
+## Architecture map (ground truth)
+**ARCHITECTURE_MAP.md** — a functional map of the actual codebase (routes, models, Redis usage,
+deployment topology, terminology), derived from reading code rather than docs/comments. Read this
+first when picking up the project in a new session. If it conflicts with the design doc or other
+written summaries, the code (and this map) wins — flag the conflict.
+
 ## Rollout plan
 The project is built in 4 phases across 14 stages. Always work within the current stage.
 Never implement features from future stages unless explicitly instructed.
