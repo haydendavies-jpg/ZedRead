@@ -15,7 +15,7 @@ first when picking up the project in a new session. If it conflicts with the des
 written summaries, the code (and this map) wins — flag the conflict.
 
 ## Rollout plan
-The project is built in 4 phases across 14 stages. Always work within the current stage.
+The project is built in 5 phases across 15 stages. Always work within the current stage.
 Never implement features from future stages unless explicitly instructed.
 
 | Phase | Stages | Summary |
@@ -24,10 +24,14 @@ Never implement features from future stages unless explicitly instructed.
 | 2 — POS Catalog | 7–9 | POS auth, products, variants, modifiers, combos |
 | 3 — Transactions | 10–12 | Invoice engine, payments, reporting, deploy |
 | 4 — Android App | 13–14 | Kotlin + Jetpack Compose POS application |
+| 5 — Identity & Permissions Redesign | 15 | PortalUser→SuperAdmin, POSUser→User rename, 5-role model, page-category permission hierarchy — see `ROLE_MODEL.md` |
 
-**Flagged, unscheduled:** `ROLE_MODEL.md` defines a target user/role redesign (PortalUser→SuperAdmin,
-POSUser→User with 5 named roles, page-category permission hierarchy). It is not yet assigned to a stage —
-do not implement it until it's explicitly slotted into the rollout table above.
+**Stage 15 scope (current):** implement the rename and role/permission model defined in `ROLE_MODEL.md` —
+SuperAdmin (Admin/Reseller Staff), User (Master User/Admin/Reporting Only/Manager/Staff), required-field
+rules, access_profiles replaced by the 5 roles, per-page permission grants within the 5 page categories,
+license gating, and cross-identity login disambiguation. The concrete per-category page list (§6 of
+`ROLE_MODEL.md`) is still open — define it as part of this stage's implementation, then update
+`ROLE_MODEL.md` to record it as resolved.
 
 ## Folder structure
 ```

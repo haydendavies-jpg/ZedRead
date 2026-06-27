@@ -14,7 +14,7 @@ from app.constants.audit_actions import (
     GROUP_UPDATED,
 )
 from app.models.group import Group
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.schemas.group import GroupCreate, GroupUpdate
 from app.services.audit_service import log_action
 
@@ -95,7 +95,7 @@ async def get_group(db: AsyncSession, group_id: uuid.UUID) -> Group:
 async def create_group(
     db: AsyncSession,
     payload: GroupCreate,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> Group:
     """
     Create a new Group and write an audit log row in the same transaction.
@@ -134,7 +134,7 @@ async def update_group(
     db: AsyncSession,
     group_id: uuid.UUID,
     payload: GroupUpdate,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> Group:
     """
     Update a Group's mutable fields and write an audit log row.
@@ -178,7 +178,7 @@ async def update_group(
 async def suspend_group(
     db: AsyncSession,
     group_id: uuid.UUID,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> Group:
     """
     Set a Group's is_active flag to False and write an audit log row.
@@ -222,7 +222,7 @@ async def suspend_group(
 async def activate_group(
     db: AsyncSession,
     group_id: uuid.UUID,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> Group:
     """
     Set a Group's is_active flag to True and write an audit log row.

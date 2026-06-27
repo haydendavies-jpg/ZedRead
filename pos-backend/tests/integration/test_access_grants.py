@@ -43,9 +43,9 @@ def _mgmt_headers(user: POSUser, grant: UserAccessGrant) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _portal_headers(portal_user) -> dict[str, str]:
+def _portal_headers(superadmin) -> dict[str, str]:
     """Return portal JWT headers."""
-    token = create_access_token(str(portal_user.id), portal_user.role)
+    token = create_access_token(str(superadmin.id), superadmin.role)
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -109,10 +109,10 @@ async def test_list_grants_brand_scope_management(
 
 
 async def test_list_grants_portal_with_brand_filter(
-    client, db, test_portal_user, test_brand, test_portal_grant, test_manager_profile, test_site
+    client, db, test_superadmin, test_brand, test_portal_grant, test_manager_profile, test_site
 ):
     """Portal admin can list grants filtered by brand_id."""
-    headers = _portal_headers(test_portal_user)
+    headers = _portal_headers(test_superadmin)
     response = await client.get(
         "/access-grants",
         headers=headers,
@@ -181,10 +181,10 @@ async def test_create_grant_brand_scope_cannot_create_brand_grant(
 
 
 async def test_create_grant_portal_has_full_authority(
-    client, db, test_portal_user, test_site, test_manager_profile, target_user
+    client, db, test_superadmin, test_site, test_manager_profile, target_user
 ):
     """Portal admin can create any grant regardless of scope."""
-    headers = _portal_headers(test_portal_user)
+    headers = _portal_headers(test_superadmin)
     payload = {
         "user_id": str(target_user.id),
         "scope": "site",
@@ -210,10 +210,10 @@ async def test_create_grant_pos_jwt_forbidden(
 
 
 async def test_create_grant_duplicate_returns_409(
-    client, db, test_portal_user, test_site, test_manager_profile, target_user
+    client, db, test_superadmin, test_site, test_manager_profile, target_user
 ):
     """Creating a second active grant for the same user+scope+entity returns 409."""
-    headers = _portal_headers(test_portal_user)
+    headers = _portal_headers(test_superadmin)
     payload = {
         "user_id": str(target_user.id),
         "scope": "site",
@@ -227,10 +227,10 @@ async def test_create_grant_duplicate_returns_409(
 
 
 async def test_create_grant_writes_audit_log(
-    client, db, test_portal_user, test_site, test_manager_profile, target_user
+    client, db, test_superadmin, test_site, test_manager_profile, target_user
 ):
     """Creating a grant writes an ACCESS_GRANT_CREATED audit row."""
-    headers = _portal_headers(test_portal_user)
+    headers = _portal_headers(test_superadmin)
     payload = {
         "user_id": str(target_user.id),
         "scope": "site",
@@ -255,10 +255,10 @@ async def test_create_grant_writes_audit_log(
 
 
 async def test_update_grant_changes_access_profile(
-    client, db, test_portal_user, test_portal_grant, test_manager_profile, test_access_profile
+    client, db, test_superadmin, test_portal_grant, test_manager_profile, test_access_profile
 ):
     """PATCH /access-grants/{id} updates the access_profile_id."""
-    headers = _portal_headers(test_portal_user)
+    headers = _portal_headers(test_superadmin)
     # Create a second profile to switch to
     new_profile = AccessProfile(
         id=uuid.uuid4(),
@@ -294,10 +294,10 @@ async def test_update_grant_pos_jwt_forbidden(
 
 
 async def test_update_grant_not_found_returns_404(
-    client, db, test_portal_user
+    client, db, test_superadmin
 ):
     """PATCH with a non-existent grant_id returns 404."""
-    headers = _portal_headers(test_portal_user)
+    headers = _portal_headers(test_superadmin)
     response = await client.patch(
         f"/access-grants/{uuid.uuid4()}",
         headers=headers,
@@ -310,10 +310,10 @@ async def test_update_grant_not_found_returns_404(
 
 
 async def test_revoke_grant_sets_is_active_false(
-    client, db, test_portal_user, test_portal_grant, test_manager_profile, test_site
+    client, db, test_superadmin, test_portal_grant, test_manager_profile, test_site
 ):
     """DELETE /access-grants/{id} soft-deletes the grant (is_active=False)."""
-    headers = _portal_headers(test_portal_user)
+    headers = _portal_headers(test_superadmin)
     response = await client.delete(
         f"/access-grants/{test_portal_grant.id}",
         headers=headers,
@@ -325,10 +325,10 @@ async def test_revoke_grant_sets_is_active_false(
 
 
 async def test_revoke_grant_writes_audit_log(
-    client, db, test_portal_user, test_portal_grant, test_manager_profile
+    client, db, test_superadmin, test_portal_grant, test_manager_profile
 ):
     """Revoking a grant writes an ACCESS_GRANT_REVOKED audit row."""
-    headers = _portal_headers(test_portal_user)
+    headers = _portal_headers(test_superadmin)
     await client.delete(f"/access-grants/{test_portal_grant.id}", headers=headers)
 
     audit_r = await db.execute(
@@ -353,10 +353,10 @@ async def test_revoke_grant_pos_jwt_forbidden(
 
 
 async def test_revoke_grant_not_found_returns_404(
-    client, db, test_portal_user
+    client, db, test_superadmin
 ):
     """DELETE with a non-existent grant_id returns 404."""
-    headers = _portal_headers(test_portal_user)
+    headers = _portal_headers(test_superadmin)
     response = await client.delete(
         f"/access-grants/{uuid.uuid4()}",
         headers=headers,
@@ -365,10 +365,10 @@ async def test_revoke_grant_not_found_returns_404(
 
 
 async def test_revoke_already_revoked_returns_409(
-    client, db, test_portal_user, test_portal_grant
+    client, db, test_superadmin, test_portal_grant
 ):
     """Revoking an already-revoked grant returns 409."""
-    headers = _portal_headers(test_portal_user)
+    headers = _portal_headers(test_superadmin)
     # First revoke
     r1 = await client.delete(f"/access-grants/{test_portal_grant.id}", headers=headers)
     assert r1.status_code == 204

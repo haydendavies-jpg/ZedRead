@@ -33,7 +33,7 @@ from app.utils.security import create_mgmt_refresh_token, hash_password
 # ── Portal user login (unchanged behaviour) ───────────────────────────────────
 
 
-async def test_portal_user_login_returns_tokens(client, test_portal_user):
+async def test_superadmin_login_returns_tokens(client, test_superadmin):
     """Existing portal user login still returns access + refresh tokens."""
     response = await client.post(
         "/auth/portal/login",

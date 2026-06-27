@@ -39,9 +39,9 @@ def _mgmt_headers(pos_user, grant) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _portal_headers(portal_user) -> dict[str, str]:
+def _portal_headers(superadmin) -> dict[str, str]:
     """Build Authorization headers with a portal admin JWT."""
-    token = create_access_token(str(portal_user.id), portal_user.role)
+    token = create_access_token(str(superadmin.id), superadmin.role)
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -74,10 +74,10 @@ async def test_list_products_accepts_management_jwt_brand_scope_grant(
 
 
 async def test_list_products_accepts_portal_jwt(
-    client, test_brand, test_portal_user, test_portal_grant
+    client, test_brand, test_superadmin, test_portal_grant
 ):
     """GET /products works with a portal admin JWT when brand_id supplied."""
-    headers = _portal_headers(test_portal_user)
+    headers = _portal_headers(test_superadmin)
     response = await client.get(
         "/products",
         headers=headers,
@@ -100,9 +100,9 @@ async def test_list_products_invalid_token_returns_401(client):
     assert response.status_code == 401
 
 
-async def test_list_products_refresh_token_rejected(client, test_portal_user):
+async def test_list_products_refresh_token_rejected(client, test_superadmin):
     """A refresh token (wrong type) is rejected on catalog routes."""
-    refresh = create_refresh_token(str(test_portal_user.id))
+    refresh = create_refresh_token(str(test_superadmin.id))
     response = await client.get(
         "/products", headers={"Authorization": f"Bearer {refresh}"}
     )

@@ -16,10 +16,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.constants.audit_actions import PORTAL_USER_CREATED
-from app.constants.statuses import ActorType, PortalUserRole
+from app.constants.statuses import ActorType, SuperAdminRole
 from app.logging_config import configure_logging
 from app.models.brand import Brand
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.services.access_profile_service import seed_system_profiles
 from app.services.audit_service import log_action
 from app.utils.security import hash_password
@@ -64,7 +64,7 @@ async def _bootstrap_super_admin_async(non_interactive: bool = False) -> None:
     async with session_factory() as db:
         # Guard: refuse to run if any super_admin already exists
         existing = await db.execute(
-            select(PortalUser).where(PortalUser.role == PortalUserRole.SUPER_ADMIN.value)
+            select(SuperAdmin).where(SuperAdmin.role == SuperAdminRole.ADMIN.value)
         )
         if existing.scalar_one_or_none() is not None:
             log.info("bootstrap.skipped", reason="super_admin already exists")
@@ -103,12 +103,12 @@ async def _bootstrap_super_admin_async(non_interactive: bool = False) -> None:
 
         import uuid
 
-        user = PortalUser(
+        user = SuperAdmin(
             id=uuid.uuid4(),
             email=email,
             password_hash=hash_password(password),
             name=name,
-            role=PortalUserRole.SUPER_ADMIN.value,
+            role=SuperAdminRole.ADMIN.value,
             is_active=True,
         )
         db.add(user)
@@ -117,13 +117,13 @@ async def _bootstrap_super_admin_async(non_interactive: bool = False) -> None:
         await log_action(
             db=db,
             action=PORTAL_USER_CREATED,
-            entity_type="portal_user",
+            entity_type="superadmin",
             entity_id=str(user.id),
             actor_type=ActorType.SYSTEM,
             actor_id=None,
             actor_email=None,
             actor_name="bootstrap-cli",
-            after_state={"email": email, "role": PortalUserRole.SUPER_ADMIN.value},
+            after_state={"email": email, "role": SuperAdminRole.ADMIN.value},
         )
 
         await db.commit()

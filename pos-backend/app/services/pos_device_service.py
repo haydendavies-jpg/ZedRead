@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants.audit_actions import DEVICE_DEREGISTERED, DEVICE_REGISTERED
 from app.constants.statuses import LicenseStatus
 from app.models.license import License
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.models.pos_device import PosDevice
 from app.models.site import Site
 from app.schemas.pos_device import PosDeviceRegister
@@ -82,7 +82,7 @@ async def get_device(db: AsyncSession, device_id: uuid.UUID) -> PosDevice:
 async def register_device(
     db: AsyncSession,
     payload: PosDeviceRegister,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> PosDevice:
     """
     Register a new POS device under a site and license, writing an audit log row.
@@ -170,7 +170,7 @@ async def register_device(
 async def deregister_device(
     db: AsyncSession,
     device_id: uuid.UUID,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> PosDevice:
     """
     Deregister a POS device (set is_active = False) and write an audit log row.

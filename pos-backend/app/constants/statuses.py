@@ -67,12 +67,11 @@ class TaxModel(str, Enum):
     COMPOUND = "compound"     # GST on base, then PST on base (not on GST-inclusive)
 
 
-class PortalUserRole(str, Enum):
+class SuperAdminRole(str, Enum):
     """Access roles for the super-admin portal."""
 
-    SUPER_ADMIN = "super_admin"
     ADMIN = "admin"
-    RESELLER = "reseller"
+    RESELLER_STAFF = "reseller_staff"
 
 
 class SystemAccessProfile(str, Enum):

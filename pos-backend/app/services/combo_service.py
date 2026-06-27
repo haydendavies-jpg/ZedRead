@@ -23,7 +23,7 @@ from app.constants.audit_actions import (
     COMBO_OPTION_REMOVED,
 )
 from app.constants.statuses import ActorType
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.models.pos_user import POSUser
 from app.models.product import Product
 from app.models.product_combo_group import ProductComboGroup
@@ -203,7 +203,7 @@ async def create_combo_group(
     brand_id: uuid.UUID,
     product_id: uuid.UUID,
     payload: ComboGroupCreate,
-    actor: POSUser | PortalUser,
+    actor: POSUser | SuperAdmin,
 ) -> ProductComboGroup:
     """
     Create a combo group for a product.
@@ -278,7 +278,7 @@ async def add_combo_option(
     brand_id: uuid.UUID,
     combo_group_id: uuid.UUID,
     payload: ComboOptionCreate,
-    actor: POSUser | PortalUser,
+    actor: POSUser | SuperAdmin,
 ) -> ProductComboOption:
     """
     Add a product as an option to a combo group.
@@ -377,7 +377,7 @@ async def remove_combo_option(
     db: AsyncSession,
     brand_id: uuid.UUID,
     option_id: uuid.UUID,
-    actor: POSUser | PortalUser,
+    actor: POSUser | SuperAdmin,
 ) -> None:
     """
     Remove a combo option.

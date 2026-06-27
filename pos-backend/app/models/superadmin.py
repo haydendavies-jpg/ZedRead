@@ -10,17 +10,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 
-class PortalUser(Base):
+class SuperAdmin(Base):
     """
     A portal (super-admin) user who can log into the React management portal.
 
     Role determines which pages and actions are accessible:
-    - super_admin: full access including user management
-    - admin: hierarchy and license management, no user management
-    - reseller: read-only view of their own group hierarchy
+    - admin: full ZedRead administrative access, sees and manages all Groups
+      across all resellers
+    - reseller_staff: partner-side staff, scoped to only the Groups they
+      personally created or are assigned to
     """
 
-    __tablename__ = "portal_users"
+    __tablename__ = "superadmins"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -31,14 +32,14 @@ class PortalUser(Base):
         String(20),
         nullable=False,
         unique=True,
-        server_default=text("'PTL-' || LPAD(nextval('portal_users_ref_seq')::text, 6, '0')"),
+        server_default=text("'PTL-' || LPAD(nextval('superadmins_ref_seq')::text, 6, '0')"),
         comment="Human-readable reference ID, e.g. PTL-000001",
     )
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     # Argon2 password hash — never store plaintext (rule 15)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    # Role values defined in PortalUserRole enum in app/constants/statuses.py
+    # Role values defined in SuperAdminRole enum in app/constants/statuses.py
     role: Mapped[str] = mapped_column(String(50), nullable=False, default="admin")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(

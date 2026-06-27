@@ -25,7 +25,7 @@ from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
 from app.models.user_pin import UserPIN
 from app.services.audit_service import log_action
-from app.utils.dependencies import get_current_portal_user
+from app.utils.dependencies import get_current_superadmin
 from app.utils.security import hash_password
 
 log = structlog.get_logger(__name__)
@@ -204,7 +204,7 @@ async def _attach_sites(
     )
     grants_result = await db.execute(grants_q)
     grants_by_user: dict[uuid.UUID, list[SiteGrantSummary]] = {}
-    portal_users: set[uuid.UUID] = set()
+    superadmins: set[uuid.UUID] = set()
     for (user_id, grant_id, site_id, is_default, site_name, profile_name, cap) in grants_result:
         grants_by_user.setdefault(user_id, []).append(
             SiteGrantSummary(
@@ -217,7 +217,7 @@ async def _attach_sites(
             )
         )
         if cap:
-            portal_users.add(user_id)
+            superadmins.add(user_id)
 
     return [
         PosUserOut(
@@ -231,7 +231,7 @@ async def _attach_sites(
             backend_role=u.backend_role,
             is_active=u.is_active,
             site_grants=grants_by_user.get(u.id, []),
-            has_portal_access=u.id in portal_users,
+            has_portal_access=u.id in superadmins,
         )
         for u in users
     ]
@@ -244,7 +244,7 @@ async def list_pos_users(
     skip: int = 0,
     limit: int = 200,
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_portal_user),
+    actor=Depends(get_current_superadmin),
 ):
     """List POS users, optionally filtered by brand. Portal admin only. Omit brand_id to see all users."""
     q = select(POSUser)
@@ -272,7 +272,7 @@ async def list_pos_users(
 async def create_pos_user(
     body: PosUserCreate,
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_portal_user),
+    actor=Depends(get_current_superadmin),
 ):
     """Create a new POS user. Requires portal JWT."""
     existing = await db.execute(select(POSUser).where(POSUser.email == body.email))
@@ -318,7 +318,7 @@ async def create_pos_user(
 async def list_user_grants(
     user_id: str,
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_portal_user),
+    actor=Depends(get_current_superadmin),
 ):
     """
     List all active access grants for a POS user, enriched with scope entity names.
@@ -447,7 +447,7 @@ async def list_user_grants(
 async def get_user_group_access(
     user_id: str,
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_portal_user),
+    actor=Depends(get_current_superadmin),
 ):
     """
     Return all brands and sites in the user's group with their current grant state.
@@ -573,7 +573,7 @@ async def update_pos_user(
     user_id: str,
     body: PosUserUpdate,
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_portal_user),
+    actor=Depends(get_current_superadmin),
 ):
     """Edit a POS user's name, email, and/or backend_role. Requires portal JWT."""
     result = await db.execute(select(POSUser).where(POSUser.id == user_id))
@@ -639,7 +639,7 @@ async def set_pin_for_user(
     user_id: str,
     body: SetPinRequest,
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_portal_user),
+    actor=Depends(get_current_superadmin),
 ):
     """
     Admin endpoint: set or reset a POS user's PIN.
@@ -691,7 +691,7 @@ async def set_pin_for_user(
 async def deactivate_pos_user(
     user_id: str,
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_portal_user),
+    actor=Depends(get_current_superadmin),
 ):
     """Deactivate a POS user. Requires portal JWT."""
     result = await db.execute(select(POSUser).where(POSUser.id == user_id))

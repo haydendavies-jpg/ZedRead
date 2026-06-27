@@ -54,11 +54,11 @@ def test_hash_same_password_produces_different_hashes():
 def test_create_access_token_decodes_with_correct_claims():
     """create_access_token() embeds user_id, role, and type='access' in the payload."""
     user_id = "abc-123"
-    token = create_access_token(user_id=user_id, role="super_admin")
+    token = create_access_token(user_id=user_id, role="admin")
     payload = decode_token(token, expected_type="access")
 
     assert payload["sub"] == user_id
-    assert payload["role"] == "super_admin"
+    assert payload["role"] == "admin"
     assert payload["type"] == "access"
 
 

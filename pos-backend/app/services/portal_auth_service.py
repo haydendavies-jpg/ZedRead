@@ -17,7 +17,7 @@ from app.constants.audit_actions import (
     AUTH_TOKEN_REFRESHED,
 )
 from app.constants.statuses import ActorType
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.schemas.portal_auth import LoginRequest, TokenResponse
 from app.services.audit_service import log_action
 from app.utils.email import PASSWORD_RESET_EXPIRY_HOURS, send_password_reset_email
@@ -32,7 +32,7 @@ from app.utils.security import (
 log = structlog.get_logger(__name__)
 
 
-async def _get_user_by_email(db: AsyncSession, email: str) -> PortalUser | None:
+async def _get_user_by_email(db: AsyncSession, email: str) -> SuperAdmin | None:
     """
     Fetch a portal user by email address.
 
@@ -41,10 +41,10 @@ async def _get_user_by_email(db: AsyncSession, email: str) -> PortalUser | None:
         email: The email address to look up.
 
     Returns:
-        PortalUser | None: The matching user, or None if not found.
+        SuperAdmin | None: The matching user, or None if not found.
     """
     result = await db.execute(
-        select(PortalUser).where(PortalUser.email == email)
+        select(SuperAdmin).where(SuperAdmin.email == email)
     )
     return result.scalar_one_or_none()
 
@@ -85,7 +85,7 @@ async def login(db: AsyncSession, payload: LoginRequest) -> TokenResponse:
         await log_action(
             db=db,
             action=AUTH_LOGIN_FAILED,
-            entity_type="portal_user",
+            entity_type="superadmin",
             entity_id=entity_id,
             actor_type=ActorType.USER,
             actor_id=None,
@@ -107,7 +107,7 @@ async def login(db: AsyncSession, payload: LoginRequest) -> TokenResponse:
     await log_action(
         db=db,
         action=AUTH_LOGIN_SUCCESS,
-        entity_type="portal_user",
+        entity_type="superadmin",
         entity_id=str(user.id),
         actor_type=ActorType.USER,
         actor_id=user.id,
@@ -148,7 +148,7 @@ async def refresh(db: AsyncSession, refresh_token: str) -> TokenResponse:
 
     user_id: str = payload.get("sub", "")
     result = await db.execute(
-        select(PortalUser).where(PortalUser.id == user_id)
+        select(SuperAdmin).where(SuperAdmin.id == user_id)
     )
     user = result.scalar_one_or_none()
 
@@ -165,7 +165,7 @@ async def refresh(db: AsyncSession, refresh_token: str) -> TokenResponse:
     await log_action(
         db=db,
         action=AUTH_TOKEN_REFRESHED,
-        entity_type="portal_user",
+        entity_type="superadmin",
         entity_id=str(user.id),
         actor_type=ActorType.USER,
         actor_id=user.id,
@@ -208,7 +208,7 @@ async def request_password_reset(db: AsyncSession, email: str) -> None:
     await log_action(
         db=db,
         action=AUTH_PASSWORD_RESET_REQUESTED,
-        entity_type="portal_user",
+        entity_type="superadmin",
         entity_id=str(user.id),
         actor_type=ActorType.USER,
         actor_id=user.id,
@@ -243,7 +243,7 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> Non
         HTTPException: 400 if the token is invalid or has expired.
     """
     result = await db.execute(
-        select(PortalUser).where(PortalUser.password_reset_token == token)
+        select(SuperAdmin).where(SuperAdmin.password_reset_token == token)
     )
     user = result.scalar_one_or_none()
 
@@ -267,7 +267,7 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> Non
     await log_action(
         db=db,
         action=AUTH_PASSWORD_RESET_COMPLETED,
-        entity_type="portal_user",
+        entity_type="superadmin",
         entity_id=str(user.id),
         actor_type=ActorType.USER,
         actor_id=user.id,

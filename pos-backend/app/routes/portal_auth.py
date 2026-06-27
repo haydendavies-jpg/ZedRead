@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import AUTH_PASSWORD_CHANGED
 from app.database import get_db
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.schemas.portal_auth import (
     ForgotPasswordRequest,
     LoginRequest,
@@ -20,7 +20,7 @@ from app.schemas.portal_auth import (
 )
 from app.services import management_auth_service, portal_auth_service
 from app.services.audit_service import log_action
-from app.utils.dependencies import get_current_portal_user
+from app.utils.dependencies import get_current_superadmin
 from app.utils.security import hash_password, verify_password
 
 router = APIRouter(prefix="/auth/portal", tags=["portal-auth"])
@@ -32,9 +32,9 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ) -> UnifiedLoginResponse:
     """
-    Unified portal login — accepts both portal_user and pos_user credentials.
+    Unified portal login — accepts both superadmin and pos_user credentials.
 
-    - portal_user → issues a portal access + refresh token (role-based admin access).
+    - superadmin → issues a portal access + refresh token (role-based admin access).
     - pos_user with can_access_portal profile and one grant → issues a management JWT.
     - pos_user with multiple grants → returns available_grants list for scope selection.
 
@@ -98,7 +98,7 @@ class ChangePasswordRequest(BaseModel):
 async def change_password(
     payload: ChangePasswordRequest,
     db: AsyncSession = Depends(get_db),
-    actor: PortalUser = Depends(get_current_portal_user),
+    actor: SuperAdmin = Depends(get_current_superadmin),
 ) -> None:
     """
     Change the authenticated portal user's password.
@@ -113,7 +113,7 @@ async def change_password(
             detail="New password must be at least 8 characters.",
         )
 
-    result = await db.execute(select(PortalUser).where(PortalUser.id == actor.id))
+    result = await db.execute(select(SuperAdmin).where(SuperAdmin.id == actor.id))
     user = result.scalar_one()
 
     if not verify_password(payload.current_password, user.password_hash):
@@ -130,7 +130,7 @@ async def change_password(
         actor_email=user.email,
         actor_name=user.name,
         action=AUTH_PASSWORD_CHANGED,
-        entity_type="portal_user",
+        entity_type="superadmin",
         entity_id=str(user.id),
         after_state={"password_changed": True},
     )

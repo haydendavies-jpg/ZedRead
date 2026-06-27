@@ -2,7 +2,7 @@
 
 Covers all five required scenarios per tests_CLAUDE.md:
 1. Happy path — correct response shape, correct status codes
-2. Auth failure — non-super_admin gets 403 (all routes require super_admin role)
+2. Auth failure — Reseller Staff gets 403 (all routes require the Admin role)
 3. Invalid input — missing fields → 422, short password → 422
 4. Business rule — 409 duplicate email, 400 self-suspend, 404 unknown user
 5. Audit log — every write asserts the correct audit_logs row
@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import PORTAL_USER_ACTIVATED, PORTAL_USER_CREATED, PORTAL_USER_SUSPENDED
 from app.models.audit_log import AuditLog
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.utils.security import create_access_token, hash_password
 
 
@@ -24,9 +24,9 @@ from app.utils.security import create_access_token, hash_password
 
 
 @pytest_asyncio.fixture()
-async def second_portal_user(db: AsyncSession) -> PortalUser:
-    """A second persisted PortalUser that super_admin can act upon."""
-    user = PortalUser(
+async def second_superadmin(db: AsyncSession) -> SuperAdmin:
+    """A second persisted SuperAdmin that super_admin can act upon."""
+    user = SuperAdmin(
         id=uuid.uuid4(),
         email="target@test.com",
         password_hash=hash_password("AnotherPassword123!"),
@@ -41,14 +41,14 @@ async def second_portal_user(db: AsyncSession) -> PortalUser:
 
 
 @pytest_asyncio.fixture()
-async def admin_auth_headers(db: AsyncSession) -> dict[str, str]:
-    """Auth headers for a regular admin (not super_admin) — should be denied on all portal-user routes."""
-    user = PortalUser(
+async def reseller_staff_auth_headers(db: AsyncSession) -> dict[str, str]:
+    """Auth headers for Reseller Staff (not Admin) — should be denied on all portal-user routes."""
+    user = SuperAdmin(
         id=uuid.uuid4(),
-        email="regular_admin@test.com",
+        email="reseller_staff@test.com",
         password_hash=hash_password("RegularPassword123!"),
-        name="Regular Admin",
-        role="admin",
+        name="Reseller Staff",
+        role="reseller_staff",
         is_active=True,
     )
     db.add(user)
@@ -61,7 +61,7 @@ async def admin_auth_headers(db: AsyncSession) -> dict[str, str]:
 # ── Happy path ────────────────────────────────────────────────────────────────
 
 
-async def test_create_portal_user_returns_201(client, portal_auth_headers):
+async def test_create_superadmin_returns_201(client, portal_auth_headers):
     """POST /portal-users creates a portal user and returns 201 with correct shape."""
     response = await client.post(
         "/portal-users/",
@@ -84,27 +84,27 @@ async def test_create_portal_user_returns_201(client, portal_auth_headers):
     assert "password" not in body
 
 
-async def test_list_portal_users_returns_200(client, portal_auth_headers, test_portal_user):
+async def test_list_superadmins_returns_200(client, portal_auth_headers, test_superadmin):
     """GET /portal-users returns 200 with a list containing the seeded user."""
     response = await client.get("/portal-users/", headers=portal_auth_headers)
 
     assert response.status_code == 200
     ids = [u["id"] for u in response.json()]
-    assert str(test_portal_user.id) in ids
+    assert str(test_superadmin.id) in ids
 
 
-async def test_get_portal_user_returns_correct_user(client, portal_auth_headers, test_portal_user):
+async def test_get_superadmin_returns_correct_user(client, portal_auth_headers, test_superadmin):
     """GET /portal-users/{id} returns the correct portal user."""
-    response = await client.get(f"/portal-users/{test_portal_user.id}", headers=portal_auth_headers)
+    response = await client.get(f"/portal-users/{test_superadmin.id}", headers=portal_auth_headers)
 
     assert response.status_code == 200
-    assert response.json()["id"] == str(test_portal_user.id)
+    assert response.json()["id"] == str(test_superadmin.id)
 
 
-async def test_update_portal_user_name(client, portal_auth_headers, second_portal_user):
+async def test_update_superadmin_name(client, portal_auth_headers, second_superadmin):
     """PATCH /portal-users/{id} updates the user's name."""
     response = await client.patch(
-        f"/portal-users/{second_portal_user.id}",
+        f"/portal-users/{second_superadmin.id}",
         json={"name": "Updated Name"},
         headers=portal_auth_headers,
     )
@@ -113,13 +113,13 @@ async def test_update_portal_user_name(client, portal_auth_headers, second_porta
     assert response.json()["name"] == "Updated Name"
 
 
-async def test_suspend_and_activate_portal_user(client, portal_auth_headers, second_portal_user):
+async def test_suspend_and_activate_superadmin(client, portal_auth_headers, second_superadmin):
     """POST /portal-users/{id}/suspend then /activate toggles is_active correctly."""
-    r1 = await client.post(f"/portal-users/{second_portal_user.id}/suspend", headers=portal_auth_headers)
+    r1 = await client.post(f"/portal-users/{second_superadmin.id}/suspend", headers=portal_auth_headers)
     assert r1.status_code == 200
     assert r1.json()["is_active"] is False
 
-    r2 = await client.post(f"/portal-users/{second_portal_user.id}/activate", headers=portal_auth_headers)
+    r2 = await client.post(f"/portal-users/{second_superadmin.id}/activate", headers=portal_auth_headers)
     assert r2.status_code == 200
     assert r2.json()["is_active"] is True
 
@@ -127,24 +127,24 @@ async def test_suspend_and_activate_portal_user(client, portal_auth_headers, sec
 # ── Auth failure ──────────────────────────────────────────────────────────────
 
 
-async def test_list_portal_users_no_token_returns_403(client):
+async def test_list_superadmins_no_token_returns_403(client):
     """GET /portal-users without a token returns 403."""
     response = await client.get("/portal-users/")
     assert response.status_code == 403
 
 
-async def test_list_portal_users_non_super_admin_returns_403(client, admin_auth_headers):
-    """GET /portal-users with a non-super_admin token returns 403."""
-    response = await client.get("/portal-users/", headers=admin_auth_headers)
+async def test_list_superadmins_reseller_staff_returns_403(client, reseller_staff_auth_headers):
+    """GET /portal-users with a Reseller Staff token returns 403."""
+    response = await client.get("/portal-users/", headers=reseller_staff_auth_headers)
     assert response.status_code == 403
 
 
-async def test_create_portal_user_non_super_admin_returns_403(client, admin_auth_headers):
-    """POST /portal-users with a non-super_admin token returns 403."""
+async def test_create_superadmin_reseller_staff_returns_403(client, reseller_staff_auth_headers):
+    """POST /portal-users with a Reseller Staff token returns 403."""
     response = await client.post(
         "/portal-users/",
         json={"email": "x@x.com", "name": "X", "password": "SecurePassword123!", "role": "admin"},
-        headers=admin_auth_headers,
+        headers=reseller_staff_auth_headers,
     )
     assert response.status_code == 403
 
@@ -152,7 +152,7 @@ async def test_create_portal_user_non_super_admin_returns_403(client, admin_auth
 # ── Invalid input ─────────────────────────────────────────────────────────────
 
 
-async def test_create_portal_user_missing_email_returns_422(client, portal_auth_headers):
+async def test_create_superadmin_missing_email_returns_422(client, portal_auth_headers):
     """POST /portal-users with no email returns 422."""
     response = await client.post(
         "/portal-users/",
@@ -162,7 +162,7 @@ async def test_create_portal_user_missing_email_returns_422(client, portal_auth_
     assert response.status_code == 422
 
 
-async def test_create_portal_user_short_password_returns_422(client, portal_auth_headers):
+async def test_create_superadmin_short_password_returns_422(client, portal_auth_headers):
     """POST /portal-users with a password shorter than 12 chars returns 422."""
     response = await client.post(
         "/portal-users/",
@@ -172,7 +172,7 @@ async def test_create_portal_user_short_password_returns_422(client, portal_auth
     assert response.status_code == 422
 
 
-async def test_create_portal_user_invalid_role_returns_422(client, portal_auth_headers):
+async def test_create_superadmin_invalid_role_returns_422(client, portal_auth_headers):
     """POST /portal-users with an unrecognised role returns 422."""
     response = await client.post(
         "/portal-users/",
@@ -190,14 +190,14 @@ async def test_create_portal_user_invalid_role_returns_422(client, portal_auth_h
 # ── Business rule violations ──────────────────────────────────────────────────
 
 
-async def test_create_portal_user_duplicate_email_returns_409(
-    client, portal_auth_headers, test_portal_user
+async def test_create_superadmin_duplicate_email_returns_409(
+    client, portal_auth_headers, test_superadmin
 ):
     """POST /portal-users with an already-registered email returns 409."""
     response = await client.post(
         "/portal-users/",
         json={
-            "email": test_portal_user.email,
+            "email": test_superadmin.email,
             "name": "Duplicate",
             "password": "SecurePassword123!",
             "role": "admin",
@@ -207,37 +207,37 @@ async def test_create_portal_user_duplicate_email_returns_409(
     assert response.status_code == 409
 
 
-async def test_get_unknown_portal_user_returns_404(client, portal_auth_headers):
+async def test_get_unknown_superadmin_returns_404(client, portal_auth_headers):
     """GET /portal-users/{unknown_id} returns 404."""
     response = await client.get(f"/portal-users/{uuid.uuid4()}", headers=portal_auth_headers)
     assert response.status_code == 404
 
 
-async def test_suspend_self_returns_400(client, portal_auth_headers, test_portal_user):
+async def test_suspend_self_returns_400(client, portal_auth_headers, test_superadmin):
     """POST /portal-users/{own_id}/suspend returns 400 — cannot suspend yourself."""
     response = await client.post(
-        f"/portal-users/{test_portal_user.id}/suspend", headers=portal_auth_headers
+        f"/portal-users/{test_superadmin.id}/suspend", headers=portal_auth_headers
     )
     assert response.status_code == 400
 
 
 async def test_suspend_already_suspended_user_returns_409(
-    client, portal_auth_headers, second_portal_user
+    client, portal_auth_headers, second_superadmin
 ):
     """Suspending an already-suspended user returns 409."""
-    await client.post(f"/portal-users/{second_portal_user.id}/suspend", headers=portal_auth_headers)
+    await client.post(f"/portal-users/{second_superadmin.id}/suspend", headers=portal_auth_headers)
     response = await client.post(
-        f"/portal-users/{second_portal_user.id}/suspend", headers=portal_auth_headers
+        f"/portal-users/{second_superadmin.id}/suspend", headers=portal_auth_headers
     )
     assert response.status_code == 409
 
 
 async def test_activate_already_active_user_returns_409(
-    client, portal_auth_headers, second_portal_user
+    client, portal_auth_headers, second_superadmin
 ):
     """Activating an already-active user returns 409."""
     response = await client.post(
-        f"/portal-users/{second_portal_user.id}/activate", headers=portal_auth_headers
+        f"/portal-users/{second_superadmin.id}/activate", headers=portal_auth_headers
     )
     assert response.status_code == 409
 
@@ -245,7 +245,7 @@ async def test_activate_already_active_user_returns_409(
 # ── Audit log assertions ──────────────────────────────────────────────────────
 
 
-async def test_create_portal_user_writes_audit_log(client, db, portal_auth_headers):
+async def test_create_superadmin_writes_audit_log(client, db, portal_auth_headers):
     """POST /portal-users writes a PORTAL_USER_CREATED audit row."""
     response = await client.post(
         "/portal-users/",
@@ -270,15 +270,15 @@ async def test_create_portal_user_writes_audit_log(client, db, portal_auth_heade
     assert row.after_state["email"] == "audit@test.com"
 
 
-async def test_suspend_portal_user_writes_audit_log(
-    client, db, portal_auth_headers, second_portal_user
+async def test_suspend_superadmin_writes_audit_log(
+    client, db, portal_auth_headers, second_superadmin
 ):
     """POST /portal-users/{id}/suspend writes a PORTAL_USER_SUSPENDED audit row."""
-    await client.post(f"/portal-users/{second_portal_user.id}/suspend", headers=portal_auth_headers)
+    await client.post(f"/portal-users/{second_superadmin.id}/suspend", headers=portal_auth_headers)
 
     result = await db.execute(
         select(AuditLog).where(
-            AuditLog.entity_id == str(second_portal_user.id),
+            AuditLog.entity_id == str(second_superadmin.id),
             AuditLog.action == PORTAL_USER_SUSPENDED,
         )
     )
@@ -286,16 +286,16 @@ async def test_suspend_portal_user_writes_audit_log(
     assert row.after_state["is_active"] is False
 
 
-async def test_activate_portal_user_writes_audit_log(
-    client, db, portal_auth_headers, second_portal_user
+async def test_activate_superadmin_writes_audit_log(
+    client, db, portal_auth_headers, second_superadmin
 ):
     """POST /portal-users/{id}/activate writes a PORTAL_USER_ACTIVATED audit row."""
-    await client.post(f"/portal-users/{second_portal_user.id}/suspend", headers=portal_auth_headers)
-    await client.post(f"/portal-users/{second_portal_user.id}/activate", headers=portal_auth_headers)
+    await client.post(f"/portal-users/{second_superadmin.id}/suspend", headers=portal_auth_headers)
+    await client.post(f"/portal-users/{second_superadmin.id}/activate", headers=portal_auth_headers)
 
     result = await db.execute(
         select(AuditLog).where(
-            AuditLog.entity_id == str(second_portal_user.id),
+            AuditLog.entity_id == str(second_superadmin.id),
             AuditLog.action == PORTAL_USER_ACTIVATED,
         )
     )

@@ -22,7 +22,7 @@ from app.constants.audit_actions import (
     AUTH_TOKEN_REFRESHED,
 )
 from app.models.audit_log import AuditLog
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.utils.security import create_refresh_token, hash_password
 
 _SEND_RESET_EMAIL_PATH = "app.services.portal_auth_service.send_password_reset_email"
@@ -31,7 +31,7 @@ _SEND_RESET_EMAIL_PATH = "app.services.portal_auth_service.send_password_reset_e
 # ── Login happy path ──────────────────────────────────────────────────────────
 
 
-async def test_login_valid_credentials_returns_token_pair(client, test_portal_user):
+async def test_login_valid_credentials_returns_token_pair(client, test_superadmin):
     """Valid credentials return a 200 with access and refresh tokens."""
     response = await client.post(
         "/auth/portal/login",
@@ -45,7 +45,7 @@ async def test_login_valid_credentials_returns_token_pair(client, test_portal_us
     assert body["token_type"] == "bearer"
 
 
-async def test_login_success_writes_audit_log(client, db, test_portal_user):
+async def test_login_success_writes_audit_log(client, db, test_superadmin):
     """Successful login writes an AUTH_LOGIN_SUCCESS audit row."""
     await client.post(
         "/auth/portal/login",
@@ -54,19 +54,19 @@ async def test_login_success_writes_audit_log(client, db, test_portal_user):
 
     result = await db.execute(
         select(AuditLog).where(
-            AuditLog.entity_id == str(test_portal_user.id),
+            AuditLog.entity_id == str(test_superadmin.id),
             AuditLog.action == AUTH_LOGIN_SUCCESS,
         )
     )
     row = result.scalar_one()  # Raises if 0 or 2+ rows — both are bugs
     assert row.actor_email == "admin@test.com"
-    assert row.actor_id == test_portal_user.id
+    assert row.actor_id == test_superadmin.id
 
 
 # ── Login failure ─────────────────────────────────────────────────────────────
 
 
-async def test_login_wrong_password_returns_401(client, test_portal_user):
+async def test_login_wrong_password_returns_401(client, test_superadmin):
     """Wrong password returns 401 with a generic error (does not leak email existence)."""
     response = await client.post(
         "/auth/portal/login",
@@ -90,7 +90,7 @@ async def test_login_unknown_email_returns_401(client):
 
 async def test_login_inactive_user_returns_401(client, db):
     """Inactive portal user cannot log in."""
-    inactive = PortalUser(
+    inactive = SuperAdmin(
         id=uuid.uuid4(),
         email="inactive@test.com",
         password_hash=hash_password("TestPassword123!"),
@@ -109,7 +109,7 @@ async def test_login_inactive_user_returns_401(client, db):
     assert response.status_code == 401
 
 
-async def test_login_failure_writes_audit_log(client, db, test_portal_user):
+async def test_login_failure_writes_audit_log(client, db, test_superadmin):
     """Failed login attempt writes an AUTH_LOGIN_FAILED audit row."""
     await client.post(
         "/auth/portal/login",
@@ -152,9 +152,9 @@ async def test_login_missing_password_returns_422(client):
 # ── Token refresh ─────────────────────────────────────────────────────────────
 
 
-async def test_refresh_valid_token_returns_new_token_pair(client, test_portal_user):
+async def test_refresh_valid_token_returns_new_token_pair(client, test_superadmin):
     """Valid refresh token returns a new access + refresh token pair."""
-    refresh_token = create_refresh_token(str(test_portal_user.id))
+    refresh_token = create_refresh_token(str(test_superadmin.id))
 
     response = await client.post(
         "/auth/portal/refresh",
@@ -179,11 +179,11 @@ async def test_refresh_invalid_token_returns_401(client):
     assert response.status_code == 401
 
 
-async def test_refresh_with_access_token_returns_401(client, test_portal_user):
+async def test_refresh_with_access_token_returns_401(client, test_superadmin):
     """Passing an access token to the refresh endpoint returns 401 (wrong token type)."""
     from app.utils.security import create_access_token
 
-    access_token = create_access_token(str(test_portal_user.id), test_portal_user.role)
+    access_token = create_access_token(str(test_superadmin.id), test_superadmin.role)
 
     response = await client.post(
         "/auth/portal/refresh",
@@ -193,9 +193,9 @@ async def test_refresh_with_access_token_returns_401(client, test_portal_user):
     assert response.status_code == 401
 
 
-async def test_refresh_writes_audit_log(client, db, test_portal_user):
+async def test_refresh_writes_audit_log(client, db, test_superadmin):
     """Successful token refresh writes an AUTH_TOKEN_REFRESHED audit row."""
-    refresh_token = create_refresh_token(str(test_portal_user.id))
+    refresh_token = create_refresh_token(str(test_superadmin.id))
 
     await client.post(
         "/auth/portal/refresh",
@@ -204,12 +204,12 @@ async def test_refresh_writes_audit_log(client, db, test_portal_user):
 
     result = await db.execute(
         select(AuditLog).where(
-            AuditLog.entity_id == str(test_portal_user.id),
+            AuditLog.entity_id == str(test_superadmin.id),
             AuditLog.action == AUTH_TOKEN_REFRESHED,
         )
     )
     row = result.scalar_one()
-    assert row.actor_id == test_portal_user.id
+    assert row.actor_id == test_superadmin.id
 
 
 # ── Protected route check ─────────────────────────────────────────────────────
@@ -226,7 +226,7 @@ async def test_protected_route_no_token_returns_403(client):
 # ── Forgot password / reset password ──────────────────────────────────────────
 
 
-async def test_forgot_password_known_email_sends_email_and_sets_token(client, db, test_portal_user):
+async def test_forgot_password_known_email_sends_email_and_sets_token(client, db, test_superadmin):
     """A known email gets a reset token generated and an email sent."""
     with patch(_SEND_RESET_EMAIL_PATH, new_callable=AsyncMock) as mock_send:
         response = await client.post(
@@ -237,12 +237,12 @@ async def test_forgot_password_known_email_sends_email_and_sets_token(client, db
     assert response.status_code == 204
     assert mock_send.called
 
-    await db.refresh(test_portal_user)
-    assert test_portal_user.password_reset_token is not None
-    assert test_portal_user.password_reset_token_expires_at is not None
+    await db.refresh(test_superadmin)
+    assert test_superadmin.password_reset_token is not None
+    assert test_superadmin.password_reset_token_expires_at is not None
 
 
-async def test_forgot_password_known_email_writes_audit_log(client, db, test_portal_user):
+async def test_forgot_password_known_email_writes_audit_log(client, db, test_superadmin):
     """A reset request for a known email writes an AUTH_PASSWORD_RESET_REQUESTED row."""
     with patch(_SEND_RESET_EMAIL_PATH, new_callable=AsyncMock):
         await client.post(
@@ -252,12 +252,12 @@ async def test_forgot_password_known_email_writes_audit_log(client, db, test_por
 
     result = await db.execute(
         select(AuditLog).where(
-            AuditLog.entity_id == str(test_portal_user.id),
+            AuditLog.entity_id == str(test_superadmin.id),
             AuditLog.action == AUTH_PASSWORD_RESET_REQUESTED,
         )
     )
     row = result.scalar_one()
-    assert row.actor_id == test_portal_user.id
+    assert row.actor_id == test_superadmin.id
 
 
 async def test_forgot_password_unknown_email_returns_204_without_sending(client):
@@ -272,7 +272,7 @@ async def test_forgot_password_unknown_email_returns_204_without_sending(client)
     assert not mock_send.called
 
 
-async def test_reset_password_valid_token_changes_password(client, db, test_portal_user):
+async def test_reset_password_valid_token_changes_password(client, db, test_superadmin):
     """A valid reset token sets a new password that can be used to log in."""
     with patch(_SEND_RESET_EMAIL_PATH, new_callable=AsyncMock):
         await client.post(
@@ -280,8 +280,8 @@ async def test_reset_password_valid_token_changes_password(client, db, test_port
             json={"email": "admin@test.com"},
         )
 
-    await db.refresh(test_portal_user)
-    token = test_portal_user.password_reset_token
+    await db.refresh(test_superadmin)
+    token = test_superadmin.password_reset_token
 
     response = await client.post(
         "/auth/portal/reset-password",
@@ -296,7 +296,7 @@ async def test_reset_password_valid_token_changes_password(client, db, test_port
     assert login_response.status_code == 200
 
 
-async def test_reset_password_token_is_single_use(client, db, test_portal_user):
+async def test_reset_password_token_is_single_use(client, db, test_superadmin):
     """Reusing a reset token after it has been consumed fails."""
     with patch(_SEND_RESET_EMAIL_PATH, new_callable=AsyncMock):
         await client.post(
@@ -304,8 +304,8 @@ async def test_reset_password_token_is_single_use(client, db, test_portal_user):
             json={"email": "admin@test.com"},
         )
 
-    await db.refresh(test_portal_user)
-    token = test_portal_user.password_reset_token
+    await db.refresh(test_superadmin)
+    token = test_superadmin.password_reset_token
 
     await client.post(
         "/auth/portal/reset-password",
@@ -328,7 +328,7 @@ async def test_reset_password_invalid_token_returns_400(client):
     assert response.status_code == 400
 
 
-async def test_reset_password_writes_audit_log(client, db, test_portal_user):
+async def test_reset_password_writes_audit_log(client, db, test_superadmin):
     """Completing a reset writes an AUTH_PASSWORD_RESET_COMPLETED row."""
     with patch(_SEND_RESET_EMAIL_PATH, new_callable=AsyncMock):
         await client.post(
@@ -336,8 +336,8 @@ async def test_reset_password_writes_audit_log(client, db, test_portal_user):
             json={"email": "admin@test.com"},
         )
 
-    await db.refresh(test_portal_user)
-    token = test_portal_user.password_reset_token
+    await db.refresh(test_superadmin)
+    token = test_superadmin.password_reset_token
 
     await client.post(
         "/auth/portal/reset-password",
@@ -346,9 +346,9 @@ async def test_reset_password_writes_audit_log(client, db, test_portal_user):
 
     result = await db.execute(
         select(AuditLog).where(
-            AuditLog.entity_id == str(test_portal_user.id),
+            AuditLog.entity_id == str(test_superadmin.id),
             AuditLog.action == AUTH_PASSWORD_RESET_COMPLETED,
         )
     )
     row = result.scalar_one()
-    assert row.actor_id == test_portal_user.id
+    assert row.actor_id == test_superadmin.id

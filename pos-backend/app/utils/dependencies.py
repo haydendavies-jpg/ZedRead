@@ -14,12 +14,12 @@ from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.statuses import PortalUserRole
+from app.constants.statuses import SuperAdminRole
 from app.database import get_db
 from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.group import Group
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.models.pos_user import POSUser
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
@@ -76,7 +76,7 @@ class CatalogAccess:
 
     pos_access: "POSAccess | None"
     mgmt_access: "ManagementAccess | None"
-    portal_access: "PortalUser | None"
+    portal_access: "SuperAdmin | None"
 
     @property
     def brand_id(self) -> uuid.UUID:
@@ -103,7 +103,7 @@ class CatalogAccess:
         )
 
     @property
-    def actor_user(self) -> "POSUser | PortalUser":
+    def actor_user(self) -> "POSUser | SuperAdmin":
         """The authenticated user, regardless of token type."""
         if self.pos_access:
             return self.pos_access.user
@@ -156,10 +156,10 @@ log = structlog.get_logger(__name__)
 _bearer = HTTPBearer()
 
 
-async def get_current_portal_user(
+async def get_current_superadmin(
     credentials: HTTPAuthorizationCredentials = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
-) -> PortalUser:
+) -> SuperAdmin:
     """
     Decode the Bearer access token and return the authenticated portal user.
 
@@ -170,7 +170,7 @@ async def get_current_portal_user(
         db: The active database session.
 
     Returns:
-        PortalUser: The authenticated and active portal user.
+        SuperAdmin: The authenticated and active portal user.
 
     Raises:
         HTTPException: 401 if the token is invalid or expired.
@@ -187,7 +187,7 @@ async def get_current_portal_user(
 
     user_id: str = payload.get("sub", "")
     result = await db.execute(
-        select(PortalUser).where(PortalUser.id == user_id)
+        select(SuperAdmin).where(SuperAdmin.id == user_id)
     )
     user = result.scalar_one_or_none()
 
@@ -208,21 +208,21 @@ async def get_current_portal_user(
 
 
 def require_super_admin(
-    current_user: PortalUser = Depends(get_current_portal_user),
-) -> PortalUser:
+    current_user: SuperAdmin = Depends(get_current_superadmin),
+) -> SuperAdmin:
     """
-    Dependency that restricts a route to super_admin users only.
+    Dependency that restricts a route to Admin-role SuperAdmins only.
 
     Args:
-        current_user: The authenticated portal user from get_current_portal_user.
+        current_user: The authenticated portal user from get_current_superadmin.
 
     Returns:
-        PortalUser: The authenticated super_admin user.
+        SuperAdmin: The authenticated Admin-role SuperAdmin.
 
     Raises:
-        HTTPException: 403 if the user is not a super_admin.
+        HTTPException: 403 if the user is not an Admin-role SuperAdmin.
     """
-    if current_user.role != PortalUserRole.SUPER_ADMIN.value:
+    if current_user.role != SuperAdminRole.ADMIN.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Super admin access required",
@@ -497,7 +497,7 @@ async def resolve_catalog_access(
     Unified dependency for catalog and report routes.
 
     Accepts any of three token types (tried in order):
-    1. portal JWT (type='access') — portal_user; full authority over any brand
+    1. portal JWT (type='access') — superadmin; full authority over any brand
     2. mgmt_access JWT — POS manager; scope-limited to their grant
     3. pos_access JWT — POS terminal user; site-scoped
 
@@ -525,11 +525,11 @@ async def resolve_catalog_access(
         payload = decode_token(token_str, expected_type="access")
         user_id_str: str = payload.get("sub", "")
         portal_result = await db.execute(
-            select(PortalUser).where(PortalUser.id == user_id_str)
+            select(SuperAdmin).where(SuperAdmin.id == user_id_str)
         )
-        portal_user = portal_result.scalar_one_or_none()
-        if portal_user and portal_user.is_active:
-            return CatalogAccess(pos_access=None, mgmt_access=None, portal_access=portal_user)
+        superadmin = portal_result.scalar_one_or_none()
+        if superadmin and superadmin.is_active:
+            return CatalogAccess(pos_access=None, mgmt_access=None, portal_access=superadmin)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Portal user inactive")
     except JWTError:
         pass  # Not a portal token — try management

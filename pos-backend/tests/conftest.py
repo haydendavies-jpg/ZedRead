@@ -38,7 +38,7 @@ from app.models import (  # noqa: F401
     ModifierOption,
     Payment,
     POSUser,
-    PortalUser,
+    SuperAdmin,
     PosDevice,
     Product,
     ProductAttributeType,
@@ -197,7 +197,7 @@ _ALL_TABLES = [
     "sites",
     "brands",
     "groups",
-    "portal_users",
+    "superadmins",
 ]
 
 
@@ -339,21 +339,21 @@ async def test_site(db: AsyncSession, test_brand: Brand) -> Site:
 
 
 @pytest_asyncio.fixture()
-async def test_portal_user(db: AsyncSession) -> PortalUser:
+async def test_superadmin(db: AsyncSession) -> SuperAdmin:
     """
-    A persisted super_admin PortalUser row for use in auth-dependent tests.
+    A persisted super_admin SuperAdmin row for use in auth-dependent tests.
 
     The password is 'TestPassword123!' — use portal_auth_headers to get a token.
 
     Returns:
-        PortalUser: A saved, active super_admin portal user.
+        SuperAdmin: A saved, active super_admin portal user.
     """
-    user = PortalUser(
+    user = SuperAdmin(
         id=uuid.uuid4(),
         email="admin@test.com",
         password_hash=hash_password("TestPassword123!"),
         name="Test Admin",
-        role="super_admin",
+        role="admin",
         is_active=True,
     )
     db.add(user)
@@ -363,14 +363,14 @@ async def test_portal_user(db: AsyncSession) -> PortalUser:
 
 
 @pytest_asyncio.fixture()
-async def portal_auth_headers(test_portal_user: PortalUser) -> dict[str, str]:
+async def portal_auth_headers(test_superadmin: SuperAdmin) -> dict[str, str]:
     """
-    Authorization header dict carrying a valid access token for test_portal_user.
+    Authorization header dict carrying a valid access token for test_superadmin.
 
     Returns:
         dict[str, str]: {"Authorization": "Bearer <token>"}
     """
-    token = create_access_token(str(test_portal_user.id), test_portal_user.role)
+    token = create_access_token(str(test_superadmin.id), test_superadmin.role)
     return {"Authorization": f"Bearer {token}"}
 
 

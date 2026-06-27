@@ -88,7 +88,7 @@ def create_access_token(user_id: str, role: str) -> str:
 
     Args:
         user_id: The portal user's UUID as a string.
-        role: The user's role string (e.g. "super_admin", "admin").
+        role: The user's role string (e.g. "admin", "reseller_staff").
 
     Returns:
         str: A signed access JWT.

@@ -46,7 +46,7 @@ async def list_grants(
     grants = await access_grant_service.list_grants(
         db,
         management_access=access.mgmt_access,
-        portal_user=access.portal_access,
+        superadmin=access.portal_access,
         brand_id_param=brand_id,
         skip=skip,
         limit=limit,
@@ -85,7 +85,7 @@ async def create_grant(
     grant = await access_grant_service.create_grant(
         db,
         management_access=access.mgmt_access,
-        portal_user=access.portal_access,
+        superadmin=access.portal_access,
         payload=payload,
     )
     return AccessGrantResponse.model_validate(grant)
@@ -120,7 +120,7 @@ async def update_grant(
         grant_id=grant_id,
         payload=payload,
         management_access=access.mgmt_access,
-        portal_user=access.portal_access,
+        superadmin=access.portal_access,
     )
     return AccessGrantResponse.model_validate(grant)
 
@@ -148,7 +148,7 @@ async def revoke_grant(
         db,
         grant_id=grant_id,
         management_access=access.mgmt_access,
-        portal_user=access.portal_access,
+        superadmin=access.portal_access,
     )
 
 
@@ -182,7 +182,7 @@ async def set_default_grant(
         db,
         grant_id=grant_id,
         management_access=access.mgmt_access,
-        portal_user=access.portal_access,
+        superadmin=access.portal_access,
     )
     return AccessGrantResponse.model_validate(grant)
 
@@ -192,7 +192,7 @@ async def set_default_grant(
 from app.models.access_profile import AccessProfile as AccessProfileModel
 from pydantic import BaseModel
 from sqlalchemy import select
-from app.utils.dependencies import get_current_portal_user
+from app.utils.dependencies import get_current_superadmin
 
 class AccessProfileOut(BaseModel):
     """Minimal access profile response for dropdowns."""
@@ -210,7 +210,7 @@ async def list_access_profiles(
     skip: int = 0,
     limit: int = 200,
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_portal_user),
+    actor=Depends(get_current_superadmin),
 ):
     """List access profiles for a brand. Requires portal JWT.
 
