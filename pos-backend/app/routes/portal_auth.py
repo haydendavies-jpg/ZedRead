@@ -5,13 +5,16 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants.audit_actions import AUTH_PASSWORD_CHANGED
 from app.database import get_db
 from app.models.portal_user import PortalUser
 from app.schemas.portal_auth import (
+    ForgotPasswordRequest,
     LoginRequest,
     ManagementTokenRequest,
     MgmtRefreshRequest,
     RefreshRequest,
+    ResetPasswordRequest,
     TokenResponse,
     UnifiedLoginResponse,
 )
@@ -126,10 +129,43 @@ async def change_password(
         actor_id=user.id,
         actor_email=user.email,
         actor_name=user.name,
-        action="auth.password.changed",
+        action=AUTH_PASSWORD_CHANGED,
         entity_type="portal_user",
         entity_id=str(user.id),
         after_state={"password_changed": True},
     )
 
     await db.commit()
+
+
+@router.post("/forgot-password", status_code=status.HTTP_204_NO_CONTENT)
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Request a password reset email.
+
+    Always returns 204 whether or not the email matches a portal user, so the
+    endpoint cannot be used to enumerate registered email addresses.
+    """
+    await portal_auth_service.request_password_reset(db, payload.email)
+
+
+@router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_password(
+    payload: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Complete a password reset using the token emailed by /forgot-password.
+
+    New password must be at least 8 characters. The token is single-use and
+    expires after PASSWORD_RESET_EXPIRY_HOURS.
+    """
+    if len(payload.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="New password must be at least 8 characters.",
+        )
+    await portal_auth_service.reset_password(db, payload.token, payload.new_password)

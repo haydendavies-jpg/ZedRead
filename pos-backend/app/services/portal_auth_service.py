@@ -1,20 +1,31 @@
 """Business logic for portal user authentication: login, refresh, and user lookup."""
 
+import secrets
+from datetime import UTC, datetime, timedelta
+
 import structlog
 from fastapi import HTTPException, status
 from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.audit_actions import AUTH_LOGIN_FAILED, AUTH_LOGIN_SUCCESS, AUTH_TOKEN_REFRESHED
+from app.constants.audit_actions import (
+    AUTH_LOGIN_FAILED,
+    AUTH_LOGIN_SUCCESS,
+    AUTH_PASSWORD_RESET_COMPLETED,
+    AUTH_PASSWORD_RESET_REQUESTED,
+    AUTH_TOKEN_REFRESHED,
+)
 from app.constants.statuses import ActorType
 from app.models.portal_user import PortalUser
 from app.schemas.portal_auth import LoginRequest, TokenResponse
 from app.services.audit_service import log_action
+from app.utils.email import PASSWORD_RESET_EXPIRY_HOURS, send_password_reset_email
 from app.utils.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    hash_password,
     verify_password,
 )
 
@@ -165,3 +176,103 @@ async def refresh(db: AsyncSession, refresh_token: str) -> TokenResponse:
 
     log.info("auth.token.refreshed", user_id=str(user.id))
     return TokenResponse(access_token=new_access, refresh_token=new_refresh)
+
+
+async def request_password_reset(db: AsyncSession, email: str) -> None:
+    """
+    Generate a password reset token and email it to the user, if the account exists.
+
+    Always returns successfully regardless of whether the email matches a
+    portal user — this prevents an attacker from using the endpoint to
+    enumerate registered email addresses.
+
+    Args:
+        db: The active database session.
+        email: The email address supplied on the forgot-password form.
+
+    Returns:
+        None
+    """
+    user = await _get_user_by_email(db, email)
+    if user is None or not user.is_active:
+        log.info("auth.password_reset.requested.unknown_email", email=email)
+        return
+
+    # Generate a cryptographically random token — never derived from user data
+    token = secrets.token_urlsafe(32)
+    user.password_reset_token = token
+    user.password_reset_token_expires_at = datetime.now(UTC) + timedelta(
+        hours=PASSWORD_RESET_EXPIRY_HOURS
+    )
+
+    await log_action(
+        db=db,
+        action=AUTH_PASSWORD_RESET_REQUESTED,
+        entity_type="portal_user",
+        entity_id=str(user.id),
+        actor_type=ActorType.USER,
+        actor_id=user.id,
+        actor_email=user.email,
+        actor_name=user.name,
+    )
+
+    # Send email — if this raises, roll back so no orphaned token is left behind
+    try:
+        await send_password_reset_email(to_email=user.email, token=token)
+    except Exception:
+        await db.rollback()
+        raise
+
+    await db.commit()
+    log.info("auth.password_reset.requested", user_id=str(user.id))
+
+
+async def reset_password(db: AsyncSession, token: str, new_password: str) -> None:
+    """
+    Consume a password reset token and set the user's new password.
+
+    Args:
+        db: The active database session.
+        token: The raw reset token from the emailed link.
+        new_password: The new plaintext password (validated by the caller).
+
+    Returns:
+        None
+
+    Raises:
+        HTTPException: 400 if the token is invalid or has expired.
+    """
+    result = await db.execute(
+        select(PortalUser).where(PortalUser.password_reset_token == token)
+    )
+    user = result.scalar_one_or_none()
+
+    if user is None or user.password_reset_token_expires_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token",
+        )
+
+    if datetime.now(UTC) > user.password_reset_token_expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token",
+        )
+
+    user.password_hash = hash_password(new_password)
+    # Single-use — clear the token so it cannot be replayed
+    user.password_reset_token = None
+    user.password_reset_token_expires_at = None
+
+    await log_action(
+        db=db,
+        action=AUTH_PASSWORD_RESET_COMPLETED,
+        entity_type="portal_user",
+        entity_id=str(user.id),
+        actor_type=ActorType.USER,
+        actor_id=user.id,
+        actor_email=user.email,
+        actor_name=user.name,
+    )
+    await db.commit()
+    log.info("auth.password_reset.completed", user_id=str(user.id))

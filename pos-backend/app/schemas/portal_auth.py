@@ -77,3 +77,16 @@ class MgmtRefreshRequest(BaseModel):
     """Payload for POST /auth/portal/mgmt-refresh."""
 
     refresh_token: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Payload for POST /auth/portal/forgot-password."""
+
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    """Payload for POST /auth/portal/reset-password."""
+
+    token: str
+    new_password: str
