@@ -27,7 +27,7 @@ from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.group import Group
 from app.models.superadmin import SuperAdmin
-from app.models.pos_user import POSUser
+from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
 from app.schemas.access_grant import AccessGrantCreate, AccessGrantUpdate
@@ -224,7 +224,7 @@ async def create_grant(
         HTTPException: 409 if an active grant already exists for the same user/scope/entity.
     """
     # Verify the target user exists and belongs to a brand in scope
-    user_r = await db.execute(select(POSUser).where(POSUser.id == payload.user_id))
+    user_r = await db.execute(select(User).where(User.id == payload.user_id))
     target_user = user_r.scalar_one_or_none()
     if not target_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target POS user not found")
@@ -291,7 +291,7 @@ async def create_grant(
     actor = management_access.user if management_access else superadmin
     assert actor is not None
 
-    granted_by = actor.id if isinstance(actor, POSUser) else None
+    granted_by = actor.id if isinstance(actor, User) else None
 
     # Auto-set is_default=True when this is the user's first active site-scope grant.
     # Subsequent site grants are non-default; admins can change the default via set_default_grant.

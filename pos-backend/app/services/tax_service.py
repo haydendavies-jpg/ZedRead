@@ -15,7 +15,7 @@ from app.constants.audit_actions import (
 )
 from app.constants.statuses import ActorType
 from app.models.superadmin import SuperAdmin
-from app.models.pos_user import POSUser
+from app.models.user import User
 from app.models.tax_category import TaxCategory
 from app.models.tax_rate import TaxRate
 from app.schemas.tax import (
@@ -95,7 +95,7 @@ async def create_tax_category(
     db: AsyncSession,
     brand_id: uuid.UUID,
     payload: TaxCategoryCreate,
-    actor: POSUser | SuperAdmin,
+    actor: User | SuperAdmin,
 ) -> TaxCategory:
     """
     Create a new TaxCategory for a brand and write an audit log row.
@@ -140,7 +140,7 @@ async def update_tax_category(
     brand_id: uuid.UUID,
     tax_category_id: uuid.UUID,
     payload: TaxCategoryUpdate,
-    actor: POSUser | SuperAdmin,
+    actor: User | SuperAdmin,
 ) -> TaxCategory:
     """
     Update a TaxCategory's mutable fields.
@@ -225,7 +225,7 @@ async def create_tax_rate(
     brand_id: uuid.UUID,
     tax_category_id: uuid.UUID,
     payload: TaxRateCreate,
-    actor: POSUser | SuperAdmin,
+    actor: User | SuperAdmin,
 ) -> TaxRate:
     """
     Create a TaxRate under a TaxCategory and write an audit log row.
@@ -283,7 +283,7 @@ async def update_tax_rate(
     brand_id: uuid.UUID,
     tax_rate_id: uuid.UUID,
     payload: TaxRateUpdate,
-    actor: POSUser | SuperAdmin,
+    actor: User | SuperAdmin,
 ) -> TaxRate:
     """
     Update a TaxRate's mutable fields and write an audit log row.

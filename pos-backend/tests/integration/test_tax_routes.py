@@ -38,7 +38,7 @@ async def test_create_tax_category_returns_201(client, pos_auth_headers, test_br
     assert body["is_active"] is True
 
 
-async def test_create_tax_category_writes_audit_log(client, db, pos_auth_headers, test_pos_user):
+async def test_create_tax_category_writes_audit_log(client, db, pos_auth_headers, test_user):
     """Creating a tax category writes a TAX_CATEGORY_CREATED audit row."""
     await client.post(
         "/tax/categories",
@@ -50,7 +50,7 @@ async def test_create_tax_category_writes_audit_log(client, db, pos_auth_headers
         select(AuditLog).where(AuditLog.action == TAX_CATEGORY_CREATED)
     )
     row = result.scalar_one()
-    assert row.actor_id == test_pos_user.id
+    assert row.actor_id == test_user.id
 
 
 async def test_list_tax_categories_returns_created(client, pos_auth_headers, test_tax_category):
@@ -133,7 +133,7 @@ async def test_create_tax_rate_returns_201(client, pos_auth_headers, test_tax_ca
 
 
 async def test_create_tax_rate_writes_audit_log(
-    client, db, pos_auth_headers, test_pos_user, test_tax_category
+    client, db, pos_auth_headers, test_user, test_tax_category
 ):
     """Creating a tax rate writes a TAX_RATE_CREATED audit row."""
     await client.post(
@@ -146,7 +146,7 @@ async def test_create_tax_rate_writes_audit_log(
         select(AuditLog).where(AuditLog.action == TAX_RATE_CREATED)
     )
     row = result.scalar_one()
-    assert row.actor_id == test_pos_user.id
+    assert row.actor_id == test_user.id
 
 
 async def test_list_tax_rates_returns_created(client, db, pos_auth_headers, test_tax_category):
@@ -187,7 +187,7 @@ async def test_update_tax_rate_returns_200(client, db, pos_auth_headers, test_ta
 
 
 async def test_update_tax_rate_writes_audit_log(
-    client, db, pos_auth_headers, test_pos_user, test_tax_category
+    client, db, pos_auth_headers, test_user, test_tax_category
 ):
     """Updating a tax rate writes a TAX_RATE_UPDATED audit row."""
     create_resp = await client.post(
@@ -207,7 +207,7 @@ async def test_update_tax_rate_writes_audit_log(
         select(AuditLog).where(AuditLog.action == TAX_RATE_UPDATED)
     )
     row = result.scalar_one()
-    assert row.actor_id == test_pos_user.id
+    assert row.actor_id == test_user.id
 
 
 # ── Tax rate failures ─────────────────────────────────────────────────────────

@@ -15,7 +15,7 @@ class UserInvite(Base):
     A pending email invitation for a new POS user.
 
     When a brand admin sends an invite, a row is created here with a unique
-    token. The invitee clicks the link, accepts the invite, and a POSUser +
+    token. The invitee clicks the link, accepts the invite, and a User +
     UserAccessGrant row are created in the same transaction. The invite is
     then marked is_accepted=True.
 
@@ -52,7 +52,7 @@ class UserInvite(Base):
     )
     invited_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("pos_users.id", ondelete="SET NULL"),
+        ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         comment="POS user who sent the invite, or NULL if sent by a portal admin",
     )

@@ -36,7 +36,7 @@ class UserPIN(Base):
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("pos_users.id", ondelete="CASCADE"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,  # Enforce one PIN per user at the DB level
         comment="POS user this PIN belongs to — one-to-one relationship",

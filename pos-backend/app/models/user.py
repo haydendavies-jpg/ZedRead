@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM model for POS users (staff who use the Android terminal)."""
+"""SQLAlchemy ORM model for Users (staff who log into the POS terminal)."""
 
 import uuid
 from datetime import datetime
@@ -10,16 +10,19 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 
-class POSUser(Base):
+class User(Base):
     """
-    A POS user is a member of staff who logs into the Android terminal.
+    A User is a member of staff who logs into the Android POS terminal.
 
-    POS users belong to a Brand (not a Group) and are granted access to
-    specific Sites via UserAccessGrant. They authenticate via email+password
-    for initial login and via PIN for quick session switching at the terminal.
+    Always has POS access; backend/portal access is optional and granted
+    per scope via UserAccessGrant. Users belong to a Brand (not a Group) —
+    target architecture (see ROLE_MODEL.md) moves this to Group-level
+    storage with multi-site grants, not yet implemented here. They
+    authenticate via email+password for initial login and via PIN for
+    quick session switching at the terminal.
     """
 
-    __tablename__ = "pos_users"
+    __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -32,13 +35,13 @@ class POSUser(Base):
         ForeignKey("brands.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
-        comment="Parent brand — POS users are scoped to a brand, not a group",
+        comment="Parent brand — Users are scoped to a brand, not a group",
     )
     ref: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
         unique=True,
-        server_default=text("'USR-' || LPAD(nextval('pos_users_ref_seq')::text, 6, '0')"),
+        server_default=text("'USR-' || LPAD(nextval('users_ref_seq')::text, 6, '0')"),
         comment="Human-readable reference ID, e.g. USR-000001",
     )
     name: Mapped[str] = mapped_column(
@@ -51,7 +54,7 @@ class POSUser(Base):
         unique=True,
         nullable=False,
         index=True,
-        comment="Login email — must be unique across all POS users",
+        comment="Login email — must be unique across all Users",
     )
     # Argon2 password hash — never store plaintext (rule 15)
     password_hash: Mapped[str] = mapped_column(

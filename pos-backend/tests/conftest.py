@@ -37,7 +37,7 @@ from app.models import (  # noqa: F401
     ModifierGroup,
     ModifierOption,
     Payment,
-    POSUser,
+    User,
     SuperAdmin,
     PosDevice,
     Product,
@@ -172,7 +172,7 @@ _ALL_TABLES = [
     "user_pins",
     "user_invites",
     "user_access_grants",
-    "pos_users",
+    "users",
     "access_profiles",
     "pos_devices",
     "license_invoices",
@@ -447,16 +447,16 @@ async def test_access_profile(db: AsyncSession, test_brand: Brand) -> AccessProf
 
 
 @pytest_asyncio.fixture()
-async def test_pos_user(db: AsyncSession, test_brand: Brand) -> POSUser:
+async def test_user(db: AsyncSession, test_brand: Brand) -> User:
     """
-    A persisted active POSUser row for test_brand.
+    A persisted active User row for test_brand.
 
     The password is 'POSPassword123!' — use pos_auth_headers to get a token.
 
     Returns:
-        POSUser: A saved, active POSUser instance.
+        User: A saved, active User instance.
     """
-    user = POSUser(
+    user = User(
         id=uuid.uuid4(),
         brand_id=test_brand.id,
         name="Test POS User",
@@ -473,12 +473,12 @@ async def test_pos_user(db: AsyncSession, test_brand: Brand) -> POSUser:
 @pytest_asyncio.fixture()
 async def test_access_grant(
     db: AsyncSession,
-    test_pos_user: POSUser,
+    test_user: User,
     test_site: Site,
     test_access_profile: AccessProfile,
 ) -> UserAccessGrant:
     """
-    A persisted active UserAccessGrant linking test_pos_user to test_site
+    A persisted active UserAccessGrant linking test_user to test_site
     with test_access_profile.
 
     Returns:
@@ -486,7 +486,7 @@ async def test_access_grant(
     """
     grant = UserAccessGrant(
         id=uuid.uuid4(),
-        user_id=test_pos_user.id,
+        user_id=test_user.id,
         site_id=test_site.id,
         access_profile_id=test_access_profile.id,
         granted_by_id=None,
@@ -500,12 +500,12 @@ async def test_access_grant(
 
 @pytest_asyncio.fixture()
 async def pos_auth_headers(
-    test_pos_user: POSUser,
+    test_user: User,
     test_site: Site,
     test_access_grant: UserAccessGrant,
 ) -> dict[str, str]:
     """
-    Authorization header dict carrying a valid POS access token for test_pos_user.
+    Authorization header dict carrying a valid POS access token for test_user.
 
     Also ensures the access grant exists (depends on test_access_grant) so
     the resolve_access dependency succeeds for tests using this fixture.
@@ -516,7 +516,7 @@ async def pos_auth_headers(
     import uuid as _uuid
     jti = str(_uuid.uuid4())
     token = create_pos_access_token(
-        user_id=str(test_pos_user.id),
+        user_id=str(test_user.id),
         site_id=str(test_site.id),
         jti=jti,
     )
@@ -553,12 +553,12 @@ async def test_manager_profile(db: AsyncSession, test_brand: Brand) -> AccessPro
 @pytest_asyncio.fixture()
 async def test_portal_grant(
     db: AsyncSession,
-    test_pos_user: POSUser,
+    test_user: User,
     test_site: Site,
     test_manager_profile: AccessProfile,
 ) -> UserAccessGrant:
     """
-    A persisted active site-scope UserAccessGrant for test_pos_user with a
+    A persisted active site-scope UserAccessGrant for test_user with a
     portal-capable Manager profile.
 
     Used by management auth tests.
@@ -568,7 +568,7 @@ async def test_portal_grant(
     """
     grant = UserAccessGrant(
         id=uuid.uuid4(),
-        user_id=test_pos_user.id,
+        user_id=test_user.id,
         scope="site",
         site_id=test_site.id,
         brand_id=None,
@@ -587,12 +587,12 @@ async def test_portal_grant(
 @pytest_asyncio.fixture()
 async def test_brand_grant(
     db: AsyncSession,
-    test_pos_user: POSUser,
+    test_user: User,
     test_brand: Brand,
     test_manager_profile: AccessProfile,
 ) -> UserAccessGrant:
     """
-    A persisted active brand-scope UserAccessGrant for test_pos_user.
+    A persisted active brand-scope UserAccessGrant for test_user.
 
     Used by management auth tests for multi-grant and brand-scope scenarios.
 
@@ -601,7 +601,7 @@ async def test_brand_grant(
     """
     grant = UserAccessGrant(
         id=uuid.uuid4(),
-        user_id=test_pos_user.id,
+        user_id=test_user.id,
         scope="brand",
         site_id=None,
         brand_id=test_brand.id,
@@ -619,12 +619,12 @@ async def test_brand_grant(
 
 @pytest_asyncio.fixture()
 async def mgmt_auth_headers(
-    test_pos_user: POSUser,
+    test_user: User,
     test_portal_grant: UserAccessGrant,
 ) -> dict[str, str]:
     """
     Authorization header dict carrying a valid management access token for
-    test_pos_user with a site-scope grant.
+    test_user with a site-scope grant.
 
     Returns:
         dict[str, str]: {"Authorization": "Bearer <mgmt_access_token>"}
@@ -632,7 +632,7 @@ async def mgmt_auth_headers(
     from app.utils.security import create_mgmt_access_token
 
     token = create_mgmt_access_token(
-        user_id=str(test_pos_user.id),
+        user_id=str(test_user.id),
         scope=test_portal_grant.scope,
         grant_id=str(test_portal_grant.id),
         site_id=str(test_portal_grant.site_id) if test_portal_grant.site_id else None,

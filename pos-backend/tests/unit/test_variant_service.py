@@ -169,7 +169,7 @@ async def test_check_duplicate_inactive_variant_ignored(
 
 @pytest.mark.asyncio
 async def test_create_variant_writes_audit_log(
-    db: AsyncSession, test_product, test_pos_user,
+    db: AsyncSession, test_product, test_user,
 ) -> None:
     """create_variant writes an audit_logs row with action 'variant.created'."""
     from sqlalchemy import select as _select
@@ -185,7 +185,7 @@ async def test_create_variant_writes_audit_log(
         price_cents=2000,
     )
 
-    result = await create_variant(db, test_product.brand_id, test_product.id, payload, test_pos_user)
+    result = await create_variant(db, test_product.brand_id, test_product.id, payload, test_user)
     assert result.sku == "SKU-XL"
 
     log_result = await db.execute(
@@ -193,4 +193,4 @@ async def test_create_variant_writes_audit_log(
     )
     log = log_result.scalar_one_or_none()
     assert log is not None
-    assert log.actor_id == test_pos_user.id
+    assert log.actor_id == test_user.id

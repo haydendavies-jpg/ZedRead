@@ -19,7 +19,7 @@ from app.constants.statuses import ActorType
 from app.models.modifier_group import ModifierGroup
 from app.models.modifier_option import ModifierOption
 from app.models.superadmin import SuperAdmin
-from app.models.pos_user import POSUser
+from app.models.user import User
 from app.models.product import Product
 from app.models.product_modifier_group_link import ProductModifierGroupLink
 from app.services.audit_service import log_action
@@ -148,7 +148,7 @@ async def create_modifier_group(
     db: AsyncSession,
     brand_id: uuid.UUID,
     payload: ModifierGroupCreate,
-    actor: POSUser | SuperAdmin,
+    actor: User | SuperAdmin,
 ) -> ModifierGroup:
     """Create a modifier group for a brand and write an audit row."""
     group = ModifierGroup(
@@ -183,7 +183,7 @@ async def update_modifier_group(
     brand_id: uuid.UUID,
     group_id: uuid.UUID,
     payload: ModifierGroupUpdate,
-    actor: POSUser | SuperAdmin,
+    actor: User | SuperAdmin,
 ) -> ModifierGroup:
     """Update a modifier group's mutable fields."""
     group = await _get_group_or_404(db, brand_id, group_id)
@@ -245,7 +245,7 @@ async def create_modifier_option(
     brand_id: uuid.UUID,
     group_id: uuid.UUID,
     payload: ModifierOptionCreate,
-    actor: POSUser | SuperAdmin,
+    actor: User | SuperAdmin,
 ) -> ModifierOption:
     """Create a modifier option and write an audit row."""
     await _get_group_or_404(db, brand_id, group_id)
@@ -286,7 +286,7 @@ async def update_modifier_option(
     brand_id: uuid.UUID,
     option_id: uuid.UUID,
     payload: ModifierOptionUpdate,
-    actor: POSUser | SuperAdmin,
+    actor: User | SuperAdmin,
 ) -> ModifierOption:
     """Update a modifier option's mutable fields."""
     option = await _get_option_or_404(db, brand_id, option_id)
@@ -326,7 +326,7 @@ async def link_modifier_group(
     product_id: uuid.UUID,
     group_id: uuid.UUID,
     display_order: int,
-    actor: POSUser | SuperAdmin,
+    actor: User | SuperAdmin,
 ) -> ProductModifierGroupLink:
     """
     Attach a modifier group to a product.
@@ -398,7 +398,7 @@ async def unlink_modifier_group(
     brand_id: uuid.UUID,
     product_id: uuid.UUID,
     group_id: uuid.UUID,
-    actor: POSUser | SuperAdmin,
+    actor: User | SuperAdmin,
 ) -> None:
     """Remove a modifier group link from a product."""
     result = await db.execute(

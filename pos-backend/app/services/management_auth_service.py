@@ -2,7 +2,7 @@
 
 Extends the portal login flow to also accept POS user credentials. If the
 email matches a superadmin, the existing portal JWT is issued. If it matches
-a pos_user whose access profile has can_access_portal=True, a management JWT
+a user whose access profile has can_access_portal=True, a management JWT
 is issued instead.
 """
 
@@ -26,7 +26,7 @@ from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.group import Group
 from app.models.superadmin import SuperAdmin
-from app.models.pos_user import POSUser
+from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
 from app.schemas.portal_auth import (
@@ -55,9 +55,9 @@ async def _load_superadmin(db: AsyncSession, email: str) -> SuperAdmin | None:
     return result.scalar_one_or_none()
 
 
-async def _load_pos_user(db: AsyncSession, email: str) -> POSUser | None:
-    """Fetch a pos_user by email."""
-    result = await db.execute(select(POSUser).where(POSUser.email == email))
+async def _load_user(db: AsyncSession, email: str) -> User | None:
+    """Fetch a user by email."""
+    result = await db.execute(select(User).where(User.email == email))
     return result.scalar_one_or_none()
 
 
@@ -121,7 +121,7 @@ async def _scope_name(
     return "Unknown"
 
 
-def _build_mgmt_token(user: POSUser, grant: UserAccessGrant) -> tuple[str, str]:
+def _build_mgmt_token(user: User, grant: UserAccessGrant) -> tuple[str, str]:
     """
     Issue a management access + refresh token pair for the given grant.
 
@@ -146,7 +146,7 @@ def _build_mgmt_token(user: POSUser, grant: UserAccessGrant) -> tuple[str, str]:
 
 async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse:
     """
-    Unified portal login: try superadmins first, then pos_users.
+    Unified portal login: try superadmins first, then users.
 
     Portal user → issues portal access + refresh tokens (existing behaviour).
     POS user with one portal-capable grant → issues management JWT directly.
@@ -207,21 +207,21 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
         log.info("auth.portal.login.success", user_id=str(superadmin.id))
         return UnifiedLoginResponse(access_token=access_token, refresh_token=refresh_token)
 
-    # ── 2. Try pos_user ───────────────────────────────────────────────────────
-    pos_user = await _load_pos_user(db, payload.email)
+    # ── 2. Try user ───────────────────────────────────────────────────────
+    user = await _load_user(db, payload.email)
     pos_creds_valid = (
-        pos_user is not None
-        and verify_password(payload.password, pos_user.password_hash)
-        and pos_user.is_active
+        user is not None
+        and verify_password(payload.password, user.password_hash)
+        and user.is_active
     )
 
     if not pos_creds_valid:
         # Neither table matched — consistent 401 (never reveal which table was checked)
-        entity_id = str(pos_user.id) if pos_user else payload.email
+        entity_id = str(user.id) if user else payload.email
         await log_action(
             db=db,
             action=MGMT_LOGIN_FAILED,
-            entity_type="pos_user",
+            entity_type="user",
             entity_id=entity_id,
             actor_type=ActorType.USER,
             actor_id=None,
@@ -236,18 +236,18 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Load portal-capable grants for this pos_user
-    grant_rows = await _portal_capable_grants(db, pos_user.id)
+    # Load portal-capable grants for this user
+    grant_rows = await _portal_capable_grants(db, user.id)
     if not grant_rows:
         await log_action(
             db=db,
             action=MGMT_LOGIN_FAILED,
-            entity_type="pos_user",
-            entity_id=str(pos_user.id),
+            entity_type="user",
+            entity_id=str(user.id),
             actor_type=ActorType.USER,
-            actor_id=pos_user.id,
-            actor_email=pos_user.email,
-            actor_name=pos_user.name,
+            actor_id=user.id,
+            actor_email=user.email,
+            actor_name=user.name,
         )
         await db.commit()
         raise HTTPException(
@@ -258,52 +258,52 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
     # Single grant → issue token immediately
     if len(grant_rows) == 1:
         grant = grant_rows[0]
-        access, refresh = _build_mgmt_token(pos_user, grant)
+        access, refresh = _build_mgmt_token(user, grant)
         await log_action(
             db=db,
             action=MGMT_LOGIN_SUCCESS,
-            entity_type="pos_user",
-            entity_id=str(pos_user.id),
+            entity_type="user",
+            entity_id=str(user.id),
             actor_type=ActorType.USER,
-            actor_id=pos_user.id,
-            actor_email=pos_user.email,
-            actor_name=pos_user.name,
+            actor_id=user.id,
+            actor_email=user.email,
+            actor_name=user.name,
         )
         await db.commit()
-        log.info("auth.portal.mgmt.login.success", user_id=str(pos_user.id), scope=grant.scope)
+        log.info("auth.portal.mgmt.login.success", user_id=str(user.id), scope=grant.scope)
         return UnifiedLoginResponse(
             access_token=access,
             refresh_token=refresh,
-            user_id=pos_user.id,
-            user_name=pos_user.name,
+            user_id=user.id,
+            user_name=user.name,
         )
 
     # Multiple grants — check for a default grant and auto-issue if found
     default_grants = [g for g in grant_rows if g.is_default]
     if default_grants:
         grant = default_grants[0]
-        access, refresh = _build_mgmt_token(pos_user, grant)
+        access, refresh = _build_mgmt_token(user, grant)
         await log_action(
             db=db,
             action=MGMT_LOGIN_SUCCESS,
-            entity_type="pos_user",
-            entity_id=str(pos_user.id),
+            entity_type="user",
+            entity_id=str(user.id),
             actor_type=ActorType.USER,
-            actor_id=pos_user.id,
-            actor_email=pos_user.email,
-            actor_name=pos_user.name,
+            actor_id=user.id,
+            actor_email=user.email,
+            actor_name=user.name,
         )
         await db.commit()
         log.info(
             "auth.portal.mgmt.login.success.default_grant",
-            user_id=str(pos_user.id),
+            user_id=str(user.id),
             scope=grant.scope,
         )
         return UnifiedLoginResponse(
             access_token=access,
             refresh_token=refresh,
-            user_id=pos_user.id,
-            user_name=pos_user.name,
+            user_id=user.id,
+            user_name=user.name,
         )
 
     # No default set → return list for manual scope selection (no token yet)
@@ -325,12 +325,12 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
 
     log.info(
         "auth.portal.mgmt.login.scope_selection",
-        user_id=str(pos_user.id),
+        user_id=str(user.id),
         grant_count=len(summaries),
     )
     return UnifiedLoginResponse(
-        user_id=pos_user.id,
-        user_name=pos_user.name,
+        user_id=user.id,
+        user_name=user.name,
         available_grants=summaries,
     )
 
@@ -355,10 +355,10 @@ async def issue_management_token(
     Raises:
         HTTPException: 401 if credentials fail; 403 if grant is not portal-capable.
     """
-    result = await db.execute(select(POSUser).where(POSUser.id == payload.user_id))
-    pos_user = result.scalar_one_or_none()
+    result = await db.execute(select(User).where(User.id == payload.user_id))
+    user = result.scalar_one_or_none()
 
-    if pos_user is None or not verify_password(payload.password, pos_user.password_hash) or not pos_user.is_active:
+    if user is None or not verify_password(payload.password, user.password_hash) or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -388,31 +388,31 @@ async def issue_management_token(
             detail="This grant does not have backend access configured",
         )
 
-    access, refresh = _build_mgmt_token(pos_user, grant)
+    access, refresh = _build_mgmt_token(user, grant)
 
     await log_action(
         db=db,
         action=MGMT_TOKEN_ISSUED,
-        entity_type="pos_user",
-        entity_id=str(pos_user.id),
+        entity_type="user",
+        entity_id=str(user.id),
         actor_type=ActorType.USER,
-        actor_id=pos_user.id,
-        actor_email=pos_user.email,
-        actor_name=pos_user.name,
+        actor_id=user.id,
+        actor_email=user.email,
+        actor_name=user.name,
     )
     await db.commit()
 
     log.info(
         "auth.portal.mgmt.token.issued",
-        user_id=str(pos_user.id),
+        user_id=str(user.id),
         grant_id=str(grant.id),
         scope=grant.scope,
     )
     return UnifiedLoginResponse(
         access_token=access,
         refresh_token=refresh,
-        user_id=pos_user.id,
-        user_name=pos_user.name,
+        user_id=user.id,
+        user_name=user.name,
     )
 
 
@@ -455,10 +455,10 @@ async def refresh_management_token(
         )
 
     user_id_str: str = payload.get("sub", "")
-    result = await db.execute(select(POSUser).where(POSUser.id == user_id_str))
-    pos_user = result.scalar_one_or_none()
+    result = await db.execute(select(User).where(User.id == user_id_str))
+    user = result.scalar_one_or_none()
 
-    if pos_user is None or not pos_user.is_active:
+    if user is None or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or inactive",
@@ -468,7 +468,7 @@ async def refresh_management_token(
     # Re-issue as a single-grant token or return grant list if needed.
     # Since a refresh carries no grant_id, we check if the user still has
     # exactly one portal-capable grant; if multiple, they must re-select.
-    grant_rows = await _portal_capable_grants(db, pos_user.id)
+    grant_rows = await _portal_capable_grants(db, user.id)
     if not grant_rows:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -477,48 +477,48 @@ async def refresh_management_token(
 
     if len(grant_rows) == 1:
         grant = grant_rows[0]
-        new_access, new_refresh = _build_mgmt_token(pos_user, grant)
+        new_access, new_refresh = _build_mgmt_token(user, grant)
         await log_action(
             db=db,
             action=AUTH_TOKEN_REFRESHED,
-            entity_type="pos_user",
-            entity_id=str(pos_user.id),
+            entity_type="user",
+            entity_id=str(user.id),
             actor_type=ActorType.USER,
-            actor_id=pos_user.id,
-            actor_email=pos_user.email,
-            actor_name=pos_user.name,
+            actor_id=user.id,
+            actor_email=user.email,
+            actor_name=user.name,
         )
         await db.commit()
-        log.info("auth.portal.mgmt.token.refreshed", user_id=str(pos_user.id))
+        log.info("auth.portal.mgmt.token.refreshed", user_id=str(user.id))
         return UnifiedLoginResponse(
             access_token=new_access,
             refresh_token=new_refresh,
-            user_id=pos_user.id,
-            user_name=pos_user.name,
+            user_id=user.id,
+            user_name=user.name,
         )
 
     # Multiple grants — honour the default grant if set
     default_grants = [g for g in grant_rows if g.is_default]
     if default_grants:
         grant = default_grants[0]
-        new_access, new_refresh = _build_mgmt_token(pos_user, grant)
+        new_access, new_refresh = _build_mgmt_token(user, grant)
         await log_action(
             db=db,
             action=AUTH_TOKEN_REFRESHED,
-            entity_type="pos_user",
-            entity_id=str(pos_user.id),
+            entity_type="user",
+            entity_id=str(user.id),
             actor_type=ActorType.USER,
-            actor_id=pos_user.id,
-            actor_email=pos_user.email,
-            actor_name=pos_user.name,
+            actor_id=user.id,
+            actor_email=user.email,
+            actor_name=user.name,
         )
         await db.commit()
-        log.info("auth.portal.mgmt.token.refreshed.default_grant", user_id=str(pos_user.id))
+        log.info("auth.portal.mgmt.token.refreshed.default_grant", user_id=str(user.id))
         return UnifiedLoginResponse(
             access_token=new_access,
             refresh_token=new_refresh,
-            user_id=pos_user.id,
-            user_name=pos_user.name,
+            user_id=user.id,
+            user_name=user.name,
         )
 
     # No default — caller must re-select via management-token
@@ -538,7 +538,7 @@ async def refresh_management_token(
             )
         )
     return UnifiedLoginResponse(
-        user_id=pos_user.id,
-        user_name=pos_user.name,
+        user_id=user.id,
+        user_name=user.name,
         available_grants=summaries,
     )

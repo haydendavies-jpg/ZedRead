@@ -26,10 +26,10 @@ from app.utils.security import (
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _mgmt_headers(pos_user, grant) -> dict[str, str]:
+def _mgmt_headers(user, grant) -> dict[str, str]:
     """Build Authorization headers with a management JWT for the given grant."""
     token = create_mgmt_access_token(
-        user_id=str(pos_user.id),
+        user_id=str(user.id),
         scope=grant.scope,
         grant_id=str(grant.id),
         site_id=str(grant.site_id) if grant.site_id else None,
@@ -56,19 +56,19 @@ async def test_list_products_accepts_pos_jwt(client, test_brand, pos_auth_header
 
 
 async def test_list_products_accepts_management_jwt_brand_scope(
-    client, test_brand, test_portal_grant, test_pos_user, test_manager_profile
+    client, test_brand, test_portal_grant, test_user, test_manager_profile
 ):
     """GET /products works with a management JWT (site-scope grant)."""
-    headers = _mgmt_headers(test_pos_user, test_portal_grant)
+    headers = _mgmt_headers(test_user, test_portal_grant)
     response = await client.get("/products", headers=headers)
     assert response.status_code == 200
 
 
 async def test_list_products_accepts_management_jwt_brand_scope_grant(
-    client, test_brand, test_brand_grant, test_pos_user
+    client, test_brand, test_brand_grant, test_user
 ):
     """GET /products works with a management JWT (brand-scope grant)."""
-    headers = _mgmt_headers(test_pos_user, test_brand_grant)
+    headers = _mgmt_headers(test_user, test_brand_grant)
     response = await client.get("/products", headers=headers)
     assert response.status_code == 200
 
@@ -119,10 +119,10 @@ async def test_list_tax_categories_accepts_pos_jwt(client, pos_auth_headers):
 
 
 async def test_list_tax_categories_accepts_mgmt_jwt(
-    client, test_pos_user, test_portal_grant
+    client, test_user, test_portal_grant
 ):
     """GET /tax/categories works with management JWT."""
-    headers = _mgmt_headers(test_pos_user, test_portal_grant)
+    headers = _mgmt_headers(test_user, test_portal_grant)
     response = await client.get("/tax/categories", headers=headers)
     assert response.status_code == 200
 
@@ -131,10 +131,10 @@ async def test_list_tax_categories_accepts_mgmt_jwt(
 
 
 async def test_revoked_grant_returns_403(
-    client, db, test_pos_user, test_portal_grant
+    client, db, test_user, test_portal_grant
 ):
     """A management JWT whose grant has been revoked returns 403."""
-    headers = _mgmt_headers(test_pos_user, test_portal_grant)
+    headers = _mgmt_headers(test_user, test_portal_grant)
 
     # Revoke the grant after issuing the token
     test_portal_grant.is_active = False
@@ -148,14 +148,14 @@ async def test_revoked_grant_returns_403(
 # ── Inactive POS user is rejected ────────────────────────────────────────────
 
 
-async def test_inactive_pos_user_management_token_returns_403(
-    client, db, test_pos_user, test_portal_grant
+async def test_inactive_user_management_token_returns_403(
+    client, db, test_user, test_portal_grant
 ):
     """Management JWT for an inactive POS user returns 403."""
-    headers = _mgmt_headers(test_pos_user, test_portal_grant)
+    headers = _mgmt_headers(test_user, test_portal_grant)
 
-    test_pos_user.is_active = False
-    db.add(test_pos_user)
+    test_user.is_active = False
+    db.add(test_user)
     await db.commit()
 
     response = await client.get("/products", headers=headers)

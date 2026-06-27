@@ -37,7 +37,7 @@ from app.models.invoice_line_modifier import InvoiceLineModifier
 from app.models.invoice_tax_breakdown import InvoiceTaxBreakdown
 from app.models.modifier_option import ModifierOption
 from app.models.payment import Payment
-from app.models.pos_user import POSUser
+from app.models.user import User
 from app.models.product import Product
 from app.models.tax_category import TaxCategory
 from app.models.tax_rate import TaxRate
@@ -255,7 +255,7 @@ async def create_invoice(
     db: AsyncSession,
     brand_id: uuid.UUID,
     site_id: uuid.UUID,
-    actor: POSUser,
+    actor: User,
 ) -> Invoice:
     """
     Create a DRAFT invoice for a site.
@@ -302,7 +302,7 @@ async def add_line_item(
     brand_id: uuid.UUID,
     invoice_id: uuid.UUID,
     payload: AddLineItemRequest,
-    actor: POSUser,
+    actor: User,
 ) -> InvoiceLineItem:
     """
     Add a product as a line item to an invoice.
@@ -440,7 +440,7 @@ async def add_line_modifier(
     invoice_id: uuid.UUID,
     line_item_id: uuid.UUID,
     payload: AddModifierRequest,
-    actor: POSUser,
+    actor: User,
 ) -> InvoiceLineModifier:
     """
     Attach a modifier selection to an invoice line item.
@@ -516,7 +516,7 @@ async def apply_discount(
     brand_id: uuid.UUID,
     invoice_id: uuid.UUID,
     payload: ApplyDiscountRequest,
-    actor: POSUser,
+    actor: User,
 ) -> Invoice:
     """
     Apply a flat discount to an invoice.
@@ -572,7 +572,7 @@ async def pay_invoice(
     brand_id: uuid.UUID,
     invoice_id: uuid.UUID,
     payload: PayInvoiceRequest,
-    actor: POSUser,
+    actor: User,
 ) -> Invoice:
     """
     Record a payment against an invoice.
@@ -648,7 +648,7 @@ async def void_invoice(
     db: AsyncSession,
     brand_id: uuid.UUID,
     invoice_id: uuid.UUID,
-    actor: POSUser,
+    actor: User,
 ) -> Invoice:
     """
     Void an invoice.
@@ -709,7 +709,7 @@ async def create_refund(
     brand_id: uuid.UUID,
     invoice_id: uuid.UUID,
     payload: RefundRequest,
-    actor: POSUser,
+    actor: User,
 ) -> Invoice:
     """
     Create a refund invoice for a paid invoice.

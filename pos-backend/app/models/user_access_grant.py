@@ -47,7 +47,7 @@ class UserAccessGrant(Base):
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("pos_users.id", ondelete="CASCADE"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
         comment="The POS user being granted access",
@@ -87,7 +87,7 @@ class UserAccessGrant(Base):
     )
     granted_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("pos_users.id", ondelete="SET NULL"),
+        ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         comment="The POS user who created this grant, or NULL for system grants",
     )

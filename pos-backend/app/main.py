@@ -14,7 +14,7 @@ from sqlalchemy.exc import OperationalError
 from app.database import engine
 from app.logging_config import configure_logging
 from app.middleware.logging import RequestLoggingMiddleware
-from app.routes import access_grants, brands, categories, combos, groups, invoices, license_invoices, licenses, modifiers, portal_auth, superadmins, pos_auth, pos_devices, pos_users, products, reports, site_overrides, sites, tax, user_invites, variants
+from app.routes import access_grants, brands, categories, combos, groups, invoices, license_invoices, licenses, modifiers, portal_auth, superadmins, pos_auth, pos_devices, users, products, reports, site_overrides, sites, tax, user_invites, variants
 from app.routes.access_grants import profiles_router
 
 # Configure structlog before the app starts accepting requests
@@ -84,7 +84,7 @@ app.include_router(licenses.router)
 app.include_router(license_invoices.router)
 app.include_router(pos_devices.router)
 app.include_router(user_invites.router)
-app.include_router(pos_users.router)
+app.include_router(users.router)
 app.include_router(tax.router)
 app.include_router(products.router)
 app.include_router(site_overrides.router)

@@ -54,7 +54,7 @@ async def test_set_override_is_idempotent(client, pos_auth_headers, test_product
 
 
 async def test_set_override_writes_audit_log(
-    client, db, pos_auth_headers, test_product, test_site, test_pos_user
+    client, db, pos_auth_headers, test_product, test_site, test_user
 ):
     """Setting an override writes a SITE_PRODUCT_OVERRIDE_SET audit row."""
     await client.put(
@@ -67,7 +67,7 @@ async def test_set_override_writes_audit_log(
         select(AuditLog).where(AuditLog.action == SITE_PRODUCT_OVERRIDE_SET)
     )
     row = result.scalar_one()
-    assert row.actor_id == test_pos_user.id
+    assert row.actor_id == test_user.id
 
 
 # ── Resolved catalog ─────────────────────────────────────────────────────────
@@ -176,7 +176,7 @@ async def test_remove_override_restores_base_price(
 
 
 async def test_remove_override_writes_audit_log(
-    client, db, pos_auth_headers, test_product, test_site, test_pos_user
+    client, db, pos_auth_headers, test_product, test_site, test_user
 ):
     """Removing an override writes a SITE_PRODUCT_OVERRIDE_REMOVED audit row."""
     await client.put(
@@ -193,7 +193,7 @@ async def test_remove_override_writes_audit_log(
         select(AuditLog).where(AuditLog.action == SITE_PRODUCT_OVERRIDE_REMOVED)
     )
     row = result.scalar_one()
-    assert row.actor_id == test_pos_user.id
+    assert row.actor_id == test_user.id
 
 
 async def test_remove_nonexistent_override_returns_404(

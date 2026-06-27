@@ -70,7 +70,7 @@ async def test_create_product_returns_201(client, db, pos_auth_headers, test_bra
     assert body["is_active"] is True
 
 
-async def test_create_product_writes_audit_log(client, db, pos_auth_headers, test_brand, test_pos_user):
+async def test_create_product_writes_audit_log(client, db, pos_auth_headers, test_brand, test_user):
     """Creating a product writes a PRODUCT_CREATED audit row."""
     category_id = await _get_or_create_category(db, test_brand.id)
 
@@ -84,7 +84,7 @@ async def test_create_product_writes_audit_log(client, db, pos_auth_headers, tes
         select(AuditLog).where(AuditLog.action == PRODUCT_CREATED)
     )
     row = result.scalar_one()
-    assert row.actor_id == test_pos_user.id
+    assert row.actor_id == test_user.id
 
 
 async def test_list_products_returns_created(client, pos_auth_headers, test_product):
@@ -120,7 +120,7 @@ async def test_update_product_returns_200(client, pos_auth_headers, test_product
 
 
 async def test_update_product_writes_audit_log(
-    client, db, pos_auth_headers, test_product, test_pos_user
+    client, db, pos_auth_headers, test_product, test_user
 ):
     """Updating a product writes a PRODUCT_UPDATED audit row."""
     await client.patch(
@@ -136,7 +136,7 @@ async def test_update_product_writes_audit_log(
         )
     )
     row = result.scalar_one()
-    assert row.actor_id == test_pos_user.id
+    assert row.actor_id == test_user.id
 
 
 async def test_deactivate_product_returns_200(client, pos_auth_headers, test_product):
@@ -151,7 +151,7 @@ async def test_deactivate_product_returns_200(client, pos_auth_headers, test_pro
 
 
 async def test_deactivate_product_writes_audit_log(
-    client, db, pos_auth_headers, test_product, test_pos_user
+    client, db, pos_auth_headers, test_product, test_user
 ):
     """Deactivating a product writes a PRODUCT_DEACTIVATED audit row."""
     await client.delete(f"/products/{test_product.id}", headers=pos_auth_headers)
@@ -163,7 +163,7 @@ async def test_deactivate_product_writes_audit_log(
         )
     )
     row = result.scalar_one()
-    assert row.actor_id == test_pos_user.id
+    assert row.actor_id == test_user.id
 
 
 # ── Business rules ────────────────────────────────────────────────────────────
