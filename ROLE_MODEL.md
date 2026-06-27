@@ -20,8 +20,8 @@ customer identity and is never assigned to a Group/Brand/Site — it has no tena
 
 | Role | Definition |
 |---|---|
-| Admin | Full ZedRead administrative access. |
-| Reseller Staff | Partner-side staff. Exact restriction set is an open question — see §5. |
+| Admin | Full ZedRead administrative access — sees and manages all Groups across all resellers. |
+| Reseller Staff | Partner-side staff. Scoped to **own accounts only**: can create/view/manage only the Groups they personally created or are assigned to. No visibility into other resellers' or ZedRead-direct accounts. |
 
 **Mapping to existing schema:** `portal_users.role` (today `super_admin \| admin \| reseller`) becomes
 `admin \| reseller_staff`. "Super Admin" as a role name is retired — "Admin" is the top role *within* the
@@ -72,8 +72,9 @@ gate) per grant:
 - A role's *POS access default* (full/limited/fixed) maps to the POS-side permission tier.
 - A role's *backend access default* (on/off, disable-able or grantable) maps to `backend_role` on a grant.
 
-**Open item:** today's 4 system `access_profiles` (Manager, Supervisor, Cashier, Kitchen) don't line up
-1:1 with the 5 target roles (Master User, Admin, Reporting Only, Manager, Staff) — see §5.
+**Decision:** the 4 existing system `access_profiles` (Manager, Supervisor, Cashier, Kitchen) are
+**replaced** by the 5 target roles. `access_profiles` becomes exactly Master User / Admin /
+Reporting Only / Manager / Staff — one tier, not two. No separate sub-tier underneath.
 
 ### Site assignment
 
@@ -111,7 +112,12 @@ Default page categories (open-ended list, designed for future expansion — not 
 - Customers & Loyalty
 
 **Hierarchy rule:** a tab is visible only if the user has at least one granted permission within that
-category. Specific pages/actions inside a visible tab are individually gated by their own permission.
+category. **Grain: per-page toggle within category** — each page inside a category (e.g. "Daily Sales"
+vs "Tax Collected" under Reports) has its own independently grantable permission; the category tab is
+shown if any page underneath it is granted. This is one level of granularity beyond a whole-category
+toggle, but does not split further into per-action (view/edit/delete) permissions within a page —
+"Reporting Only" achieves view-without-edit by being granted the page itself but not the products/menus
+pages that have edit actions, not by an action-level flag.
 
 **Licensing gate (orthogonal to role permissions):** some categories or pages are hidden entirely based
 on the Brand/Site's license plan, regardless of role. This is a second, independent gate —
@@ -119,12 +125,16 @@ on the Brand/Site's license plan, regardless of role. This is a second, independ
 
 ---
 
-## 5. Open questions / follow-ups
+## 5. Resolved decisions
 
-1. **Reseller Staff boundaries** — the user defined "Admin" as full SuperAdmin access but didn't specify
-   what Reseller Staff is restricted from. Needs clarification before schema/permission work starts.
-2. **System access profiles vs target roles** — decide whether the 4 existing system `access_profiles`
-   (Manager/Supervisor/Cashier/Kitchen) are renamed/reduced to match the 5 target User roles, or whether
-   `access_profiles` remains a separate, finer-grained tier layered underneath the 5 fixed roles.
-3. **Per-category permission list** — only the 5 category names are fixed by this doc; the concrete
-   permissions/pages inside each category are "to be expanded" per the original request.
+1. **Reseller Staff boundaries** — own-accounts-only: Reseller Staff sees/manages only Groups they
+   created or are assigned to. Admin sees everything. (See §1.)
+2. **System access profiles vs target roles** — the 4 existing system profiles are replaced by the 5
+   target roles; `access_profiles` is not a separate sub-tier. (See §2, "Two independent axes" note.)
+3. **Permission grain per page category** — per-page toggle within each category, not whole-category-only
+   and not per-action. (See §4.)
+
+## 6. Still open / to be expanded
+
+- The concrete list of pages within each category (e.g. exactly which pages live under Reports vs
+  Customers & Loyalty) is not yet enumerated — to be defined when this work is scheduled into a stage.

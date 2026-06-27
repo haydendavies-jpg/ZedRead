@@ -188,7 +188,7 @@ Pending invite tokens for new POS user onboarding.
 #### `access_profiles`
 Named permission tiers within a brand. Four system profiles are seeded automatically when a brand is created; they cannot be deleted.
 
-**Open question (see `ROLE_MODEL.md` §5):** whether these 4 system profiles get reconciled/renamed against the 5 target User roles (Master User/Admin/Reporting Only/Manager/Staff), or remain a separate finer-grained tier underneath them.
+**Target rename (see `ROLE_MODEL.md` §2/§5):** these 4 system profiles (Manager/Supervisor/Cashier/Kitchen) are decided to be **replaced** by the 5 target User roles (Master User/Admin/Reporting Only/Manager/Staff) — not implemented yet; columns below are current.
 
 | Column | Type | Notes |
 |--------|------|-------|
