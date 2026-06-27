@@ -6,10 +6,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.schemas.site import SiteCreate, SiteResponse, SiteUpdate
 from app.services import site_service
-from app.utils.dependencies import get_current_portal_user
+from app.utils.dependencies import get_current_superadmin
 
 router = APIRouter(prefix="/sites", tags=["sites"])
 
@@ -22,7 +22,7 @@ async def list_sites(
     brand_id: uuid.UUID | None = Query(default=None, description="Filter by parent brand ID"),
     is_active: bool | None = Query(default=None, description="Filter by active/inactive status"),
     db: AsyncSession = Depends(get_db),
-    _: PortalUser = Depends(get_current_portal_user),
+    _: SuperAdmin = Depends(get_current_superadmin),
 ) -> list[SiteResponse]:
     """List all sites with pagination and optional filters."""
     return await site_service.list_sites(db, skip=skip, limit=limit, name=name, brand_id=brand_id, is_active=is_active)
@@ -32,7 +32,7 @@ async def list_sites(
 async def get_site(
     site_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: PortalUser = Depends(get_current_portal_user),
+    _: SuperAdmin = Depends(get_current_superadmin),
 ) -> SiteResponse:
     """Fetch a single site by ID."""
     return await site_service.get_site(db, site_id)
@@ -42,7 +42,7 @@ async def get_site(
 async def create_site(
     payload: SiteCreate,
     db: AsyncSession = Depends(get_db),
-    actor: PortalUser = Depends(get_current_portal_user),
+    actor: SuperAdmin = Depends(get_current_superadmin),
 ) -> SiteResponse:
     """Create a new site under a brand."""
     return await site_service.create_site(db, payload, actor)
@@ -53,7 +53,7 @@ async def update_site(
     site_id: uuid.UUID,
     payload: SiteUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: PortalUser = Depends(get_current_portal_user),
+    actor: SuperAdmin = Depends(get_current_superadmin),
 ) -> SiteResponse:
     """Update a site's name."""
     return await site_service.update_site(db, site_id, payload, actor)
@@ -63,7 +63,7 @@ async def update_site(
 async def suspend_site(
     site_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: PortalUser = Depends(get_current_portal_user),
+    actor: SuperAdmin = Depends(get_current_superadmin),
 ) -> SiteResponse:
     """Suspend a site (set is_active = False)."""
     return await site_service.suspend_site(db, site_id, actor)
@@ -73,7 +73,7 @@ async def suspend_site(
 async def activate_site(
     site_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: PortalUser = Depends(get_current_portal_user),
+    actor: SuperAdmin = Depends(get_current_superadmin),
 ) -> SiteResponse:
     """Activate a previously suspended site."""
     return await site_service.activate_site(db, site_id, actor)

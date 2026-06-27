@@ -13,7 +13,7 @@ from app.constants.audit_actions import (
     SITE_SUSPENDED,
     SITE_UPDATED,
 )
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.models.site import Site
 from app.schemas.site import SiteCreate, SiteUpdate
 from app.services.audit_service import log_action
@@ -99,7 +99,7 @@ async def get_site(db: AsyncSession, site_id: uuid.UUID) -> Site:
 async def create_site(
     db: AsyncSession,
     payload: SiteCreate,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> Site:
     """
     Create a new Site and write an audit log row in the same transaction.
@@ -147,7 +147,7 @@ async def update_site(
     db: AsyncSession,
     site_id: uuid.UUID,
     payload: SiteUpdate,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> Site:
     """
     Update a Site's mutable fields and write an audit log row.
@@ -191,7 +191,7 @@ async def update_site(
 async def suspend_site(
     db: AsyncSession,
     site_id: uuid.UUID,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> Site:
     """
     Suspend a site (set is_active = False) and write an audit log row.
@@ -235,7 +235,7 @@ async def suspend_site(
 async def activate_site(
     db: AsyncSession,
     site_id: uuid.UUID,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> Site:
     """
     Activate a site (set is_active = True) and write an audit log row.

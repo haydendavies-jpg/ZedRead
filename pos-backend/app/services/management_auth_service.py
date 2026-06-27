@@ -1,7 +1,7 @@
 """Business logic for unified portal login and management JWT issuance.
 
 Extends the portal login flow to also accept POS user credentials. If the
-email matches a portal_user, the existing portal JWT is issued. If it matches
+email matches a superadmin, the existing portal JWT is issued. If it matches
 a pos_user whose access profile has can_access_portal=True, a management JWT
 is issued instead.
 """
@@ -25,7 +25,7 @@ from app.constants.statuses import ActorType, GrantScope
 from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.group import Group
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.models.pos_user import POSUser
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
@@ -49,9 +49,9 @@ from app.utils.security import (
 log = structlog.get_logger(__name__)
 
 
-async def _load_portal_user(db: AsyncSession, email: str) -> PortalUser | None:
-    """Fetch a portal_user by email."""
-    result = await db.execute(select(PortalUser).where(PortalUser.email == email))
+async def _load_superadmin(db: AsyncSession, email: str) -> SuperAdmin | None:
+    """Fetch a superadmin by email."""
+    result = await db.execute(select(SuperAdmin).where(SuperAdmin.email == email))
     return result.scalar_one_or_none()
 
 
@@ -146,7 +146,7 @@ def _build_mgmt_token(user: POSUser, grant: UserAccessGrant) -> tuple[str, str]:
 
 async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse:
     """
-    Unified portal login: try portal_users first, then pos_users.
+    Unified portal login: try superadmins first, then pos_users.
 
     Portal user → issues portal access + refresh tokens (existing behaviour).
     POS user with one portal-capable grant → issues management JWT directly.
@@ -165,46 +165,46 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
     """
     log.info("auth.portal.login.attempt", email=payload.email)
 
-    # ── 1. Try portal_user first ─────────────────────────────────────────────
-    portal_user = await _load_portal_user(db, payload.email)
-    if portal_user is not None:
+    # ── 1. Try superadmin first ─────────────────────────────────────────────
+    superadmin = await _load_superadmin(db, payload.email)
+    if superadmin is not None:
         credentials_valid = (
-            verify_password(payload.password, portal_user.password_hash)
-            and portal_user.is_active
+            verify_password(payload.password, superadmin.password_hash)
+            and superadmin.is_active
         )
         if not credentials_valid:
             await log_action(
                 db=db,
                 action=AUTH_LOGIN_FAILED,
-                entity_type="portal_user",
-                entity_id=str(portal_user.id),
+                entity_type="superadmin",
+                entity_id=str(superadmin.id),
                 actor_type=ActorType.USER,
                 actor_id=None,
                 actor_email=payload.email,
                 actor_name=None,
             )
             await db.commit()
-            log.warning("auth.portal.login.failed", email=payload.email, reason="portal_user")
+            log.warning("auth.portal.login.failed", email=payload.email, reason="superadmin")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        access_token = create_access_token(str(portal_user.id), portal_user.role)
-        refresh_token = create_refresh_token(str(portal_user.id))
+        access_token = create_access_token(str(superadmin.id), superadmin.role)
+        refresh_token = create_refresh_token(str(superadmin.id))
         await log_action(
             db=db,
             action=AUTH_LOGIN_SUCCESS,
-            entity_type="portal_user",
-            entity_id=str(portal_user.id),
+            entity_type="superadmin",
+            entity_id=str(superadmin.id),
             actor_type=ActorType.USER,
-            actor_id=portal_user.id,
-            actor_email=portal_user.email,
-            actor_name=portal_user.name,
+            actor_id=superadmin.id,
+            actor_email=superadmin.email,
+            actor_name=superadmin.name,
         )
         await db.commit()
-        log.info("auth.portal.login.success", user_id=str(portal_user.id))
+        log.info("auth.portal.login.success", user_id=str(superadmin.id))
         return UnifiedLoginResponse(access_token=access_token, refresh_token=refresh_token)
 
     # ── 2. Try pos_user ───────────────────────────────────────────────────────

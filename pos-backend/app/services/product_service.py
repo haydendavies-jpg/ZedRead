@@ -22,7 +22,7 @@ from app.constants.audit_actions import (
 )
 from app.constants.statuses import ActorType
 from app.models.category import Category
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.models.pos_user import POSUser
 from app.models.product import Product
 from app.schemas.product import ProductCreate, ProductUpdate
@@ -155,7 +155,7 @@ async def create_product(
     db: AsyncSession,
     brand_id: uuid.UUID,
     payload: ProductCreate,
-    actor: POSUser | PortalUser,
+    actor: POSUser | SuperAdmin,
 ) -> Product:
     """
     Create a new product in the catalog and write an audit log row.
@@ -218,7 +218,7 @@ async def update_product(
     brand_id: uuid.UUID,
     product_id: uuid.UUID,
     payload: ProductUpdate,
-    actor: POSUser | PortalUser,
+    actor: POSUser | SuperAdmin,
 ) -> Product:
     """
     Update a product's mutable fields and write an audit log row.
@@ -278,7 +278,7 @@ async def deactivate_product(
     db: AsyncSession,
     brand_id: uuid.UUID,
     product_id: uuid.UUID,
-    actor: POSUser | PortalUser,
+    actor: POSUser | SuperAdmin,
 ) -> Product:
     """
     Soft-delete a product by setting is_active=False.
@@ -329,7 +329,7 @@ async def upload_photo(
     brand_id: uuid.UUID,
     product_id: uuid.UUID,
     file: UploadFile,
-    actor: POSUser | PortalUser,
+    actor: POSUser | SuperAdmin,
 ) -> Product:
     """
     Upload a product photo to Supabase Storage and save the URL on the product.

@@ -15,7 +15,7 @@ from app.constants.audit_actions import (
 )
 from app.constants.statuses import LicenseStatus
 from app.models.license import License
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.models.site import Site
 from app.schemas.license import LicenseCreate, LicenseUpdate
 from app.services.audit_service import log_action
@@ -96,7 +96,7 @@ async def get_license(db: AsyncSession, license_id: uuid.UUID) -> License:
 async def create_license(
     db: AsyncSession,
     payload: LicenseCreate,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> License:
     """
     Create a new license for a site and write an audit log row in the same transaction.
@@ -174,7 +174,7 @@ async def update_license(
     db: AsyncSession,
     license_id: uuid.UUID,
     payload: LicenseUpdate,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> License:
     """
     Update mutable fields on a license and write an audit log row.
@@ -230,7 +230,7 @@ async def update_license(
 async def disable_license(
     db: AsyncSession,
     license_id: uuid.UUID,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> License:
     """
     Disable an active license (manual suspension).
@@ -274,7 +274,7 @@ async def disable_license(
 async def enable_license(
     db: AsyncSession,
     license_id: uuid.UUID,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> License:
     """
     Re-enable a disabled license.

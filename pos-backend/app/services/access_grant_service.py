@@ -26,7 +26,7 @@ from app.constants.statuses import ActorType, GrantScope
 from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.group import Group
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.models.pos_user import POSUser
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
@@ -41,7 +41,7 @@ async def _load_grant_with_authority(
     db: AsyncSession,
     grant_id: uuid.UUID,
     management_access: ManagementAccess | None,
-    portal_user: PortalUser | None,
+    superadmin: SuperAdmin | None,
 ) -> UserAccessGrant:
     """
     Load a grant and verify the caller has authority over it.
@@ -53,7 +53,7 @@ async def _load_grant_with_authority(
         db: Active session.
         grant_id: The grant to load.
         management_access: Set if caller is a management JWT user.
-        portal_user: Set if caller is a portal admin.
+        superadmin: Set if caller is a portal admin.
 
     Returns:
         UserAccessGrant: The verified grant.
@@ -68,7 +68,7 @@ async def _load_grant_with_authority(
     if grant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grant not found")
 
-    if portal_user:
+    if superadmin:
         return grant  # Portal admin has full authority
 
     # Management user — verify the grant is within their scope
@@ -139,7 +139,7 @@ async def _assert_grant_in_scope(
 async def list_grants(
     db: AsyncSession,
     management_access: ManagementAccess | None,
-    portal_user: PortalUser | None,
+    superadmin: SuperAdmin | None,
     brand_id_param: uuid.UUID | None,
     skip: int,
     limit: int,
@@ -155,7 +155,7 @@ async def list_grants(
     Args:
         db: Active session.
         management_access: Set for management JWT callers.
-        portal_user: Set for portal admin callers.
+        superadmin: Set for portal admin callers.
         brand_id_param: Optional brand_id filter (required for portal/group-scope).
         skip: Pagination offset.
         limit: Maximum results.
@@ -165,7 +165,7 @@ async def list_grants(
     """
     query = select(UserAccessGrant).where(UserAccessGrant.is_active == True)  # noqa: E712
 
-    if portal_user:
+    if superadmin:
         if brand_id_param:
             # Portal admin filtered to a brand
             sites_sq = select(Site.id).where(Site.brand_id == brand_id_param)
@@ -203,7 +203,7 @@ async def list_grants(
 async def create_grant(
     db: AsyncSession,
     management_access: ManagementAccess | None,
-    portal_user: PortalUser | None,
+    superadmin: SuperAdmin | None,
     payload: AccessGrantCreate,
 ) -> UserAccessGrant:
     """
@@ -212,7 +212,7 @@ async def create_grant(
     Args:
         db: Active session.
         management_access: Set for management JWT callers.
-        portal_user: Set for portal admin callers.
+        superadmin: Set for portal admin callers.
         payload: Grant creation data.
 
     Returns:
@@ -288,7 +288,7 @@ async def create_grant(
                         detail="User already belongs to a different group. A POS user can only belong to one group.",
                     )
 
-    actor = management_access.user if management_access else portal_user
+    actor = management_access.user if management_access else superadmin
     assert actor is not None
 
     granted_by = actor.id if isinstance(actor, POSUser) else None
@@ -531,7 +531,7 @@ async def update_grant(
     grant_id: uuid.UUID,
     payload: AccessGrantUpdate,
     management_access: ManagementAccess | None,
-    portal_user: PortalUser | None,
+    superadmin: SuperAdmin | None,
 ) -> UserAccessGrant:
     """
     Update the POS access profile and/or backend role on an existing grant.
@@ -544,14 +544,14 @@ async def update_grant(
         grant_id: Grant to update.
         payload: Fields to update (access_profile_id and/or backend_role).
         management_access: Set for management JWT callers.
-        portal_user: Set for portal admin callers.
+        superadmin: Set for portal admin callers.
 
     Returns:
         UserAccessGrant: The updated grant.
     """
-    grant = await _load_grant_with_authority(db, grant_id, management_access, portal_user)
+    grant = await _load_grant_with_authority(db, grant_id, management_access, superadmin)
 
-    actor = management_access.user if management_access else portal_user
+    actor = management_access.user if management_access else superadmin
     assert actor is not None
 
     # Update POS access profile when explicitly supplied
@@ -616,7 +616,7 @@ async def revoke_grant(
     db: AsyncSession,
     grant_id: uuid.UUID,
     management_access: ManagementAccess | None,
-    portal_user: PortalUser | None,
+    superadmin: SuperAdmin | None,
 ) -> None:
     """
     Soft-delete a grant (set is_active=False).
@@ -625,14 +625,14 @@ async def revoke_grant(
         db: Active session.
         grant_id: Grant to revoke.
         management_access: Set for management JWT callers.
-        portal_user: Set for portal admin callers.
+        superadmin: Set for portal admin callers.
     """
-    grant = await _load_grant_with_authority(db, grant_id, management_access, portal_user)
+    grant = await _load_grant_with_authority(db, grant_id, management_access, superadmin)
 
     if not grant.is_active:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Grant is already revoked")
 
-    actor = management_access.user if management_access else portal_user
+    actor = management_access.user if management_access else superadmin
     assert actor is not None
 
     grant.is_active = False
@@ -656,7 +656,7 @@ async def set_default_grant(
     db: AsyncSession,
     grant_id: uuid.UUID,
     management_access: ManagementAccess | None,
-    portal_user: PortalUser | None,
+    superadmin: SuperAdmin | None,
 ) -> UserAccessGrant:
     """
     Set a site-scope grant as the user's default (primary) login entry point.
@@ -669,7 +669,7 @@ async def set_default_grant(
         db: Active session.
         grant_id: Grant to make the default.
         management_access: Set for management JWT callers.
-        portal_user: Set for portal admin callers.
+        superadmin: Set for portal admin callers.
 
     Returns:
         UserAccessGrant: The updated grant with is_default=True.
@@ -678,7 +678,7 @@ async def set_default_grant(
         HTTPException: 404 if grant not found or out of scope.
         HTTPException: 400 if the grant is not a site-scope grant.
     """
-    grant = await _load_grant_with_authority(db, grant_id, management_access, portal_user)
+    grant = await _load_grant_with_authority(db, grant_id, management_access, superadmin)
 
     if grant.scope != GrantScope.SITE:
         raise HTTPException(
@@ -691,7 +691,7 @@ async def set_default_grant(
             detail="Cannot set a revoked grant as default",
         )
 
-    actor = management_access.user if management_access else portal_user
+    actor = management_access.user if management_access else superadmin
     assert actor is not None
 
     # Clear is_default on all other site-scope grants for this user

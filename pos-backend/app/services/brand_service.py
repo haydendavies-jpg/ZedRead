@@ -20,7 +20,7 @@ from app.constants.audit_actions import (
 )
 from app.models.brand import Brand
 from app.models.category import Category
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.schemas.brand import BrandCreate, BrandUpdate
 from app.services.access_profile_service import seed_system_profiles
 from app.services.audit_service import log_action
@@ -106,7 +106,7 @@ async def get_brand(db: AsyncSession, brand_id: uuid.UUID) -> Brand:
 async def create_brand(
     db: AsyncSession,
     payload: BrandCreate,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> Brand:
     """
     Create a Brand and auto-create its 'Uncategorised' system category.
@@ -172,7 +172,7 @@ async def update_brand(
     db: AsyncSession,
     brand_id: uuid.UUID,
     payload: BrandUpdate,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> Brand:
     """
     Update a Brand's mutable fields and write an audit log row.
@@ -216,7 +216,7 @@ async def update_brand(
 async def suspend_brand(
     db: AsyncSession,
     brand_id: uuid.UUID,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> Brand:
     """
     Suspend a brand (set is_active = False) and write an audit log row.
@@ -260,7 +260,7 @@ async def suspend_brand(
 async def activate_brand(
     db: AsyncSession,
     brand_id: uuid.UUID,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> Brand:
     """
     Activate a brand (set is_active = True) and write an audit log row.

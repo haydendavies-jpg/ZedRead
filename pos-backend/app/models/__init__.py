@@ -14,7 +14,7 @@ from app.models.license_invoice import LicenseInvoice
 from app.models.modifier_group import ModifierGroup
 from app.models.modifier_option import ModifierOption
 from app.models.payment import Payment
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.models.pos_device import PosDevice
 from app.models.pos_user import POSUser
 from app.models.product import Product
@@ -50,7 +50,7 @@ __all__ = [
     "ModifierGroup",
     "ModifierOption",
     "Payment",
-    "PortalUser",
+    "SuperAdmin",
     "PosDevice",
     "POSUser",
     "Product",

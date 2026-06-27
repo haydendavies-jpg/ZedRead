@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants.audit_actions import LICENSE_INVOICE_PAID
 from app.models.license import License
 from app.models.license_invoice import LicenseInvoice
-from app.models.portal_user import PortalUser
+from app.models.superadmin import SuperAdmin
 from app.schemas.license_invoice import LicenseInvoiceCreate, LicenseInvoicePayRequest
 from app.services.audit_service import log_action
 
@@ -81,7 +81,7 @@ async def get_invoice(db: AsyncSession, invoice_id: uuid.UUID) -> LicenseInvoice
 async def create_invoice(
     db: AsyncSession,
     payload: LicenseInvoiceCreate,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> LicenseInvoice:
     """
     Create a new invoice against a license and write an audit log row.
@@ -133,7 +133,7 @@ async def pay_invoice(
     db: AsyncSession,
     invoice_id: uuid.UUID,
     payload: LicenseInvoicePayRequest,
-    actor: PortalUser,
+    actor: SuperAdmin,
 ) -> LicenseInvoice:
     """
     Mark an open invoice as paid and write a LICENSE_INVOICE_PAID audit row.

@@ -33,10 +33,10 @@ SITE_UPDATED = "site.updated"
 SITE_SUSPENDED = "site.suspended"
 SITE_ACTIVATED = "site.activated"
 
-PORTAL_USER_CREATED = "portal_user.created"
-PORTAL_USER_UPDATED = "portal_user.updated"
-PORTAL_USER_SUSPENDED = "portal_user.suspended"
-PORTAL_USER_ACTIVATED = "portal_user.activated"
+PORTAL_USER_CREATED = "superadmin.created"
+PORTAL_USER_UPDATED = "superadmin.updated"
+PORTAL_USER_SUSPENDED = "superadmin.suspended"
+PORTAL_USER_ACTIVATED = "superadmin.activated"
 
 # ── Phase 1 / Stage 4 — License Management ───────────────────────────────────
 LICENSE_CREATED = "license.created"
