@@ -70,7 +70,7 @@ async def test_seed_only_creates_missing_profiles(db, test_brand):
     existing = AccessProfile(
         id=uuid.uuid4(),
         brand_id=test_brand.id,
-        name=SystemAccessProfile.MANAGER.value,
+        name=SystemAccessProfile.ADMIN.value,
         is_system=True,
         is_active=True,
     )
@@ -83,7 +83,7 @@ async def test_seed_only_creates_missing_profiles(db, test_brand):
     # Only the remaining 3 should be created
     assert len(created) == 3
     created_names = {p.name for p in created}
-    assert SystemAccessProfile.MANAGER.value not in created_names
+    assert SystemAccessProfile.ADMIN.value not in created_names
 
     # Total in DB should still be 4
     result = await db.execute(

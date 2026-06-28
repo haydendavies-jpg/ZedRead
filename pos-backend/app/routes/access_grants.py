@@ -214,7 +214,7 @@ async def list_access_profiles(
 ):
     """List access profiles for a brand. Requires portal JWT.
 
-    Lazily seeds system profiles (Manager, Supervisor, Cashier, Kitchen) on first
+    Lazily seeds system profiles (Admin, Reporting Only, Manager, Staff) on first
     call for any brand that predates the seeding feature, so the dropdown is never
     empty even if the startup seed step did not run.
     """

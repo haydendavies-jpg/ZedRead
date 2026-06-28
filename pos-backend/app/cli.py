@@ -155,7 +155,7 @@ async def _seed_all_profiles_async() -> None:
 
 @cli.command(name="seed-all-profiles")
 def seed_all_profiles() -> None:
-    """Ensure every brand has its system access profiles (Manager, Supervisor, Cashier, Kitchen).
+    """Ensure every brand has its system access profiles (Admin, Reporting Only, Manager, Staff).
 
     Idempotent — safe to run on every startup.
     """

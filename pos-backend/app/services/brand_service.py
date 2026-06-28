@@ -148,7 +148,7 @@ async def create_brand(
     )
     db.add(uncategorised)
 
-    # Seed the 4 system access profiles (Manager, Supervisor, Cashier, Kitchen)
+    # Seed the 4 system access profiles (Admin, Reporting Only, Manager, Staff)
     await seed_system_profiles(db, brand.id)
 
     await log_action(

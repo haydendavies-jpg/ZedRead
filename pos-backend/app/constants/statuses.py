@@ -76,16 +76,20 @@ class SuperAdminRole(str, Enum):
 
 class SystemAccessProfile(str, Enum):
     """
-    Names of the four system access profiles seeded for every new brand.
+    Names of the system access profiles seeded for every new brand.
 
-    These are created automatically by seed_system_profiles() in
-    access_profile_service.py and cannot be deleted (is_system=True).
+    These map to 4 of the 5 target roles in ROLE_MODEL.md — Master User is
+    excluded because it is assigned per-site (exactly one per site, immutable)
+    rather than seeded once per brand like these four.
+
+    Created automatically by seed_system_profiles() in access_profile_service.py
+    and cannot be deleted (is_system=True).
     """
 
+    ADMIN = "Admin"
+    REPORTING_ONLY = "Reporting Only"
     MANAGER = "Manager"
-    SUPERVISOR = "Supervisor"
-    CASHIER = "Cashier"
-    KITCHEN = "Kitchen"
+    STAFF = "Staff"
 
 
 class GrantScope(str, Enum):
