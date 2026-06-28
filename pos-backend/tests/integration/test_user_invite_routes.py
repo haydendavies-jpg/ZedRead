@@ -18,7 +18,7 @@ from sqlalchemy import select
 
 from app.constants.audit_actions import USER_INVITE_ACCEPTED, USER_INVITED
 from app.models.audit_log import AuditLog
-from app.models.pos_user import POSUser
+from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
 from app.models.user_invite import UserInvite
 
@@ -82,7 +82,7 @@ async def test_create_invite_writes_invite_row(
 
 
 async def test_create_invite_writes_audit_log(
-    client, db, pos_auth_headers, test_pos_user, test_site, test_access_profile
+    client, db, pos_auth_headers, test_user, test_site, test_access_profile
 ):
     """Creating an invite writes a USER_INVITED audit row."""
     with patch(_SEND_EMAIL_PATH, new_callable=AsyncMock):
@@ -96,8 +96,8 @@ async def test_create_invite_writes_audit_log(
         select(AuditLog).where(AuditLog.action == USER_INVITED)
     )
     row = result.scalar_one()
-    assert row.actor_id == test_pos_user.id
-    assert row.actor_email == test_pos_user.email
+    assert row.actor_id == test_user.id
+    assert row.actor_email == test_user.email
 
 
 # ── Create invite failure ─────────────────────────────────────────────────────
@@ -206,10 +206,10 @@ async def _create_invite_token(db, brand_id, site_id, access_profile_id) -> str:
     return token
 
 
-async def test_accept_invite_creates_pos_user(
+async def test_accept_invite_creates_user(
     client, db, test_brand, test_site, test_access_profile
 ):
-    """Accepting a valid invite creates a POSUser row."""
+    """Accepting a valid invite creates a User row."""
     token = await _create_invite_token(db, test_brand.id, test_site.id, test_access_profile.id)
 
     response = await client.post(
@@ -220,7 +220,7 @@ async def test_accept_invite_creates_pos_user(
     assert response.status_code == 204
 
     result = await db.execute(
-        select(POSUser).where(POSUser.email == "newstaff@test.com")
+        select(User).where(User.email == "newstaff@test.com")
     )
     user = result.scalar_one()
     assert user.name == "New Staff"
@@ -240,7 +240,7 @@ async def test_accept_invite_creates_access_grant(
     )
 
     user_result = await db.execute(
-        select(POSUser).where(POSUser.email == "newstaff@test.com")
+        select(User).where(User.email == "newstaff@test.com")
     )
     user = user_result.scalar_one()
 

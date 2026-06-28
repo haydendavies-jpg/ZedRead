@@ -15,7 +15,7 @@ from app.constants.audit_actions import (
 )
 from app.constants.statuses import ActorType
 from app.models.access_profile import AccessProfile
-from app.models.pos_user import POSUser
+from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
 from app.models.user_pin import UserPIN
@@ -37,7 +37,7 @@ from app.utils.security import (
 log = structlog.get_logger(__name__)
 
 
-async def _get_pos_user_by_email(db: AsyncSession, email: str) -> POSUser | None:
+async def _get_user_by_email(db: AsyncSession, email: str) -> User | None:
     """
     Fetch a POS user by email address.
 
@@ -46,9 +46,9 @@ async def _get_pos_user_by_email(db: AsyncSession, email: str) -> POSUser | None
         email: The email address to look up.
 
     Returns:
-        POSUser | None: The matching user, or None if not found.
+        User | None: The matching user, or None if not found.
     """
-    result = await db.execute(select(POSUser).where(POSUser.email == email))
+    result = await db.execute(select(User).where(User.email == email))
     return result.scalar_one_or_none()
 
 
@@ -112,7 +112,7 @@ async def login(db: AsyncSession, payload: POSLoginRequest) -> POSLoginResponse:
     """
     log.info("pos_auth.login.attempt", email=payload.email, site_id=str(payload.site_id))
 
-    user = await _get_pos_user_by_email(db, payload.email)
+    user = await _get_user_by_email(db, payload.email)
 
     # Check all conditions before deciding to avoid timing attacks that could
     # reveal whether an email exists in the system
@@ -127,7 +127,7 @@ async def login(db: AsyncSession, payload: POSLoginRequest) -> POSLoginResponse:
         await log_action(
             db=db,
             action=POS_LOGIN_FAILED,
-            entity_type="pos_user",
+            entity_type="user",
             entity_id=entity_id,
             actor_type=ActorType.USER,
             actor_id=None,
@@ -150,7 +150,7 @@ async def login(db: AsyncSession, payload: POSLoginRequest) -> POSLoginResponse:
         await log_action(
             db=db,
             action=POS_LOGIN_FAILED,
-            entity_type="pos_user",
+            entity_type="user",
             entity_id=str(user.id),
             actor_type=ActorType.USER,
             actor_id=user.id,
@@ -171,7 +171,7 @@ async def login(db: AsyncSession, payload: POSLoginRequest) -> POSLoginResponse:
         await log_action(
             db=db,
             action=POS_LOGIN_FAILED,
-            entity_type="pos_user",
+            entity_type="user",
             entity_id=str(user.id),
             actor_type=ActorType.USER,
             actor_id=user.id,
@@ -207,7 +207,7 @@ async def login(db: AsyncSession, payload: POSLoginRequest) -> POSLoginResponse:
     await log_action(
         db=db,
         action=POS_LOGIN_SUCCESS,
-        entity_type="pos_user",
+        entity_type="user",
         entity_id=str(user.id),
         actor_type=ActorType.USER,
         actor_id=user.id,
@@ -235,7 +235,7 @@ async def login(db: AsyncSession, payload: POSLoginRequest) -> POSLoginResponse:
 
 async def set_pin(
     db: AsyncSession,
-    user: POSUser,
+    user: User,
     payload: PINSetRequest,
 ) -> None:
     """
@@ -276,7 +276,7 @@ async def set_pin(
     await log_action(
         db=db,
         action=POS_PIN_SET,
-        entity_type="pos_user",
+        entity_type="user",
         entity_id=str(user.id),
         actor_type=ActorType.USER,
         actor_id=user.id,
@@ -313,7 +313,7 @@ async def verify_pin(
     """
     log.info("pos_auth.pin.verify.attempt", email=payload.email, site_id=str(payload.site_id))
 
-    user = await _get_pos_user_by_email(db, payload.email)
+    user = await _get_user_by_email(db, payload.email)
 
     # Load the PIN record — no PIN set means verification cannot succeed
     pin_record: UserPIN | None = None
@@ -333,7 +333,7 @@ async def verify_pin(
         await log_action(
             db=db,
             action=POS_LOGIN_FAILED,
-            entity_type="pos_user",
+            entity_type="user",
             entity_id=entity_id,
             actor_type=ActorType.USER,
             actor_id=None,
@@ -374,7 +374,7 @@ async def verify_pin(
     await log_action(
         db=db,
         action=POS_PIN_VERIFIED,
-        entity_type="pos_user",
+        entity_type="user",
         entity_id=str(user.id),
         actor_type=ActorType.USER,
         actor_id=user.id,

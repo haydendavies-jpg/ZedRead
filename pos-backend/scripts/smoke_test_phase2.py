@@ -88,18 +88,18 @@ def main() -> None:
         # ── 7. Create POS user ───────────────────────────────────────────────
         pos_email = f"smoke_{uid}@test.zedread.internal"
         pos_password = "SmokeTest123!"
-        pos_user = check("create_pos_user", c.post("/pos-users", json={
+        user = check("create_user", c.post("/users", json={
             "brand_id": brand_id,
             "name": f"Smoke User {uid}",
             "email": pos_email,
             "password": pos_password,
         }, headers=ph), 201)
-        pos_user_id = pos_user["id"]
-        print(f"       pos_user_id={pos_user_id}")
+        user_id = user["id"]
+        print(f"       user_id={user_id}")
 
         # ── 8. Grant POS user access to the site ────────────────────────────
         check("create_access_grant", c.post("/access-grants", json={
-            "user_id": pos_user_id,
+            "user_id": user_id,
             "site_id": site_id,
             "access_profile_id": profile_id,
         }, headers=ph), 201)

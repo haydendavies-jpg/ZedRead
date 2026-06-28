@@ -16,7 +16,7 @@ from app.models.modifier_option import ModifierOption
 from app.models.payment import Payment
 from app.models.superadmin import SuperAdmin
 from app.models.pos_device import PosDevice
-from app.models.pos_user import POSUser
+from app.models.user import User
 from app.models.product import Product
 from app.models.product_attribute_type import ProductAttributeType
 from app.models.product_attribute_value import ProductAttributeValue
@@ -52,7 +52,7 @@ __all__ = [
     "Payment",
     "SuperAdmin",
     "PosDevice",
-    "POSUser",
+    "User",
     "Product",
     "ProductAttributeType",
     "ProductAttributeValue",

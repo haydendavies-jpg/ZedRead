@@ -32,11 +32,11 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ) -> UnifiedLoginResponse:
     """
-    Unified portal login — accepts both superadmin and pos_user credentials.
+    Unified portal login — accepts both superadmin and user credentials.
 
     - superadmin → issues a portal access + refresh token (role-based admin access).
-    - pos_user with can_access_portal profile and one grant → issues a management JWT.
-    - pos_user with multiple grants → returns available_grants list for scope selection.
+    - user with can_access_portal profile and one grant → issues a management JWT.
+    - user with multiple grants → returns available_grants list for scope selection.
 
     Returns HTTP 401 for invalid credentials. The error message is intentionally
     vague — it does not reveal whether the email exists or which user table was checked.

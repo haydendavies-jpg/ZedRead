@@ -19,7 +19,7 @@ from app.constants.audit_actions import (
 )
 from app.constants.statuses import ActorType
 from app.models.superadmin import SuperAdmin
-from app.models.pos_user import POSUser
+from app.models.user import User
 from app.models.product import Product
 from app.models.product_attribute_type import ProductAttributeType
 from app.models.product_attribute_value import ProductAttributeValue
@@ -259,7 +259,7 @@ async def create_variant(
     brand_id: uuid.UUID,
     product_id: uuid.UUID,
     payload: VariantCreate,
-    actor: POSUser | SuperAdmin,
+    actor: User | SuperAdmin,
 ) -> VariantResponse:
     """
     Create a product variant and its attribute assignments.
@@ -364,7 +364,7 @@ async def update_variant(
     brand_id: uuid.UUID,
     variant_id: uuid.UUID,
     payload: VariantUpdate,
-    actor: POSUser | SuperAdmin,
+    actor: User | SuperAdmin,
 ) -> VariantResponse:
     """
     Update a variant's price or SKU. Attributes are immutable after creation.
@@ -419,7 +419,7 @@ async def deactivate_variant(
     db: AsyncSession,
     brand_id: uuid.UUID,
     variant_id: uuid.UUID,
-    actor: POSUser | SuperAdmin,
+    actor: User | SuperAdmin,
 ) -> VariantResponse:
     """
     Soft-delete a variant (set is_active=False).

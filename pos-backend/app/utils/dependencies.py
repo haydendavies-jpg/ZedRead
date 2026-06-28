@@ -20,7 +20,7 @@ from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.group import Group
 from app.models.superadmin import SuperAdmin
-from app.models.pos_user import POSUser
+from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
 from app.utils.security import decode_token
@@ -35,7 +35,7 @@ class POSAccess:
     Returned by resolve_access() and injected into POS route handlers.
     """
 
-    user: POSUser
+    user: User
     site: Site
     access_profile: AccessProfile
 
@@ -55,7 +55,7 @@ class ManagementAccess:
       scope='group' → group is populated; brand and site are None
     """
 
-    user: POSUser
+    user: User
     access_profile: AccessProfile
     scope: str
     site: Site | None
@@ -103,7 +103,7 @@ class CatalogAccess:
         )
 
     @property
-    def actor_user(self) -> "POSUser | SuperAdmin":
+    def actor_user(self) -> "User | SuperAdmin":
         """The authenticated user, regardless of token type."""
         if self.pos_access:
             return self.pos_access.user
@@ -287,7 +287,7 @@ async def resolve_access(
         )
 
     # Fetch and validate the POS user
-    user_result = await db.execute(select(POSUser).where(POSUser.id == user_id))
+    user_result = await db.execute(select(User).where(User.id == user_id))
     user = user_result.scalar_one_or_none()
     if user is None:
         raise HTTPException(
@@ -406,7 +406,7 @@ async def resolve_management_access(
         )
 
     # Validate the POS user
-    user_result = await db.execute(select(POSUser).where(POSUser.id == user_id))
+    user_result = await db.execute(select(User).where(User.id == user_id))
     user = user_result.scalar_one_or_none()
     if user is None:
         raise HTTPException(
@@ -542,9 +542,9 @@ async def resolve_catalog_access(
         grant_id = uuid.UUID(payload.get("grant_id", ""))
         scope = payload.get("scope", "")
 
-        user_r = await db.execute(select(POSUser).where(POSUser.id == user_id))
-        pos_user = user_r.scalar_one_or_none()
-        if not pos_user or not pos_user.is_active:
+        user_r = await db.execute(select(User).where(User.id == user_id))
+        user = user_r.scalar_one_or_none()
+        if not user or not user.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="POS user inactive")
 
         grant_r = await db.execute(
@@ -591,7 +591,7 @@ async def resolve_catalog_access(
             resolved_group = gr.scalar_one_or_none()
 
         mgmt = ManagementAccess(
-            user=pos_user,
+            user=user,
             access_profile=access_profile,
             scope=scope,
             site=resolved_site,
@@ -610,9 +610,9 @@ async def resolve_catalog_access(
         user_id = uuid.UUID(payload.get("sub", ""))
         site_id = uuid.UUID(payload.get("site_id", ""))
 
-        user_r = await db.execute(select(POSUser).where(POSUser.id == user_id))
-        pos_user = user_r.scalar_one_or_none()
-        if not pos_user or not pos_user.is_active:
+        user_r = await db.execute(select(User).where(User.id == user_id))
+        user = user_r.scalar_one_or_none()
+        if not user or not user.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="POS user inactive")
 
         site_r = await db.execute(select(Site).where(Site.id == site_id))
@@ -643,7 +643,7 @@ async def resolve_catalog_access(
             )
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Access profile missing")
 
-        pos_access = POSAccess(user=pos_user, site=site, access_profile=access_profile)
+        pos_access = POSAccess(user=user, site=site, access_profile=access_profile)
         return CatalogAccess(pos_access=pos_access, mgmt_access=None, portal_access=None)
 
     except JWTError:

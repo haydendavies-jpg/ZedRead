@@ -24,7 +24,7 @@ from app.constants.audit_actions import (
 from app.models.access_profile import AccessProfile
 from app.models.audit_log import AuditLog
 from app.models.brand import Brand
-from app.models.pos_user import POSUser
+from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
 from app.utils.security import create_mgmt_refresh_token, hash_password
@@ -51,7 +51,7 @@ async def test_superadmin_login_returns_tokens(client, test_superadmin):
 # ── POS user login — single grant ─────────────────────────────────────────────
 
 
-async def test_pos_user_single_grant_returns_mgmt_token(client, test_pos_user, test_portal_grant):
+async def test_user_single_grant_returns_mgmt_token(client, test_user, test_portal_grant):
     """POS user with one portal-capable grant gets a management JWT directly."""
     response = await client.post(
         "/auth/portal/login",
@@ -62,12 +62,12 @@ async def test_pos_user_single_grant_returns_mgmt_token(client, test_pos_user, t
     body = response.json()
     assert body["access_token"] is not None
     assert body["refresh_token"] is not None
-    assert body["user_name"] == test_pos_user.name
-    assert str(body["user_id"]) == str(test_pos_user.id)
+    assert body["user_name"] == test_user.name
+    assert str(body["user_id"]) == str(test_user.id)
     assert body["available_grants"] is None
 
 
-async def test_pos_user_single_grant_audit_log(client, db, test_pos_user, test_portal_grant):
+async def test_user_single_grant_audit_log(client, db, test_user, test_portal_grant):
     """Successful POS manager login writes a MGMT_LOGIN_SUCCESS audit row."""
     await client.post(
         "/auth/portal/login",
@@ -76,20 +76,20 @@ async def test_pos_user_single_grant_audit_log(client, db, test_pos_user, test_p
 
     result = await db.execute(
         select(AuditLog).where(
-            AuditLog.entity_id == str(test_pos_user.id),
+            AuditLog.entity_id == str(test_user.id),
             AuditLog.action == MGMT_LOGIN_SUCCESS,
         )
     )
     row = result.scalar_one()
     assert row.actor_email == "posuser@test.com"
-    assert row.actor_id == test_pos_user.id
+    assert row.actor_id == test_user.id
 
 
 # ── POS user login — multiple grants ─────────────────────────────────────────
 
 
-async def test_pos_user_multi_grant_returns_available_grants(
-    client, db, test_pos_user, test_portal_grant, test_brand_grant
+async def test_user_multi_grant_returns_available_grants(
+    client, db, test_user, test_portal_grant, test_brand_grant
 ):
     """POS user with two portal-capable grants gets a list of available grants."""
     response = await client.post(
@@ -109,8 +109,8 @@ async def test_pos_user_multi_grant_returns_available_grants(
     assert "brand" in scopes
 
 
-async def test_pos_user_multi_grant_each_has_scope_name(
-    client, test_pos_user, test_portal_grant, test_brand_grant, test_brand, test_site
+async def test_user_multi_grant_each_has_scope_name(
+    client, test_user, test_portal_grant, test_brand_grant, test_brand, test_site
 ):
     """Each grant summary in the available_grants list has a non-empty scope_name."""
     response = await client.post(
@@ -128,12 +128,12 @@ async def test_pos_user_multi_grant_each_has_scope_name(
 # ── Management token selection ────────────────────────────────────────────────
 
 
-async def test_management_token_endpoint_issues_token(client, test_pos_user, test_brand_grant):
+async def test_management_token_endpoint_issues_token(client, test_user, test_brand_grant):
     """POST /management-token with valid credentials issues a management JWT."""
     response = await client.post(
         "/auth/portal/management-token",
         json={
-            "user_id": str(test_pos_user.id),
+            "user_id": str(test_user.id),
             "grant_id": str(test_brand_grant.id),
             "password": "POSPassword123!",
         },
@@ -143,15 +143,15 @@ async def test_management_token_endpoint_issues_token(client, test_pos_user, tes
     body = response.json()
     assert body["access_token"] is not None
     assert body["refresh_token"] is not None
-    assert str(body["user_id"]) == str(test_pos_user.id)
+    assert str(body["user_id"]) == str(test_user.id)
 
 
-async def test_management_token_writes_audit_log(client, db, test_pos_user, test_brand_grant):
+async def test_management_token_writes_audit_log(client, db, test_user, test_brand_grant):
     """Scope selection writes a MGMT_TOKEN_ISSUED audit row."""
     await client.post(
         "/auth/portal/management-token",
         json={
-            "user_id": str(test_pos_user.id),
+            "user_id": str(test_user.id),
             "grant_id": str(test_brand_grant.id),
             "password": "POSPassword123!",
         },
@@ -159,20 +159,20 @@ async def test_management_token_writes_audit_log(client, db, test_pos_user, test
 
     result = await db.execute(
         select(AuditLog).where(
-            AuditLog.entity_id == str(test_pos_user.id),
+            AuditLog.entity_id == str(test_user.id),
             AuditLog.action == MGMT_TOKEN_ISSUED,
         )
     )
     row = result.scalar_one()
-    assert row.actor_id == test_pos_user.id
+    assert row.actor_id == test_user.id
 
 
-async def test_management_token_wrong_password_returns_401(client, test_pos_user, test_brand_grant):
+async def test_management_token_wrong_password_returns_401(client, test_user, test_brand_grant):
     """Wrong password on management-token endpoint returns 401."""
     response = await client.post(
         "/auth/portal/management-token",
         json={
-            "user_id": str(test_pos_user.id),
+            "user_id": str(test_user.id),
             "grant_id": str(test_brand_grant.id),
             "password": "WrongPassword!",
         },
@@ -181,11 +181,11 @@ async def test_management_token_wrong_password_returns_401(client, test_pos_user
 
 
 async def test_management_token_wrong_grant_owner_returns_403(
-    client, db, test_pos_user, test_brand, test_site, test_manager_profile
+    client, db, test_user, test_brand, test_site, test_manager_profile
 ):
     """Requesting a grant that belongs to a different user returns 403."""
     # Create a second POS user with their own grant
-    other_user = POSUser(
+    other_user = User(
         id=uuid.uuid4(),
         brand_id=test_brand.id,
         name="Other User",
@@ -208,11 +208,11 @@ async def test_management_token_wrong_grant_owner_returns_403(
     db.add(other_grant)
     await db.commit()
 
-    # test_pos_user tries to use other_user's grant — wrong owner → 403
+    # test_user tries to use other_user's grant — wrong owner → 403
     response = await client.post(
         "/auth/portal/management-token",
         json={
-            "user_id": str(test_pos_user.id),
+            "user_id": str(test_user.id),
             "grant_id": str(other_grant.id),
             "password": "POSPassword123!",
         },
@@ -223,7 +223,7 @@ async def test_management_token_wrong_grant_owner_returns_403(
 # ── Auth failures ─────────────────────────────────────────────────────────────
 
 
-async def test_login_wrong_password_returns_401(client, test_pos_user, test_portal_grant):
+async def test_login_wrong_password_returns_401(client, test_user, test_portal_grant):
     """Wrong password for a POS user returns 401."""
     response = await client.post(
         "/auth/portal/login",
@@ -232,9 +232,9 @@ async def test_login_wrong_password_returns_401(client, test_pos_user, test_port
     assert response.status_code == 401
 
 
-async def test_login_inactive_pos_user_returns_401(client, db, test_brand, test_manager_profile, test_site):
+async def test_login_inactive_user_returns_401(client, db, test_brand, test_manager_profile, test_site):
     """Inactive POS user returns 401."""
-    inactive_user = POSUser(
+    inactive_user = User(
         id=uuid.uuid4(),
         brand_id=test_brand.id,
         name="Inactive User",
@@ -264,7 +264,7 @@ async def test_login_no_portal_capable_grants_returns_403(client, db, test_brand
     )
     db.add(non_portal_profile)
 
-    restricted_user = POSUser(
+    restricted_user = User(
         id=uuid.uuid4(),
         brand_id=test_brand.id,
         name="Restricted User",
@@ -305,7 +305,7 @@ async def test_login_unknown_email_returns_401(client):
     assert response.json()["detail"] == "Invalid credentials"
 
 
-async def test_login_failure_writes_audit_log(client, db, test_pos_user, test_portal_grant):
+async def test_login_failure_writes_audit_log(client, db, test_user, test_portal_grant):
     """Failed POS user login writes a MGMT_LOGIN_FAILED audit row."""
     await client.post(
         "/auth/portal/login",
@@ -325,9 +325,9 @@ async def test_login_failure_writes_audit_log(client, db, test_pos_user, test_po
 # ── Management refresh ────────────────────────────────────────────────────────
 
 
-async def test_mgmt_refresh_with_valid_token(client, test_pos_user, test_portal_grant):
+async def test_mgmt_refresh_with_valid_token(client, test_user, test_portal_grant):
     """Valid management refresh token returns a new token pair."""
-    refresh_token = create_mgmt_refresh_token(str(test_pos_user.id))
+    refresh_token = create_mgmt_refresh_token(str(test_user.id))
 
     response = await client.post(
         "/auth/portal/mgmt-refresh",
@@ -349,11 +349,11 @@ async def test_mgmt_refresh_with_invalid_token_returns_401(client):
     assert response.status_code == 401
 
 
-async def test_mgmt_refresh_with_wrong_token_type_returns_401(client, test_pos_user):
+async def test_mgmt_refresh_with_wrong_token_type_returns_401(client, test_user):
     """A portal refresh token (wrong type) is rejected on the mgmt-refresh endpoint."""
     from app.utils.security import create_refresh_token
 
-    wrong_type_token = create_refresh_token(str(test_pos_user.id))
+    wrong_type_token = create_refresh_token(str(test_user.id))
     response = await client.post(
         "/auth/portal/mgmt-refresh",
         json={"refresh_token": wrong_type_token},

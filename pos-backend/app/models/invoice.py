@@ -52,7 +52,7 @@ class Invoice(Base):
     )
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("pos_users.id", ondelete="SET NULL"),
+        ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         comment="POS user who created the invoice; SET NULL if user is later deleted",
     )

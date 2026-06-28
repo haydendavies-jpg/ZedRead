@@ -21,7 +21,7 @@ from app.constants.audit_actions import ACCESS_GRANT_CREATED, ACCESS_GRANT_REVOK
 from app.models.access_profile import AccessProfile
 from app.models.audit_log import AuditLog
 from app.models.brand import Brand
-from app.models.pos_user import POSUser
+from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
 from app.utils.security import create_access_token, create_mgmt_access_token
@@ -30,7 +30,7 @@ from app.utils.security import create_access_token, create_mgmt_access_token
 # ── Local helpers ──────────────────────────────────────────────────────────────
 
 
-def _mgmt_headers(user: POSUser, grant: UserAccessGrant) -> dict[str, str]:
+def _mgmt_headers(user: User, grant: UserAccessGrant) -> dict[str, str]:
     """Return management JWT headers for the given user+grant pair."""
     token = create_mgmt_access_token(
         user_id=str(user.id),
@@ -53,18 +53,18 @@ def _portal_headers(superadmin) -> dict[str, str]:
 
 
 @pytest_asyncio.fixture()
-async def target_user(db: AsyncSession, test_brand: Brand) -> POSUser:
+async def target_user(db: AsyncSession, test_brand: Brand) -> User:
     """
-    A second POSUser who is the *target* of grants created in tests.
+    A second User who is the *target* of grants created in tests.
 
-    Kept separate from test_pos_user (who is the management *actor*).
+    Kept separate from test_user (who is the management *actor*).
 
     Returns:
-        POSUser: A saved, active POSUser instance.
+        User: A saved, active User instance.
     """
     from app.utils.security import hash_password
 
-    user = POSUser(
+    user = User(
         id=uuid.uuid4(),
         brand_id=test_brand.id,
         name="Target User",
@@ -82,10 +82,10 @@ async def target_user(db: AsyncSession, test_brand: Brand) -> POSUser:
 
 
 async def test_list_grants_site_scope_management(
-    client, db, test_pos_user, test_site, test_portal_grant, test_manager_profile
+    client, db, test_user, test_site, test_portal_grant, test_manager_profile
 ):
     """Site-scope management user can list grants for their site."""
-    headers = _mgmt_headers(test_pos_user, test_portal_grant)
+    headers = _mgmt_headers(test_user, test_portal_grant)
     response = await client.get("/access-grants", headers=headers)
     assert response.status_code == 200
     data = response.json()
@@ -96,10 +96,10 @@ async def test_list_grants_site_scope_management(
 
 
 async def test_list_grants_brand_scope_management(
-    client, db, test_pos_user, test_brand, test_brand_grant, test_portal_grant, test_manager_profile
+    client, db, test_user, test_brand, test_brand_grant, test_portal_grant, test_manager_profile
 ):
     """Brand-scope management user sees all grants within their brand."""
-    headers = _mgmt_headers(test_pos_user, test_brand_grant)
+    headers = _mgmt_headers(test_user, test_brand_grant)
     response = await client.get("/access-grants", headers=headers)
     assert response.status_code == 200
     data = response.json()
@@ -132,10 +132,10 @@ async def test_list_grants_no_token_returns_403(client):
 
 
 async def test_create_grant_brand_scope_creates_site_grant(
-    client, db, test_pos_user, test_brand, test_brand_grant, test_manager_profile, test_site, target_user
+    client, db, test_user, test_brand, test_brand_grant, test_manager_profile, test_site, target_user
 ):
     """Brand-scope management user can create a site-scope grant for a site in their brand."""
-    headers = _mgmt_headers(test_pos_user, test_brand_grant)
+    headers = _mgmt_headers(test_user, test_brand_grant)
     payload = {
         "user_id": str(target_user.id),
         "scope": "site",
@@ -151,10 +151,10 @@ async def test_create_grant_brand_scope_creates_site_grant(
 
 
 async def test_create_grant_site_scope_forbidden(
-    client, db, test_pos_user, test_site, test_portal_grant, test_manager_profile, target_user
+    client, db, test_user, test_site, test_portal_grant, test_manager_profile, target_user
 ):
     """Site-scope management user cannot create any grant (403)."""
-    headers = _mgmt_headers(test_pos_user, test_portal_grant)
+    headers = _mgmt_headers(test_user, test_portal_grant)
     payload = {
         "user_id": str(target_user.id),
         "scope": "site",
@@ -166,10 +166,10 @@ async def test_create_grant_site_scope_forbidden(
 
 
 async def test_create_grant_brand_scope_cannot_create_brand_grant(
-    client, db, test_pos_user, test_brand, test_brand_grant, test_manager_profile, target_user
+    client, db, test_user, test_brand, test_brand_grant, test_manager_profile, target_user
 ):
     """Brand-scope management user cannot create brand-scope grants (403)."""
-    headers = _mgmt_headers(test_pos_user, test_brand_grant)
+    headers = _mgmt_headers(test_user, test_brand_grant)
     payload = {
         "user_id": str(target_user.id),
         "scope": "brand",

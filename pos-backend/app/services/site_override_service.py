@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants.audit_actions import SITE_PRODUCT_OVERRIDE_REMOVED, SITE_PRODUCT_OVERRIDE_SET
 from app.constants.statuses import ActorType
 from app.models.superadmin import SuperAdmin
-from app.models.pos_user import POSUser
+from app.models.user import User
 from app.models.product import Product
 from app.models.site import Site
 from app.models.site_product_override import SiteProductOverride
@@ -26,7 +26,7 @@ async def set_override(
     site_id: uuid.UUID,
     product_id: uuid.UUID,
     payload: SiteProductOverrideSet,
-    actor: POSUser | SuperAdmin,
+    actor: User | SuperAdmin,
 ) -> SiteProductOverride:
     """
     Create or update a site product override (upsert).
@@ -133,7 +133,7 @@ async def remove_override(
     brand_id: uuid.UUID,
     site_id: uuid.UUID,
     product_id: uuid.UUID,
-    actor: POSUser | SuperAdmin,
+    actor: User | SuperAdmin,
 ) -> None:
     """
     Delete a site product override row.

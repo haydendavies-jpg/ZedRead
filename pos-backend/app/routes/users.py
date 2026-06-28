@@ -20,7 +20,7 @@ from app.database import get_db
 from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.group import Group
-from app.models.pos_user import POSUser
+from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
 from app.models.user_pin import UserPIN
@@ -30,14 +30,14 @@ from app.utils.security import hash_password
 
 log = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/pos-users", tags=["pos-users"])
+router = APIRouter(prefix="/users", tags=["users"])
 
 # Valid backend role values — all carry full permissions for now
 _BACKEND_ROLES = {"admin", "users", "reporting"}
 
 
 class SiteGrantSummary(BaseModel):
-    """Minimal site grant info embedded in PosUserOut for the portal UI."""
+    """Minimal site grant info embedded in UserOut for the portal UI."""
 
     grant_id: uuid.UUID
     site_id: uuid.UUID
@@ -47,7 +47,7 @@ class SiteGrantSummary(BaseModel):
     can_access_portal: bool
 
 
-class PosUserOut(BaseModel):
+class UserOut(BaseModel):
     """POS user response schema — includes active site grants, brand/group info, and portal access flag."""
 
     id: uuid.UUID
@@ -67,7 +67,7 @@ class PosUserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class PosUserCreate(BaseModel):
+class UserCreate(BaseModel):
     """Request body for creating a POS user."""
 
     brand_id: str
@@ -76,7 +76,7 @@ class PosUserCreate(BaseModel):
     password: str
 
 
-class PosUserUpdate(BaseModel):
+class UserUpdate(BaseModel):
     """Request body for editing a POS user — all fields optional."""
 
     name: str | None = None
@@ -150,8 +150,8 @@ class GroupAccessOut(BaseModel):
 
 async def _attach_sites(
     db: AsyncSession,
-    users: list[POSUser],
-) -> list[PosUserOut]:
+    users: list[User],
+) -> list[UserOut]:
     """
     Fetch active site grants and portal access flag for a batch of users.
 
@@ -160,10 +160,10 @@ async def _attach_sites(
 
     Args:
         db: Active database session.
-        users: List of POSUser ORM objects to enrich.
+        users: List of User ORM objects to enrich.
 
     Returns:
-        list[PosUserOut]: Enriched user response objects.
+        list[UserOut]: Enriched user response objects.
     """
     if not users:
         return []
@@ -220,7 +220,7 @@ async def _attach_sites(
             superadmins.add(user_id)
 
     return [
-        PosUserOut(
+        UserOut(
             id=u.id,
             ref=u.ref,
             brand_id=u.brand_id,
@@ -237,8 +237,8 @@ async def _attach_sites(
     ]
 
 
-@router.get("", response_model=list[PosUserOut])
-async def list_pos_users(
+@router.get("", response_model=list[UserOut])
+async def list_users(
     brand_id: str | None = None,
     site_id: str | None = None,
     skip: int = 0,
@@ -247,14 +247,14 @@ async def list_pos_users(
     actor=Depends(get_current_superadmin),
 ):
     """List POS users, optionally filtered by brand. Portal admin only. Omit brand_id to see all users."""
-    q = select(POSUser)
+    q = select(User)
     if brand_id:
-        q = q.where(POSUser.brand_id == brand_id)
+        q = q.where(User.brand_id == brand_id)
 
     if site_id:
         # Subquery: only users with an active site-scope grant for this site
         q = q.where(
-            POSUser.id.in_(
+            User.id.in_(
                 select(UserAccessGrant.user_id).where(
                     UserAccessGrant.site_id == site_id,
                     UserAccessGrant.is_active.is_(True),
@@ -262,24 +262,24 @@ async def list_pos_users(
             )
         )
 
-    q = q.offset(skip).limit(limit).order_by(POSUser.name)
+    q = q.offset(skip).limit(limit).order_by(User.name)
     result = await db.execute(q)
     users = list(result.scalars().all())
     return await _attach_sites(db, users)
 
 
-@router.post("", response_model=PosUserOut, status_code=status.HTTP_201_CREATED)
-async def create_pos_user(
-    body: PosUserCreate,
+@router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    body: UserCreate,
     db: AsyncSession = Depends(get_db),
     actor=Depends(get_current_superadmin),
 ):
     """Create a new POS user. Requires portal JWT."""
-    existing = await db.execute(select(POSUser).where(POSUser.email == body.email))
+    existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
 
-    user = POSUser(
+    user = User(
         brand_id=body.brand_id,
         name=body.name,
         email=body.email,
@@ -294,14 +294,14 @@ async def create_pos_user(
         actor_email=actor.email,
         actor_name=actor.name,
         action=USER_CREATED,
-        entity_type="pos_user",
+        entity_type="user",
         entity_id=str(user.id),
         after_state={"name": user.name, "email": user.email, "brand_id": str(user.brand_id)},
     )
 
     await db.commit()
     await db.refresh(user)
-    return PosUserOut(
+    return UserOut(
         id=user.id,
         ref=user.ref,
         brand_id=user.brand_id,
@@ -333,7 +333,7 @@ async def list_user_grants(
         list[EnrichedGrantOut]: All active grants enriched with entity names.
     """
     # Verify user exists
-    user_r = await db.execute(select(POSUser).where(POSUser.id == user_id))
+    user_r = await db.execute(select(User).where(User.id == user_id))
     if user_r.scalar_one_or_none() is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
@@ -463,7 +463,7 @@ async def get_user_group_access(
     Returns:
         GroupAccessOut: Group info plus one entry per brand and per site.
     """
-    user_r = await db.execute(select(POSUser).where(POSUser.id == user_id))
+    user_r = await db.execute(select(User).where(User.id == user_id))
     user = user_r.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -568,15 +568,15 @@ async def get_user_group_access(
     return GroupAccessOut(group_id=group.id, group_name=group.name, entries=entries)
 
 
-@router.patch("/{user_id}", response_model=PosUserOut)
-async def update_pos_user(
+@router.patch("/{user_id}", response_model=UserOut)
+async def update_user(
     user_id: str,
-    body: PosUserUpdate,
+    body: UserUpdate,
     db: AsyncSession = Depends(get_db),
     actor=Depends(get_current_superadmin),
 ):
     """Edit a POS user's name, email, and/or backend_role. Requires portal JWT."""
-    result = await db.execute(select(POSUser).where(POSUser.id == user_id))
+    result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -588,7 +588,7 @@ async def update_pos_user(
     if body.email is not None:
         # Check for email conflict with another user
         dup = await db.execute(
-            select(POSUser).where(POSUser.email == body.email, POSUser.id != user.id)
+            select(User).where(User.email == body.email, User.id != user.id)
         )
         if dup.scalar_one_or_none():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
@@ -609,7 +609,7 @@ async def update_pos_user(
                 actor_email=actor.email,
                 actor_name=actor.name,
                 action=USER_BACKEND_ROLE_UPDATED,
-                entity_type="pos_user",
+                entity_type="user",
                 entity_id=str(user.id),
                 before_state={"backend_role": user.backend_role},
                 after_state={"backend_role": body.backend_role},
@@ -622,7 +622,7 @@ async def update_pos_user(
         actor_email=actor.email,
         actor_name=actor.name,
         action=USER_UPDATED,
-        entity_type="pos_user",
+        entity_type="user",
         entity_id=str(user.id),
         before_state=before,
         after_state={"name": user.name, "email": user.email, "backend_role": user.backend_role},
@@ -651,7 +651,7 @@ async def set_pin_for_user(
         user_id: UUID of the POS user to set the PIN for.
         body: Contains the raw PIN (4–6 digits).
     """
-    user_r = await db.execute(select(POSUser).where(POSUser.id == user_id))
+    user_r = await db.execute(select(User).where(User.id == user_id))
     user = user_r.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -679,7 +679,7 @@ async def set_pin_for_user(
         actor_email=actor.email,
         actor_name=actor.name,
         action=USER_PIN_ADMIN_SET,
-        entity_type="pos_user",
+        entity_type="user",
         entity_id=str(user.id),
         after_state={"set_by_admin": True},
     )
@@ -687,14 +687,14 @@ async def set_pin_for_user(
     await db.commit()
 
 
-@router.patch("/{user_id}/deactivate", response_model=PosUserOut)
-async def deactivate_pos_user(
+@router.patch("/{user_id}/deactivate", response_model=UserOut)
+async def deactivate_user(
     user_id: str,
     db: AsyncSession = Depends(get_db),
     actor=Depends(get_current_superadmin),
 ):
     """Deactivate a POS user. Requires portal JWT."""
-    result = await db.execute(select(POSUser).where(POSUser.id == user_id))
+    result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -706,7 +706,7 @@ async def deactivate_pos_user(
         actor_email=actor.email,
         actor_name=actor.name,
         action=USER_DEACTIVATED,
-        entity_type="pos_user",
+        entity_type="user",
         entity_id=str(user.id),
         after_state={"is_active": False},
     )

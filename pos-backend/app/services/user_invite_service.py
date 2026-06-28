@@ -4,7 +4,7 @@ Invite flow:
   1. POST /invites — portal admin calls create_invite(); a UserInvite row is
      written and an email is sent via Resend.
   2. The invitee clicks the link, which hits POST /invites/accept with the token.
-  3. accept_invite() validates the token, creates a POSUser + UserAccessGrant in
+  3. accept_invite() validates the token, creates a User + UserAccessGrant in
      one transaction, marks the invite accepted, and writes two audit rows.
 
 If the Resend API call fails in create_invite(), the DB transaction is rolled
@@ -24,7 +24,7 @@ from app.constants.audit_actions import USER_INVITE_ACCEPTED, USER_INVITED
 from app.constants.statuses import ActorType
 from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
-from app.models.pos_user import POSUser
+from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
 from app.models.user_invite import UserInvite
@@ -40,7 +40,7 @@ async def create_invite(
     db: AsyncSession,
     brand_id: uuid.UUID,
     payload: InviteCreateRequest,
-    actor: POSUser,
+    actor: User,
 ) -> InviteResponse:
     """
     Create a UserInvite row and send an invitation email via Resend.
@@ -171,9 +171,9 @@ async def create_invite(
 async def accept_invite(
     db: AsyncSession,
     payload: InviteAcceptRequest,
-) -> POSUser:
+) -> User:
     """
-    Accept a pending invite: create the POSUser and UserAccessGrant.
+    Accept a pending invite: create the User and UserAccessGrant.
 
     Validates that the token exists, has not been accepted, and has not
     expired. Creates the user and grant in the same transaction as the invite
@@ -184,12 +184,12 @@ async def accept_invite(
         payload: Accept data (token, name, password).
 
     Returns:
-        POSUser: The newly created POS user.
+        User: The newly created POS user.
 
     Raises:
         HTTPException: 404 if the token is not found.
         HTTPException: 410 if the invite has already been accepted or has expired.
-        HTTPException: 409 if a POSUser with this email already exists.
+        HTTPException: 409 if a User with this email already exists.
     """
     # Look up the invite by token
     invite_result = await db.execute(
@@ -216,7 +216,7 @@ async def accept_invite(
 
     # Prevent duplicate users if someone calls accept twice in a race
     existing_user_result = await db.execute(
-        select(POSUser).where(POSUser.email == invite.email)
+        select(User).where(User.email == invite.email)
     )
     if existing_user_result.scalar_one_or_none() is not None:
         raise HTTPException(
@@ -225,7 +225,7 @@ async def accept_invite(
         )
 
     # Create the POS user
-    user = POSUser(
+    user = User(
         id=uuid.uuid4(),
         brand_id=invite.brand_id,
         name=payload.name,
@@ -252,7 +252,7 @@ async def accept_invite(
     await log_action(
         db=db,
         action=USER_INVITE_ACCEPTED,
-        entity_type="pos_user",
+        entity_type="user",
         entity_id=str(user.id),
         actor_type=ActorType.USER,
         actor_id=user.id,
