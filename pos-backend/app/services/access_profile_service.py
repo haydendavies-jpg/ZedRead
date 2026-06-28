@@ -1,6 +1,6 @@
 """Business logic for AccessProfile seeding and management.
 
-System profiles (Manager, Supervisor, Cashier, Kitchen) are seeded automatically
+System profiles (Admin, Reporting Only, Manager, Staff) are seeded automatically
 when a brand is created via seed_system_profiles(). The function is idempotent —
 calling it twice on the same brand will not create duplicates.
 """
@@ -30,6 +30,9 @@ async def seed_system_profiles(
     Called inside create_brand() in the same transaction, so all profiles
     are committed or rolled back atomically with the brand itself.
 
+    Master User (the 5th target role in ROLE_MODEL.md) is deliberately not
+    seeded here — it is assigned per-site rather than per-brand.
+
     Args:
         db: Active database session (transaction already open from caller).
         brand_id: UUID of the brand to seed profiles for.
@@ -57,8 +60,11 @@ async def seed_system_profiles(
             )
             continue
 
-        # Manager profile gets portal access by default; others start without it
-        can_access_portal = profile_name == SystemAccessProfile.MANAGER
+        # Admin and Reporting Only get portal access by default; Manager and Staff do not
+        can_access_portal = profile_name in (
+            SystemAccessProfile.ADMIN,
+            SystemAccessProfile.REPORTING_ONLY,
+        )
         profile = AccessProfile(
             id=uuid.uuid4(),
             brand_id=brand_id,
