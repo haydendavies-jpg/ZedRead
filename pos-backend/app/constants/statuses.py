@@ -78,9 +78,11 @@ class SystemAccessProfile(str, Enum):
     """
     Names of the system access profiles seeded for every new brand.
 
-    These map to 4 of the 5 target roles in ROLE_MODEL.md — Master User is
-    excluded because it is assigned per-site (exactly one per site, immutable)
-    rather than seeded once per brand like these four.
+    These are the 5 target roles in ROLE_MODEL.md. MASTER defines the
+    permission tier only — the *User* holding it is restricted to exactly
+    one per site (assigned automatically when the site is created, see
+    site_service.create_site()), unlike the other four which any number of
+    Users can hold.
 
     Created automatically by seed_system_profiles() in access_profile_service.py
     and cannot be deleted (is_system=True).
@@ -90,6 +92,7 @@ class SystemAccessProfile(str, Enum):
     REPORTING_ONLY = "Reporting Only"
     MANAGER = "Manager"
     STAFF = "Staff"
+    MASTER = "Master User"
 
 
 class GrantScope(str, Enum):

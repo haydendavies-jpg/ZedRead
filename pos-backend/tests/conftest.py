@@ -306,6 +306,8 @@ async def test_brand(db: AsyncSession, test_group: Group) -> Brand:
     Returns:
         Brand: A saved, active Brand instance.
     """
+    from app.services.access_profile_service import seed_system_profiles
+
     brand = Brand(
         id=uuid.uuid4(),
         group_id=test_group.id,
@@ -315,6 +317,12 @@ async def test_brand(db: AsyncSession, test_group: Group) -> Brand:
     db.add(brand)
     await db.commit()
     await db.refresh(brand)
+
+    # Mirrors create_brand()'s real-world invariant: every brand has its
+    # system access profiles seeded, including Master User (needed by
+    # site_service.create_site() when tests POST /sites/).
+    await seed_system_profiles(db, brand.id)
+    await db.commit()
     return brand
 
 

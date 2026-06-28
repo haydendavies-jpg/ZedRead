@@ -20,6 +20,10 @@ class User(Base):
     storage with multi-site grants, not yet implemented here. They
     authenticate via email+password for initial login and via PIN for
     quick session switching at the terminal.
+
+    Exactly one User per site is the immutable Master User
+    (is_master_user=True), auto-created alongside its site — see
+    site_service.create_site().
     """
 
     __tablename__ = "users"
@@ -74,6 +78,17 @@ class User(Base):
         nullable=False,
         default=True,
         comment="False when the user is suspended and cannot log in",
+    )
+    is_master_user: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment=(
+            "True for the single, immutable site-identity User auto-created "
+            "per site (ROLE_MODEL.md Master User role). Cannot be edited, "
+            "deactivated, or have its site grant revoked/reassigned."
+        ),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

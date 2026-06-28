@@ -14,12 +14,13 @@ class AccessProfile(Base):
     """
     Defines a named permission tier for Users within a brand.
 
-    Four system profiles (Admin, Reporting Only, Manager, Staff) are seeded
-    automatically when a brand is created — these correspond to 4 of the 5
-    target roles in ROLE_MODEL.md; Master User is excluded since it is
-    assigned per-site rather than per-brand. Additional custom profiles can
-    be created by brand admins. System profiles cannot be deleted
-    (is_system=True).
+    Five system profiles (Admin, Reporting Only, Manager, Staff, Master User)
+    are seeded automatically when a brand is created — the 5 target roles in
+    ROLE_MODEL.md. Unlike the other four, the Master User profile is only
+    ever assigned to exactly one User per site (see site_service.create_site());
+    this profile row itself is still per-brand like the rest. Additional
+    custom profiles can be created by brand admins. System profiles cannot be
+    deleted (is_system=True).
     """
 
     __tablename__ = "access_profiles"
