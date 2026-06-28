@@ -1,8 +1,8 @@
 """Business logic for AccessProfile seeding and management.
 
-System profiles (Admin, Reporting Only, Manager, Staff) are seeded automatically
-when a brand is created via seed_system_profiles(). The function is idempotent —
-calling it twice on the same brand will not create duplicates.
+System profiles (Admin, Reporting Only, Manager, Staff, Master User) are seeded
+automatically when a brand is created via seed_system_profiles(). The function
+is idempotent — calling it twice on the same brand will not create duplicates.
 """
 
 import uuid
@@ -22,7 +22,7 @@ async def seed_system_profiles(
     brand_id: uuid.UUID,
 ) -> list[AccessProfile]:
     """
-    Create the four system access profiles for a brand if they do not exist.
+    Create the five system access profiles for a brand if they do not exist.
 
     Idempotent: checks for existing system profiles by name before inserting,
     so re-running against the same brand is safe (no duplicates).
@@ -30,8 +30,10 @@ async def seed_system_profiles(
     Called inside create_brand() in the same transaction, so all profiles
     are committed or rolled back atomically with the brand itself.
 
-    Master User (the 5th target role in ROLE_MODEL.md) is deliberately not
-    seeded here — it is assigned per-site rather than per-brand.
+    This seeds the Master User *profile* (the permission tier definition)
+    same as the other four — but unlike the other four, no User is ever
+    assigned this profile here. That only happens once per site, in
+    site_service.create_site(), which enforces the one-per-site constraint.
 
     Args:
         db: Active database session (transaction already open from caller).
@@ -60,10 +62,12 @@ async def seed_system_profiles(
             )
             continue
 
-        # Admin and Reporting Only get portal access by default; Manager and Staff do not
+        # Admin, Reporting Only, and Master User get portal access by default;
+        # Manager and Staff do not
         can_access_portal = profile_name in (
             SystemAccessProfile.ADMIN,
             SystemAccessProfile.REPORTING_ONLY,
+            SystemAccessProfile.MASTER,
         )
         profile = AccessProfile(
             id=uuid.uuid4(),

@@ -526,6 +526,30 @@ async def _assert_create_authority(
 _BACKEND_ROLES = {"admin", "users", "reporting"}
 
 
+async def _assert_not_master_user_grant(db: AsyncSession, grant: UserAccessGrant) -> None:
+    """
+    Raise HTTP 409 if the grant belongs to a Master User.
+
+    Master User grants are auto-created with the site and must never be
+    updated or revoked — that would risk locking a site out of its own
+    fixed, full-access identity (ROLE_MODEL.md Master User role).
+
+    Args:
+        db: Active session.
+        grant: The grant to check.
+
+    Raises:
+        HTTPException: 409 if the grant's user is a Master User.
+    """
+    user_r = await db.execute(select(User).where(User.id == grant.user_id))
+    grant_user = user_r.scalar_one_or_none()
+    if grant_user is not None and grant_user.is_master_user:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Master User's site grant cannot be modified or revoked",
+        )
+
+
 async def update_grant(
     db: AsyncSession,
     grant_id: uuid.UUID,
@@ -550,6 +574,7 @@ async def update_grant(
         UserAccessGrant: The updated grant.
     """
     grant = await _load_grant_with_authority(db, grant_id, management_access, superadmin)
+    await _assert_not_master_user_grant(db, grant)
 
     actor = management_access.user if management_access else superadmin
     assert actor is not None
@@ -628,6 +653,7 @@ async def revoke_grant(
         superadmin: Set for portal admin callers.
     """
     grant = await _load_grant_with_authority(db, grant_id, management_access, superadmin)
+    await _assert_not_master_user_grant(db, grant)
 
     if not grant.is_active:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Grant is already revoked")
