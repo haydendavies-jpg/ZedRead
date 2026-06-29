@@ -25,7 +25,7 @@ from app.utils.security import create_access_token, hash_password
 
 @pytest_asyncio.fixture()
 async def second_superadmin(db: AsyncSession) -> SuperAdmin:
-    """A second persisted SuperAdmin that super_admin can act upon."""
+    """A second persisted SuperAdmin that an Admin-role SuperAdmin can act upon."""
     user = SuperAdmin(
         id=uuid.uuid4(),
         email="target@test.com",

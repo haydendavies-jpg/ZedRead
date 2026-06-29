@@ -2,7 +2,7 @@
  * Authentication context — provides current user, login, and logout to the tree.
  *
  * Supports two user types:
- *   portal_access — PortalUser (super_admin, admin, reseller); fetched from API.
+ *   portal_access — PortalUser (admin, reseller_staff); fetched from API.
  *   mgmt_access   — MgmtUser (POS manager with portal access); decoded from JWT.
  *
  * When login returns available_grants (multi-grant POS user), the context exposes
@@ -174,7 +174,7 @@ export function useAuth(): AuthContextValue {
   return ctx
 }
 
-/** True if the logged-in user is a portal admin (super_admin, admin, reseller). */
+/** True if the logged-in user is a portal admin (admin, reseller_staff). */
 export function isPortalUser(user: AuthUser | null): user is PortalUser {
   return user !== null && 'role' in user
 }

@@ -1,4 +1,4 @@
-/** Portal Users management page — super_admin only. */
+/** Portal Users management page — Admin-role SuperAdmin only. */
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'

@@ -115,7 +115,7 @@ export interface PortalUser {
   ref: string
   email: string
   name: string
-  role: 'super_admin' | 'admin' | 'reseller'
+  role: 'admin' | 'reseller_staff'
   is_active: boolean
   created_at: string
   updated_at: string
