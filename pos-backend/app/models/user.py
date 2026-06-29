@@ -24,6 +24,12 @@ class User(Base):
     Exactly one User per site is the immutable Master User
     (is_master_user=True), auto-created alongside its site — see
     site_service.create_site().
+
+    Required-field rules (ROLE_MODEL.md §2): every non-Master User must have
+    first_name/last_name (Master User has neither — its `name` is the site's
+    name, see site_service._create_master_user()). email/password_hash are
+    nullable here and only required at the point a grant is given a
+    backend_role — see access_grant_service.update_grant().
     """
 
     __tablename__ = "users"
@@ -48,23 +54,37 @@ class User(Base):
         server_default=text("'USR-' || LPAD(nextval('users_ref_seq')::text, 6, '0')"),
         comment="Human-readable reference ID, e.g. USR-000001",
     )
+    first_name: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="Required for every User except Master User (ROLE_MODEL.md)",
+    )
+    last_name: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="Required for every User except Master User (ROLE_MODEL.md)",
+    )
     name: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
-        comment="Full display name shown on the terminal",
+        comment=(
+            "Full display name shown on the terminal. Derived from "
+            "first_name + last_name for ordinary Users; for the Master "
+            "User this is the site's name and has no first/last source."
+        ),
     )
-    email: Mapped[str] = mapped_column(
+    email: Mapped[str | None] = mapped_column(
         String(255),
         unique=True,
-        nullable=False,
+        nullable=True,
         index=True,
-        comment="Login email — must be unique across all Users",
+        comment="Login email. Required once any grant has a backend_role.",
     )
     # Argon2 password hash — never store plaintext (rule 15)
-    password_hash: Mapped[str] = mapped_column(
+    password_hash: Mapped[str | None] = mapped_column(
         String(255),
-        nullable=False,
-        comment="Argon2 hash of the user's password",
+        nullable=True,
+        comment="Argon2 hash of the user's password. Required alongside email.",
     )
     # Portal/backend access level — separate from POS terminal access profile
     # Values: 'admin' | 'users' | 'reporting'; NULL = no backend/portal access

@@ -228,7 +228,9 @@ async def accept_invite(
     user = User(
         id=uuid.uuid4(),
         brand_id=invite.brand_id,
-        name=payload.name,
+        first_name=payload.first_name,
+        last_name=payload.last_name,
+        name=f"{payload.first_name} {payload.last_name}",
         email=invite.email,
         password_hash=hash_password(payload.password),
         is_active=True,

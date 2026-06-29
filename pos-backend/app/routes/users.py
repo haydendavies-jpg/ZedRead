@@ -5,7 +5,7 @@ import uuid
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -56,7 +56,7 @@ class UserOut(BaseModel):
     brand_name: str = ""
     group_name: str = ""
     name: str
-    email: str
+    email: str | None = None
     backend_role: str | None = None
     is_active: bool
     # Active site-scope grants with grant ID, site info, and default flag
@@ -68,18 +68,33 @@ class UserOut(BaseModel):
 
 
 class UserCreate(BaseModel):
-    """Request body for creating a POS user."""
+    """
+    Request body for creating a POS user.
+
+    email/password are optional at creation (ROLE_MODEL.md §2 — only
+    required once the user is granted backend access). If one is supplied,
+    both must be, since a password is meaningless without a login email.
+    """
 
     brand_id: str
-    name: str
-    email: EmailStr
-    password: str
+    first_name: str
+    last_name: str
+    email: EmailStr | None = None
+    password: str | None = None
+
+    @model_validator(mode="after")
+    def _email_and_password_together(self) -> "UserCreate":
+        """Reject a half-supplied email/password pair."""
+        if (self.email is None) != (self.password is None):
+            raise ValueError("email and password must be supplied together, or not at all")
+        return self
 
 
 class UserUpdate(BaseModel):
     """Request body for editing a POS user — all fields optional."""
 
-    name: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
     email: EmailStr | None = None
     backend_role: str | None = None  # Use sentinel to distinguish "not supplied" from "clear"
 
@@ -275,15 +290,18 @@ async def create_user(
     actor=Depends(get_current_superadmin),
 ):
     """Create a new POS user. Requires portal JWT."""
-    existing = await db.execute(select(User).where(User.email == body.email))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
+    if body.email is not None:
+        existing = await db.execute(select(User).where(User.email == body.email))
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
 
     user = User(
         brand_id=body.brand_id,
-        name=body.name,
+        first_name=body.first_name,
+        last_name=body.last_name,
+        name=f"{body.first_name} {body.last_name}",
         email=body.email,
-        password_hash=hash_password(body.password),
+        password_hash=hash_password(body.password) if body.password is not None else None,
     )
     db.add(user)
     await db.flush()
@@ -588,8 +606,12 @@ async def update_user(
 
     before: dict = {"name": user.name, "email": user.email, "backend_role": user.backend_role}
 
-    if body.name is not None:
-        user.name = body.name
+    if body.first_name is not None:
+        user.first_name = body.first_name
+    if body.last_name is not None:
+        user.last_name = body.last_name
+    if body.first_name is not None or body.last_name is not None:
+        user.name = f"{user.first_name} {user.last_name}"
     if body.email is not None:
         # Check for email conflict with another user
         dup = await db.execute(
@@ -606,6 +628,11 @@ async def update_user(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"backend_role must be one of: {sorted(_BACKEND_ROLES)} or null",
+            )
+        if body.backend_role is not None and (user.email is None or user.password_hash is None):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User must have an email and password before being granted backend access",
             )
         if user.backend_role != body.backend_role:
             await log_action(

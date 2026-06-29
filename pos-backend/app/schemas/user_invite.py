@@ -33,5 +33,6 @@ class InviteAcceptRequest(BaseModel):
     """Payload for POST /invites/accept — accept an invite and create the POS user account."""
 
     token: str
-    name: str
+    first_name: str
+    last_name: str
     password: str
