@@ -27,5 +27,6 @@ class GroupResponse(BaseModel):
     ref: str
     name: str
     is_active: bool
+    created_by_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime

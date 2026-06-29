@@ -13,6 +13,7 @@ from app.constants.audit_actions import (
     GROUP_SUSPENDED,
     GROUP_UPDATED,
 )
+from app.constants.statuses import SuperAdminRole
 from app.models.group import Group
 from app.models.superadmin import SuperAdmin
 from app.schemas.group import GroupCreate, GroupUpdate
@@ -21,21 +22,43 @@ from app.services.audit_service import log_action
 log = structlog.get_logger(__name__)
 
 
-async def _get_or_404(db: AsyncSession, group_id: uuid.UUID) -> Group:
+def _scope_to_own_accounts(conditions: list, actor: SuperAdmin) -> None:
+    """
+    Restrict a query's conditions to groups the actor created, for Reseller Staff.
+
+    Reseller Staff may only see/manage Groups they personally created
+    (ROLE_MODEL.md §5.1); Admin is unrestricted and this is a no-op.
+
+    Args:
+        conditions: The list of SQLAlchemy filter conditions to extend in place.
+        actor: The authenticated SuperAdmin performing the action.
+    """
+    if actor.role == SuperAdminRole.RESELLER_STAFF.value:
+        conditions.append(Group.created_by_id == actor.id)
+
+
+async def _get_or_404(db: AsyncSession, group_id: uuid.UUID, actor: SuperAdmin) -> Group:
     """
     Fetch a Group by ID or raise HTTP 404.
+
+    For Reseller Staff, a Group outside their own accounts is treated as not
+    found rather than forbidden, to avoid leaking the existence of other
+    resellers' or ZedRead-direct accounts (ROLE_MODEL.md §5.1).
 
     Args:
         db: Active database session.
         group_id: The UUID of the group to fetch.
+        actor: The authenticated SuperAdmin performing the action.
 
     Returns:
         Group: The found group instance.
 
     Raises:
-        HTTPException: 404 if no group with the given ID exists.
+        HTTPException: 404 if no group with the given ID exists within the actor's scope.
     """
-    result = await db.execute(select(Group).where(Group.id == group_id))
+    conditions = [Group.id == group_id]
+    _scope_to_own_accounts(conditions, actor)
+    result = await db.execute(select(Group).where(*conditions))
     group = result.scalar_one_or_none()
     if group is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
@@ -44,23 +67,28 @@ async def _get_or_404(db: AsyncSession, group_id: uuid.UUID) -> Group:
 
 async def list_groups(
     db: AsyncSession,
+    actor: SuperAdmin,
     skip: int = 0,
     limit: int = 50,
     name: str | None = None,
     is_active: bool | None = None,
 ) -> list[Group]:
     """
-    Return a paginated list of all groups with optional filters.
+    Return a paginated list of groups with optional filters.
+
+    Reseller Staff only see Groups they personally created; Admin sees all
+    Groups (ROLE_MODEL.md §5.1).
 
     Args:
         db: Active database session.
+        actor: The authenticated SuperAdmin performing the action.
         skip: Number of records to skip (offset).
         limit: Maximum number of records to return.
         name: Optional substring filter on Group.name (case-insensitive).
         is_active: Optional exact-match filter on Group.is_active.
 
     Returns:
-        list[Group]: The requested page of groups.
+        list[Group]: The requested page of groups within the actor's scope.
     """
     conditions: list = []
     if name is not None:
@@ -68,6 +96,7 @@ async def list_groups(
         conditions.append(Group.name.ilike(f"%{name}%"))
     if is_active is not None:
         conditions.append(Group.is_active == is_active)
+    _scope_to_own_accounts(conditions, actor)
 
     result = await db.execute(
         select(Group).where(*conditions).order_by(Group.created_at.desc()).offset(skip).limit(limit)
@@ -75,21 +104,22 @@ async def list_groups(
     return list(result.scalars().all())
 
 
-async def get_group(db: AsyncSession, group_id: uuid.UUID) -> Group:
+async def get_group(db: AsyncSession, group_id: uuid.UUID, actor: SuperAdmin) -> Group:
     """
-    Fetch a single group by ID.
+    Fetch a single group by ID, scoped to the actor's own accounts if Reseller Staff.
 
     Args:
         db: Active database session.
         group_id: The UUID of the group.
+        actor: The authenticated SuperAdmin performing the action.
 
     Returns:
         Group: The found group.
 
     Raises:
-        HTTPException: 404 if the group does not exist.
+        HTTPException: 404 if the group does not exist within the actor's scope.
     """
-    return await _get_or_404(db, group_id)
+    return await _get_or_404(db, group_id, actor)
 
 
 async def create_group(
@@ -110,7 +140,8 @@ async def create_group(
     """
     log.info("group.creating", name=payload.name, actor_id=str(actor.id))
 
-    group = Group(id=uuid.uuid4(), name=payload.name, is_active=True)
+    # Record the creating SuperAdmin so Reseller Staff can be scoped to own accounts
+    group = Group(id=uuid.uuid4(), name=payload.name, is_active=True, created_by_id=actor.id)
     db.add(group)
 
     await log_action(
@@ -149,9 +180,9 @@ async def update_group(
         Group: The updated group.
 
     Raises:
-        HTTPException: 404 if the group does not exist.
+        HTTPException: 404 if the group does not exist within the actor's scope.
     """
-    group = await _get_or_404(db, group_id)
+    group = await _get_or_404(db, group_id, actor)
 
     before = {"name": group.name}
     if payload.name is not None:
@@ -192,10 +223,10 @@ async def suspend_group(
         Group: The suspended group.
 
     Raises:
-        HTTPException: 404 if the group does not exist.
+        HTTPException: 404 if the group does not exist within the actor's scope.
         HTTPException: 409 if the group is already suspended.
     """
-    group = await _get_or_404(db, group_id)
+    group = await _get_or_404(db, group_id, actor)
 
     if not group.is_active:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Group is already suspended")
@@ -236,10 +267,10 @@ async def activate_group(
         Group: The activated group.
 
     Raises:
-        HTTPException: 404 if the group does not exist.
+        HTTPException: 404 if the group does not exist within the actor's scope.
         HTTPException: 409 if the group is already active.
     """
-    group = await _get_or_404(db, group_id)
+    group = await _get_or_404(db, group_id, actor)
 
     if group.is_active:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Group is already active")

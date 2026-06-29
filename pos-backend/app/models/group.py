@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, func, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -56,4 +56,12 @@ class Group(Base):
         server_default=func.now(),
         onupdate=func.now(),
         comment="UTC timestamp updated by the DB on every write",
+    )
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("superadmins.id"),
+        nullable=True,
+        comment="SuperAdmin who created this group. Scopes Reseller Staff "
+        "visibility to own accounts only (ROLE_MODEL.md §5.1); NULL for "
+        "pre-existing groups and groups created by Admin.",
     )
