@@ -614,6 +614,16 @@ async def update_grant(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"backend_role must be one of: {sorted(_BACKEND_ROLES)} or null",
             )
+        if payload.backend_role is not None:
+            # ROLE_MODEL.md §2 — email/password are only required once a
+            # grant gives the user backend access.
+            grant_user_r = await db.execute(select(User).where(User.id == grant.user_id))
+            grant_user = grant_user_r.scalar_one_or_none()
+            if grant_user is None or grant_user.email is None or grant_user.password_hash is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="User must have an email and password before being granted backend access",
+                )
         old_role = grant.backend_role
         grant.backend_role = payload.backend_role
 

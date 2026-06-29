@@ -214,7 +214,7 @@ async def test_accept_invite_creates_user(
 
     response = await client.post(
         "/invites/accept",
-        json={"token": token, "name": "New Staff", "password": "StaffPassword123!"},
+        json={"token": token, "first_name": "New", "last_name": "Staff", "password": "StaffPassword123!"},
     )
 
     assert response.status_code == 204
@@ -236,7 +236,7 @@ async def test_accept_invite_creates_access_grant(
 
     await client.post(
         "/invites/accept",
-        json={"token": token, "name": "New Staff", "password": "StaffPassword123!"},
+        json={"token": token, "first_name": "New", "last_name": "Staff", "password": "StaffPassword123!"},
     )
 
     user_result = await db.execute(
@@ -263,7 +263,7 @@ async def test_accept_invite_marks_invite_accepted(
 
     await client.post(
         "/invites/accept",
-        json={"token": token, "name": "New Staff", "password": "StaffPassword123!"},
+        json={"token": token, "first_name": "New", "last_name": "Staff", "password": "StaffPassword123!"},
     )
 
     # Expire the SQLAlchemy cache to read the DB-committed value
@@ -283,7 +283,7 @@ async def test_accept_invite_writes_audit_log(
 
     await client.post(
         "/invites/accept",
-        json={"token": token, "name": "New Staff", "password": "StaffPassword123!"},
+        json={"token": token, "first_name": "New", "last_name": "Staff", "password": "StaffPassword123!"},
     )
 
     result = await db.execute(
@@ -300,7 +300,7 @@ async def test_accept_invite_unknown_token_returns_404(client):
     """Unknown token returns 404."""
     response = await client.post(
         "/invites/accept",
-        json={"token": "not-a-real-token", "name": "X", "password": "Pass123!"},
+        json={"token": "not-a-real-token", "first_name": "X", "last_name": "Y", "password": "Pass123!"},
     )
 
     assert response.status_code == 404
@@ -314,13 +314,13 @@ async def test_accept_invite_already_accepted_returns_410(
 
     await client.post(
         "/invites/accept",
-        json={"token": token, "name": "New Staff", "password": "StaffPassword123!"},
+        json={"token": token, "first_name": "New", "last_name": "Staff", "password": "StaffPassword123!"},
     )
 
     # Second attempt on the same token
     response = await client.post(
         "/invites/accept",
-        json={"token": token, "name": "Another", "password": "Pass123!"},
+        json={"token": token, "first_name": "Another", "last_name": "Person", "password": "Pass123!"},
     )
 
     assert response.status_code == 410
@@ -352,7 +352,8 @@ async def test_accept_invite_expired_token_returns_410(
         "/invites/accept",
         json={
             "token": expired_invite.token,
-            "name": "Late User",
+            "first_name": "Late",
+            "last_name": "User",
             "password": "Pass123!",
         },
     )
@@ -365,7 +366,7 @@ async def test_accept_invite_missing_fields_returns_422(client):
     """Missing required fields return 422."""
     response = await client.post(
         "/invites/accept",
-        json={"token": "some-token"},  # missing name and password
+        json={"token": "some-token"},  # missing first_name, last_name, and password
     )
 
     assert response.status_code == 422
