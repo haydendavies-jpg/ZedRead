@@ -239,3 +239,139 @@ async def list_access_profiles(
         .order_by(AccessProfileModel.name)
     )
     return result.scalars().all()
+
+
+# ── Page-category permission hierarchy (ROLE_MODEL.md §4) ────────────────────
+
+from app.schemas.access_profile_page_permission import (
+    PagePermissionGrant,
+    PagePermissionsResponse,
+    VisiblePagesResponse,
+)
+from app.services import access_profile_service
+
+
+@profiles_router.get(
+    "/{access_profile_id}/pages",
+    response_model=PagePermissionsResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def list_page_permissions(
+    access_profile_id: uuid.UUID,
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> PagePermissionsResponse:
+    """
+    List the page keys currently granted to an access profile.
+
+    Args:
+        access_profile_id: UUID of the profile to query.
+        access: Resolved catalog access (any non-POS token type).
+        db: Active database session.
+
+    Returns:
+        PagePermissionsResponse: The granted page keys.
+    """
+    if access.pos_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Page permission management requires a management or portal JWT",
+        )
+    page_keys = await access_profile_service.list_page_permissions(db, access_profile_id)
+    return PagePermissionsResponse(access_profile_id=access_profile_id, page_keys=page_keys)
+
+
+@profiles_router.post(
+    "/{access_profile_id}/pages",
+    response_model=None,
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def grant_page_permission(
+    access_profile_id: uuid.UUID,
+    payload: PagePermissionGrant,
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Grant a single page to an access profile.
+
+    Args:
+        access_profile_id: UUID of the profile to grant the page to.
+        payload: The page_key to grant.
+        access: Resolved catalog access (any non-POS token type).
+        db: Active database session.
+    """
+    if access.pos_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Page permission management requires a management or portal JWT",
+        )
+    actor = access.mgmt_access.user if access.mgmt_access else access.portal_access
+    assert actor is not None
+    await access_profile_service.grant_page(db, access_profile_id, payload.page_key, actor)
+
+
+@profiles_router.delete(
+    "/{access_profile_id}/pages/{page_key}",
+    response_model=None,
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def revoke_page_permission(
+    access_profile_id: uuid.UUID,
+    page_key: str,
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Revoke a single page from an access profile.
+
+    Args:
+        access_profile_id: UUID of the profile to revoke the page from.
+        page_key: The page key to revoke.
+        access: Resolved catalog access (any non-POS token type).
+        db: Active database session.
+    """
+    if access.pos_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Page permission management requires a management or portal JWT",
+        )
+    actor = access.mgmt_access.user if access.mgmt_access else access.portal_access
+    assert actor is not None
+    await access_profile_service.revoke_page(db, access_profile_id, page_key, actor)
+
+
+@profiles_router.get(
+    "/{access_profile_id}/visible-pages",
+    response_model=VisiblePagesResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_visible_pages(
+    access_profile_id: uuid.UUID,
+    site_id: uuid.UUID = Query(..., description="Site whose license plan supplies the license gate"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> VisiblePagesResponse:
+    """
+    Resolve the pages visible to a profile at a site: role grant AND license gate.
+
+    Args:
+        access_profile_id: UUID of the profile to resolve pages for.
+        site_id: UUID of the site whose license plan supplies the license gate.
+        access: Resolved catalog access (any non-POS token type).
+        db: Active database session.
+
+    Returns:
+        VisiblePagesResponse: Page keys visible under both gates.
+    """
+    if access.pos_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Page permission management requires a management or portal JWT",
+        )
+    page_keys = await access_profile_service.resolve_visible_pages(db, access_profile_id, site_id)
+    return VisiblePagesResponse(
+        access_profile_id=access_profile_id,
+        site_id=site_id,
+        page_keys=sorted(page_keys),
+    )
