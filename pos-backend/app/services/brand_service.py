@@ -18,8 +18,10 @@ from app.constants.audit_actions import (
     BRAND_SUSPENDED,
     BRAND_UPDATED,
 )
+from app.constants.statuses import SuperAdminRole
 from app.models.brand import Brand
 from app.models.category import Category
+from app.models.group import Group
 from app.models.superadmin import SuperAdmin
 from app.schemas.brand import BrandCreate, BrandUpdate
 from app.services.access_profile_service import seed_system_profiles
@@ -28,21 +30,44 @@ from app.services.audit_service import log_action
 log = structlog.get_logger(__name__)
 
 
-async def _get_or_404(db: AsyncSession, brand_id: uuid.UUID) -> Brand:
+def _scope_to_own_accounts(conditions: list, actor: SuperAdmin) -> None:
+    """
+    Restrict a Brand query's conditions to groups the actor created, for Reseller Staff.
+
+    Reseller Staff may only see/manage Brands under Groups they personally
+    created (ROLE_MODEL.md §5.1); Admin is unrestricted and this is a no-op.
+
+    Args:
+        conditions: The list of SQLAlchemy filter conditions to extend in place.
+        actor: The authenticated SuperAdmin performing the action.
+    """
+    if actor.role == SuperAdminRole.RESELLER_STAFF.value:
+        conditions.append(
+            Brand.group_id.in_(select(Group.id).where(Group.created_by_id == actor.id))
+        )
+
+
+async def _get_or_404(db: AsyncSession, brand_id: uuid.UUID, actor: SuperAdmin) -> Brand:
     """
     Fetch a Brand by ID or raise HTTP 404.
+
+    For Reseller Staff, a Brand outside their own accounts is treated as not
+    found rather than forbidden, to avoid leaking existence (ROLE_MODEL.md §5.1).
 
     Args:
         db: Active database session.
         brand_id: The UUID of the brand to fetch.
+        actor: The authenticated SuperAdmin performing the action.
 
     Returns:
         Brand: The found brand instance.
 
     Raises:
-        HTTPException: 404 if no brand with the given ID exists.
+        HTTPException: 404 if no brand with the given ID exists within the actor's scope.
     """
-    result = await db.execute(select(Brand).where(Brand.id == brand_id))
+    conditions = [Brand.id == brand_id]
+    _scope_to_own_accounts(conditions, actor)
+    result = await db.execute(select(Brand).where(*conditions))
     brand = result.scalar_one_or_none()
     if brand is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Brand not found")
@@ -51,6 +76,7 @@ async def _get_or_404(db: AsyncSession, brand_id: uuid.UUID) -> Brand:
 
 async def list_brands(
     db: AsyncSession,
+    actor: SuperAdmin,
     skip: int = 0,
     limit: int = 50,
     name: str | None = None,
@@ -58,10 +84,11 @@ async def list_brands(
     is_active: bool | None = None,
 ) -> list[Brand]:
     """
-    Return a paginated list of all brands with optional filters.
+    Return a paginated list of brands with optional filters, scoped to the actor's accounts.
 
     Args:
         db: Active database session.
+        actor: The authenticated SuperAdmin performing the action.
         skip: Number of records to skip (offset).
         limit: Maximum number of records to return.
         name: Optional substring filter on Brand.name (case-insensitive).
@@ -69,7 +96,7 @@ async def list_brands(
         is_active: Optional exact-match filter on Brand.is_active.
 
     Returns:
-        list[Brand]: The requested page of brands.
+        list[Brand]: The requested page of brands within the actor's scope.
     """
     conditions: list = []
     if name is not None:
@@ -79,6 +106,7 @@ async def list_brands(
         conditions.append(Brand.group_id == group_id)
     if is_active is not None:
         conditions.append(Brand.is_active == is_active)
+    _scope_to_own_accounts(conditions, actor)
 
     result = await db.execute(
         select(Brand).where(*conditions).order_by(Brand.created_at.desc()).offset(skip).limit(limit)
@@ -86,21 +114,22 @@ async def list_brands(
     return list(result.scalars().all())
 
 
-async def get_brand(db: AsyncSession, brand_id: uuid.UUID) -> Brand:
+async def get_brand(db: AsyncSession, brand_id: uuid.UUID, actor: SuperAdmin) -> Brand:
     """
-    Fetch a single brand by ID.
+    Fetch a single brand by ID, scoped to the actor's own accounts if Reseller Staff.
 
     Args:
         db: Active database session.
         brand_id: The UUID of the brand.
+        actor: The authenticated SuperAdmin performing the action.
 
     Returns:
         Brand: The found brand.
 
     Raises:
-        HTTPException: 404 if the brand does not exist.
+        HTTPException: 404 if the brand does not exist within the actor's scope.
     """
-    return await _get_or_404(db, brand_id)
+    return await _get_or_404(db, brand_id, actor)
 
 
 async def create_brand(
@@ -123,12 +152,13 @@ async def create_brand(
         Brand: The newly created brand.
 
     Raises:
-        HTTPException: 404 if the referenced group does not exist.
+        HTTPException: 404 if the referenced group does not exist within the actor's scope.
     """
-    from app.models.group import Group
-
-    # Verify parent group exists before creating the brand
-    group_result = await db.execute(select(Group).where(Group.id == payload.group_id))
+    # Verify parent group exists, and is within the actor's scope if Reseller Staff
+    group_conditions = [Group.id == payload.group_id]
+    if actor.role == SuperAdminRole.RESELLER_STAFF.value:
+        group_conditions.append(Group.created_by_id == actor.id)
+    group_result = await db.execute(select(Group).where(*group_conditions))
     if group_result.scalar_one_or_none() is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
 
@@ -189,7 +219,7 @@ async def update_brand(
     Raises:
         HTTPException: 404 if the brand does not exist.
     """
-    brand = await _get_or_404(db, brand_id)
+    brand = await _get_or_404(db, brand_id, actor)
 
     before = {"name": brand.name}
     if payload.name is not None:
@@ -233,7 +263,7 @@ async def suspend_brand(
         HTTPException: 404 if the brand does not exist.
         HTTPException: 409 if the brand is already suspended.
     """
-    brand = await _get_or_404(db, brand_id)
+    brand = await _get_or_404(db, brand_id, actor)
 
     if not brand.is_active:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Brand is already suspended")
@@ -277,7 +307,7 @@ async def activate_brand(
         HTTPException: 404 if the brand does not exist.
         HTTPException: 409 if the brand is already active.
     """
-    brand = await _get_or_404(db, brand_id)
+    brand = await _get_or_404(db, brand_id, actor)
 
     if brand.is_active:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Brand is already active")

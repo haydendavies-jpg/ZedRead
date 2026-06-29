@@ -22,20 +22,22 @@ async def list_brands(
     group_id: uuid.UUID | None = Query(default=None, description="Filter by parent group ID"),
     is_active: bool | None = Query(default=None, description="Filter by active/inactive status"),
     db: AsyncSession = Depends(get_db),
-    _: SuperAdmin = Depends(get_current_superadmin),
+    actor: SuperAdmin = Depends(get_current_superadmin),
 ) -> list[BrandResponse]:
-    """List all brands with pagination and optional filters."""
-    return await brand_service.list_brands(db, skip=skip, limit=limit, name=name, group_id=group_id, is_active=is_active)
+    """List brands with pagination and optional filters, scoped to the actor's accounts."""
+    return await brand_service.list_brands(
+        db, actor, skip=skip, limit=limit, name=name, group_id=group_id, is_active=is_active
+    )
 
 
 @router.get("/{brand_id}", response_model=BrandResponse)
 async def get_brand(
     brand_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: SuperAdmin = Depends(get_current_superadmin),
+    actor: SuperAdmin = Depends(get_current_superadmin),
 ) -> BrandResponse:
-    """Fetch a single brand by ID."""
-    return await brand_service.get_brand(db, brand_id)
+    """Fetch a single brand by ID, scoped to the actor's accounts."""
+    return await brand_service.get_brand(db, brand_id, actor)
 
 
 @router.post("/", response_model=BrandResponse, status_code=201)

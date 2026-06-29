@@ -16,8 +16,10 @@ from app.constants.audit_actions import (
     SITE_UPDATED,
     USER_CREATED,
 )
-from app.constants.statuses import ActorType, GrantScope, SystemAccessProfile
+from app.constants.statuses import ActorType, GrantScope, SuperAdminRole, SystemAccessProfile
 from app.models.access_profile import AccessProfile
+from app.models.brand import Brand
+from app.models.group import Group
 from app.models.superadmin import SuperAdmin
 from app.models.site import Site
 from app.models.user import User
@@ -27,6 +29,28 @@ from app.services.audit_service import log_action
 from app.utils.security import hash_password
 
 log = structlog.get_logger(__name__)
+
+
+def _scope_to_own_accounts(conditions: list, actor: SuperAdmin) -> None:
+    """
+    Restrict a Site query's conditions to groups the actor created, for Reseller Staff.
+
+    Reseller Staff may only see/manage Sites under Brands whose Group they
+    personally created (ROLE_MODEL.md §5.1); Admin is unrestricted and this
+    is a no-op.
+
+    Args:
+        conditions: The list of SQLAlchemy filter conditions to extend in place.
+        actor: The authenticated SuperAdmin performing the action.
+    """
+    if actor.role == SuperAdminRole.RESELLER_STAFF.value:
+        conditions.append(
+            Site.brand_id.in_(
+                select(Brand.id).where(
+                    Brand.group_id.in_(select(Group.id).where(Group.created_by_id == actor.id))
+                )
+            )
+        )
 
 
 async def _create_master_user(db: AsyncSession, site: Site, actor: SuperAdmin) -> User:
@@ -131,21 +155,27 @@ async def _create_master_user(db: AsyncSession, site: Site, actor: SuperAdmin) -
     return master_user
 
 
-async def _get_or_404(db: AsyncSession, site_id: uuid.UUID) -> Site:
+async def _get_or_404(db: AsyncSession, site_id: uuid.UUID, actor: SuperAdmin) -> Site:
     """
     Fetch a Site by ID or raise HTTP 404.
+
+    For Reseller Staff, a Site outside their own accounts is treated as not
+    found rather than forbidden, to avoid leaking existence (ROLE_MODEL.md §5.1).
 
     Args:
         db: Active database session.
         site_id: The UUID of the site to fetch.
+        actor: The authenticated SuperAdmin performing the action.
 
     Returns:
         Site: The found site instance.
 
     Raises:
-        HTTPException: 404 if no site with the given ID exists.
+        HTTPException: 404 if no site with the given ID exists within the actor's scope.
     """
-    result = await db.execute(select(Site).where(Site.id == site_id))
+    conditions = [Site.id == site_id]
+    _scope_to_own_accounts(conditions, actor)
+    result = await db.execute(select(Site).where(*conditions))
     site = result.scalar_one_or_none()
     if site is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site not found")
@@ -154,6 +184,7 @@ async def _get_or_404(db: AsyncSession, site_id: uuid.UUID) -> Site:
 
 async def list_sites(
     db: AsyncSession,
+    actor: SuperAdmin,
     skip: int = 0,
     limit: int = 50,
     name: str | None = None,
@@ -161,10 +192,11 @@ async def list_sites(
     is_active: bool | None = None,
 ) -> list[Site]:
     """
-    Return a paginated list of all sites with optional filters.
+    Return a paginated list of sites with optional filters, scoped to the actor's accounts.
 
     Args:
         db: Active database session.
+        actor: The authenticated SuperAdmin performing the action.
         skip: Number of records to skip (offset).
         limit: Maximum number of records to return.
         name: Optional substring filter on Site.name (case-insensitive).
@@ -172,7 +204,7 @@ async def list_sites(
         is_active: Optional exact-match filter on Site.is_active.
 
     Returns:
-        list[Site]: The requested page of sites.
+        list[Site]: The requested page of sites within the actor's scope.
     """
     conditions: list = []
     if name is not None:
@@ -182,6 +214,7 @@ async def list_sites(
         conditions.append(Site.brand_id == brand_id)
     if is_active is not None:
         conditions.append(Site.is_active == is_active)
+    _scope_to_own_accounts(conditions, actor)
 
     result = await db.execute(
         select(Site).where(*conditions).order_by(Site.created_at.desc()).offset(skip).limit(limit)
@@ -189,21 +222,22 @@ async def list_sites(
     return list(result.scalars().all())
 
 
-async def get_site(db: AsyncSession, site_id: uuid.UUID) -> Site:
+async def get_site(db: AsyncSession, site_id: uuid.UUID, actor: SuperAdmin) -> Site:
     """
-    Fetch a single site by ID.
+    Fetch a single site by ID, scoped to the actor's own accounts if Reseller Staff.
 
     Args:
         db: Active database session.
         site_id: The UUID of the site.
+        actor: The authenticated SuperAdmin performing the action.
 
     Returns:
         Site: The found site.
 
     Raises:
-        HTTPException: 404 if the site does not exist.
+        HTTPException: 404 if the site does not exist within the actor's scope.
     """
-    return await _get_or_404(db, site_id)
+    return await _get_or_404(db, site_id, actor)
 
 
 async def create_site(
@@ -223,11 +257,14 @@ async def create_site(
         Site: The newly created site.
 
     Raises:
-        HTTPException: 404 if the referenced brand does not exist.
+        HTTPException: 404 if the referenced brand does not exist within the actor's scope.
     """
-    from app.models.brand import Brand
-
-    brand_result = await db.execute(select(Brand).where(Brand.id == payload.brand_id))
+    brand_conditions = [Brand.id == payload.brand_id]
+    if actor.role == SuperAdminRole.RESELLER_STAFF.value:
+        brand_conditions.append(
+            Brand.group_id.in_(select(Group.id).where(Group.created_by_id == actor.id))
+        )
+    brand_result = await db.execute(select(Brand).where(*brand_conditions))
     if brand_result.scalar_one_or_none() is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Brand not found")
 
@@ -279,7 +316,7 @@ async def update_site(
     Raises:
         HTTPException: 404 if the site does not exist.
     """
-    site = await _get_or_404(db, site_id)
+    site = await _get_or_404(db, site_id, actor)
 
     before = {"name": site.name}
     if payload.name is not None:
@@ -323,7 +360,7 @@ async def suspend_site(
         HTTPException: 404 if the site does not exist.
         HTTPException: 409 if the site is already suspended.
     """
-    site = await _get_or_404(db, site_id)
+    site = await _get_or_404(db, site_id, actor)
 
     if not site.is_active:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Site is already suspended")
@@ -367,7 +404,7 @@ async def activate_site(
         HTTPException: 404 if the site does not exist.
         HTTPException: 409 if the site is already active.
     """
-    site = await _get_or_404(db, site_id)
+    site = await _get_or_404(db, site_id, actor)
 
     if site.is_active:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Site is already active")
