@@ -1,9 +1,13 @@
 """Business logic for unified portal login and management JWT issuance.
 
-Extends the portal login flow to also accept POS user credentials. If the
-email matches a superadmin, the existing portal JWT is issued. If it matches
-a user whose access profile has can_access_portal=True, a management JWT
-is issued instead.
+Extends the portal login flow to also accept POS user credentials. Portal
+access for a User is gated on backend_role (per-grant), not on the POS
+access profile. If an email matches only a superadmin, the portal JWT is
+issued; if it matches only a portal-capable user, a management JWT is
+issued (directly, via default grant, or via grant selection). If an email
+matches both a superadmin and a portal-capable user, the caller is shown
+both identities (ROLE_MODEL.md §3) and must select one via
+POST /auth/portal/identity-token before either token type is issued.
 """
 
 import uuid
@@ -31,6 +35,8 @@ from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
 from app.schemas.portal_auth import (
     GrantSummary,
+    IdentitySummary,
+    IdentityTokenRequest,
     LoginRequest,
     ManagementTokenRequest,
     TokenResponse,
@@ -144,116 +150,54 @@ def _build_mgmt_token(user: User, grant: UserAccessGrant) -> tuple[str, str]:
     return access, refresh
 
 
-async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse:
+async def _issue_superadmin_tokens(db: AsyncSession, superadmin: SuperAdmin) -> UnifiedLoginResponse:
     """
-    Unified portal login: try superadmins first, then users.
+    Issue portal access + refresh tokens for an authenticated superadmin.
 
-    Portal user → issues portal access + refresh tokens (existing behaviour).
-    POS user with one portal-capable grant → issues management JWT directly.
-    POS user with multiple portal-capable grants → returns grant list for selection.
-    Any failure → consistent 401 (no information about which table was checked).
+    Writes the AUTH_LOGIN_SUCCESS audit row and commits the transaction.
 
     Args:
         db: Active database session.
-        payload: Login credentials (email + password).
+        superadmin: The authenticated superadmin.
 
     Returns:
-        UnifiedLoginResponse: Tokens or grant list depending on user type and grants.
-
-    Raises:
-        HTTPException: 401 for invalid credentials; 403 if no portal-capable grants.
+        UnifiedLoginResponse: Portal token pair, no user_id/grant fields.
     """
-    log.info("auth.portal.login.attempt", email=payload.email)
-
-    # ── 1. Try superadmin first ─────────────────────────────────────────────
-    superadmin = await _load_superadmin(db, payload.email)
-    if superadmin is not None:
-        credentials_valid = (
-            verify_password(payload.password, superadmin.password_hash)
-            and superadmin.is_active
-        )
-        if not credentials_valid:
-            await log_action(
-                db=db,
-                action=AUTH_LOGIN_FAILED,
-                entity_type="superadmin",
-                entity_id=str(superadmin.id),
-                actor_type=ActorType.USER,
-                actor_id=None,
-                actor_email=payload.email,
-                actor_name=None,
-            )
-            await db.commit()
-            log.warning("auth.portal.login.failed", email=payload.email, reason="superadmin")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid credentials",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        access_token = create_access_token(str(superadmin.id), superadmin.role)
-        refresh_token = create_refresh_token(str(superadmin.id))
-        await log_action(
-            db=db,
-            action=AUTH_LOGIN_SUCCESS,
-            entity_type="superadmin",
-            entity_id=str(superadmin.id),
-            actor_type=ActorType.USER,
-            actor_id=superadmin.id,
-            actor_email=superadmin.email,
-            actor_name=superadmin.name,
-        )
-        await db.commit()
-        log.info("auth.portal.login.success", user_id=str(superadmin.id))
-        return UnifiedLoginResponse(access_token=access_token, refresh_token=refresh_token)
-
-    # ── 2. Try user ───────────────────────────────────────────────────────
-    user = await _load_user(db, payload.email)
-    pos_creds_valid = (
-        user is not None
-        and verify_password(payload.password, user.password_hash)
-        and user.is_active
+    access_token = create_access_token(str(superadmin.id), superadmin.role)
+    refresh_token = create_refresh_token(str(superadmin.id))
+    await log_action(
+        db=db,
+        action=AUTH_LOGIN_SUCCESS,
+        entity_type="superadmin",
+        entity_id=str(superadmin.id),
+        actor_type=ActorType.USER,
+        actor_id=superadmin.id,
+        actor_email=superadmin.email,
+        actor_name=superadmin.name,
     )
+    await db.commit()
+    log.info("auth.portal.login.success", user_id=str(superadmin.id))
+    return UnifiedLoginResponse(access_token=access_token, refresh_token=refresh_token)
 
-    if not pos_creds_valid:
-        # Neither table matched — consistent 401 (never reveal which table was checked)
-        entity_id = str(user.id) if user else payload.email
-        await log_action(
-            db=db,
-            action=MGMT_LOGIN_FAILED,
-            entity_type="user",
-            entity_id=entity_id,
-            actor_type=ActorType.USER,
-            actor_id=None,
-            actor_email=payload.email,
-            actor_name=None,
-        )
-        await db.commit()
-        log.warning("auth.portal.login.failed", email=payload.email, reason="not_found_or_bad_pw")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
 
-    # Load portal-capable grants for this user
+async def _resolve_user_login(db: AsyncSession, user: User) -> UnifiedLoginResponse:
+    """
+    Resolve a portal-capable user's login into tokens or a grant-selection list.
+
+    Single grant or a grant marked is_default → issues a management token
+    directly. Multiple grants with no default → returns available_grants
+    for the caller to select via POST /auth/portal/management-token.
+
+    Args:
+        db: Active database session.
+        user: The authenticated, portal-capable user (caller has already
+            verified credentials and that at least one portal-capable
+            grant exists).
+
+    Returns:
+        UnifiedLoginResponse: Management tokens, or a grant list for selection.
+    """
     grant_rows = await _portal_capable_grants(db, user.id)
-    if not grant_rows:
-        await log_action(
-            db=db,
-            action=MGMT_LOGIN_FAILED,
-            entity_type="user",
-            entity_id=str(user.id),
-            actor_type=ActorType.USER,
-            actor_id=user.id,
-            actor_email=user.email,
-            actor_name=user.name,
-        )
-        await db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No portal-capable access grants for this account",
-        )
 
     # Single grant → issue token immediately
     if len(grant_rows) == 1:
@@ -332,6 +276,193 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
         user_id=user.id,
         user_name=user.name,
         available_grants=summaries,
+    )
+
+
+async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse:
+    """
+    Unified portal login, disambiguating across superadmins and users.
+
+    Loads both a candidate superadmin and a candidate user by email. If both
+    have valid credentials (the user additionally needing at least one
+    portal-capable grant), neither token is issued yet — instead the caller
+    is shown both identities (ROLE_MODEL.md §3) and must call
+    POST /auth/portal/identity-token with the chosen identity_type. If only
+    one candidate is valid, behaviour is unchanged from before disambiguation
+    existed: superadmin → portal tokens; user → management tokens or a grant
+    list for selection. If neither is valid → consistent 401 (no information
+    about which table was checked).
+
+    Args:
+        db: Active database session.
+        payload: Login credentials (email + password).
+
+    Returns:
+        UnifiedLoginResponse: Tokens, a grant list, or an identity list,
+        depending on what matches the supplied email.
+
+    Raises:
+        HTTPException: 401 for invalid credentials; 403 if a user matches
+            but has no portal-capable grants.
+    """
+    log.info("auth.portal.login.attempt", email=payload.email)
+
+    superadmin = await _load_superadmin(db, payload.email)
+    superadmin_valid = (
+        superadmin is not None
+        and verify_password(payload.password, superadmin.password_hash)
+        and superadmin.is_active
+    )
+
+    user = await _load_user(db, payload.email)
+    user_creds_valid = (
+        user is not None
+        and verify_password(payload.password, user.password_hash)
+        and user.is_active
+    )
+    user_grants = await _portal_capable_grants(db, user.id) if user_creds_valid else []
+    user_valid = user_creds_valid and bool(user_grants)
+
+    # ── Both identities valid for this email → disambiguate, issue no tokens yet ──
+    if superadmin_valid and user_valid:
+        log.info("auth.portal.login.identity_selection", email=payload.email)
+        return UnifiedLoginResponse(
+            available_identities=[
+                IdentitySummary(identity_type="superadmin", display_name=superadmin.name),
+                IdentitySummary(identity_type="user", display_name=user.name),
+            ]
+        )
+
+    # ── Only superadmin valid ────────────────────────────────────────────
+    if superadmin_valid:
+        return await _issue_superadmin_tokens(db, superadmin)
+
+    # ── Only user valid (with grants) ────────────────────────────────────
+    if user_valid:
+        return await _resolve_user_login(db, user)
+
+    # ── User matched credentials but has no portal-capable grants ───────
+    if user_creds_valid:
+        await log_action(
+            db=db,
+            action=MGMT_LOGIN_FAILED,
+            entity_type="user",
+            entity_id=str(user.id),
+            actor_type=ActorType.USER,
+            actor_id=user.id,
+            actor_email=user.email,
+            actor_name=user.name,
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No portal-capable access grants for this account",
+        )
+
+    # ── Neither table matched — consistent 401, never reveal which was checked ──
+    if superadmin is not None:
+        await log_action(
+            db=db,
+            action=AUTH_LOGIN_FAILED,
+            entity_type="superadmin",
+            entity_id=str(superadmin.id),
+            actor_type=ActorType.USER,
+            actor_id=None,
+            actor_email=payload.email,
+            actor_name=None,
+        )
+    else:
+        entity_id = str(user.id) if user else payload.email
+        await log_action(
+            db=db,
+            action=MGMT_LOGIN_FAILED,
+            entity_type="user",
+            entity_id=entity_id,
+            actor_type=ActorType.USER,
+            actor_id=None,
+            actor_email=payload.email,
+            actor_name=None,
+        )
+    await db.commit()
+    log.warning("auth.portal.login.failed", email=payload.email, reason="not_found_or_bad_pw")
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+async def issue_identity_token(
+    db: AsyncSession, payload: IdentityTokenRequest
+) -> UnifiedLoginResponse:
+    """
+    Issue tokens for the chosen identity after cross-identity disambiguation.
+
+    Re-verifies credentials for the selected identity_type before issuing
+    anything, to prevent identity enumeration by a caller probing types.
+
+    Args:
+        db: Active database session.
+        payload: email, password, and the chosen identity_type
+            ("superadmin" or "user").
+
+    Returns:
+        UnifiedLoginResponse: Portal tokens (superadmin), or management
+        tokens / a grant list (user), depending on identity_type.
+
+    Raises:
+        HTTPException: 401 for invalid credentials or an unrecognised
+            identity_type; 403 if the user has no portal-capable grants.
+    """
+    if payload.identity_type == "superadmin":
+        superadmin = await _load_superadmin(db, payload.email)
+        if (
+            superadmin is None
+            or not verify_password(payload.password, superadmin.password_hash)
+            or not superadmin.is_active
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return await _issue_superadmin_tokens(db, superadmin)
+
+    if payload.identity_type == "user":
+        user = await _load_user(db, payload.email)
+        if (
+            user is None
+            or not verify_password(payload.password, user.password_hash)
+            or not user.is_active
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        grant_rows = await _portal_capable_grants(db, user.id)
+        if not grant_rows:
+            await log_action(
+                db=db,
+                action=MGMT_LOGIN_FAILED,
+                entity_type="user",
+                entity_id=str(user.id),
+                actor_type=ActorType.USER,
+                actor_id=user.id,
+                actor_email=user.email,
+                actor_name=user.name,
+            )
+            await db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No portal-capable access grants for this account",
+            )
+        return await _resolve_user_login(db, user)
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid identity_type",
+        headers={"WWW-Authenticate": "Bearer"},
     )
 
 

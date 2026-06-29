@@ -35,19 +35,39 @@ class GrantSummary(BaseModel):
     access_profile_name: str
 
 
+class IdentitySummary(BaseModel):
+    """
+    Describes one available identity during cross-identity login disambiguation.
+
+    Returned when an email is shared by both a SuperAdmin and a User account
+    with at least one portal-capable grant (ROLE_MODEL.md §3). The client
+    presents these as a selection screen and calls POST /auth/portal/identity-token
+    with the chosen identity_type to continue.
+    """
+
+    identity_type: str
+    display_name: str
+
+
 class UnifiedLoginResponse(BaseModel):
     """
-    Unified login response covering both portal users and POS manager users.
+    Unified login response covering SuperAdmins and POS manager Users.
 
-    For portal users: access_token and refresh_token are populated; all other
+    For SuperAdmins: access_token and refresh_token are populated; all other
     fields are None (backward-compatible with the existing TokenResponse shape).
 
-    For POS manager users with one grant: access_token and refresh_token are
+    For Users with one portal-capable grant: access_token and refresh_token are
     populated alongside user_id and user_name.
 
-    For POS manager users with multiple grants: access_token and refresh_token
+    For Users with multiple portal-capable grants: access_token and refresh_token
     are None and available_grants lists the options. The client selects one and
     calls POST /auth/portal/management-token to obtain a token.
+
+    For an email shared by both a SuperAdmin and a User: access_token and
+    refresh_token are None and available_identities lists the two identity
+    options. The client selects one and calls POST /auth/portal/identity-token
+    to continue (which may itself return available_grants if the chosen User
+    identity has multiple portal-capable grants).
     """
 
     token_type: str = "bearer"
@@ -56,6 +76,21 @@ class UnifiedLoginResponse(BaseModel):
     user_id: uuid.UUID | None = None
     user_name: str | None = None
     available_grants: list[GrantSummary] | None = None
+    available_identities: list[IdentitySummary] | None = None
+
+
+class IdentityTokenRequest(BaseModel):
+    """
+    Payload for POST /auth/portal/identity-token.
+
+    Used by the frontend identity-selector when an email is shared by both a
+    SuperAdmin and a portal-capable User. The password is re-verified for the
+    chosen identity_type to prevent identity enumeration.
+    """
+
+    email: EmailStr
+    password: str
+    identity_type: str
 
 
 class ManagementTokenRequest(BaseModel):

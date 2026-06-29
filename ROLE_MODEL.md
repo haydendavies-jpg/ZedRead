@@ -96,8 +96,16 @@ portal/page.
 `available_grants` when a User has multiple backend-role grants, and a follow-up call
 (`/auth/portal/management-token`) finalizes the selection.
 
-**Not yet built:** disambiguation *across* SuperAdmin and User identities sharing the same email.
-SuperAdmin login and User login are currently fully separate flows with no shared lookup step.
+**Already built (across SuperAdmin and User):** `POST /auth/portal/login` now loads both a
+candidate SuperAdmin and a candidate User by email. If both have valid credentials (the User
+additionally needing at least one portal-capable grant), no token is issued yet — the response
+instead carries `available_identities` (`identity_type` + `display_name` per identity). The client
+selects one and calls `POST /auth/portal/identity-token` with `{email, password, identity_type}`,
+which re-verifies credentials for the chosen identity and then issues SuperAdmin tokens directly
+or delegates into the existing User/grant-resolution flow (itself possibly returning
+`available_grants` if that User identity has multiple ungranted-default grants). A User matched by
+credentials but with zero portal-capable grants is not treated as a competing identity — the
+existing single-table 403 behaviour still applies in that case.
 
 ---
 

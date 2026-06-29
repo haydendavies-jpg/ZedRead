@@ -10,6 +10,7 @@ from app.database import get_db
 from app.models.superadmin import SuperAdmin
 from app.schemas.portal_auth import (
     ForgotPasswordRequest,
+    IdentityTokenRequest,
     LoginRequest,
     ManagementTokenRequest,
     MgmtRefreshRequest,
@@ -35,13 +36,31 @@ async def login(
     Unified portal login — accepts both superadmin and user credentials.
 
     - superadmin → issues a portal access + refresh token (role-based admin access).
-    - user with can_access_portal profile and one grant → issues a management JWT.
+    - user with one portal-capable grant → issues a management JWT.
     - user with multiple grants → returns available_grants list for scope selection.
+    - email shared by both a superadmin and a portal-capable user → returns
+      available_identities; the client selects one and calls /identity-token.
 
     Returns HTTP 401 for invalid credentials. The error message is intentionally
-    vague — it does not reveal whether the email exists or which user table was checked.
+    vague — it does not reveal whether the email exists or which table was checked.
     """
     return await management_auth_service.login(db, payload)
+
+
+@router.post("/identity-token", response_model=UnifiedLoginResponse)
+async def identity_token(
+    payload: IdentityTokenRequest,
+    db: AsyncSession = Depends(get_db),
+) -> UnifiedLoginResponse:
+    """
+    Issue tokens for the chosen identity after cross-identity disambiguation.
+
+    Called by the frontend identity-selector when /login returned
+    available_identities (the email matched both a superadmin and a
+    portal-capable user). Re-verifies the password for the chosen
+    identity_type to prevent identity enumeration.
+    """
+    return await management_auth_service.issue_identity_token(db, payload)
 
 
 @router.post("/refresh", response_model=TokenResponse)

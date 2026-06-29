@@ -24,6 +24,7 @@ from app.constants.audit_actions import (
 from app.models.access_profile import AccessProfile
 from app.models.audit_log import AuditLog
 from app.models.brand import Brand
+from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
@@ -357,5 +358,162 @@ async def test_mgmt_refresh_with_wrong_token_type_returns_401(client, test_user)
     response = await client.post(
         "/auth/portal/mgmt-refresh",
         json={"refresh_token": wrong_type_token},
+    )
+    assert response.status_code == 401
+
+
+# ── Cross-identity login disambiguation (ROLE_MODEL.md §3) ───────────────────
+
+
+async def test_login_shared_email_returns_available_identities(
+    client, db, test_user, test_portal_grant
+):
+    """A superadmin and a portal-capable user sharing an email get disambiguated."""
+    shared_superadmin = SuperAdmin(
+        id=uuid.uuid4(),
+        email="posuser@test.com",
+        password_hash=hash_password("SharedPassword123!"),
+        name="Shared Superadmin",
+        role="admin",
+        is_active=True,
+    )
+    db.add(shared_superadmin)
+    test_user.password_hash = hash_password("SharedPassword123!")
+    await db.commit()
+
+    response = await client.post(
+        "/auth/portal/login",
+        json={"email": "posuser@test.com", "password": "SharedPassword123!"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["access_token"] is None
+    assert body["refresh_token"] is None
+    assert body["available_identities"] is not None
+    identity_types = {i["identity_type"] for i in body["available_identities"]}
+    assert identity_types == {"superadmin", "user"}
+
+
+async def test_login_shared_email_pos_only_user_unaffected(client, db, test_user):
+    """A superadmin sharing an email with a non-portal-capable user logs in unaffected."""
+    shared_superadmin = SuperAdmin(
+        id=uuid.uuid4(),
+        email="posuser@test.com",
+        password_hash=hash_password("SharedPassword123!"),
+        name="Shared Superadmin",
+        role="admin",
+        is_active=True,
+    )
+    db.add(shared_superadmin)
+    await db.commit()
+
+    response = await client.post(
+        "/auth/portal/login",
+        json={"email": "posuser@test.com", "password": "SharedPassword123!"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["access_token"] is not None
+    assert body["available_identities"] is None
+
+
+async def test_identity_token_superadmin_selection_issues_portal_tokens(
+    client, db, test_user, test_portal_grant
+):
+    """Choosing identity_type=superadmin issues a portal token pair."""
+    shared_superadmin = SuperAdmin(
+        id=uuid.uuid4(),
+        email="posuser@test.com",
+        password_hash=hash_password("SharedPassword123!"),
+        name="Shared Superadmin",
+        role="admin",
+        is_active=True,
+    )
+    db.add(shared_superadmin)
+    test_user.password_hash = hash_password("SharedPassword123!")
+    await db.commit()
+
+    response = await client.post(
+        "/auth/portal/identity-token",
+        json={
+            "email": "posuser@test.com",
+            "password": "SharedPassword123!",
+            "identity_type": "superadmin",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["access_token"] is not None
+    assert body["user_id"] is None
+
+
+async def test_identity_token_user_selection_issues_mgmt_token(
+    client, db, test_user, test_portal_grant
+):
+    """Choosing identity_type=user issues a management token pair."""
+    shared_superadmin = SuperAdmin(
+        id=uuid.uuid4(),
+        email="posuser@test.com",
+        password_hash=hash_password("SharedPassword123!"),
+        name="Shared Superadmin",
+        role="admin",
+        is_active=True,
+    )
+    db.add(shared_superadmin)
+    test_user.password_hash = hash_password("SharedPassword123!")
+    await db.commit()
+
+    response = await client.post(
+        "/auth/portal/identity-token",
+        json={
+            "email": "posuser@test.com",
+            "password": "SharedPassword123!",
+            "identity_type": "user",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["access_token"] is not None
+    assert str(body["user_id"]) == str(test_user.id)
+
+
+async def test_identity_token_wrong_password_returns_401(client, db, test_user, test_portal_grant):
+    """Wrong password on the identity-token endpoint returns 401."""
+    shared_superadmin = SuperAdmin(
+        id=uuid.uuid4(),
+        email="posuser@test.com",
+        password_hash=hash_password("SharedPassword123!"),
+        name="Shared Superadmin",
+        role="admin",
+        is_active=True,
+    )
+    db.add(shared_superadmin)
+    test_user.password_hash = hash_password("SharedPassword123!")
+    await db.commit()
+
+    response = await client.post(
+        "/auth/portal/identity-token",
+        json={
+            "email": "posuser@test.com",
+            "password": "WrongPassword!",
+            "identity_type": "user",
+        },
+    )
+    assert response.status_code == 401
+
+
+async def test_identity_token_invalid_identity_type_returns_401(client, test_user, test_portal_grant):
+    """An unrecognised identity_type is rejected with 401."""
+    response = await client.post(
+        "/auth/portal/identity-token",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "identity_type": "bogus",
+        },
     )
     assert response.status_code == 401
