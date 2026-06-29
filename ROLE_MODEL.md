@@ -109,7 +109,7 @@ existing single-table 403 behaviour still applies in that case.
 
 ---
 
-## 4. Page-category permission hierarchy (new — not yet built)
+## 4. Page-category permission hierarchy (implemented — Stage 15)
 
 Default page categories (open-ended list, designed for future expansion — not a fixed enum):
 
@@ -131,6 +131,25 @@ pages that have edit actions, not by an action-level flag.
 on the Brand/Site's license plan, regardless of role. This is a second, independent gate —
 `visible = has_role_permission AND license_allows`, not folded into the role model itself.
 
+**Implementation (Stage 15):**
+
+- `app/constants/pages.py` — `PAGE_CATALOG`: 17 pages across the 5 categories (the concrete list resolved
+  in §6 below). Plain Python data, not a DB-seeded table or fixed enum, so new pages can ship without a
+  migration; `page_key` is validated against the catalog at the service layer.
+- `AccessProfilePagePermission` (table `access_profile_page_permissions`) — presence-based grant of a
+  single page to an `AccessProfile`. Permission grain attaches to `AccessProfile` (the POS-side
+  permission tier), not to individual `UserAccessGrant` rows, consistent with the "two independent axes"
+  framing in §2.
+- `app/constants/license_plans.py` — `allowed_pages_for_plan(plan_name)` maps `License.plan_name`
+  (free-form string) to an allowed page-key set for the `starter`/`pro`/`enterprise` tiers. Any
+  unrecognised or `None` plan_name falls back to the full catalog, so the absence of a tier mapping never
+  silently locks out pages on a plan nobody has classified yet.
+- `access_profile_service.py` — `seed_system_profiles()` now also seeds each system role's default page
+  grants; `grant_page()`/`revoke_page()`/`list_page_permissions()` manage grants; `resolve_visible_pages()`
+  ANDs the role grant with the site's license gate.
+- Routes: `GET/POST /access-profiles/{id}/pages`, `DELETE /access-profiles/{id}/pages/{page_key}`,
+  `GET /access-profiles/{id}/visible-pages?site_id=...`.
+
 ---
 
 ## 5. Resolved decisions
@@ -141,8 +160,36 @@ on the Brand/Site's license plan, regardless of role. This is a second, independ
    target roles; `access_profiles` is not a separate sub-tier. (See §2, "Two independent axes" note.)
 3. **Permission grain per page category** — per-page toggle within each category, not whole-category-only
    and not per-action. (See §4.)
+4. **Concrete per-category page list and license-tier mapping** — resolved in §6 below as part of this
+   stage's implementation, per the implementer's mandate to define it.
 
-## 6. Still open / to be expanded
+## 6. Page catalog (resolved)
 
-- The concrete list of pages within each category (e.g. exactly which pages live under Reports vs
-  Customers & Loyalty) is not yet enumerated — to be defined when this work is scheduled into a stage.
+17 pages across the 5 categories, defined in `app/constants/pages.py`:
+
+| Category | Pages |
+|---|---|
+| Product & Menus | products, variants_modifiers, combos, categories |
+| App Configuration | site_settings, devices, tax_settings, license_billing |
+| Reports | daily_sales, tax_collected, invoices, audit_log |
+| User Management | users, access_grants, access_profiles |
+| Customers & Loyalty | customers, loyalty_programs |
+
+Default role grants seeded by `seed_system_profiles()`:
+
+| Role | Default pages |
+|---|---|
+| Master User | All 17 |
+| Admin | All 17 |
+| Reporting Only | Reports category only (daily_sales, tax_collected, invoices, audit_log) |
+| Manager | All except users, access_grants, access_profiles, license_billing |
+| Staff | products, categories, customers |
+
+License-tier page sets (`app/constants/license_plans.py`) — a judgment call made without explicit
+business sign-off; flag for review if the user wants different tier boundaries:
+
+| Plan | Pages unlocked |
+|---|---|
+| starter | products, categories, site_settings, daily_sales, invoices, users, customers |
+| pro | All starter pages plus variants_modifiers, combos, devices, tax_settings, license_billing, tax_collected, audit_log, access_grants, loyalty_programs |
+| enterprise (and any unrecognised plan_name, including null) | Full catalog |

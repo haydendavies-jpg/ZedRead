@@ -95,6 +95,23 @@ class SystemAccessProfile(str, Enum):
     MASTER = "Master User"
 
 
+class PageCategory(str, Enum):
+    """
+    The 5 page categories that group portal pages (ROLE_MODEL.md §4).
+
+    Open-ended by design — new categories can be added without touching
+    existing permission rows, since AccessProfilePagePermission stores
+    page_key, not category, and category is resolved via the page catalog
+    (app/constants/pages.py).
+    """
+
+    PRODUCT_MENUS = "product_menus"
+    APP_CONFIGURATION = "app_configuration"
+    REPORTS = "reports"
+    USER_MANAGEMENT = "user_management"
+    CUSTOMERS_LOYALTY = "customers_loyalty"
+
+
 class GrantScope(str, Enum):
     """
     Scope level of a UserAccessGrant.

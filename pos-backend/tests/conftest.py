@@ -173,6 +173,7 @@ _ALL_TABLES = [
     "user_invites",
     "user_access_grants",
     "users",
+    "access_profile_page_permissions",
     "access_profiles",
     "pos_devices",
     "license_invoices",

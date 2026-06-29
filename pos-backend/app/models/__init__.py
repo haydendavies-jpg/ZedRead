@@ -1,6 +1,7 @@
 """ORM model registry — import all models here so Alembic autogenerate detects them."""
 
 from app.models.access_profile import AccessProfile
+from app.models.access_profile_page_permission import AccessProfilePagePermission
 from app.models.audit_log import AuditLog
 from app.models.brand import Brand
 from app.models.category import Category
@@ -37,6 +38,7 @@ from app.models.user_pos_session import UserPOSSession
 
 __all__ = [
     "AccessProfile",
+    "AccessProfilePagePermission",
     "AuditLog",
     "Brand",
     "Category",
