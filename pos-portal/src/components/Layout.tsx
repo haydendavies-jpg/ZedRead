@@ -70,7 +70,7 @@ export function Layout() {
                 {label}
               </NavLink>
             ))}
-            {portalUser.role === 'super_admin' && (
+            {portalUser.role === 'admin' && (
               <>
                 <div className="pt-3 pb-1 px-3 text-xs font-medium text-gray-400 uppercase tracking-wide">
                   Admin
