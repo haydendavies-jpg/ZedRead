@@ -5,6 +5,8 @@ Run with: python -m app.cli <command>
 Commands:
   bootstrap-super-admin   Create the initial Admin-role SuperAdmin portal user.
                           Refuses to run if an Admin-role SuperAdmin already exists.
+  wipe-hierarchy          Permanently delete every Group, Brand, and Site, plus
+                          everything that depends on them. Irreversible.
 """
 
 import asyncio
@@ -12,13 +14,15 @@ import getpass
 
 import structlog
 import typer
-from sqlalchemy import select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.constants.audit_actions import PORTAL_USER_CREATED
+from app.constants.audit_actions import HIERARCHY_WIPED, PORTAL_USER_CREATED
 from app.constants.statuses import ActorType, SuperAdminRole
 from app.logging_config import configure_logging
 from app.models.brand import Brand
+from app.models.group import Group
+from app.models.site import Site
 from app.models.superadmin import SuperAdmin
 from app.services.access_profile_service import seed_system_profiles
 from app.services.audit_service import log_action
@@ -179,6 +183,66 @@ def bootstrap_super_admin(
     Refuses to run if an Admin-role SuperAdmin already exists.
     """
     asyncio.run(_bootstrap_super_admin_async(non_interactive=non_interactive))
+
+
+async def _wipe_hierarchy_async() -> None:
+    """
+    Core async logic for the wipe-hierarchy command.
+
+    Writes a SYSTEM-actor audit log row recording the pre-wipe row counts,
+    then issues a single TRUNCATE ... CASCADE on groups/brands/sites. CASCADE
+    removes every row in those tables and every table with a foreign key
+    pointing at them (licenses, users, access_profiles, products, invoices,
+    devices, etc.) regardless of each FK's own ondelete rule. audit_logs has
+    no foreign key to any of these tables, so the audit trail — including
+    the row this function writes — survives the wipe.
+    """
+    engine = create_async_engine(_get_database_url(), echo=False, connect_args={"statement_cache_size": 0})
+    session_factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with session_factory() as db:
+        group_count = (await db.execute(select(func.count()).select_from(Group))).scalar_one()
+        brand_count = (await db.execute(select(func.count()).select_from(Brand))).scalar_one()
+        site_count = (await db.execute(select(func.count()).select_from(Site))).scalar_one()
+
+        await log_action(
+            db=db,
+            action=HIERARCHY_WIPED,
+            entity_type="hierarchy",
+            entity_id="all",
+            actor_type=ActorType.SYSTEM,
+            actor_name="wipe-hierarchy-cli",
+            before_state={"groups": group_count, "brands": brand_count, "sites": site_count},
+        )
+        await db.commit()
+
+        await db.execute(text("TRUNCATE TABLE groups, brands, sites CASCADE"))
+        await db.commit()
+
+    await engine.dispose()
+    typer.echo(f"Wiped {group_count} group(s), {brand_count} brand(s), {site_count} site(s) and all dependents.")
+
+
+@cli.command(name="wipe-hierarchy")
+def wipe_hierarchy(
+    confirm: str = typer.Option(
+        "",
+        "--confirm",
+        help='Must be exactly "DELETE ALL" to proceed.',
+    ),
+) -> None:
+    """
+    Permanently delete every Group, Brand, and Site, plus everything that
+    depends on them (Licenses, Users, access grants, products, invoices,
+    devices, etc.).
+
+    Irreversible — there is no undo. Requires --confirm "DELETE ALL" as an
+    explicit safety check against accidental invocation.
+    """
+    if confirm != "DELETE ALL":
+        typer.echo('ERROR: Refusing to run without --confirm "DELETE ALL".')
+        raise typer.Exit(code=1)
+    asyncio.run(_wipe_hierarchy_async())
 
 
 if __name__ == "__main__":

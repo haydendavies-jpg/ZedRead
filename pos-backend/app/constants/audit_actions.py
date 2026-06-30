@@ -33,6 +33,8 @@ SITE_UPDATED = "site.updated"
 SITE_SUSPENDED = "site.suspended"
 SITE_ACTIVATED = "site.activated"
 
+HIERARCHY_WIPED = "hierarchy.wiped"  # Admin CLI: hard-delete of all Groups/Brands/Sites and dependents
+
 PORTAL_USER_CREATED = "superadmin.created"
 PORTAL_USER_UPDATED = "superadmin.updated"
 PORTAL_USER_SUSPENDED = "superadmin.suspended"
