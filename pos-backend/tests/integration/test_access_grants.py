@@ -66,6 +66,7 @@ async def target_user(db: AsyncSession, test_brand: Brand) -> User:
 
     user = User(
         id=uuid.uuid4(),
+        group_id=test_brand.group_id,
         brand_id=test_brand.id,
         name="Target User",
         email="target@test.com",

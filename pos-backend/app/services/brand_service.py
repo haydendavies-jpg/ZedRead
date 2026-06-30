@@ -5,6 +5,7 @@ transaction — this category cannot be deleted and is used as the fallback for
 products not assigned to any other category.
 """
 
+import secrets
 import uuid
 
 import structlog
@@ -13,21 +14,125 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
+    ACCESS_GRANT_CREATED,
     BRAND_ACTIVATED,
     BRAND_CREATED,
     BRAND_SUSPENDED,
     BRAND_UPDATED,
+    USER_CREATED,
 )
-from app.constants.statuses import SuperAdminRole
+from app.constants.statuses import ActorType, GrantScope, SuperAdminRole, SystemAccessProfile
+from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.category import Category
 from app.models.group import Group
 from app.models.superadmin import SuperAdmin
+from app.models.user import User
+from app.models.user_access_grant import UserAccessGrant
 from app.schemas.brand import BrandCreate, BrandUpdate
 from app.services.access_profile_service import seed_system_profiles
 from app.services.audit_service import log_action
+from app.utils.security import hash_password
 
 log = structlog.get_logger(__name__)
+
+
+async def _create_brand_master_user(db: AsyncSession, brand: Brand, actor: SuperAdmin) -> User:
+    """
+    Auto-create the immutable Master User for a newly created brand.
+
+    Mirrors site_service._create_master_user(): synthetic email/unusable
+    password, full fixed access via the brand's seeded Master User access
+    profile, backend_role='admin' always on.
+
+    Args:
+        db: Active database session (transaction already open from caller).
+        brand: The newly created, already-flushed Brand.
+        actor: The portal admin who created the brand (for audit attribution).
+
+    Returns:
+        User: The newly created Master User.
+
+    Raises:
+        HTTPException: 404 if the brand's Master User access profile is missing
+            (should not happen — seeded by seed_system_profiles() just before this).
+    """
+    profile_r = await db.execute(
+        select(AccessProfile).where(
+            AccessProfile.brand_id == brand.id,
+            AccessProfile.name == SystemAccessProfile.MASTER.value,
+            AccessProfile.is_system == True,  # noqa: E712
+        )
+    )
+    master_profile = profile_r.scalar_one_or_none()
+    if master_profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Brand is missing its Master User access profile",
+        )
+
+    master_user = User(
+        id=uuid.uuid4(),
+        group_id=brand.group_id,
+        brand_id=brand.id,
+        name=brand.name,
+        email=f"master-{brand.id}@system.zedread.internal",
+        password_hash=hash_password(secrets.token_urlsafe(32)),
+        is_active=True,
+        is_master_user=True,
+    )
+    db.add(master_user)
+    await db.flush()
+
+    await log_action(
+        db=db,
+        action=USER_CREATED,
+        entity_type="user",
+        entity_id=str(master_user.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        after_state={
+            "name": master_user.name,
+            "brand_id": str(master_user.brand_id),
+            "is_master_user": True,
+        },
+    )
+
+    grant = UserAccessGrant(
+        id=uuid.uuid4(),
+        user_id=master_user.id,
+        scope=GrantScope.BRAND,
+        brand_id=brand.id,
+        access_profile_id=master_profile.id,
+        granted_by_id=None,  # System-created grant
+        is_active=True,
+        is_default=True,
+        backend_role="admin",
+    )
+    db.add(grant)
+
+    await log_action(
+        db=db,
+        action=ACCESS_GRANT_CREATED,
+        entity_type="user_access_grant",
+        entity_id=str(grant.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        after_state={
+            "user_id": str(master_user.id),
+            "scope": GrantScope.BRAND,
+            "brand_id": str(brand.id),
+            "access_profile_id": str(master_profile.id),
+            "auto_created": True,
+        },
+    )
+
+    log.info("brand.master_user.created", brand_id=str(brand.id), user_id=str(master_user.id))
+    return master_user
 
 
 def _scope_to_own_accounts(conditions: list, actor: SuperAdmin) -> None:
@@ -178,8 +283,13 @@ async def create_brand(
     )
     db.add(uncategorised)
 
-    # Seed the 4 system access profiles (Admin, Reporting Only, Manager, Staff)
+    # Seed the 5 system access profiles (Admin, Reporting Only, Manager, Staff, Master User)
     await seed_system_profiles(db, brand.id)
+    await db.flush()  # Profiles must be visible to the lookup in _create_brand_master_user (autoflush=False)
+
+    # Every brand gets exactly one immutable Master User, created atomically
+    # with the brand itself (ROLE_MODEL.md Master User role, extended to Brand).
+    await _create_brand_master_user(db, brand, actor)
 
     await log_action(
         db=db,

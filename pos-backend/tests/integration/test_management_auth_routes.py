@@ -188,6 +188,7 @@ async def test_management_token_wrong_grant_owner_returns_403(
     # Create a second POS user with their own grant
     other_user = User(
         id=uuid.uuid4(),
+        group_id=test_brand.group_id,
         brand_id=test_brand.id,
         name="Other User",
         email="other@test.com",
@@ -237,6 +238,7 @@ async def test_login_inactive_user_returns_401(client, db, test_brand, test_mana
     """Inactive POS user returns 401."""
     inactive_user = User(
         id=uuid.uuid4(),
+        group_id=test_brand.group_id,
         brand_id=test_brand.id,
         name="Inactive User",
         email="inactive@test.com",
@@ -267,6 +269,7 @@ async def test_login_no_portal_capable_grants_returns_403(client, db, test_brand
 
     restricted_user = User(
         id=uuid.uuid4(),
+        group_id=test_brand.group_id,
         brand_id=test_brand.id,
         name="Restricted User",
         email="restricted@test.com",

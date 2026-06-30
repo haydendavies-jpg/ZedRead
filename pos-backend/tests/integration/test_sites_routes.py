@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from app.constants.audit_actions import SITE_ACTIVATED, SITE_CREATED, SITE_SUSPENDED, SITE_UPDATED
 from app.models.audit_log import AuditLog
+from app.models.user import User
 
 
 # ── Happy path ────────────────────────────────────────────────────────────────
@@ -185,3 +186,27 @@ async def test_suspend_site_writes_audit_log(client, db, portal_auth_headers, te
     )
     row = result.scalar_one()
     assert row.after_state["is_active"] is False
+
+
+# ── Master User auto-creation ───────────────────────────────────────────────────
+
+
+async def test_create_site_master_user_has_group_id(client, db, portal_auth_headers, test_brand, test_group):
+    """POST /sites's auto-created Master User has group_id resolved via its brand."""
+    response = await client.post(
+        "/sites/",
+        json={"brand_id": str(test_brand.id), "name": "Group Id Test Site"},
+        headers=portal_auth_headers,
+    )
+    site_id = response.json()["id"]
+
+    result = await db.execute(
+        select(User).where(
+            User.brand_id == test_brand.id,
+            User.is_master_user == True,  # noqa: E712
+            User.name == "Group Id Test Site",
+        )
+    )
+    master_user = result.scalar_one()
+    assert master_user.group_id == test_group.id
+    assert str(site_id)  # site created successfully alongside the master user

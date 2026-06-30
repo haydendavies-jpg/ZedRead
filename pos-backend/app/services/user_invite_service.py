@@ -224,9 +224,19 @@ async def accept_invite(
             detail="A POS user with this email already exists",
         )
 
+    # Resolve the invite's brand to populate the new user's required group_id
+    invite_brand_result = await db.execute(select(Brand).where(Brand.id == invite.brand_id))
+    invite_brand = invite_brand_result.scalar_one_or_none()
+    if invite_brand is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invite's brand not found",
+        )
+
     # Create the POS user
     user = User(
         id=uuid.uuid4(),
+        group_id=invite_brand.group_id,
         brand_id=invite.brand_id,
         first_name=payload.first_name,
         last_name=payload.last_name,

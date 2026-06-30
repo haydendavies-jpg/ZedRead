@@ -90,9 +90,16 @@ async def _create_master_user(db: AsyncSession, site: Site, actor: SuperAdmin) -
             detail="Brand is missing its Master User access profile",
         )
 
+    # Site itself has no group_id column — resolve it via its brand
+    brand_group_r = await db.execute(select(Brand.group_id).where(Brand.id == site.brand_id))
+    brand_group_id = brand_group_r.scalar_one_or_none()
+    if brand_group_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site's brand not found")
+
     # Synthetic, unguessable credentials — Master User has no real login path yet
     master_user = User(
         id=uuid.uuid4(),
+        group_id=brand_group_id,
         brand_id=site.brand_id,
         name=site.name,
         email=f"master-{site.id}@system.zedread.internal",

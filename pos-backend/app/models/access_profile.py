@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -12,18 +12,29 @@ from app.database import Base
 
 class AccessProfile(Base):
     """
-    Defines a named permission tier for Users within a brand.
+    Defines a named permission tier for Users within a brand or group.
 
     Five system profiles (Admin, Reporting Only, Manager, Staff, Master User)
     are seeded automatically when a brand is created — the 5 target roles in
-    ROLE_MODEL.md. Unlike the other four, the Master User profile is only
-    ever assigned to exactly one User per site (see site_service.create_site());
-    this profile row itself is still per-brand like the rest. Additional
-    custom profiles can be created by brand admins. System profiles cannot be
+    ROLE_MODEL.md. A single group-scoped Master User profile is additionally
+    seeded per group (see access_profile_service.seed_group_master_profile())
+    for the group-level Master User; the other four tiers stay brand-only
+    since they gate catalog/product permissions that only make sense once a
+    Brand exists. Exactly one of brand_id/group_id is set per profile,
+    enforced by ck_access_profiles_scope_fk_consistency. Additional custom
+    profiles can be created by brand admins. System profiles cannot be
     deleted (is_system=True).
     """
 
     __tablename__ = "access_profiles"
+    __table_args__ = (
+        # Ensure exactly one scope FK is set
+        CheckConstraint(
+            "(brand_id IS NOT NULL AND group_id IS NULL) OR "
+            "(brand_id IS NULL AND group_id IS NOT NULL)",
+            name="ck_access_profiles_scope_fk_consistency",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -31,12 +42,19 @@ class AccessProfile(Base):
         default=uuid.uuid4,
         comment="Primary key — UUID generated at insert time",
     )
-    brand_id: Mapped[uuid.UUID] = mapped_column(
+    brand_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("brands.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
         index=True,
-        comment="Brand this profile belongs to — profiles are not shared across brands",
+        comment="Set for brand-scoped profiles — profiles are not shared across brands",
+    )
+    group_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("groups.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+        comment="Set for the group-scoped Master User profile",
     )
     name: Mapped[str] = mapped_column(
         String(100),

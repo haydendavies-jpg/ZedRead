@@ -1,5 +1,6 @@
 """Business logic for Group CRUD operations."""
 
+import secrets
 import uuid
 
 import structlog
@@ -8,16 +9,23 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
+    ACCESS_GRANT_CREATED,
     GROUP_ACTIVATED,
     GROUP_CREATED,
     GROUP_SUSPENDED,
     GROUP_UPDATED,
+    USER_CREATED,
 )
-from app.constants.statuses import SuperAdminRole
+from app.constants.statuses import ActorType, GrantScope, SuperAdminRole, SystemAccessProfile
+from app.models.access_profile import AccessProfile
 from app.models.group import Group
 from app.models.superadmin import SuperAdmin
+from app.models.user import User
+from app.models.user_access_grant import UserAccessGrant
 from app.schemas.group import GroupCreate, GroupUpdate
+from app.services.access_profile_service import seed_group_master_profile
 from app.services.audit_service import log_action
+from app.utils.security import hash_password
 
 log = structlog.get_logger(__name__)
 
@@ -122,13 +130,114 @@ async def get_group(db: AsyncSession, group_id: uuid.UUID, actor: SuperAdmin) ->
     return await _get_or_404(db, group_id, actor)
 
 
+async def _create_group_master_user(db: AsyncSession, group: Group, actor: SuperAdmin) -> User:
+    """
+    Auto-create the immutable Master User for a newly created group.
+
+    Mirrors site_service._create_master_user() and
+    brand_service._create_brand_master_user(): synthetic email/unusable
+    password, full fixed access via the group's seeded Master User access
+    profile, backend_role='admin' always on. A group-level Master User has
+    no brand (User.brand_id is NULL) — its scope is the whole group.
+
+    Args:
+        db: Active database session (transaction already open from caller).
+        group: The newly created, already-flushed Group.
+        actor: The portal admin who created the group (for audit attribution).
+
+    Returns:
+        User: The newly created Master User.
+
+    Raises:
+        HTTPException: 404 if the group's Master User access profile is missing
+            (should not happen — seeded by seed_group_master_profile() just before this).
+    """
+    profile_r = await db.execute(
+        select(AccessProfile).where(
+            AccessProfile.group_id == group.id,
+            AccessProfile.name == SystemAccessProfile.MASTER.value,
+            AccessProfile.is_system == True,  # noqa: E712
+        )
+    )
+    master_profile = profile_r.scalar_one_or_none()
+    if master_profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Group is missing its Master User access profile",
+        )
+
+    master_user = User(
+        id=uuid.uuid4(),
+        group_id=group.id,
+        brand_id=None,
+        name=group.name,
+        email=f"master-{group.id}@system.zedread.internal",
+        password_hash=hash_password(secrets.token_urlsafe(32)),
+        is_active=True,
+        is_master_user=True,
+    )
+    db.add(master_user)
+    await db.flush()
+
+    await log_action(
+        db=db,
+        action=USER_CREATED,
+        entity_type="user",
+        entity_id=str(master_user.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        after_state={
+            "name": master_user.name,
+            "group_id": str(master_user.group_id),
+            "is_master_user": True,
+        },
+    )
+
+    grant = UserAccessGrant(
+        id=uuid.uuid4(),
+        user_id=master_user.id,
+        scope=GrantScope.GROUP,
+        group_id=group.id,
+        access_profile_id=master_profile.id,
+        granted_by_id=None,  # System-created grant
+        is_active=True,
+        is_default=True,
+        backend_role="admin",
+    )
+    db.add(grant)
+
+    await log_action(
+        db=db,
+        action=ACCESS_GRANT_CREATED,
+        entity_type="user_access_grant",
+        entity_id=str(grant.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        after_state={
+            "user_id": str(master_user.id),
+            "scope": GrantScope.GROUP,
+            "group_id": str(group.id),
+            "access_profile_id": str(master_profile.id),
+            "auto_created": True,
+        },
+    )
+
+    log.info("group.master_user.created", group_id=str(group.id), user_id=str(master_user.id))
+    return master_user
+
+
 async def create_group(
     db: AsyncSession,
     payload: GroupCreate,
     actor: SuperAdmin,
 ) -> Group:
     """
-    Create a new Group and write an audit log row in the same transaction.
+    Create a new Group, seed its Master User access profile, auto-create its
+    Master User, and write audit log rows — all in the same transaction.
 
     Args:
         db: Active database session.
@@ -143,6 +252,7 @@ async def create_group(
     # Record the creating SuperAdmin so Reseller Staff can be scoped to own accounts
     group = Group(id=uuid.uuid4(), name=payload.name, is_active=True, created_by_id=actor.id)
     db.add(group)
+    await db.flush()  # Group must be in DB before AccessProfile/User FK inserts
 
     await log_action(
         db=db,
@@ -154,6 +264,12 @@ async def create_group(
         actor_name=actor.name,
         after_state={"name": group.name, "is_active": group.is_active},
     )
+
+    # Every group gets exactly one immutable Master User, created atomically
+    # with the group itself (ROLE_MODEL.md Master User role, extended to Group).
+    await seed_group_master_profile(db, group.id)
+    await db.flush()  # Profile must be visible to the lookup in _create_group_master_user (autoflush=False)
+    await _create_group_master_user(db, group, actor)
 
     await db.commit()
     await db.refresh(group)

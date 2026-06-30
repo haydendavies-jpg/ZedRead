@@ -13,8 +13,12 @@ import uuid
 from sqlalchemy import select
 
 from app.constants.audit_actions import GROUP_ACTIVATED, GROUP_CREATED, GROUP_SUSPENDED, GROUP_UPDATED
+from app.constants.statuses import GrantScope, SystemAccessProfile
+from app.models.access_profile import AccessProfile
 from app.models.audit_log import AuditLog
 from app.models.group import Group
+from app.models.user import User
+from app.models.user_access_grant import UserAccessGrant
 
 
 # ── Happy path ────────────────────────────────────────────────────────────────
@@ -189,3 +193,86 @@ async def test_activate_group_writes_audit_log(client, db, portal_auth_headers, 
     )
     row = result.scalar_one()
     assert row.after_state["is_active"] is True
+
+
+# ── Master User auto-creation ───────────────────────────────────────────────────
+
+
+async def test_create_group_seeds_group_master_profile(client, db, portal_auth_headers):
+    """POST /groups seeds a group-scoped Master User AccessProfile."""
+    response = await client.post(
+        "/groups/", json={"name": "Profile Test Group"}, headers=portal_auth_headers
+    )
+    group_id = response.json()["id"]
+
+    result = await db.execute(
+        select(AccessProfile).where(
+            AccessProfile.group_id == uuid.UUID(group_id),
+            AccessProfile.name == SystemAccessProfile.MASTER.value,
+        )
+    )
+    profile = result.scalar_one()
+    assert profile.is_system is True
+    assert profile.brand_id is None
+
+
+async def test_create_group_auto_creates_master_user(client, db, portal_auth_headers):
+    """POST /groups auto-creates an immutable Master User scoped to the group."""
+    response = await client.post(
+        "/groups/", json={"name": "Master User Test Group"}, headers=portal_auth_headers
+    )
+    group_id = response.json()["id"]
+
+    result = await db.execute(
+        select(User).where(
+            User.group_id == uuid.UUID(group_id),
+            User.is_master_user == True,  # noqa: E712
+        )
+    )
+    master_user = result.scalar_one()
+    assert master_user.brand_id is None
+    assert master_user.name == "Master User Test Group"
+    assert master_user.is_active is True
+
+    grant_result = await db.execute(
+        select(UserAccessGrant).where(UserAccessGrant.user_id == master_user.id)
+    )
+    grant = grant_result.scalar_one()
+    assert grant.scope == GrantScope.GROUP
+    assert grant.group_id == uuid.UUID(group_id)
+    assert grant.backend_role == "admin"
+    assert grant.is_default is True
+
+
+async def test_create_group_master_user_writes_audit_logs(client, db, portal_auth_headers):
+    """POST /groups writes USER_CREATED and ACCESS_GRANT_CREATED audit rows for the Master User."""
+    from app.constants.audit_actions import ACCESS_GRANT_CREATED, USER_CREATED
+
+    response = await client.post(
+        "/groups/", json={"name": "Audit Master Group"}, headers=portal_auth_headers
+    )
+    group_id = response.json()["id"]
+
+    user_result = await db.execute(
+        select(User).where(
+            User.group_id == uuid.UUID(group_id),
+            User.is_master_user == True,  # noqa: E712
+        )
+    )
+    master_user = user_result.scalar_one()
+
+    user_audit = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(master_user.id),
+            AuditLog.action == USER_CREATED,
+        )
+    )
+    assert user_audit.scalar_one() is not None
+
+    grant_audit = await db.execute(
+        select(AuditLog).where(
+            AuditLog.action == ACCESS_GRANT_CREATED,
+            AuditLog.after_state["user_id"].astext == str(master_user.id),
+        )
+    )
+    assert grant_audit.scalar_one_or_none() is not None
