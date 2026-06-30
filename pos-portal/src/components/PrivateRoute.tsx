@@ -22,7 +22,7 @@ export function PrivateRoute({ children, requireSuperAdmin = false, requirePorta
 
   if (!user) return <Navigate to="/login" replace />
 
-  if (requireSuperAdmin && (!isPortalUser(user) || user.role !== 'super_admin')) {
+  if (requireSuperAdmin && (!isPortalUser(user) || user.role !== 'admin')) {
     return <Navigate to="/" replace />
   }
 

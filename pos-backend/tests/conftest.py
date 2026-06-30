@@ -350,12 +350,12 @@ async def test_site(db: AsyncSession, test_brand: Brand) -> Site:
 @pytest_asyncio.fixture()
 async def test_superadmin(db: AsyncSession) -> SuperAdmin:
     """
-    A persisted super_admin SuperAdmin row for use in auth-dependent tests.
+    A persisted Admin-role SuperAdmin row for use in auth-dependent tests.
 
     The password is 'TestPassword123!' — use portal_auth_headers to get a token.
 
     Returns:
-        SuperAdmin: A saved, active super_admin portal user.
+        SuperAdmin: A saved, active Admin-role portal user.
     """
     user = SuperAdmin(
         id=uuid.uuid4(),

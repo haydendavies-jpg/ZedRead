@@ -3,8 +3,8 @@
 Run with: python -m app.cli <command>
 
 Commands:
-  bootstrap-super-admin   Create the initial super_admin portal user.
-                          Refuses to run if a super_admin already exists.
+  bootstrap-super-admin   Create the initial Admin-role SuperAdmin portal user.
+                          Refuses to run if an Admin-role SuperAdmin already exists.
 """
 
 import asyncio
@@ -49,8 +49,8 @@ async def _bootstrap_super_admin_async(non_interactive: bool = False) -> None:
     """
     Core async logic for the bootstrap-super-admin command.
 
-    Creates the first super_admin portal user.
-    Exits with an error if a super_admin already exists to prevent duplicates.
+    Creates the first Admin-role SuperAdmin portal user.
+    Exits with an error if an Admin-role SuperAdmin already exists to prevent duplicates.
 
     Args:
         non_interactive: When True, reads BOOTSTRAP_EMAIL, BOOTSTRAP_NAME,
@@ -62,13 +62,13 @@ async def _bootstrap_super_admin_async(non_interactive: bool = False) -> None:
     session_factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
     async with session_factory() as db:
-        # Guard: refuse to run if any super_admin already exists
+        # Guard: refuse to run if any Admin-role SuperAdmin already exists
         existing = await db.execute(
             select(SuperAdmin).where(SuperAdmin.role == SuperAdminRole.ADMIN.value)
         )
         if existing.scalar_one_or_none() is not None:
-            log.info("bootstrap.skipped", reason="super_admin already exists")
-            typer.echo("INFO: A super_admin already exists — skipping bootstrap.")
+            log.info("bootstrap.skipped", reason="admin-role superadmin already exists")
+            typer.echo("INFO: An Admin-role SuperAdmin already exists — skipping bootstrap.")
             return  # Not an error when running from startup script
 
         if non_interactive:
@@ -171,12 +171,12 @@ def bootstrap_super_admin(
     ),
 ) -> None:
     """
-    Create the initial super_admin portal user.
+    Create the initial Admin-role SuperAdmin portal user.
 
     Interactive mode (default): prompts for email, name, and password.
     Non-interactive mode (--non-interactive): reads BOOTSTRAP_EMAIL,
     BOOTSTRAP_NAME, and BOOTSTRAP_PASSWORD from environment variables.
-    Refuses to run if a super_admin already exists.
+    Refuses to run if an Admin-role SuperAdmin already exists.
     """
     asyncio.run(_bootstrap_super_admin_async(non_interactive=non_interactive))
 

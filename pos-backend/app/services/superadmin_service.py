@@ -1,4 +1,4 @@
-"""Business logic for portal user management (super_admin only)."""
+"""Business logic for portal user management (Admin-role SuperAdmin only)."""
 
 import uuid
 
@@ -107,7 +107,7 @@ async def create_superadmin(
     Args:
         db: Active database session.
         payload: The user creation data.
-        actor: The authenticated super_admin performing the action.
+        actor: The authenticated Admin-role SuperAdmin performing the action.
 
     Returns:
         SuperAdmin: The newly created portal user.
@@ -165,7 +165,7 @@ async def update_superadmin(
         db: Active database session.
         user_id: The UUID of the user to update.
         payload: The fields to update (all optional).
-        actor: The authenticated super_admin performing the action.
+        actor: The authenticated Admin-role SuperAdmin performing the action.
 
     Returns:
         SuperAdmin: The updated portal user.
@@ -207,12 +207,12 @@ async def suspend_superadmin(
     """
     Suspend a portal user (set is_active = False) and write an audit log row.
 
-    A super_admin cannot suspend themselves.
+    An Admin-role SuperAdmin cannot suspend themselves.
 
     Args:
         db: Active database session.
         user_id: The UUID of the user to suspend.
-        actor: The authenticated super_admin performing the action.
+        actor: The authenticated Admin-role SuperAdmin performing the action.
 
     Returns:
         SuperAdmin: The suspended portal user.
@@ -263,7 +263,7 @@ async def activate_superadmin(
     Args:
         db: Active database session.
         user_id: The UUID of the user to activate.
-        actor: The authenticated super_admin performing the action.
+        actor: The authenticated Admin-role SuperAdmin performing the action.
 
     Returns:
         SuperAdmin: The activated portal user.

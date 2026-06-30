@@ -1,4 +1,4 @@
-"""Routes for portal user management (super_admin only)."""
+"""Routes for portal user management (Admin-role SuperAdmin only)."""
 
 import uuid
 

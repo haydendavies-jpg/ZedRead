@@ -7,7 +7,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 
 class SuperAdminCreate(BaseModel):
-    """Payload for creating a new portal user (super_admin only)."""
+    """Payload for creating a new portal user (Admin-role SuperAdmin only)."""
 
     email: EmailStr
     name: str = Field(..., min_length=1, max_length=255)

@@ -1,4 +1,4 @@
-/** Portal Users management page — super_admin only. */
+/** Portal Users management page — Admin-role SuperAdmin only. */
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -14,7 +14,10 @@ async function fetchPortalUsers(): Promise<PortalUser[]> {
   return data
 }
 
-const ROLES = ['super_admin', 'admin', 'reseller'] as const
+const ROLES = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'reseller_staff', label: 'Reseller Staff' },
+] as const
 
 export function PortalUsersPage() {
   const { user: me } = useAuth()
@@ -26,7 +29,7 @@ export function PortalUsersPage() {
   const [statusFilter, setStatusFilter] = useState('')
 
   const [showCreate, setShowCreate] = useState(false)
-  const [form, setForm] = useState({ email: '', name: '', password: '', role: 'admin' as string })
+  const [form, setForm] = useState({ email: '', name: '', password: '', role: 'admin' })
   const [formError, setFormError] = useState<string | null>(null)
 
   const [editUser, setEditUser] = useState<PortalUser | null>(null)
@@ -42,6 +45,7 @@ export function PortalUsersPage() {
       setShowCreate(false)
       setForm({ email: '', name: '', password: '', role: 'admin' })
     },
+
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
       setFormError(msg ?? 'Failed to create user.')
@@ -131,7 +135,7 @@ export function PortalUsersPage() {
         >
           <option value="">All roles</option>
           {ROLES.map((r) => (
-            <option key={r} value={r}>{r.replace('_', ' ')}</option>
+            <option key={r.value} value={r.value}>{r.label}</option>
           ))}
         </select>
         <select
@@ -181,7 +185,9 @@ export function PortalUsersPage() {
                   </td>
                   <td className="px-4 py-3 text-gray-500">{u.email}</td>
                   <td className="px-4 py-3">
-                    <span className="text-xs font-medium text-gray-600 capitalize">{u.role.replace('_', ' ')}</span>
+                    <span className="text-xs font-medium text-gray-600">
+                      {ROLES.find((r) => r.value === u.role)?.label ?? u.role}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={u.is_active ? 'active' : 'suspended'} />
@@ -235,7 +241,7 @@ export function PortalUsersPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
                 {ROLES.map((r) => (
-                  <option key={r} value={r}>{r.replace('_', ' ')}</option>
+                  <option key={r.value} value={r.value}>{r.label}</option>
                 ))}
               </select>
             </div>
@@ -292,7 +298,7 @@ export function PortalUsersPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
                 {ROLES.map((r) => (
-                  <option key={r} value={r}>{r.replace('_', ' ')}</option>
+                  <option key={r.value} value={r.value}>{r.label}</option>
                 ))}
               </select>
             </div>
