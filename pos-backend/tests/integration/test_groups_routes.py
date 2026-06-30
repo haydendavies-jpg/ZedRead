@@ -8,17 +8,30 @@ Covers all five required scenarios per tests_CLAUDE.md:
 5. Audit log — every write asserts the correct audit_logs row
 """
 
+import io
 import uuid
+from unittest.mock import AsyncMock, patch
 
 from sqlalchemy import select
 
-from app.constants.audit_actions import GROUP_ACTIVATED, GROUP_CREATED, GROUP_SUSPENDED, GROUP_UPDATED
+from app.constants.audit_actions import (
+    GROUP_ACTIVATED,
+    GROUP_CREATED,
+    GROUP_LOGO_UPDATED,
+    GROUP_SUSPENDED,
+    GROUP_UPDATED,
+)
 from app.constants.statuses import GrantScope, SystemAccessProfile
 from app.models.access_profile import AccessProfile
 from app.models.audit_log import AuditLog
 from app.models.group import Group
 from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
+
+# Patch target for upload_logo tests so no real Supabase call goes out
+_UPLOAD_IMAGE_PATH = "app.services.group_service.upload_image"
+# Patch target for request-billing-info tests so no real Resend call goes out
+_SEND_BILLING_EMAIL_PATH = "app.services.branding_service.send_billing_info_request_email"
 
 
 # ── Happy path ────────────────────────────────────────────────────────────────
@@ -276,3 +289,155 @@ async def test_create_group_master_user_writes_audit_logs(client, db, portal_aut
         )
     )
     assert grant_audit.scalar_one_or_none() is not None
+
+
+# ── Company profile fields ──────────────────────────────────────────────────
+
+
+async def test_create_group_with_profile_fields(client, portal_auth_headers):
+    """POST /groups accepts and returns the full company-profile field set."""
+    response = await client.post(
+        "/groups/",
+        json={
+            "name": "Profile Fields Group",
+            "timezone": "America/New_York",
+            "currency": "USD",
+            "country": "US",
+            "tax_id_value": "12-3456789",
+            "billing_email": "billing@example.com",
+        },
+        headers=portal_auth_headers,
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["timezone"] == "America/New_York"
+    assert body["currency"] == "USD"
+    assert body["country"] == "US"
+    assert body["tax_id_value"] == "12-3456789"
+    assert body["billing_email"] == "billing@example.com"
+
+
+async def test_update_group_currency_writes_before_after_audit(client, db, portal_auth_headers, test_group):
+    """PATCH /groups/{id} changing currency records the old and new value in the audit row."""
+    response = await client.patch(
+        f"/groups/{test_group.id}", json={"currency": "NZD"}, headers=portal_auth_headers
+    )
+    assert response.status_code == 200
+    assert response.json()["currency"] == "NZD"
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_group.id),
+            AuditLog.action == GROUP_UPDATED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.before_state["currency"] == "AUD"
+    assert row.after_state["currency"] == "NZD"
+
+
+# ── Logo upload ──────────────────────────────────────────────────────────────
+
+
+async def test_upload_group_logo_returns_200(client, portal_auth_headers, test_group):
+    """POST /groups/{id}/logo accepts a valid image and returns the updated group."""
+    with patch(_UPLOAD_IMAGE_PATH, new_callable=AsyncMock) as mock_upload:
+        mock_upload.return_value = "https://example.test/logos/group.jpg"
+        response = await client.post(
+            f"/groups/{test_group.id}/logo",
+            files={"file": ("logo.jpg", io.BytesIO(b"fake-image-bytes"), "image/jpeg")},
+            headers=portal_auth_headers,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["logo_url"] == "https://example.test/logos/group.jpg"
+
+
+async def test_upload_group_logo_writes_audit_log(client, db, portal_auth_headers, test_group):
+    """POST /groups/{id}/logo writes a GROUP_LOGO_UPDATED audit row."""
+    with patch(_UPLOAD_IMAGE_PATH, new_callable=AsyncMock) as mock_upload:
+        mock_upload.return_value = "https://example.test/logos/group.jpg"
+        await client.post(
+            f"/groups/{test_group.id}/logo",
+            files={"file": ("logo.jpg", io.BytesIO(b"fake-image-bytes"), "image/jpeg")},
+            headers=portal_auth_headers,
+        )
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_group.id),
+            AuditLog.action == GROUP_LOGO_UPDATED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.after_state["logo_url"] == "https://example.test/logos/group.jpg"
+
+
+async def test_upload_group_logo_rejects_oversized_file(client, portal_auth_headers, test_group):
+    """POST /groups/{id}/logo with a file over 1 MB returns 413."""
+    oversized = b"x" * (1024 * 1024 + 1)
+    response = await client.post(
+        f"/groups/{test_group.id}/logo",
+        files={"file": ("logo.jpg", io.BytesIO(oversized), "image/jpeg")},
+        headers=portal_auth_headers,
+    )
+    assert response.status_code == 413
+
+
+async def test_upload_group_logo_rejects_invalid_content_type(client, portal_auth_headers, test_group):
+    """POST /groups/{id}/logo with a non-image content type returns 415."""
+    response = await client.post(
+        f"/groups/{test_group.id}/logo",
+        files={"file": ("notes.txt", io.BytesIO(b"not an image"), "text/plain")},
+        headers=portal_auth_headers,
+    )
+    assert response.status_code == 415
+
+
+# ── Request billing info ─────────────────────────────────────────────────────
+
+
+async def test_request_group_billing_info_returns_200(client, db, portal_auth_headers, test_group, test_billing_info_template):
+    """POST /groups/{id}/request-billing-info sends to the group's own billing_email."""
+    test_group.billing_email = "billing@group.test"
+    await db.commit()
+
+    with patch(_SEND_BILLING_EMAIL_PATH, new_callable=AsyncMock) as mock_send:
+        response = await client.post(
+            f"/groups/{test_group.id}/request-billing-info", headers=portal_auth_headers
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sent_to"] == "billing@group.test"
+    assert body["source_level"] == "group"
+    mock_send.assert_awaited_once()
+
+
+async def test_request_group_billing_info_no_email_returns_409(client, portal_auth_headers, test_group, test_billing_info_template):
+    """POST /groups/{id}/request-billing-info with no billing_email set returns 409."""
+    response = await client.post(
+        f"/groups/{test_group.id}/request-billing-info", headers=portal_auth_headers
+    )
+    assert response.status_code == 409
+
+
+async def test_request_group_billing_info_writes_audit_log(client, db, portal_auth_headers, test_group, test_billing_info_template):
+    """POST /groups/{id}/request-billing-info writes a BILLING_INFO_REQUESTED audit row."""
+    from app.constants.audit_actions import BILLING_INFO_REQUESTED
+
+    test_group.billing_email = "billing@group.test"
+    await db.commit()
+
+    with patch(_SEND_BILLING_EMAIL_PATH, new_callable=AsyncMock):
+        await client.post(f"/groups/{test_group.id}/request-billing-info", headers=portal_auth_headers)
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_group.id),
+            AuditLog.action == BILLING_INFO_REQUESTED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.after_state["sent_to"] == "billing@group.test"

@@ -62,3 +62,48 @@ class Site(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+    timezone: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        comment="IANA timezone name, e.g. 'Australia/Sydney'. Required independently per level.",
+    )
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        comment="ISO 4217 currency code, e.g. 'AUD'. Editing this affects invoice currency.",
+    )
+    country: Mapped[str] = mapped_column(
+        String(2),
+        nullable=False,
+        comment="ISO 3166-1 alpha-2 country code, e.g. 'AU'. Drives the tax ID label and address country.",
+    )
+    tax_id_value: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Free-text tax identifier (e.g. ABN, NZBN); label resolved from country.",
+    )
+    logo_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Uploaded logo URL. Falls back to the parent Brand's (then Group's) logo when unset.",
+    )
+    billing_email: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Billing contact email. Falls back to the parent Brand's (then Group's) when unset.",
+    )
+    address_street: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment="Street address of this physical site.",
+    )
+    address_state: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        comment="State/territory/province of this site.",
+    )
+    address_postcode: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        comment="Postal/zip code of this site.",
+    )

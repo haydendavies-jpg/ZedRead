@@ -23,13 +23,17 @@ import { SitesPage } from './pages/SitesPage'
 import { LicensesPage } from './pages/LicensesPage'
 import { PortalUsersPage } from './pages/PortalUsersPage'
 import { BrandDetailPage } from './pages/brands/BrandDetailPage'
+import { GroupDetailPage } from './pages/groups/GroupDetailPage'
+import { SiteDetailPage } from './pages/sites/SiteDetailPage'
 import { ProductsPage } from './pages/management/ProductsPage'
 import { CategoriesPage } from './pages/management/CategoriesPage'
 import { TaxPage } from './pages/management/TaxPage'
 import { ReportsPage } from './pages/management/ReportsPage'
 import { UsersPage } from './pages/management/UsersPage'
 import { SiteOverridesPage } from './pages/management/SiteOverridesPage'
+import { CompanyProfilePage } from './pages/management/CompanyProfilePage'
 import { PosUsersPage } from './pages/PosUsersPage'
+import { EmailTemplatesPage } from './pages/EmailTemplatesPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -70,6 +74,14 @@ export default function App() {
                 }
               />
               <Route
+                path="groups/:groupId"
+                element={
+                  <PrivateRoute requirePortalUser>
+                    <GroupDetailPage />
+                  </PrivateRoute>
+                }
+              />
+              <Route
                 path="brands"
                 element={
                   <PrivateRoute requirePortalUser>
@@ -90,6 +102,14 @@ export default function App() {
                 element={
                   <PrivateRoute requirePortalUser>
                     <SitesPage />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="sites/:siteId"
+                element={
+                  <PrivateRoute requirePortalUser>
+                    <SiteDetailPage />
                   </PrivateRoute>
                 }
               />
@@ -117,6 +137,14 @@ export default function App() {
                   </PrivateRoute>
                 }
               />
+              <Route
+                path="email-templates"
+                element={
+                  <PrivateRoute requirePortalUser>
+                    <EmailTemplatesPage />
+                  </PrivateRoute>
+                }
+              />
 
               {/* Management routes — available to both portal and management users */}
               <Route path="management/products" element={<ProductsPage />} />
@@ -125,6 +153,7 @@ export default function App() {
               <Route path="management/reports" element={<ReportsPage />} />
               <Route path="management/users" element={<UsersPage />} />
               <Route path="management/overrides" element={<SiteOverridesPage />} />
+              <Route path="management/company-profile" element={<CompanyProfilePage />} />
             </Route>
 
             {/* Catch-all */}

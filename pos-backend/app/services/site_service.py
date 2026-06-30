@@ -4,7 +4,7 @@ import secrets
 import uuid
 
 import structlog
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,7 @@ from app.constants.audit_actions import (
     ACCESS_GRANT_CREATED,
     SITE_ACTIVATED,
     SITE_CREATED,
+    SITE_LOGO_UPDATED,
     SITE_SUSPENDED,
     SITE_UPDATED,
     USER_CREATED,
@@ -25,8 +26,11 @@ from app.models.site import Site
 from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
 from app.schemas.site import SiteCreate, SiteUpdate
+from app.services import branding_service
 from app.services.audit_service import log_action
+from app.services.branding_service import ResolvedValue
 from app.utils.security import hash_password
+from app.utils.storage import ALLOWED_LOGO_TYPES, MAX_LOGO_BYTES, extension_for_content_type, upload_image
 
 log = structlog.get_logger(__name__)
 
@@ -277,7 +281,20 @@ async def create_site(
 
     log.info("site.creating", name=payload.name, brand_id=str(payload.brand_id))
 
-    site = Site(id=uuid.uuid4(), brand_id=payload.brand_id, name=payload.name, is_active=True)
+    site = Site(
+        id=uuid.uuid4(),
+        brand_id=payload.brand_id,
+        name=payload.name,
+        is_active=True,
+        timezone=payload.timezone,
+        currency=payload.currency,
+        country=payload.country,
+        tax_id_value=payload.tax_id_value,
+        billing_email=payload.billing_email,
+        address_street=payload.address_street,
+        address_state=payload.address_state,
+        address_postcode=payload.address_postcode,
+    )
     db.add(site)
     await db.flush()
 
@@ -289,7 +306,19 @@ async def create_site(
         actor_id=actor.id,
         actor_email=actor.email,
         actor_name=actor.name,
-        after_state={"name": site.name, "brand_id": str(site.brand_id), "is_active": True},
+        after_state={
+            "name": site.name,
+            "brand_id": str(site.brand_id),
+            "is_active": True,
+            "timezone": site.timezone,
+            "currency": site.currency,
+            "country": site.country,
+            "tax_id_value": site.tax_id_value,
+            "billing_email": site.billing_email,
+            "address_street": site.address_street,
+            "address_state": site.address_state,
+            "address_postcode": site.address_postcode,
+        },
     )
 
     # Every site gets exactly one immutable Master User, created atomically
@@ -325,10 +354,46 @@ async def update_site(
     """
     site = await _get_or_404(db, site_id, actor)
 
-    before = {"name": site.name}
+    before = {
+        "name": site.name,
+        "timezone": site.timezone,
+        "currency": site.currency,
+        "country": site.country,
+        "tax_id_value": site.tax_id_value,
+        "billing_email": site.billing_email,
+        "address_street": site.address_street,
+        "address_state": site.address_state,
+        "address_postcode": site.address_postcode,
+    }
     if payload.name is not None:
         site.name = payload.name
-    after = {"name": site.name}
+    if payload.timezone is not None:
+        site.timezone = payload.timezone
+    if payload.currency is not None:
+        site.currency = payload.currency
+    if payload.country is not None:
+        site.country = payload.country
+    if payload.tax_id_value is not None:
+        site.tax_id_value = payload.tax_id_value
+    if payload.billing_email is not None:
+        site.billing_email = payload.billing_email
+    if payload.address_street is not None:
+        site.address_street = payload.address_street
+    if payload.address_state is not None:
+        site.address_state = payload.address_state
+    if payload.address_postcode is not None:
+        site.address_postcode = payload.address_postcode
+    after = {
+        "name": site.name,
+        "timezone": site.timezone,
+        "currency": site.currency,
+        "country": site.country,
+        "tax_id_value": site.tax_id_value,
+        "billing_email": site.billing_email,
+        "address_street": site.address_street,
+        "address_state": site.address_state,
+        "address_postcode": site.address_postcode,
+    }
 
     await log_action(
         db=db,
@@ -389,6 +454,90 @@ async def suspend_site(
     await db.commit()
     await db.refresh(site)
     return site
+
+
+async def upload_logo(
+    db: AsyncSession,
+    site_id: uuid.UUID,
+    file: UploadFile,
+    actor: SuperAdmin,
+) -> Site:
+    """
+    Upload or replace a Site's logo and write an audit log row.
+
+    Accepts JPEG, PNG, or WebP images up to 1 MB. Stores the image in
+    Supabase Storage and saves the public URL on the site row.
+
+    Args:
+        db: Active database session.
+        site_id: UUID of the site to attach the logo to.
+        file: The uploaded image file.
+        actor: The authenticated portal user performing the action.
+
+    Returns:
+        Site: The site with updated logo_url.
+
+    Raises:
+        HTTPException: 404 if the site does not exist within the actor's scope.
+        HTTPException: 413 if the file exceeds 1 MB.
+        HTTPException: 415 if the content type is not an accepted image type.
+    """
+    site = await _get_or_404(db, site_id, actor)
+
+    contents = await file.read()
+    ext = extension_for_content_type(file.content_type or "")
+    logo_url = await upload_image(
+        bucket="logos",
+        path=f"sites/{site_id}.{ext}",
+        content_type=file.content_type or "",
+        contents=contents,
+        allowed_content_types=ALLOWED_LOGO_TYPES,
+        max_bytes=MAX_LOGO_BYTES,
+    )
+
+    old_url = site.logo_url
+    site.logo_url = logo_url
+
+    await log_action(
+        db=db,
+        action=SITE_LOGO_UPDATED,
+        entity_type="site",
+        entity_id=str(site.id),
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"logo_url": old_url},
+        after_state={"logo_url": logo_url},
+    )
+
+    await db.commit()
+    await db.refresh(site)
+    log.info("site.logo.uploaded", site_id=str(site.id))
+    return site
+
+
+async def request_billing_info(
+    db: AsyncSession,
+    site_id: uuid.UUID,
+    actor: SuperAdmin,
+) -> ResolvedValue:
+    """
+    Send a billing-info-request email to the site's effective billing contact.
+
+    Args:
+        db: Active database session.
+        site_id: The UUID of the site to request billing info for.
+        actor: The authenticated portal user performing the action.
+
+    Returns:
+        ResolvedValue: The billing email sent to and which hierarchy level it came from.
+
+    Raises:
+        HTTPException: 404 if the site does not exist within the actor's scope.
+        HTTPException: 409 if no billing email is set anywhere in the site's chain.
+    """
+    site = await _get_or_404(db, site_id, actor)
+    return await branding_service.request_billing_info(db, site, "site", actor)
 
 
 async def activate_site(

@@ -27,6 +27,7 @@ from app.models import (  # noqa: F401
     AuditLog,
     Brand,
     Category,
+    EmailTemplate,
     Group,
     Invoice,
     InvoiceLineItem,
@@ -162,6 +163,7 @@ TEST_DATABASE_URL: str = os.getenv(
 # All table names in reverse FK dependency order — used for TRUNCATE CASCADE
 _ALL_TABLES = [
     "audit_logs",
+    "email_templates",
     # Stage 10 — invoices (must precede products/users they reference)
     "payments",
     "invoice_tax_breakdowns",
@@ -292,7 +294,14 @@ async def test_group(db: AsyncSession) -> Group:
     Returns:
         Group: A saved, active Group instance.
     """
-    group = Group(id=uuid.uuid4(), name="Test Group", is_active=True)
+    group = Group(
+        id=uuid.uuid4(),
+        name="Test Group",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+    )
     db.add(group)
     await db.commit()
     await db.refresh(group)
@@ -314,6 +323,9 @@ async def test_brand(db: AsyncSession, test_group: Group) -> Brand:
         group_id=test_group.id,
         name="Test Brand",
         is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
     )
     db.add(brand)
     await db.commit()
@@ -340,6 +352,12 @@ async def test_site(db: AsyncSession, test_brand: Brand) -> Site:
         brand_id=test_brand.id,
         name="Test Site",
         is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+        address_street="1 Test Street",
+        address_state="NSW",
+        address_postcode="2000",
     )
     db.add(site)
     await db.commit()
@@ -719,3 +737,30 @@ async def test_product(db: AsyncSession, test_brand: Brand, test_site: Site) -> 
     await db.commit()
     await db.refresh(product)
     return product
+
+
+@pytest_asyncio.fixture()
+async def test_billing_info_template(db: AsyncSession) -> EmailTemplate:
+    """
+    A persisted, active 'billing_info_request' system EmailTemplate.
+
+    Mirrors the row seeded by migration 0029 (the `db` fixture builds the
+    schema via Base.metadata.create_all rather than running migrations, so
+    that seed never runs in tests — required by branding_service.request_billing_info()).
+
+    Returns:
+        EmailTemplate: A saved, active, is_system=True template.
+    """
+    template = EmailTemplate(
+        id=uuid.uuid4(),
+        template_key="billing_info_request",
+        name="Billing Info Request",
+        subject="Please provide billing details for $entity_name",
+        body="Hi,\n\nWe need billing details for your $entity_type, $entity_name.\n\nThanks.",
+        is_system=True,
+        is_active=True,
+    )
+    db.add(template)
+    await db.commit()
+    await db.refresh(template)
+    return template

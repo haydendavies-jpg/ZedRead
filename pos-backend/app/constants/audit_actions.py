@@ -33,6 +33,10 @@ SITE_UPDATED = "site.updated"
 SITE_SUSPENDED = "site.suspended"
 SITE_ACTIVATED = "site.activated"
 
+GROUP_LOGO_UPDATED = "group.logo.updated"
+BRAND_LOGO_UPDATED = "brand.logo.updated"
+SITE_LOGO_UPDATED = "site.logo.updated"
+
 HIERARCHY_WIPED = "hierarchy.wiped"  # Admin CLI: hard-delete of all Groups/Brands/Sites and dependents
 
 PORTAL_USER_CREATED = "superadmin.created"
@@ -121,3 +125,8 @@ INVOICE_PAID = "invoice.paid"
 INVOICE_VOIDED = "invoice.voided"
 INVOICE_REFUNDED = "invoice.refunded"
 INVOICE_DISCOUNT_APPLIED = "invoice.discount.applied"
+
+# ── Phase 5 / Stage 15 — Company Profile & Billing Info Requests ────────────
+BILLING_INFO_REQUESTED = "billing_info.requested"
+EMAIL_TEMPLATE_CREATED = "email_template.created"
+EMAIL_TEMPLATE_UPDATED = "email_template.updated"

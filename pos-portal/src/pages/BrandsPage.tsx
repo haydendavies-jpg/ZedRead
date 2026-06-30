@@ -8,6 +8,8 @@ import { Link } from 'react-router-dom'
 import { EntityIdChip } from '../components/EntityIdChip'
 import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
+import { CompanyProfileFields, type CompanyProfileValues } from '../components/CompanyProfileFields'
+import { DEFAULT_COMPANY_PROFILE_VALUES, confirmCurrencyChange } from '../utils/companyProfile'
 
 async function fetchBrands(): Promise<Brand[]> {
   const { data } = await api.get('/brands/', { params: { limit: 200 } })
@@ -32,22 +34,23 @@ export function BrandsPage() {
   const [editing, setEditing] = useState<Brand | null>(null)
   const [name, setName] = useState('')
   const [groupId, setGroupId] = useState('')
+  const [profile, setProfile] = useState<CompanyProfileValues>(DEFAULT_COMPANY_PROFILE_VALUES)
   const [formError, setFormError] = useState<string | null>(null)
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['brands'] })
 
   const createMutation = useMutation({
-    mutationFn: ({ name, group_id }: { name: string; group_id: string }) =>
-      api.post('/brands/', { name, group_id }),
-    onSuccess: () => { invalidate(); setShowCreate(false); setName(''); setGroupId('') },
-    onError: () => setFormError('Failed to create brand.'),
+    mutationFn: (body: { name: string; group_id: string } & CompanyProfileValues) =>
+      api.post('/brands/', body),
+    onSuccess: () => { invalidate(); setShowCreate(false); setName(''); setGroupId(''); setProfile(DEFAULT_COMPANY_PROFILE_VALUES) },
+    onError: () => { invalidate(); setFormError('Failed to create brand.') },
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) =>
-      api.patch(`/brands/${id}`, { name }),
+    mutationFn: ({ id, body }: { id: string; body: { name: string } & CompanyProfileValues }) =>
+      api.patch(`/brands/${id}`, body),
     onSuccess: () => { invalidate(); setEditing(null); setName('') },
-    onError: () => setFormError('Failed to update brand.'),
+    onError: () => { invalidate(); setFormError('Failed to update brand.') },
   })
 
   const suspendMutation = useMutation({
@@ -65,16 +68,32 @@ export function BrandsPage() {
   const openCreate = () => {
     setName('')
     setGroupId(groups[0]?.id ?? '')
+    setProfile(DEFAULT_COMPANY_PROFILE_VALUES)
     setFormError(null)
     setShowCreate(true)
   }
-  const openEdit = (b: Brand) => { setName(b.name); setFormError(null); setEditing(b) }
+  const openEdit = (b: Brand) => {
+    setName(b.name)
+    setProfile({
+      timezone: b.timezone,
+      currency: b.currency,
+      country: b.country,
+      tax_id_value: b.tax_id_value ?? '',
+      billing_email: b.billing_email ?? '',
+    })
+    setFormError(null)
+    setEditing(b)
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
-    if (editing) updateMutation.mutate({ id: editing.id, name })
-    else createMutation.mutate({ name, group_id: groupId })
+    if (editing) {
+      if (!confirmCurrencyChange(editing.currency, profile.currency, 'brand')) return
+      updateMutation.mutate({ id: editing.id, body: { name, ...profile } })
+    } else {
+      createMutation.mutate({ name, group_id: groupId, ...profile })
+    }
   }
 
   const filtered = brands.filter((b) => {
@@ -220,6 +239,7 @@ export function BrandsPage() {
                 placeholder="Burger Chain"
               />
             </div>
+            <CompanyProfileFields values={profile} onChange={setProfile} />
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => { setShowCreate(false); setEditing(null) }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>

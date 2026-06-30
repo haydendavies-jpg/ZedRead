@@ -120,9 +120,28 @@ async def test_create_invite_cross_brand_site_returns_404(
     from app.models.brand import Brand
     from app.models.site import Site
 
-    other_brand = Brand(id=uuid.uuid4(), group_id=test_group.id, name="Other Brand", is_active=True)
+    other_brand = Brand(
+        id=uuid.uuid4(),
+        group_id=test_group.id,
+        name="Other Brand",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+    )
     db.add(other_brand)
-    other_site = Site(id=uuid.uuid4(), brand_id=other_brand.id, name="Other Site", is_active=True)
+    other_site = Site(
+        id=uuid.uuid4(),
+        brand_id=other_brand.id,
+        name="Other Site",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+        address_street="",
+        address_state="",
+        address_postcode="",
+    )
     db.add(other_site)
     await db.commit()
 

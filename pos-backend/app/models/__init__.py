@@ -5,6 +5,7 @@ from app.models.access_profile_page_permission import AccessProfilePagePermissio
 from app.models.audit_log import AuditLog
 from app.models.brand import Brand
 from app.models.category import Category
+from app.models.email_template import EmailTemplate
 from app.models.group import Group
 from app.models.invoice import Invoice
 from app.models.invoice_line_item import InvoiceLineItem
@@ -42,6 +43,7 @@ __all__ = [
     "AuditLog",
     "Brand",
     "Category",
+    "EmailTemplate",
     "Group",
     "Invoice",
     "InvoiceLineItem",

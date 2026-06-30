@@ -15,6 +15,7 @@ const PORTAL_ADMIN_NAV = [
 const PORTAL_SUPER_ADMIN_NAV = [
   { to: '/portal-users', label: 'Portal Users' },
   { to: '/pos-users', label: 'POS Users' },
+  { to: '/email-templates', label: 'Email Templates' },
 ]
 
 /** Nav items shown to all management users. */
@@ -23,6 +24,7 @@ const MGMT_NAV = [
   { to: '/management/categories', label: 'Categories' },
   { to: '/management/tax', label: 'Tax' },
   { to: '/management/reports', label: 'Reports' },
+  { to: '/management/company-profile', label: 'Company Profile' },
 ]
 
 /** Nav items shown to brand/group scope management users only. */

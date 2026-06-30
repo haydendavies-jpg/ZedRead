@@ -2,11 +2,12 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.superadmin import SuperAdmin
+from app.schemas.billing_info_request import BillingInfoRequestResponse
 from app.schemas.site import SiteCreate, SiteResponse, SiteUpdate
 from app.services import site_service
 from app.utils.dependencies import get_current_superadmin
@@ -79,3 +80,25 @@ async def activate_site(
 ) -> SiteResponse:
     """Activate a previously suspended site."""
     return await site_service.activate_site(db, site_id, actor)
+
+
+@router.post("/{site_id}/logo", response_model=SiteResponse)
+async def upload_site_logo(
+    site_id: uuid.UUID,
+    file: UploadFile,
+    db: AsyncSession = Depends(get_db),
+    actor: SuperAdmin = Depends(get_current_superadmin),
+) -> SiteResponse:
+    """Upload or replace the site's logo (JPEG/PNG/WebP, up to 1 MB)."""
+    return await site_service.upload_logo(db, site_id, file, actor)
+
+
+@router.post("/{site_id}/request-billing-info", response_model=BillingInfoRequestResponse)
+async def request_site_billing_info(
+    site_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    actor: SuperAdmin = Depends(get_current_superadmin),
+) -> BillingInfoRequestResponse:
+    """Email the site's effective billing contact the billing_info_request template."""
+    resolved = await site_service.request_billing_info(db, site_id, actor)
+    return BillingInfoRequestResponse(sent_to=resolved.value, source_level=resolved.source_level)

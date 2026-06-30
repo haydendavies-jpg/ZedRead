@@ -9,7 +9,7 @@ import secrets
 import uuid
 
 import structlog
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +17,7 @@ from app.constants.audit_actions import (
     ACCESS_GRANT_CREATED,
     BRAND_ACTIVATED,
     BRAND_CREATED,
+    BRAND_LOGO_UPDATED,
     BRAND_SUSPENDED,
     BRAND_UPDATED,
     USER_CREATED,
@@ -30,9 +31,12 @@ from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
 from app.schemas.brand import BrandCreate, BrandUpdate
+from app.services import branding_service
 from app.services.access_profile_service import seed_system_profiles
 from app.services.audit_service import log_action
+from app.services.branding_service import ResolvedValue
 from app.utils.security import hash_password
+from app.utils.storage import ALLOWED_LOGO_TYPES, MAX_LOGO_BYTES, extension_for_content_type, upload_image
 
 log = structlog.get_logger(__name__)
 
@@ -269,7 +273,17 @@ async def create_brand(
 
     log.info("brand.creating", name=payload.name, group_id=str(payload.group_id))
 
-    brand = Brand(id=uuid.uuid4(), group_id=payload.group_id, name=payload.name, is_active=True)
+    brand = Brand(
+        id=uuid.uuid4(),
+        group_id=payload.group_id,
+        name=payload.name,
+        is_active=True,
+        timezone=payload.timezone,
+        currency=payload.currency,
+        country=payload.country,
+        tax_id_value=payload.tax_id_value,
+        billing_email=payload.billing_email,
+    )
     db.add(brand)
     await db.flush()  # Brand must be in DB before Category and AccessProfile FK inserts
 
@@ -299,7 +313,16 @@ async def create_brand(
         actor_id=actor.id,
         actor_email=actor.email,
         actor_name=actor.name,
-        after_state={"name": brand.name, "group_id": str(brand.group_id), "is_active": True},
+        after_state={
+            "name": brand.name,
+            "group_id": str(brand.group_id),
+            "is_active": True,
+            "timezone": brand.timezone,
+            "currency": brand.currency,
+            "country": brand.country,
+            "tax_id_value": brand.tax_id_value,
+            "billing_email": brand.billing_email,
+        },
     )
 
     await db.commit()
@@ -331,10 +354,34 @@ async def update_brand(
     """
     brand = await _get_or_404(db, brand_id, actor)
 
-    before = {"name": brand.name}
+    before = {
+        "name": brand.name,
+        "timezone": brand.timezone,
+        "currency": brand.currency,
+        "country": brand.country,
+        "tax_id_value": brand.tax_id_value,
+        "billing_email": brand.billing_email,
+    }
     if payload.name is not None:
         brand.name = payload.name
-    after = {"name": brand.name}
+    if payload.timezone is not None:
+        brand.timezone = payload.timezone
+    if payload.currency is not None:
+        brand.currency = payload.currency
+    if payload.country is not None:
+        brand.country = payload.country
+    if payload.tax_id_value is not None:
+        brand.tax_id_value = payload.tax_id_value
+    if payload.billing_email is not None:
+        brand.billing_email = payload.billing_email
+    after = {
+        "name": brand.name,
+        "timezone": brand.timezone,
+        "currency": brand.currency,
+        "country": brand.country,
+        "tax_id_value": brand.tax_id_value,
+        "billing_email": brand.billing_email,
+    }
 
     await log_action(
         db=db,
@@ -395,6 +442,90 @@ async def suspend_brand(
     await db.commit()
     await db.refresh(brand)
     return brand
+
+
+async def upload_logo(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    file: UploadFile,
+    actor: SuperAdmin,
+) -> Brand:
+    """
+    Upload or replace a Brand's logo and write an audit log row.
+
+    Accepts JPEG, PNG, or WebP images up to 1 MB. Stores the image in
+    Supabase Storage and saves the public URL on the brand row.
+
+    Args:
+        db: Active database session.
+        brand_id: UUID of the brand to attach the logo to.
+        file: The uploaded image file.
+        actor: The authenticated portal user performing the action.
+
+    Returns:
+        Brand: The brand with updated logo_url.
+
+    Raises:
+        HTTPException: 404 if the brand does not exist within the actor's scope.
+        HTTPException: 413 if the file exceeds 1 MB.
+        HTTPException: 415 if the content type is not an accepted image type.
+    """
+    brand = await _get_or_404(db, brand_id, actor)
+
+    contents = await file.read()
+    ext = extension_for_content_type(file.content_type or "")
+    logo_url = await upload_image(
+        bucket="logos",
+        path=f"brands/{brand_id}.{ext}",
+        content_type=file.content_type or "",
+        contents=contents,
+        allowed_content_types=ALLOWED_LOGO_TYPES,
+        max_bytes=MAX_LOGO_BYTES,
+    )
+
+    old_url = brand.logo_url
+    brand.logo_url = logo_url
+
+    await log_action(
+        db=db,
+        action=BRAND_LOGO_UPDATED,
+        entity_type="brand",
+        entity_id=str(brand.id),
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"logo_url": old_url},
+        after_state={"logo_url": logo_url},
+    )
+
+    await db.commit()
+    await db.refresh(brand)
+    log.info("brand.logo.uploaded", brand_id=str(brand.id))
+    return brand
+
+
+async def request_billing_info(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    actor: SuperAdmin,
+) -> ResolvedValue:
+    """
+    Send a billing-info-request email to the brand's effective billing contact.
+
+    Args:
+        db: Active database session.
+        brand_id: The UUID of the brand to request billing info for.
+        actor: The authenticated portal user performing the action.
+
+    Returns:
+        ResolvedValue: The billing email sent to and which hierarchy level it came from.
+
+    Raises:
+        HTTPException: 404 if the brand does not exist within the actor's scope.
+        HTTPException: 409 if no billing email is set anywhere in the brand's chain.
+    """
+    brand = await _get_or_404(db, brand_id, actor)
+    return await branding_service.request_billing_info(db, brand, "brand", actor)
 
 
 async def activate_brand(

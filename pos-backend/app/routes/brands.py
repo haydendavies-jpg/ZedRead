@@ -2,11 +2,12 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.superadmin import SuperAdmin
+from app.schemas.billing_info_request import BillingInfoRequestResponse
 from app.schemas.brand import BrandCreate, BrandResponse, BrandUpdate
 from app.services import brand_service
 from app.utils.dependencies import get_current_superadmin
@@ -79,3 +80,25 @@ async def activate_brand(
 ) -> BrandResponse:
     """Activate a previously suspended brand."""
     return await brand_service.activate_brand(db, brand_id, actor)
+
+
+@router.post("/{brand_id}/logo", response_model=BrandResponse)
+async def upload_brand_logo(
+    brand_id: uuid.UUID,
+    file: UploadFile,
+    db: AsyncSession = Depends(get_db),
+    actor: SuperAdmin = Depends(get_current_superadmin),
+) -> BrandResponse:
+    """Upload or replace the brand's logo (JPEG/PNG/WebP, up to 1 MB)."""
+    return await brand_service.upload_logo(db, brand_id, file, actor)
+
+
+@router.post("/{brand_id}/request-billing-info", response_model=BillingInfoRequestResponse)
+async def request_brand_billing_info(
+    brand_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    actor: SuperAdmin = Depends(get_current_superadmin),
+) -> BillingInfoRequestResponse:
+    """Email the brand's effective billing contact the billing_info_request template."""
+    resolved = await brand_service.request_billing_info(db, brand_id, actor)
+    return BillingInfoRequestResponse(sent_to=resolved.value, source_level=resolved.source_level)

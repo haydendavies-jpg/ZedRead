@@ -4,7 +4,7 @@ import secrets
 import uuid
 
 import structlog
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,7 @@ from app.constants.audit_actions import (
     ACCESS_GRANT_CREATED,
     GROUP_ACTIVATED,
     GROUP_CREATED,
+    GROUP_LOGO_UPDATED,
     GROUP_SUSPENDED,
     GROUP_UPDATED,
     USER_CREATED,
@@ -23,9 +24,12 @@ from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
 from app.schemas.group import GroupCreate, GroupUpdate
+from app.services import branding_service
 from app.services.access_profile_service import seed_group_master_profile
 from app.services.audit_service import log_action
+from app.services.branding_service import ResolvedValue
 from app.utils.security import hash_password
+from app.utils.storage import ALLOWED_LOGO_TYPES, MAX_LOGO_BYTES, extension_for_content_type, upload_image
 
 log = structlog.get_logger(__name__)
 
@@ -250,7 +254,17 @@ async def create_group(
     log.info("group.creating", name=payload.name, actor_id=str(actor.id))
 
     # Record the creating SuperAdmin so Reseller Staff can be scoped to own accounts
-    group = Group(id=uuid.uuid4(), name=payload.name, is_active=True, created_by_id=actor.id)
+    group = Group(
+        id=uuid.uuid4(),
+        name=payload.name,
+        is_active=True,
+        created_by_id=actor.id,
+        timezone=payload.timezone,
+        currency=payload.currency,
+        country=payload.country,
+        tax_id_value=payload.tax_id_value,
+        billing_email=payload.billing_email,
+    )
     db.add(group)
     await db.flush()  # Group must be in DB before AccessProfile/User FK inserts
 
@@ -262,7 +276,15 @@ async def create_group(
         actor_id=actor.id,
         actor_email=actor.email,
         actor_name=actor.name,
-        after_state={"name": group.name, "is_active": group.is_active},
+        after_state={
+            "name": group.name,
+            "is_active": group.is_active,
+            "timezone": group.timezone,
+            "currency": group.currency,
+            "country": group.country,
+            "tax_id_value": group.tax_id_value,
+            "billing_email": group.billing_email,
+        },
     )
 
     # Every group gets exactly one immutable Master User, created atomically
@@ -300,10 +322,34 @@ async def update_group(
     """
     group = await _get_or_404(db, group_id, actor)
 
-    before = {"name": group.name}
+    before = {
+        "name": group.name,
+        "timezone": group.timezone,
+        "currency": group.currency,
+        "country": group.country,
+        "tax_id_value": group.tax_id_value,
+        "billing_email": group.billing_email,
+    }
     if payload.name is not None:
         group.name = payload.name
-    after = {"name": group.name}
+    if payload.timezone is not None:
+        group.timezone = payload.timezone
+    if payload.currency is not None:
+        group.currency = payload.currency
+    if payload.country is not None:
+        group.country = payload.country
+    if payload.tax_id_value is not None:
+        group.tax_id_value = payload.tax_id_value
+    if payload.billing_email is not None:
+        group.billing_email = payload.billing_email
+    after = {
+        "name": group.name,
+        "timezone": group.timezone,
+        "currency": group.currency,
+        "country": group.country,
+        "tax_id_value": group.tax_id_value,
+        "billing_email": group.billing_email,
+    }
 
     await log_action(
         db=db,
@@ -364,6 +410,90 @@ async def suspend_group(
     await db.commit()
     await db.refresh(group)
     return group
+
+
+async def upload_logo(
+    db: AsyncSession,
+    group_id: uuid.UUID,
+    file: UploadFile,
+    actor: SuperAdmin,
+) -> Group:
+    """
+    Upload or replace a Group's logo and write an audit log row.
+
+    Accepts JPEG, PNG, or WebP images up to 1 MB. Stores the image in
+    Supabase Storage and saves the public URL on the group row.
+
+    Args:
+        db: Active database session.
+        group_id: UUID of the group to attach the logo to.
+        file: The uploaded image file.
+        actor: The authenticated portal user performing the action.
+
+    Returns:
+        Group: The group with updated logo_url.
+
+    Raises:
+        HTTPException: 404 if the group does not exist within the actor's scope.
+        HTTPException: 413 if the file exceeds 1 MB.
+        HTTPException: 415 if the content type is not an accepted image type.
+    """
+    group = await _get_or_404(db, group_id, actor)
+
+    contents = await file.read()
+    ext = extension_for_content_type(file.content_type or "")
+    logo_url = await upload_image(
+        bucket="logos",
+        path=f"groups/{group_id}.{ext}",
+        content_type=file.content_type or "",
+        contents=contents,
+        allowed_content_types=ALLOWED_LOGO_TYPES,
+        max_bytes=MAX_LOGO_BYTES,
+    )
+
+    old_url = group.logo_url
+    group.logo_url = logo_url
+
+    await log_action(
+        db=db,
+        action=GROUP_LOGO_UPDATED,
+        entity_type="group",
+        entity_id=str(group.id),
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"logo_url": old_url},
+        after_state={"logo_url": logo_url},
+    )
+
+    await db.commit()
+    await db.refresh(group)
+    log.info("group.logo.uploaded", group_id=str(group.id))
+    return group
+
+
+async def request_billing_info(
+    db: AsyncSession,
+    group_id: uuid.UUID,
+    actor: SuperAdmin,
+) -> ResolvedValue:
+    """
+    Send a billing-info-request email to the group's effective billing contact.
+
+    Args:
+        db: Active database session.
+        group_id: The UUID of the group to request billing info for.
+        actor: The authenticated portal user performing the action.
+
+    Returns:
+        ResolvedValue: The billing email sent to and which hierarchy level it came from.
+
+    Raises:
+        HTTPException: 404 if the group does not exist within the actor's scope.
+        HTTPException: 409 if no billing email is set anywhere in the group's chain.
+    """
+    group = await _get_or_404(db, group_id, actor)
+    return await branding_service.request_billing_info(db, group, "group", actor)
 
 
 async def activate_group(
