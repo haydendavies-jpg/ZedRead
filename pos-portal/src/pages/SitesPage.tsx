@@ -2,11 +2,22 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { api } from '../api/axios'
 import type { Brand, Site } from '../types'
 import { EntityIdChip } from '../components/EntityIdChip'
 import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
+import { CompanyProfileFields, type CompanyProfileValues } from '../components/CompanyProfileFields'
+import { DEFAULT_COMPANY_PROFILE_VALUES, confirmCurrencyChange } from '../utils/companyProfile'
+
+interface AddressValues {
+  address_street: string
+  address_state: string
+  address_postcode: string
+}
+
+const DEFAULT_ADDRESS_VALUES: AddressValues = { address_street: '', address_state: '', address_postcode: '' }
 
 async function fetchSites(): Promise<Site[]> {
   const { data } = await api.get('/sites/', { params: { limit: 200 } })
@@ -31,22 +42,31 @@ export function SitesPage() {
   const [editing, setEditing] = useState<Site | null>(null)
   const [name, setName] = useState('')
   const [brandId, setBrandId] = useState('')
+  const [profile, setProfile] = useState<CompanyProfileValues>(DEFAULT_COMPANY_PROFILE_VALUES)
+  const [address, setAddress] = useState<AddressValues>(DEFAULT_ADDRESS_VALUES)
   const [formError, setFormError] = useState<string | null>(null)
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['sites'] })
 
   const createMutation = useMutation({
-    mutationFn: ({ name, brand_id }: { name: string; brand_id: string }) =>
-      api.post('/sites/', { name, brand_id }),
-    onSuccess: () => { invalidate(); setShowCreate(false); setName(''); setBrandId('') },
-    onError: () => setFormError('Failed to create site.'),
+    mutationFn: (body: { name: string; brand_id: string } & CompanyProfileValues & AddressValues) =>
+      api.post('/sites/', body),
+    onSuccess: () => {
+      invalidate()
+      setShowCreate(false)
+      setName('')
+      setBrandId('')
+      setProfile(DEFAULT_COMPANY_PROFILE_VALUES)
+      setAddress(DEFAULT_ADDRESS_VALUES)
+    },
+    onError: () => { invalidate(); setFormError('Failed to create site.') },
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) =>
-      api.patch(`/sites/${id}`, { name }),
+    mutationFn: ({ id, body }: { id: string; body: { name: string } & CompanyProfileValues & AddressValues }) =>
+      api.patch(`/sites/${id}`, body),
     onSuccess: () => { invalidate(); setEditing(null); setName('') },
-    onError: () => setFormError('Failed to update site.'),
+    onError: () => { invalidate(); setFormError('Failed to update site.') },
   })
 
   const suspendMutation = useMutation({
@@ -64,16 +84,38 @@ export function SitesPage() {
   const openCreate = () => {
     setName('')
     setBrandId(brands[0]?.id ?? '')
+    setProfile(DEFAULT_COMPANY_PROFILE_VALUES)
+    setAddress(DEFAULT_ADDRESS_VALUES)
     setFormError(null)
     setShowCreate(true)
   }
-  const openEdit = (s: Site) => { setName(s.name); setFormError(null); setEditing(s) }
+  const openEdit = (s: Site) => {
+    setName(s.name)
+    setProfile({
+      timezone: s.timezone,
+      currency: s.currency,
+      country: s.country,
+      tax_id_value: s.tax_id_value ?? '',
+      billing_email: s.billing_email ?? '',
+    })
+    setAddress({
+      address_street: s.address_street,
+      address_state: s.address_state,
+      address_postcode: s.address_postcode,
+    })
+    setFormError(null)
+    setEditing(s)
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
-    if (editing) updateMutation.mutate({ id: editing.id, name })
-    else createMutation.mutate({ name, brand_id: brandId })
+    if (editing) {
+      if (!confirmCurrencyChange(editing.currency, profile.currency, 'site')) return
+      updateMutation.mutate({ id: editing.id, body: { name, ...profile, ...address } })
+    } else {
+      createMutation.mutate({ name, brand_id: brandId, ...profile, ...address })
+    }
   }
 
   const filtered = sites.filter((s) => {
@@ -157,7 +199,11 @@ export function SitesPage() {
               {filtered.map((s) => (
                 <tr key={s.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3"><EntityIdChip id={s.id} ref={s.ref} /></td>
-                  <td className="px-4 py-3 font-medium text-gray-900">{s.name}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    <Link to={`/sites/${s.id}`} className="hover:text-brand-600 transition-colors">
+                      {s.name}
+                    </Link>
+                  </td>
                   <td className="px-4 py-3"><EntityIdChip id={s.brand_id} ref={brands.find((b) => b.id === s.brand_id)?.ref} /></td>
                   <td className="px-4 py-3 text-gray-500">{brandName(s.brand_id)}</td>
                   <td className="px-4 py-3">
@@ -214,6 +260,36 @@ export function SitesPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="Sydney CBD"
               />
+            </div>
+            <CompanyProfileFields values={profile} onChange={setProfile} />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Street address</label>
+              <input
+                value={address.address_street}
+                onChange={(e) => setAddress({ ...address, address_street: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                placeholder="123 George St"
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+                <input
+                  value={address.address_state}
+                  onChange={(e) => setAddress({ ...address, address_state: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  placeholder="NSW"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Postcode</label>
+                <input
+                  value={address.address_postcode}
+                  onChange={(e) => setAddress({ ...address, address_postcode: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  placeholder="2000"
+                />
+              </div>
             </div>
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">

@@ -2,11 +2,12 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.superadmin import SuperAdmin
+from app.schemas.billing_info_request import BillingInfoRequestResponse
 from app.schemas.group import GroupCreate, GroupResponse, GroupUpdate
 from app.services import group_service
 from app.utils.dependencies import get_current_superadmin
@@ -78,3 +79,25 @@ async def activate_group(
 ) -> GroupResponse:
     """Activate a previously suspended group."""
     return await group_service.activate_group(db, group_id, actor)
+
+
+@router.post("/{group_id}/logo", response_model=GroupResponse)
+async def upload_group_logo(
+    group_id: uuid.UUID,
+    file: UploadFile,
+    db: AsyncSession = Depends(get_db),
+    actor: SuperAdmin = Depends(get_current_superadmin),
+) -> GroupResponse:
+    """Upload or replace the group's logo (JPEG/PNG/WebP, up to 1 MB)."""
+    return await group_service.upload_logo(db, group_id, file, actor)
+
+
+@router.post("/{group_id}/request-billing-info", response_model=BillingInfoRequestResponse)
+async def request_group_billing_info(
+    group_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    actor: SuperAdmin = Depends(get_current_superadmin),
+) -> BillingInfoRequestResponse:
+    """Email the group's effective billing contact the billing_info_request template."""
+    resolved = await group_service.request_billing_info(db, group_id, actor)
+    return BillingInfoRequestResponse(sent_to=resolved.value, source_level=resolved.source_level)

@@ -11,13 +11,14 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/axios'
 import { BrandContext } from '../../context/BrandContext'
+import { CompanyProfileForm } from '../../components/CompanyProfileForm'
 import { ProductsPage } from '../management/ProductsPage'
 import { CategoriesPage } from '../management/CategoriesPage'
 import { TaxPage } from '../management/TaxPage'
 import { ReportsPage } from '../management/ReportsPage'
 import { UsersPage } from '../management/UsersPage'
 import { SiteOverridesPage } from '../management/SiteOverridesPage'
-import type { Brand } from '../../types'
+import type { Brand, Group } from '../../types'
 
 type Tab = 'overview' | 'products' | 'categories' | 'tax' | 'overrides' | 'reports' | 'users'
 
@@ -101,34 +102,27 @@ export function BrandDetailPage() {
 }
 
 function BrandOverview({ brand }: { brand: Brand }) {
-  return (
-    <div className="p-4 sm:p-6 max-w-lg">
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-500">Brand ID</span>
-          <span className="font-mono text-gray-700 text-xs">{brand.id}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-500">Group ID</span>
-          <span className="font-mono text-gray-700 text-xs">{brand.group_id}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-500">Name</span>
-          <span className="text-gray-900 font-medium">{brand.name}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-500">Created</span>
-          <span className="text-gray-700">{new Date(brand.created_at).toLocaleDateString()}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-500">Status</span>
-          <span className={brand.is_active ? 'text-green-600' : 'text-gray-500'}>
-            {brand.is_active ? 'Active' : 'Suspended'}
-          </span>
-        </div>
-      </div>
+  const { data: group } = useQuery<Group>({
+    queryKey: ['group', brand.group_id],
+    queryFn: () => api.get(`/groups/${brand.group_id}`).then((r) => r.data),
+    enabled: !!brand.group_id,
+  })
 
-      <p className="mt-4 text-sm text-gray-400">
+  return (
+    <div className="p-4 sm:p-6">
+      <CompanyProfileForm
+        entityType="brand"
+        entity={brand}
+        inherited={{
+          logoUrl: group?.logo_url ?? null,
+          logoSource: group?.logo_url ? 'group' : null,
+          billingEmail: group?.billing_email ?? null,
+          billingEmailSource: group?.billing_email ? 'group' : null,
+        }}
+        invalidateKeys={[['brand', brand.id], ['brands']]}
+      />
+
+      <p className="mt-4 text-sm text-gray-400 max-w-2xl">
         Use the tabs above to manage this brand's catalog, tax settings, reports, and user access.
       </p>
     </div>

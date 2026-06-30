@@ -295,7 +295,13 @@ async def create_user(
         if existing.scalar_one_or_none():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
 
+    brand_r = await db.execute(select(Brand).where(Brand.id == body.brand_id))
+    brand = brand_r.scalar_one_or_none()
+    if not brand:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Brand not found")
+
     user = User(
+        group_id=brand.group_id,
         brand_id=body.brand_id,
         first_name=body.first_name,
         last_name=body.last_name,
@@ -470,10 +476,10 @@ async def get_user_group_access(
     """
     Return all brands and sites in the user's group with their current grant state.
 
-    Every POS user belongs to exactly one group (derived from their brand).
-    Each entry shows the current POS access profile, or null if no access is
-    granted yet — so the portal can render the full access matrix rather than
-    just the rows that already have grants.
+    Every POS user belongs to exactly one group via User.group_id. Each entry
+    shows the current POS access profile, or null if no access is granted yet —
+    so the portal can render the full access matrix rather than just the rows
+    that already have grants.
 
     Args:
         user_id: UUID of the POS user.
@@ -486,13 +492,9 @@ async def get_user_group_access(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    # Resolve group via the user's brand
-    brand_r = await db.execute(select(Brand).where(Brand.id == user.brand_id))
-    user_brand = brand_r.scalar_one_or_none()
-    if not user_brand:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User's brand not found")
-
-    group_r = await db.execute(select(Group).where(Group.id == user_brand.group_id))
+    # Resolve group directly — User.group_id is set for every user, including
+    # a Group-level Master User (brand_id NULL)
+    group_r = await db.execute(select(Group).where(Group.id == user.group_id))
     group = group_r.scalar_one_or_none()
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")

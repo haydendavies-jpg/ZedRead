@@ -135,6 +135,67 @@ async def seed_system_profiles(
     return created
 
 
+async def seed_group_master_profile(
+    db: AsyncSession,
+    group_id: uuid.UUID,
+) -> AccessProfile | None:
+    """
+    Create the single group-scoped Master User access profile for a group, if missing.
+
+    Mirrors seed_system_profiles() but only seeds the one Master User tier,
+    scoped to the group rather than a brand (AccessProfile.group_id set,
+    brand_id NULL) — the other four system tiers (Admin, Reporting Only,
+    Manager, Staff) stay brand-only since they gate catalog/product
+    permissions that only make sense once a Brand exists.
+
+    Idempotent: returns None without inserting if a group-scoped Master
+    profile already exists for this group.
+
+    Called inside create_group() in the same transaction, so the profile is
+    committed or rolled back atomically with the group itself.
+
+    Args:
+        db: Active database session (transaction already open from caller).
+        group_id: UUID of the group to seed the Master profile for.
+
+    Returns:
+        AccessProfile | None: The newly created profile, or None if it already existed.
+    """
+    result = await db.execute(
+        select(AccessProfile).where(
+            AccessProfile.group_id == group_id,
+            AccessProfile.name == SystemAccessProfile.MASTER.value,
+            AccessProfile.is_system == True,  # noqa: E712
+        )
+    )
+    if result.scalar_one_or_none() is not None:
+        log.debug("access_profile.seed_group_master.skipped", group_id=str(group_id))
+        return None
+
+    profile = AccessProfile(
+        id=uuid.uuid4(),
+        group_id=group_id,
+        name=SystemAccessProfile.MASTER.value,
+        is_system=True,
+        is_active=True,
+        can_access_portal=True,
+    )
+    db.add(profile)
+
+    # Master User gets the full page catalog, same as the brand-level tier
+    for page_key in PAGE_KEYS:
+        db.add(
+            AccessProfilePagePermission(
+                id=uuid.uuid4(),
+                access_profile_id=profile.id,
+                page_key=page_key,
+            )
+        )
+
+    log.info("access_profile.seed_group_master.created", group_id=str(group_id))
+    return profile
+
+
 async def _load_profile_or_404(db: AsyncSession, access_profile_id: uuid.UUID) -> AccessProfile:
     """
     Load an AccessProfile by id, raising 404 if it does not exist.

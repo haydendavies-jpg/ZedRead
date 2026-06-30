@@ -8,12 +8,26 @@ Covers all five required scenarios per tests_CLAUDE.md:
 5. Audit log — every write asserts the correct audit_logs row
 """
 
+import io
 import uuid
+from unittest.mock import AsyncMock, patch
 
 from sqlalchemy import select
 
-from app.constants.audit_actions import SITE_ACTIVATED, SITE_CREATED, SITE_SUSPENDED, SITE_UPDATED
+from app.constants.audit_actions import (
+    SITE_ACTIVATED,
+    SITE_CREATED,
+    SITE_LOGO_UPDATED,
+    SITE_SUSPENDED,
+    SITE_UPDATED,
+)
 from app.models.audit_log import AuditLog
+from app.models.user import User
+
+# Patch target for upload_logo tests so no real Supabase call goes out
+_UPLOAD_IMAGE_PATH = "app.services.site_service.upload_image"
+# Patch target for request-billing-info tests so no real Resend call goes out
+_SEND_BILLING_EMAIL_PATH = "app.services.branding_service.send_billing_info_request_email"
 
 
 # ── Happy path ────────────────────────────────────────────────────────────────
@@ -185,3 +199,192 @@ async def test_suspend_site_writes_audit_log(client, db, portal_auth_headers, te
     )
     row = result.scalar_one()
     assert row.after_state["is_active"] is False
+
+
+# ── Master User auto-creation ───────────────────────────────────────────────────
+
+
+async def test_create_site_master_user_has_group_id(client, db, portal_auth_headers, test_brand, test_group):
+    """POST /sites's auto-created Master User has group_id resolved via its brand."""
+    response = await client.post(
+        "/sites/",
+        json={"brand_id": str(test_brand.id), "name": "Group Id Test Site"},
+        headers=portal_auth_headers,
+    )
+    site_id = response.json()["id"]
+
+    result = await db.execute(
+        select(User).where(
+            User.brand_id == test_brand.id,
+            User.is_master_user == True,  # noqa: E712
+            User.name == "Group Id Test Site",
+        )
+    )
+    master_user = result.scalar_one()
+    assert master_user.group_id == test_group.id
+    assert str(site_id)  # site created successfully alongside the master user
+
+
+# ── Company profile fields ──────────────────────────────────────────────────
+
+
+async def test_create_site_with_profile_fields(client, portal_auth_headers, test_brand):
+    """POST /sites accepts and returns the full company-profile field set, including address."""
+    response = await client.post(
+        "/sites/",
+        json={
+            "brand_id": str(test_brand.id),
+            "name": "Profile Fields Site",
+            "timezone": "America/New_York",
+            "currency": "USD",
+            "country": "US",
+            "tax_id_value": "12-3456789",
+            "billing_email": "billing@example.com",
+            "address_street": "123 Main St",
+            "address_state": "NY",
+            "address_postcode": "10001",
+        },
+        headers=portal_auth_headers,
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["timezone"] == "America/New_York"
+    assert body["currency"] == "USD"
+    assert body["country"] == "US"
+    assert body["tax_id_value"] == "12-3456789"
+    assert body["billing_email"] == "billing@example.com"
+    assert body["address_street"] == "123 Main St"
+    assert body["address_state"] == "NY"
+    assert body["address_postcode"] == "10001"
+
+
+async def test_update_site_currency_writes_before_after_audit(client, db, portal_auth_headers, test_site):
+    """PATCH /sites/{id} changing currency records the old and new value in the audit row."""
+    response = await client.patch(
+        f"/sites/{test_site.id}", json={"currency": "NZD"}, headers=portal_auth_headers
+    )
+    assert response.status_code == 200
+    assert response.json()["currency"] == "NZD"
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_site.id),
+            AuditLog.action == SITE_UPDATED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.before_state["currency"] == "AUD"
+    assert row.after_state["currency"] == "NZD"
+
+
+# ── Logo upload ──────────────────────────────────────────────────────────────
+
+
+async def test_upload_site_logo_returns_200(client, portal_auth_headers, test_site):
+    """POST /sites/{id}/logo accepts a valid image and returns the updated site."""
+    with patch(_UPLOAD_IMAGE_PATH, new_callable=AsyncMock) as mock_upload:
+        mock_upload.return_value = "https://example.test/logos/site.jpg"
+        response = await client.post(
+            f"/sites/{test_site.id}/logo",
+            files={"file": ("logo.jpg", io.BytesIO(b"fake-image-bytes"), "image/jpeg")},
+            headers=portal_auth_headers,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["logo_url"] == "https://example.test/logos/site.jpg"
+
+
+async def test_upload_site_logo_writes_audit_log(client, db, portal_auth_headers, test_site):
+    """POST /sites/{id}/logo writes a SITE_LOGO_UPDATED audit row."""
+    with patch(_UPLOAD_IMAGE_PATH, new_callable=AsyncMock) as mock_upload:
+        mock_upload.return_value = "https://example.test/logos/site.jpg"
+        await client.post(
+            f"/sites/{test_site.id}/logo",
+            files={"file": ("logo.jpg", io.BytesIO(b"fake-image-bytes"), "image/jpeg")},
+            headers=portal_auth_headers,
+        )
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_site.id),
+            AuditLog.action == SITE_LOGO_UPDATED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.after_state["logo_url"] == "https://example.test/logos/site.jpg"
+
+
+async def test_upload_site_logo_rejects_oversized_file(client, portal_auth_headers, test_site):
+    """POST /sites/{id}/logo with a file over 1 MB returns 413."""
+    oversized = b"x" * (1024 * 1024 + 1)
+    response = await client.post(
+        f"/sites/{test_site.id}/logo",
+        files={"file": ("logo.jpg", io.BytesIO(oversized), "image/jpeg")},
+        headers=portal_auth_headers,
+    )
+    assert response.status_code == 413
+
+
+async def test_upload_site_logo_rejects_invalid_content_type(client, portal_auth_headers, test_site):
+    """POST /sites/{id}/logo with a non-image content type returns 415."""
+    response = await client.post(
+        f"/sites/{test_site.id}/logo",
+        files={"file": ("notes.txt", io.BytesIO(b"not an image"), "text/plain")},
+        headers=portal_auth_headers,
+    )
+    assert response.status_code == 415
+
+
+# ── Request billing info ─────────────────────────────────────────────────────
+
+
+async def test_request_site_billing_info_inherits_from_brand(
+    client, db, portal_auth_headers, test_site, test_brand, test_billing_info_template
+):
+    """POST /sites/{id}/request-billing-info falls back to the parent brand's billing_email."""
+    test_brand.billing_email = "billing@brand.test"
+    await db.commit()
+
+    with patch(_SEND_BILLING_EMAIL_PATH, new_callable=AsyncMock) as mock_send:
+        response = await client.post(
+            f"/sites/{test_site.id}/request-billing-info", headers=portal_auth_headers
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sent_to"] == "billing@brand.test"
+    assert body["source_level"] == "brand"
+    mock_send.assert_awaited_once()
+
+
+async def test_request_site_billing_info_no_email_returns_409(
+    client, portal_auth_headers, test_site, test_billing_info_template
+):
+    """POST /sites/{id}/request-billing-info with no billing_email anywhere in the chain returns 409."""
+    response = await client.post(
+        f"/sites/{test_site.id}/request-billing-info", headers=portal_auth_headers
+    )
+    assert response.status_code == 409
+
+
+async def test_request_site_billing_info_writes_audit_log(
+    client, db, portal_auth_headers, test_site, test_billing_info_template
+):
+    """POST /sites/{id}/request-billing-info writes a BILLING_INFO_REQUESTED audit row."""
+    from app.constants.audit_actions import BILLING_INFO_REQUESTED
+
+    test_site.billing_email = "billing@site.test"
+    await db.commit()
+
+    with patch(_SEND_BILLING_EMAIL_PATH, new_callable=AsyncMock):
+        await client.post(f"/sites/{test_site.id}/request-billing-info", headers=portal_auth_headers)
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_site.id),
+            AuditLog.action == BILLING_INFO_REQUESTED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.after_state["sent_to"] == "billing@site.test"

@@ -175,7 +175,15 @@ async def test_create_product_cross_brand_category_returns_400(
     """Assigning a product to a category from a different brand returns 400."""
     from app.models.brand import Brand
 
-    other_brand = Brand(id=uuid.uuid4(), group_id=test_group.id, name="Other Brand", is_active=True)
+    other_brand = Brand(
+        id=uuid.uuid4(),
+        group_id=test_group.id,
+        name="Other Brand",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+    )
     db.add(other_brand)
     other_cat = Category(
         id=uuid.uuid4(),

@@ -15,15 +15,15 @@ class User(Base):
     A User is a member of staff who logs into the Android POS terminal.
 
     Always has POS access; backend/portal access is optional and granted
-    per scope via UserAccessGrant. Users belong to a Brand (not a Group) —
-    target architecture (see ROLE_MODEL.md) moves this to Group-level
-    storage with multi-site grants, not yet implemented here. They
-    authenticate via email+password for initial login and via PIN for
-    quick session switching at the terminal.
+    per scope via UserAccessGrant. Every User belongs to a Group; brand_id
+    is additionally set for brand- and site-scoped users and is NULL for a
+    Group-level Master User. They authenticate via email+password for
+    initial login and via PIN for quick session switching at the terminal.
 
-    Exactly one User per site is the immutable Master User
-    (is_master_user=True), auto-created alongside its site — see
-    site_service.create_site().
+    Exactly one User per site, per brand, and per group is the immutable
+    Master User (is_master_user=True), auto-created alongside its entity —
+    see site_service.create_site(), brand_service.create_brand(), and
+    group_service.create_group().
 
     Required-field rules (ROLE_MODEL.md §2): every non-Master User must have
     first_name/last_name (Master User has neither — its `name` is the site's
@@ -40,12 +40,19 @@ class User(Base):
         default=uuid.uuid4,
         comment="Primary key — UUID generated at insert time",
     )
-    brand_id: Mapped[uuid.UUID] = mapped_column(
+    group_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("brands.id", ondelete="RESTRICT"),
+        ForeignKey("groups.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
-        comment="Parent brand — Users are scoped to a brand, not a group",
+        comment="Parent group — every user belongs to a group; brand_id is additionally set for brand- and site-scoped users",
+    )
+    brand_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("brands.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+        comment="Set for brand- and site-scoped users; NULL for a Group-level Master User",
     )
     ref: Mapped[str] = mapped_column(
         String(20),

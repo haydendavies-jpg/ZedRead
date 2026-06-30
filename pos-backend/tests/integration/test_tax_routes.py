@@ -90,7 +90,15 @@ async def test_update_tax_category_wrong_brand_returns_404(
     from app.models.brand import Brand
     from app.models.tax_category import TaxCategory
 
-    other_brand = Brand(id=uuid.uuid4(), group_id=test_group.id, name="Other", is_active=True)
+    other_brand = Brand(
+        id=uuid.uuid4(),
+        group_id=test_group.id,
+        name="Other",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+    )
     db.add(other_brand)
     other_cat = TaxCategory(
         id=uuid.uuid4(), brand_id=other_brand.id, name="Foreign", is_active=True

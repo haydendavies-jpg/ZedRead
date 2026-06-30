@@ -27,11 +27,13 @@ from app.models.user import User
 from app.models.product import Product
 from app.schemas.product import ProductCreate, ProductUpdate
 from app.services.audit_service import log_action
+from app.utils.storage import extension_for_content_type, upload_image
 
 log = structlog.get_logger(__name__)
 
 # Maximum photo size enforced before attempting Supabase upload
 _MAX_PHOTO_BYTES = 500 * 1024  # 500 KB
+_ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
 async def _get_or_404(db: AsyncSession, brand_id: uuid.UUID, product_id: uuid.UUID) -> Product:
@@ -355,21 +357,16 @@ async def upload_photo(
     """
     product = await _get_or_404(db, brand_id, product_id)
 
-    allowed_types = {"image/jpeg", "image/png", "image/webp"}
-    if file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Unsupported image type '{file.content_type}'. Accepted: jpeg, png, webp",
-        )
-
     contents = await file.read()
-    if len(contents) > _MAX_PHOTO_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Photo exceeds 500 KB limit ({len(contents)} bytes received)",
-        )
-
-    photo_url = await _upload_to_supabase(brand_id, product_id, file.content_type, contents)
+    ext = extension_for_content_type(file.content_type or "")
+    photo_url = await upload_image(
+        bucket="product-photos",
+        path=f"products/{brand_id}/{product_id}.{ext}",
+        content_type=file.content_type or "",
+        contents=contents,
+        allowed_content_types=_ALLOWED_PHOTO_TYPES,
+        max_bytes=_MAX_PHOTO_BYTES,
+    )
 
     old_url = product.photo_url
     product.photo_url = photo_url
@@ -391,56 +388,3 @@ async def upload_photo(
     await db.refresh(product)
     log.info("product.photo.uploaded", product_id=str(product.id))
     return product
-
-
-async def _upload_to_supabase(
-    brand_id: uuid.UUID,
-    product_id: uuid.UUID,
-    content_type: str,
-    contents: bytes,
-) -> str:
-    """
-    Upload image bytes to Supabase Storage and return the public URL.
-
-    Uses the `supabase` SDK configured via SUPABASE_URL and SUPABASE_STORAGE_KEY
-    env vars. The file is stored at products/{brand_id}/{product_id}.<ext>.
-
-    Args:
-        brand_id: Used to namespace the storage path.
-        product_id: Used as the filename stem.
-        content_type: MIME type of the image.
-        contents: Raw image bytes.
-
-    Returns:
-        str: The public URL of the uploaded file.
-
-    Raises:
-        Exception: Re-raised from the Supabase SDK on upload failure.
-    """
-    import os
-
-    from supabase import create_client
-
-    url: str = os.getenv("SUPABASE_URL", "")
-    key: str = os.getenv("SUPABASE_STORAGE_KEY", "")
-
-    if not url or not key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Photo storage is not configured",
-        )
-
-    ext_map = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
-    ext = ext_map.get(content_type, "jpg")
-    path = f"products/{brand_id}/{product_id}.{ext}"
-
-    client = create_client(url, key)
-    bucket = client.storage.from_("product-photos")
-
-    try:
-        bucket.upload(path=path, file=contents, file_options={"content-type": content_type, "upsert": "true"})
-    except Exception:
-        log.error("product.photo.upload_failed", product_id=str(product_id), exc_info=True)
-        raise
-
-    return bucket.get_public_url(path)

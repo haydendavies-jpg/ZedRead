@@ -65,3 +65,33 @@ class Group(Base):
         "visibility to own accounts only (ROLE_MODEL.md §5.1); NULL for "
         "pre-existing groups and groups created by Admin.",
     )
+    timezone: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        comment="IANA timezone name, e.g. 'Australia/Sydney'. Required independently per level.",
+    )
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        comment="ISO 4217 currency code, e.g. 'AUD'. Editing this affects invoice currency.",
+    )
+    country: Mapped[str] = mapped_column(
+        String(2),
+        nullable=False,
+        comment="ISO 3166-1 alpha-2 country code, e.g. 'AU'. Drives the tax ID label.",
+    )
+    tax_id_value: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Free-text tax identifier (e.g. ABN, NZBN); label resolved from country.",
+    )
+    logo_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Uploaded logo URL. Inherits down to Brand/Site when unset there.",
+    )
+    billing_email: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Billing contact email. Inherits down to Brand/Site when unset there.",
+    )

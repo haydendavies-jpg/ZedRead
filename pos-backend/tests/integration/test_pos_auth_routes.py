@@ -135,6 +135,7 @@ async def test_pos_login_inactive_user_returns_401(client, db, test_site, test_b
 
     inactive = User(
         id=uuid.uuid4(),
+        group_id=test_brand.group_id,
         brand_id=test_brand.id,
         name="Inactive",
         email="inactive_pos@test.com",

@@ -22,7 +22,15 @@ pytestmark = pytest.mark.asyncio
 
 async def _unseeded_brand(db, test_group) -> Brand:
     """Create a Brand with no access profiles seeded yet (unlike test_brand)."""
-    brand = Brand(id=uuid.uuid4(), group_id=test_group.id, name="Unseeded Brand", is_active=True)
+    brand = Brand(
+        id=uuid.uuid4(),
+        group_id=test_group.id,
+        name="Unseeded Brand",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+    )
     db.add(brand)
     await db.commit()
     await db.refresh(brand)
@@ -115,6 +123,9 @@ async def test_seed_does_not_affect_other_brands(db, test_brand, test_group):
         group_id=test_group.id,
         name="Other Brand",
         is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
     )
     db.add(other_brand)
     await db.commit()

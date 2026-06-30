@@ -5,29 +5,138 @@ transaction — this category cannot be deleted and is used as the fallback for
 products not assigned to any other category.
 """
 
+import secrets
 import uuid
 
 import structlog
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
+    ACCESS_GRANT_CREATED,
     BRAND_ACTIVATED,
     BRAND_CREATED,
+    BRAND_LOGO_UPDATED,
     BRAND_SUSPENDED,
     BRAND_UPDATED,
+    USER_CREATED,
 )
-from app.constants.statuses import SuperAdminRole
+from app.constants.statuses import ActorType, GrantScope, SuperAdminRole, SystemAccessProfile
+from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.category import Category
 from app.models.group import Group
 from app.models.superadmin import SuperAdmin
+from app.models.user import User
+from app.models.user_access_grant import UserAccessGrant
 from app.schemas.brand import BrandCreate, BrandUpdate
+from app.services import branding_service
 from app.services.access_profile_service import seed_system_profiles
 from app.services.audit_service import log_action
+from app.services.branding_service import ResolvedValue
+from app.utils.security import hash_password
+from app.utils.storage import ALLOWED_LOGO_TYPES, MAX_LOGO_BYTES, extension_for_content_type, upload_image
 
 log = structlog.get_logger(__name__)
+
+
+async def _create_brand_master_user(db: AsyncSession, brand: Brand, actor: SuperAdmin) -> User:
+    """
+    Auto-create the immutable Master User for a newly created brand.
+
+    Mirrors site_service._create_master_user(): synthetic email/unusable
+    password, full fixed access via the brand's seeded Master User access
+    profile, backend_role='admin' always on.
+
+    Args:
+        db: Active database session (transaction already open from caller).
+        brand: The newly created, already-flushed Brand.
+        actor: The portal admin who created the brand (for audit attribution).
+
+    Returns:
+        User: The newly created Master User.
+
+    Raises:
+        HTTPException: 404 if the brand's Master User access profile is missing
+            (should not happen — seeded by seed_system_profiles() just before this).
+    """
+    profile_r = await db.execute(
+        select(AccessProfile).where(
+            AccessProfile.brand_id == brand.id,
+            AccessProfile.name == SystemAccessProfile.MASTER.value,
+            AccessProfile.is_system == True,  # noqa: E712
+        )
+    )
+    master_profile = profile_r.scalar_one_or_none()
+    if master_profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Brand is missing its Master User access profile",
+        )
+
+    master_user = User(
+        id=uuid.uuid4(),
+        group_id=brand.group_id,
+        brand_id=brand.id,
+        name=brand.name,
+        email=f"master-{brand.id}@system.zedread.internal",
+        password_hash=hash_password(secrets.token_urlsafe(32)),
+        is_active=True,
+        is_master_user=True,
+    )
+    db.add(master_user)
+    await db.flush()
+
+    await log_action(
+        db=db,
+        action=USER_CREATED,
+        entity_type="user",
+        entity_id=str(master_user.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        after_state={
+            "name": master_user.name,
+            "brand_id": str(master_user.brand_id),
+            "is_master_user": True,
+        },
+    )
+
+    grant = UserAccessGrant(
+        id=uuid.uuid4(),
+        user_id=master_user.id,
+        scope=GrantScope.BRAND,
+        brand_id=brand.id,
+        access_profile_id=master_profile.id,
+        granted_by_id=None,  # System-created grant
+        is_active=True,
+        is_default=True,
+        backend_role="admin",
+    )
+    db.add(grant)
+
+    await log_action(
+        db=db,
+        action=ACCESS_GRANT_CREATED,
+        entity_type="user_access_grant",
+        entity_id=str(grant.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        after_state={
+            "user_id": str(master_user.id),
+            "scope": GrantScope.BRAND,
+            "brand_id": str(brand.id),
+            "access_profile_id": str(master_profile.id),
+            "auto_created": True,
+        },
+    )
+
+    log.info("brand.master_user.created", brand_id=str(brand.id), user_id=str(master_user.id))
+    return master_user
 
 
 def _scope_to_own_accounts(conditions: list, actor: SuperAdmin) -> None:
@@ -164,7 +273,17 @@ async def create_brand(
 
     log.info("brand.creating", name=payload.name, group_id=str(payload.group_id))
 
-    brand = Brand(id=uuid.uuid4(), group_id=payload.group_id, name=payload.name, is_active=True)
+    brand = Brand(
+        id=uuid.uuid4(),
+        group_id=payload.group_id,
+        name=payload.name,
+        is_active=True,
+        timezone=payload.timezone,
+        currency=payload.currency,
+        country=payload.country,
+        tax_id_value=payload.tax_id_value,
+        billing_email=payload.billing_email,
+    )
     db.add(brand)
     await db.flush()  # Brand must be in DB before Category and AccessProfile FK inserts
 
@@ -178,8 +297,13 @@ async def create_brand(
     )
     db.add(uncategorised)
 
-    # Seed the 4 system access profiles (Admin, Reporting Only, Manager, Staff)
+    # Seed the 5 system access profiles (Admin, Reporting Only, Manager, Staff, Master User)
     await seed_system_profiles(db, brand.id)
+    await db.flush()  # Profiles must be visible to the lookup in _create_brand_master_user (autoflush=False)
+
+    # Every brand gets exactly one immutable Master User, created atomically
+    # with the brand itself (ROLE_MODEL.md Master User role, extended to Brand).
+    await _create_brand_master_user(db, brand, actor)
 
     await log_action(
         db=db,
@@ -189,7 +313,16 @@ async def create_brand(
         actor_id=actor.id,
         actor_email=actor.email,
         actor_name=actor.name,
-        after_state={"name": brand.name, "group_id": str(brand.group_id), "is_active": True},
+        after_state={
+            "name": brand.name,
+            "group_id": str(brand.group_id),
+            "is_active": True,
+            "timezone": brand.timezone,
+            "currency": brand.currency,
+            "country": brand.country,
+            "tax_id_value": brand.tax_id_value,
+            "billing_email": brand.billing_email,
+        },
     )
 
     await db.commit()
@@ -221,10 +354,34 @@ async def update_brand(
     """
     brand = await _get_or_404(db, brand_id, actor)
 
-    before = {"name": brand.name}
+    before = {
+        "name": brand.name,
+        "timezone": brand.timezone,
+        "currency": brand.currency,
+        "country": brand.country,
+        "tax_id_value": brand.tax_id_value,
+        "billing_email": brand.billing_email,
+    }
     if payload.name is not None:
         brand.name = payload.name
-    after = {"name": brand.name}
+    if payload.timezone is not None:
+        brand.timezone = payload.timezone
+    if payload.currency is not None:
+        brand.currency = payload.currency
+    if payload.country is not None:
+        brand.country = payload.country
+    if payload.tax_id_value is not None:
+        brand.tax_id_value = payload.tax_id_value
+    if payload.billing_email is not None:
+        brand.billing_email = payload.billing_email
+    after = {
+        "name": brand.name,
+        "timezone": brand.timezone,
+        "currency": brand.currency,
+        "country": brand.country,
+        "tax_id_value": brand.tax_id_value,
+        "billing_email": brand.billing_email,
+    }
 
     await log_action(
         db=db,
@@ -285,6 +442,90 @@ async def suspend_brand(
     await db.commit()
     await db.refresh(brand)
     return brand
+
+
+async def upload_logo(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    file: UploadFile,
+    actor: SuperAdmin,
+) -> Brand:
+    """
+    Upload or replace a Brand's logo and write an audit log row.
+
+    Accepts JPEG, PNG, or WebP images up to 1 MB. Stores the image in
+    Supabase Storage and saves the public URL on the brand row.
+
+    Args:
+        db: Active database session.
+        brand_id: UUID of the brand to attach the logo to.
+        file: The uploaded image file.
+        actor: The authenticated portal user performing the action.
+
+    Returns:
+        Brand: The brand with updated logo_url.
+
+    Raises:
+        HTTPException: 404 if the brand does not exist within the actor's scope.
+        HTTPException: 413 if the file exceeds 1 MB.
+        HTTPException: 415 if the content type is not an accepted image type.
+    """
+    brand = await _get_or_404(db, brand_id, actor)
+
+    contents = await file.read()
+    ext = extension_for_content_type(file.content_type or "")
+    logo_url = await upload_image(
+        bucket="logos",
+        path=f"brands/{brand_id}.{ext}",
+        content_type=file.content_type or "",
+        contents=contents,
+        allowed_content_types=ALLOWED_LOGO_TYPES,
+        max_bytes=MAX_LOGO_BYTES,
+    )
+
+    old_url = brand.logo_url
+    brand.logo_url = logo_url
+
+    await log_action(
+        db=db,
+        action=BRAND_LOGO_UPDATED,
+        entity_type="brand",
+        entity_id=str(brand.id),
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"logo_url": old_url},
+        after_state={"logo_url": logo_url},
+    )
+
+    await db.commit()
+    await db.refresh(brand)
+    log.info("brand.logo.uploaded", brand_id=str(brand.id))
+    return brand
+
+
+async def request_billing_info(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    actor: SuperAdmin,
+) -> ResolvedValue:
+    """
+    Send a billing-info-request email to the brand's effective billing contact.
+
+    Args:
+        db: Active database session.
+        brand_id: The UUID of the brand to request billing info for.
+        actor: The authenticated portal user performing the action.
+
+    Returns:
+        ResolvedValue: The billing email sent to and which hierarchy level it came from.
+
+    Raises:
+        HTTPException: 404 if the brand does not exist within the actor's scope.
+        HTTPException: 409 if no billing email is set anywhere in the brand's chain.
+    """
+    brand = await _get_or_404(db, brand_id, actor)
+    return await branding_service.request_billing_info(db, brand, "brand", actor)
 
 
 async def activate_brand(

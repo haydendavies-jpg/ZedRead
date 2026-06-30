@@ -4,9 +4,12 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/axios'
 import type { Group } from '../types'
+import { Link } from 'react-router-dom'
 import { EntityIdChip } from '../components/EntityIdChip'
 import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
+import { CompanyProfileFields, type CompanyProfileValues } from '../components/CompanyProfileFields'
+import { DEFAULT_COMPANY_PROFILE_VALUES, confirmCurrencyChange } from '../utils/companyProfile'
 
 async function fetchGroups(): Promise<Group[]> {
   const { data } = await api.get('/groups/', { params: { limit: 200 } })
@@ -23,21 +26,22 @@ export function GroupsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing] = useState<Group | null>(null)
   const [name, setName] = useState('')
+  const [profile, setProfile] = useState<CompanyProfileValues>(DEFAULT_COMPANY_PROFILE_VALUES)
   const [formError, setFormError] = useState<string | null>(null)
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['groups'] })
 
   const createMutation = useMutation({
-    mutationFn: (name: string) => api.post('/groups/', { name }),
-    onSuccess: () => { invalidate(); setShowCreate(false); setName('') },
-    onError: () => setFormError('Failed to create group.'),
+    mutationFn: (body: { name: string } & CompanyProfileValues) => api.post('/groups/', body),
+    onSuccess: () => { invalidate(); setShowCreate(false); setName(''); setProfile(DEFAULT_COMPANY_PROFILE_VALUES) },
+    onError: () => { invalidate(); setFormError('Failed to create group.') },
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) =>
-      api.patch(`/groups/${id}`, { name }),
+    mutationFn: ({ id, body }: { id: string; body: { name: string } & CompanyProfileValues }) =>
+      api.patch(`/groups/${id}`, body),
     onSuccess: () => { invalidate(); setEditing(null); setName('') },
-    onError: () => setFormError('Failed to update group.'),
+    onError: () => { invalidate(); setFormError('Failed to update group.') },
   })
 
   const suspendMutation = useMutation({
@@ -50,14 +54,34 @@ export function GroupsPage() {
     onSuccess: invalidate,
   })
 
-  const openCreate = () => { setName(''); setFormError(null); setShowCreate(true) }
-  const openEdit = (g: Group) => { setName(g.name); setFormError(null); setEditing(g) }
+  const openCreate = () => {
+    setName('')
+    setProfile(DEFAULT_COMPANY_PROFILE_VALUES)
+    setFormError(null)
+    setShowCreate(true)
+  }
+  const openEdit = (g: Group) => {
+    setName(g.name)
+    setProfile({
+      timezone: g.timezone,
+      currency: g.currency,
+      country: g.country,
+      tax_id_value: g.tax_id_value ?? '',
+      billing_email: g.billing_email ?? '',
+    })
+    setFormError(null)
+    setEditing(g)
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
-    if (editing) updateMutation.mutate({ id: editing.id, name })
-    else createMutation.mutate(name)
+    if (editing) {
+      if (!confirmCurrencyChange(editing.currency, profile.currency, 'group')) return
+      updateMutation.mutate({ id: editing.id, body: { name, ...profile } })
+    } else {
+      createMutation.mutate({ name, ...profile })
+    }
   }
 
   const filtered = groups.filter((g) => {
@@ -127,7 +151,11 @@ export function GroupsPage() {
               {filtered.map((g) => (
                 <tr key={g.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3"><EntityIdChip id={g.id} ref={g.ref} /></td>
-                  <td className="px-4 py-3 font-medium text-gray-900">{g.name}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    <Link to={`/groups/${g.id}`} className="hover:text-brand-600 transition-colors">
+                      {g.name}
+                    </Link>
+                  </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={g.is_active ? 'active' : 'suspended'} />
                   </td>
@@ -170,6 +198,7 @@ export function GroupsPage() {
                 placeholder="Acme Corp"
               />
             </div>
+            <CompanyProfileFields values={profile} onChange={setProfile} />
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => { setShowCreate(false); setEditing(null) }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>

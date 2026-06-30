@@ -6,6 +6,7 @@ single place.
 """
 
 import os
+from string import Template
 
 import resend
 import structlog
@@ -154,4 +155,58 @@ async def send_password_reset_email(to_email: str, token: str) -> None:
         log.info("email.password_reset.sent", to=to_email)
     except Exception:
         log.error("email.password_reset.failed", to=to_email, exc_info=True)
+        raise
+
+
+async def send_billing_info_request_email(
+    to_email: str,
+    entity_name: str,
+    entity_type: str,
+    subject_template: str,
+    body_template: str,
+) -> None:
+    """
+    Send a billing-info-request email via Resend, rendered from an admin-editable template.
+
+    Uses stdlib string.Template ($variable substitution) rather than a
+    templating engine — the subject/body are stored as plain DB rows edited
+    by trusted SuperAdmins, but we still don't want arbitrary template logic
+    executed from stored data.
+
+    Args:
+        to_email: The resolved effective billing email to send to.
+        entity_name: Name of the Group/Brand/Site missing billing info.
+        entity_type: One of "group", "brand", "site" — substituted into the template.
+        subject_template: The EmailTemplate.subject value, may contain $variable placeholders.
+        body_template: The EmailTemplate.body value, may contain $variable placeholders.
+
+    Returns:
+        None
+
+    Raises:
+        Exception: Re-raised from the Resend SDK if the API call fails.
+                   Callers should handle this and roll back the DB transaction.
+    """
+    substitutions = {"entity_name": entity_name, "entity_type": entity_type}
+    subject = Template(subject_template).safe_substitute(substitutions)
+    body_text = Template(body_template).safe_substitute(substitutions)
+    html_body = f"""
+<html>
+  <body style="font-family: sans-serif; color: #333; max-width: 560px; margin: 0 auto;">
+    {"".join(f"<p>{line}</p>" for line in body_text.split(chr(10)) if line.strip())}
+  </body>
+</html>
+"""
+
+    log.info("email.billing_info_request.sending", to=to_email, entity_name=entity_name, entity_type=entity_type)
+    try:
+        resend.Emails.send({
+            "from": _FROM_ADDRESS,
+            "to": [to_email],
+            "subject": subject,
+            "html": html_body,
+        })
+        log.info("email.billing_info_request.sent", to=to_email)
+    except Exception:
+        log.error("email.billing_info_request.failed", to=to_email, exc_info=True)
         raise

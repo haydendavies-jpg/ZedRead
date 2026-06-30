@@ -62,6 +62,12 @@ export interface Group {
   ref: string
   name: string
   is_active: boolean
+  timezone: string
+  currency: string
+  country: string
+  tax_id_value: string | null
+  logo_url: string | null
+  billing_email: string | null
   created_at: string
   updated_at: string
 }
@@ -72,6 +78,12 @@ export interface Brand {
   group_id: string
   name: string
   is_active: boolean
+  timezone: string
+  currency: string
+  country: string
+  tax_id_value: string | null
+  logo_url: string | null
+  billing_email: string | null
   created_at: string
   updated_at: string
 }
@@ -81,6 +93,39 @@ export interface Site {
   ref: string
   brand_id: string
   name: string
+  is_active: boolean
+  timezone: string
+  currency: string
+  country: string
+  tax_id_value: string | null
+  logo_url: string | null
+  billing_email: string | null
+  address_street: string
+  address_state: string
+  address_postcode: string
+  created_at: string
+  updated_at: string
+}
+
+/** ISO code + display name pair returned by the /reference/countries and /reference/currencies routes. */
+export interface CodeName {
+  code: string
+  name: string
+}
+
+/** Response shape for POST /{group|brand|site}s/{id}/request-billing-info. */
+export interface BillingInfoRequestResponse {
+  sent_to: string
+  source_level: 'group' | 'brand' | 'site'
+}
+
+export interface EmailTemplate {
+  id: string
+  template_key: string
+  name: string
+  subject: string
+  body: string
+  is_system: boolean
   is_active: boolean
   created_at: string
   updated_at: string
