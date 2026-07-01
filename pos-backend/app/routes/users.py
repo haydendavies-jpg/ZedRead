@@ -52,7 +52,8 @@ class UserOut(BaseModel):
 
     id: uuid.UUID
     ref: str
-    brand_id: uuid.UUID
+    # None for group-scoped master users (brand_id is NULL for them)
+    brand_id: uuid.UUID | None = None
     brand_name: str = ""
     group_name: str = ""
     name: str
@@ -184,7 +185,8 @@ async def _attach_sites(
         return []
 
     user_ids = [u.id for u in users]
-    brand_ids = list({u.brand_id for u in users})
+    # Exclude None — group-scoped master users have brand_id=NULL
+    brand_ids = list({u.brand_id for u in users if u.brand_id is not None})
 
     # Brand and group names — batch query so the portal table can show them
     brand_q = (
