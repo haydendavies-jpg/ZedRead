@@ -22,7 +22,7 @@ interface SiteGrant {
 interface PosUser {
   id: string
   ref: string
-  brand_id: string
+  brand_id: string | null
   brand_name: string
   group_name: string
   name: string
@@ -74,7 +74,7 @@ async function fetchSites(): Promise<Site[]> {
 async function fetchPosUsers(brandId: string): Promise<PosUser[]> {
   const params: Record<string, unknown> = { limit: 200 }
   if (brandId) params.brand_id = brandId
-  const { data } = await api.get('/pos-users', { params })
+  const { data } = await api.get('/users', { params })
   return data
 }
 
@@ -85,7 +85,7 @@ async function fetchProfiles(brandId: string): Promise<AccessProfile[]> {
 }
 
 async function fetchGroupAccess(userId: string): Promise<GroupAccess> {
-  const { data } = await api.get(`/pos-users/${userId}/group-access`)
+  const { data } = await api.get(`/users/${userId}/group-access`)
   return data
 }
 
@@ -161,7 +161,7 @@ export function PosUsersPage() {
   // ── Mutations ─────────────────────────────────────────────────────────────
   const createMutation = useMutation({
     mutationFn: (body: { brand_id: string; name: string; email: string; password: string }) =>
-      api.post('/pos-users', body),
+      api.post('/users', body),
     onSuccess: () => {
       invalidateUsers()
       setShowCreate(false)
@@ -176,7 +176,7 @@ export function PosUsersPage() {
 
   const editMutation = useMutation({
     mutationFn: ({ id, name, email }: { id: string; name: string; email: string }) =>
-      api.patch(`/pos-users/${id}`, { name, email }),
+      api.patch(`/users/${id}`, { name, email }),
     onSuccess: () => {
       invalidateUsers()
       setEditError(null)
@@ -189,7 +189,7 @@ export function PosUsersPage() {
 
   const setPinMutation = useMutation({
     mutationFn: ({ userId, pin }: { userId: string; pin: string }) =>
-      api.post(`/pos-users/${userId}/set-pin`, { pin }),
+      api.post(`/users/${userId}/set-pin`, { pin }),
     onSuccess: () => {
       setPinError(null)
       setPinSuccess(true)
@@ -241,7 +241,7 @@ export function PosUsersPage() {
   })
 
   const deactivateMutation = useMutation({
-    mutationFn: (userId: string) => api.patch(`/pos-users/${userId}/deactivate`),
+    mutationFn: (userId: string) => api.patch(`/users/${userId}/deactivate`),
     onSuccess: invalidateUsers,
   })
 
