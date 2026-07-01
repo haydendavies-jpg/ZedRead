@@ -78,7 +78,7 @@ async function fetchPosUsers(brandId: string): Promise<PosUser[]> {
   return data
 }
 
-async function fetchProfiles(brandId: string): Promise<AccessProfile[]> {
+async function fetchProfiles(brandId: string | null): Promise<AccessProfile[]> {
   if (!brandId) return []
   const { data } = await api.get('/access-profiles', { params: { brand_id: brandId, limit: 200 } })
   return data
