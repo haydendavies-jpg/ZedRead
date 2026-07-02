@@ -10,14 +10,16 @@ import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
 import { CompanyProfileFields, type CompanyProfileValues } from '../components/CompanyProfileFields'
 import { DEFAULT_COMPANY_PROFILE_VALUES, confirmCurrencyChange } from '../utils/companyProfile'
+import { useAddressSearch } from '../hooks/useAddressSearch'
 
 interface AddressValues {
   address_street: string
+  address_city: string
   address_state: string
   address_postcode: string
 }
 
-const DEFAULT_ADDRESS_VALUES: AddressValues = { address_street: '', address_state: '', address_postcode: '' }
+const DEFAULT_ADDRESS_VALUES: AddressValues = { address_street: '', address_city: '', address_state: '', address_postcode: '' }
 
 async function fetchSites(): Promise<Site[]> {
   const { data } = await api.get('/sites/', { params: { limit: 200 } })
@@ -46,7 +48,11 @@ export function SitesPage() {
   const [masterPassword, setMasterPassword] = useState('')
   const [profile, setProfile] = useState<CompanyProfileValues>(DEFAULT_COMPANY_PROFILE_VALUES)
   const [address, setAddress] = useState<AddressValues>(DEFAULT_ADDRESS_VALUES)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [sessioningId, setSessioningId] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+
+  const { suggestions } = useAddressSearch(showCreate && !editing ? address.address_street : '')
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['sites'] })
 
@@ -83,6 +89,24 @@ export function SitesPage() {
     onSuccess: invalidate,
   })
 
+  const handleSessionInto = async (siteId: string) => {
+    setSessioningId(siteId)
+    try {
+      const { data: grantData } = await api.get<{ grant_id: string }>('/admin/master-grant', {
+        params: { site_id: siteId },
+      })
+      const { data: tokenData } = await api.post<{ access_token: string }>('/admin/impersonate', {
+        grant_id: grantData.grant_id,
+      })
+      sessionStorage.setItem('imp_token', tokenData.access_token)
+      window.open('/management', '_blank')
+    } catch {
+      // error shown on the detail page; silently clear loading state here
+    } finally {
+      setSessioningId(null)
+    }
+  }
+
   const brandName = (id: string) => brands.find((b) => b.id === id)?.name ?? id.slice(0, 8)
 
   const openCreate = () => {
@@ -106,6 +130,7 @@ export function SitesPage() {
     })
     setAddress({
       address_street: s.address_street,
+      address_city: s.address_city ?? '',
       address_state: s.address_state,
       address_postcode: s.address_postcode,
     })
@@ -190,7 +215,7 @@ export function SitesPage() {
         <div className="text-gray-400 text-sm">Loading…</div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200">
-          <table className="w-full text-sm min-w-[600px]">
+          <table className="w-full text-sm min-w-[700px]">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
                 <th className="px-4 py-3">ID</th>
@@ -217,6 +242,13 @@ export function SitesPage() {
                   </td>
                   <td className="px-4 py-3 flex gap-2">
                     <button onClick={() => openEdit(s)} className="text-brand-600 hover:underline text-xs">Edit</button>
+                    <button
+                      onClick={() => handleSessionInto(s.id)}
+                      disabled={sessioningId === s.id}
+                      className="text-brand-600 hover:underline text-xs disabled:opacity-50"
+                    >
+                      {sessioningId === s.id ? '…' : 'Session into'}
+                    </button>
                     {s.is_active ? (
                       <button onClick={() => suspendMutation.mutate(s.id)} className="text-amber-600 hover:underline text-xs">Suspend</button>
                     ) : (
@@ -294,13 +326,46 @@ export function SitesPage() {
               </>
             )}
             <CompanyProfileFields values={profile} onChange={setProfile} />
-            <div>
+            <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-1">Street address</label>
               <input
                 value={address.address_street}
-                onChange={(e) => setAddress({ ...address, address_street: e.target.value })}
+                onChange={(e) => {
+                  setAddress({ ...address, address_street: e.target.value })
+                  setShowSuggestions(true)
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setShowSuggestions(false) }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="123 George St"
+                autoComplete="off"
+              />
+              {showSuggestions && suggestions.length > 0 && (
+                <ul className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg text-sm divide-y divide-gray-100 max-h-48 overflow-y-auto">
+                  {suggestions.map((s, i) => (
+                    <li
+                      key={i}
+                      onMouseDown={() => {
+                        setAddress({ address_street: s.road, address_city: s.city, address_state: s.state, address_postcode: s.postcode })
+                        setShowSuggestions(false)
+                      }}
+                      className="px-3 py-2 hover:bg-brand-50 cursor-pointer text-gray-700 truncate"
+                      title={s.display_name}
+                    >
+                      {s.display_name}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Suburb / City</label>
+              <input
+                value={address.address_city}
+                onChange={(e) => setAddress({ ...address, address_city: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                placeholder="South Brisbane"
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -310,7 +375,7 @@ export function SitesPage() {
                   value={address.address_state}
                   onChange={(e) => setAddress({ ...address, address_state: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  placeholder="NSW"
+                  placeholder="QLD"
                 />
               </div>
               <div>
@@ -319,7 +384,7 @@ export function SitesPage() {
                   value={address.address_postcode}
                   onChange={(e) => setAddress({ ...address, address_postcode: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  placeholder="2000"
+                  placeholder="4101"
                 />
               </div>
             </div>

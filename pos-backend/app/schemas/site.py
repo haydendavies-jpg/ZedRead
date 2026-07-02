@@ -26,6 +26,7 @@ class SiteCreate(BaseModel):
     tax_id_value: str | None = Field(default=None, max_length=50)
     billing_email: str | None = Field(default=None, max_length=255)
     address_street: str = Field(default="", max_length=255)
+    address_city: str = Field(default="", max_length=100)
     address_state: str = Field(default="", max_length=100)
     address_postcode: str = Field(default="", max_length=20)
     master_email: EmailStr = Field(..., description="Login email for the auto-created Site master user")
@@ -42,6 +43,7 @@ class SiteUpdate(BaseModel):
     tax_id_value: str | None = Field(default=None, max_length=50)
     billing_email: str | None = Field(default=None, max_length=255)
     address_street: str | None = Field(default=None, max_length=255)
+    address_city: str | None = Field(default=None, max_length=100)
     address_state: str | None = Field(default=None, max_length=100)
     address_postcode: str | None = Field(default=None, max_length=20)
 
@@ -63,6 +65,7 @@ class SiteResponse(BaseModel):
     logo_url: str | None
     billing_email: str | None
     address_street: str
+    address_city: str
     address_state: str
     address_postcode: str
     created_at: datetime

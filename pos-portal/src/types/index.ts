@@ -110,6 +110,7 @@ export interface Site {
   logo_url: string | null
   billing_email: string | null
   address_street: string
+  address_city: string
   address_state: string
   address_postcode: string
   created_at: string
