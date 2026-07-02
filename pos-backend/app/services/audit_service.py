@@ -30,6 +30,8 @@ async def log_action(
     before_state: dict[str, Any] | None = None,
     after_state: dict[str, Any] | None = None,
     request_id: str | None = None,
+    impersonator_id: uuid.UUID | None = None,
+    impersonator_email: str | None = None,
 ) -> AuditLog:
     """
     Create an AuditLog row and add it to the current session.
@@ -50,6 +52,8 @@ async def log_action(
         before_state: Serialisable dict of entity state before the change.
         after_state: Serialisable dict of entity state after the change.
         request_id: UUID from the X-Request-ID header for request correlation.
+        impersonator_id: SuperAdmin UUID when this action occurred under impersonation.
+        impersonator_email: Snapshotted admin email for impersonation audit trail.
 
     Returns:
         AuditLog: The unsaved ORM instance added to the session.
@@ -70,6 +74,8 @@ async def log_action(
         before_state=before_state,
         after_state=after_state,
         request_id=request_id,
+        impersonator_id=impersonator_id,
+        impersonator_email=impersonator_email,
     )
 
     db.add(audit_row)

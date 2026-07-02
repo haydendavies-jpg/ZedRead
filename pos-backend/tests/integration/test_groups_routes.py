@@ -33,6 +33,9 @@ _UPLOAD_IMAGE_PATH = "app.services.group_service.upload_image"
 # Patch target for request-billing-info tests so no real Resend call goes out
 _SEND_BILLING_EMAIL_PATH = "app.services.branding_service.send_billing_info_request_email"
 
+# Master-user credentials required on every POST /groups/ since Change 1
+_MASTER_CREDS = {"master_email": "owner@grouptest.example", "master_password": "TestPass123!"}
+
 
 # ── Happy path ────────────────────────────────────────────────────────────────
 
@@ -40,7 +43,7 @@ _SEND_BILLING_EMAIL_PATH = "app.services.branding_service.send_billing_info_requ
 async def test_create_group_returns_201(client, portal_auth_headers):
     """POST /groups creates a group and returns 201 with the correct shape."""
     response = await client.post(
-        "/groups/", json={"name": "Acme Corp"}, headers=portal_auth_headers
+        "/groups/", json={"name": "Acme Corp", **_MASTER_CREDS}, headers=portal_auth_headers
     )
 
     assert response.status_code == 201
@@ -146,7 +149,7 @@ async def test_activate_already_active_group_returns_409(client, portal_auth_hea
 async def test_create_group_writes_audit_log(client, db, portal_auth_headers):
     """POST /groups writes a GROUP_CREATED audit row with correct fields."""
     response = await client.post(
-        "/groups/", json={"name": "Audit Test Group"}, headers=portal_auth_headers
+        "/groups/", json={"name": "Audit Test Group", **_MASTER_CREDS}, headers=portal_auth_headers
     )
     group_id = response.json()["id"]
 
@@ -214,7 +217,7 @@ async def test_activate_group_writes_audit_log(client, db, portal_auth_headers, 
 async def test_create_group_seeds_group_master_profile(client, db, portal_auth_headers):
     """POST /groups seeds a group-scoped Master User AccessProfile."""
     response = await client.post(
-        "/groups/", json={"name": "Profile Test Group"}, headers=portal_auth_headers
+        "/groups/", json={"name": "Profile Test Group", **_MASTER_CREDS}, headers=portal_auth_headers
     )
     group_id = response.json()["id"]
 
@@ -232,7 +235,7 @@ async def test_create_group_seeds_group_master_profile(client, db, portal_auth_h
 async def test_create_group_auto_creates_master_user(client, db, portal_auth_headers):
     """POST /groups auto-creates an immutable Master User scoped to the group."""
     response = await client.post(
-        "/groups/", json={"name": "Master User Test Group"}, headers=portal_auth_headers
+        "/groups/", json={"name": "Master User Test Group", **_MASTER_CREDS}, headers=portal_auth_headers
     )
     group_id = response.json()["id"]
 
@@ -262,7 +265,7 @@ async def test_create_group_master_user_writes_audit_logs(client, db, portal_aut
     from app.constants.audit_actions import ACCESS_GRANT_CREATED, USER_CREATED
 
     response = await client.post(
-        "/groups/", json={"name": "Audit Master Group"}, headers=portal_auth_headers
+        "/groups/", json={"name": "Audit Master Group", **_MASTER_CREDS}, headers=portal_auth_headers
     )
     group_id = response.json()["id"]
 
@@ -305,6 +308,7 @@ async def test_create_group_with_profile_fields(client, portal_auth_headers):
             "country": "US",
             "tax_id_value": "12-3456789",
             "billing_email": "billing@example.com",
+            **_MASTER_CREDS,
         },
         headers=portal_auth_headers,
     )

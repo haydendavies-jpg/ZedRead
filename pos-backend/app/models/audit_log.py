@@ -82,6 +82,18 @@ class AuditLog(Base):
         comment="Serialised entity state after the action (null for delete actions)",
     )
 
+    # ── Impersonation context (set only when an admin impersonates an entity) ──
+    impersonator_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="SuperAdmin UUID when this action was taken under impersonation",
+    )
+    impersonator_email: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Snapshotted admin email when impersonating — preserved for audit trail",
+    )
+
     # ── Request correlation ───────────────────────────────────────────────────
     request_id: Mapped[str | None] = mapped_column(
         String(36),

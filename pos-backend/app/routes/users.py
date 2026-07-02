@@ -691,11 +691,6 @@ async def set_pin_for_user(
     user = user_r.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    if user.is_master_user:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Master User has no independent PIN — its identity is tied to its site",
-        )
 
     pin_r = await db.execute(select(UserPIN).where(UserPIN.user_id == user_id))
     pin_row = pin_r.scalar_one_or_none()

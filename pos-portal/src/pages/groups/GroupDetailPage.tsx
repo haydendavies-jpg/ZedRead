@@ -1,13 +1,27 @@
 /** Group detail page for portal admins — shows the editable company profile for a Group. */
 
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/axios'
 import { CompanyProfileForm } from '../../components/CompanyProfileForm'
 import type { Group } from '../../types'
 
+async function sessionInto(groupId: string): Promise<void> {
+  const { data: grantData } = await api.get<{ grant_id: string }>('/admin/master-grant', {
+    params: { group_id: groupId },
+  })
+  const { data: tokenData } = await api.post<{ access_token: string }>('/admin/impersonate', {
+    grant_id: grantData.grant_id,
+  })
+  sessionStorage.setItem('imp_token', tokenData.access_token)
+  window.open('/management', '_blank')
+}
+
 export function GroupDetailPage() {
   const { groupId } = useParams<{ groupId: string }>()
+  const [sessionError, setSessionError] = useState<string | null>(null)
+  const [isSessioning, setIsSessioning] = useState(false)
 
   const { data: group, isLoading } = useQuery<Group>({
     queryKey: ['group', groupId],
@@ -16,6 +30,18 @@ export function GroupDetailPage() {
   })
 
   if (!groupId) return null
+
+  const handleSessionInto = async () => {
+    setSessionError(null)
+    setIsSessioning(true)
+    try {
+      await sessionInto(groupId)
+    } catch {
+      setSessionError('Could not start session. Ensure the group has an active master user.')
+    } finally {
+      setIsSessioning(false)
+    }
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -31,13 +57,23 @@ export function GroupDetailPage() {
         </div>
 
         {group && (
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-semibold text-gray-900">{group.name}</h1>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${group.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-              {group.is_active ? 'active' : 'suspended'}
-            </span>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-4">
+              <h1 className="text-xl font-semibold text-gray-900">{group.name}</h1>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${group.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                {group.is_active ? 'active' : 'suspended'}
+              </span>
+            </div>
+            <button
+              onClick={handleSessionInto}
+              disabled={isSessioning}
+              className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+            >
+              {isSessioning ? 'Opening…' : 'Session into management portal'}
+            </button>
           </div>
         )}
+        {sessionError && <p className="text-xs text-red-600 mt-1">{sessionError}</p>}
       </div>
 
       <div className="flex-1 overflow-auto bg-gray-50 p-4 sm:p-6">

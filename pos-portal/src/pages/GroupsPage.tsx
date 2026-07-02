@@ -26,14 +26,16 @@ export function GroupsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing] = useState<Group | null>(null)
   const [name, setName] = useState('')
+  const [masterEmail, setMasterEmail] = useState('')
+  const [masterPassword, setMasterPassword] = useState('')
   const [profile, setProfile] = useState<CompanyProfileValues>(DEFAULT_COMPANY_PROFILE_VALUES)
   const [formError, setFormError] = useState<string | null>(null)
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['groups'] })
 
   const createMutation = useMutation({
-    mutationFn: (body: { name: string } & CompanyProfileValues) => api.post('/groups/', body),
-    onSuccess: () => { invalidate(); setShowCreate(false); setName(''); setProfile(DEFAULT_COMPANY_PROFILE_VALUES) },
+    mutationFn: (body: { name: string; master_email: string; master_password: string } & CompanyProfileValues) => api.post('/groups/', body),
+    onSuccess: () => { invalidate(); setShowCreate(false); setName(''); setMasterEmail(''); setMasterPassword(''); setProfile(DEFAULT_COMPANY_PROFILE_VALUES) },
     onError: () => { invalidate(); setFormError('Failed to create group.') },
   })
 
@@ -56,6 +58,8 @@ export function GroupsPage() {
 
   const openCreate = () => {
     setName('')
+    setMasterEmail('')
+    setMasterPassword('')
     setProfile(DEFAULT_COMPANY_PROFILE_VALUES)
     setFormError(null)
     setShowCreate(true)
@@ -80,7 +84,7 @@ export function GroupsPage() {
       if (!confirmCurrencyChange(editing.currency, profile.currency, 'group')) return
       updateMutation.mutate({ id: editing.id, body: { name, ...profile } })
     } else {
-      createMutation.mutate({ name, ...profile })
+      createMutation.mutate({ name, master_email: masterEmail, master_password: masterPassword, ...profile })
     }
   }
 
@@ -198,6 +202,32 @@ export function GroupsPage() {
                 placeholder="Acme Corp"
               />
             </div>
+            {!editing && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Group email</label>
+                  <input
+                    type="email"
+                    value={masterEmail}
+                    onChange={(e) => setMasterEmail(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    placeholder="owner@example.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Password (min 8 chars)</label>
+                  <input
+                    type="password"
+                    value={masterPassword}
+                    onChange={(e) => setMasterPassword(e.target.value)}
+                    required
+                    minLength={8}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                </div>
+              </>
+            )}
             <CompanyProfileFields values={profile} onChange={setProfile} />
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
