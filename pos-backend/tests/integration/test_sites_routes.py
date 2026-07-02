@@ -29,6 +29,9 @@ _UPLOAD_IMAGE_PATH = "app.services.site_service.upload_image"
 # Patch target for request-billing-info tests so no real Resend call goes out
 _SEND_BILLING_EMAIL_PATH = "app.services.branding_service.send_billing_info_request_email"
 
+# Master-user credentials required on every POST /sites/ since Change 1
+_MASTER_CREDS = {"master_email": "owner@sitetest.example", "master_password": "TestPass123!"}
+
 
 # ── Happy path ────────────────────────────────────────────────────────────────
 
@@ -37,7 +40,7 @@ async def test_create_site_returns_201(client, portal_auth_headers, test_brand):
     """POST /sites creates a site and returns 201 with the correct shape."""
     response = await client.post(
         "/sites/",
-        json={"brand_id": str(test_brand.id), "name": "Sydney CBD"},
+        json={"brand_id": str(test_brand.id), "name": "Sydney CBD", **_MASTER_CREDS},
         headers=portal_auth_headers,
     )
 
@@ -129,7 +132,7 @@ async def test_create_site_unknown_brand_returns_404(client, portal_auth_headers
     """POST /sites with a non-existent brand_id returns 404."""
     response = await client.post(
         "/sites/",
-        json={"brand_id": str(uuid.uuid4()), "name": "Orphan Site"},
+        json={"brand_id": str(uuid.uuid4()), "name": "Orphan Site", **_MASTER_CREDS},
         headers=portal_auth_headers,
     )
     assert response.status_code == 404
@@ -155,7 +158,7 @@ async def test_create_site_writes_audit_log(client, db, portal_auth_headers, tes
     """POST /sites writes a SITE_CREATED audit row."""
     response = await client.post(
         "/sites/",
-        json={"brand_id": str(test_brand.id), "name": "Audit Site"},
+        json={"brand_id": str(test_brand.id), "name": "Audit Site", **_MASTER_CREDS},
         headers=portal_auth_headers,
     )
     site_id = response.json()["id"]
@@ -208,7 +211,7 @@ async def test_create_site_master_user_has_group_id(client, db, portal_auth_head
     """POST /sites's auto-created Master User has group_id resolved via its brand."""
     response = await client.post(
         "/sites/",
-        json={"brand_id": str(test_brand.id), "name": "Group Id Test Site"},
+        json={"brand_id": str(test_brand.id), "name": "Group Id Test Site", **_MASTER_CREDS},
         headers=portal_auth_headers,
     )
     site_id = response.json()["id"]
@@ -243,6 +246,7 @@ async def test_create_site_with_profile_fields(client, portal_auth_headers, test
             "address_street": "123 Main St",
             "address_state": "NY",
             "address_postcode": "10001",
+            **_MASTER_CREDS,
         },
         headers=portal_auth_headers,
     )

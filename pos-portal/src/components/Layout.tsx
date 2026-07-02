@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth, isPortalUser, isMgmtUser } from '../context/AuthContext'
 import { ChangePasswordModal } from '../pages/ChangePasswordPage'
+import { ImpersonationBanner } from './ImpersonationBanner'
 
 const PORTAL_ADMIN_NAV = [
   { to: '/groups', label: 'Groups' },
@@ -49,9 +50,10 @@ export function Layout() {
   const portalUser = isPortalUser(user) ? user : null
   const isBrandOrGroupScope = mgmtUser && (mgmtUser.scope === 'brand' || mgmtUser.scope === 'group')
 
+  const ROLE_LABELS: Record<string, string> = { admin: 'Admin', reseller_staff: 'Reseller' }
   const scopeLabel = mgmtUser
     ? `${mgmtUser.scope.charAt(0).toUpperCase() + mgmtUser.scope.slice(1)} scope`
-    : portalUser?.role?.replace('_', ' ')
+    : (portalUser?.role ? ROLE_LABELS[portalUser.role] ?? portalUser.role : undefined)
 
   const closeSidebar = () => setSidebarOpen(false)
 
@@ -172,6 +174,7 @@ export function Layout() {
           </button>
           <span className="font-semibold text-gray-900 text-sm">ZedRead</span>
         </div>
+        <ImpersonationBanner />
         <Outlet />
       </main>
     </div>

@@ -1,6 +1,5 @@
 """Business logic for Site CRUD operations."""
 
-import secrets
 import uuid
 
 import structlog
@@ -25,6 +24,7 @@ from app.models.superadmin import SuperAdmin
 from app.models.site import Site
 from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
+from app.models.user_pin import UserPIN
 from app.schemas.site import SiteCreate, SiteUpdate
 from app.services import branding_service
 from app.services.audit_service import log_action
@@ -57,21 +57,26 @@ def _scope_to_own_accounts(conditions: list, actor: SuperAdmin) -> None:
         )
 
 
-async def _create_master_user(db: AsyncSession, site: Site, actor: SuperAdmin) -> User:
+async def _create_master_user(
+    db: AsyncSession,
+    site: Site,
+    actor: SuperAdmin,
+    master_email: str,
+    master_password: str,
+) -> User:
     """
     Auto-create the immutable Master User for a newly created site.
 
-    The Master User's display name is the site's name (not a person's name),
-    has no independent login path yet (synthetic email/unusable password —
-    real credential rules are deferred to the required-field-rules slice in
-    ROLE_MODEL.md), and is granted full, fixed access to its site via the
-    brand's Master User system access profile with backend_role='admin'
-    (always on, per ROLE_MODEL.md — Master User access can't be disabled).
+    Uses the supplied real credentials so the operator can log in
+    immediately. Also seeds a default PIN of "1337" so the master user
+    can authenticate at a POS terminal without a separate PIN-set step.
 
     Args:
         db: Active database session (transaction already open from caller).
         site: The newly created, already-flushed Site.
         actor: The portal admin who created the site (for audit attribution).
+        master_email: Real login email for the master user.
+        master_password: Real login password for the master user.
 
     Returns:
         User: The newly created Master User.
@@ -100,19 +105,21 @@ async def _create_master_user(db: AsyncSession, site: Site, actor: SuperAdmin) -
     if brand_group_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site's brand not found")
 
-    # Synthetic, unguessable credentials — Master User has no real login path yet
     master_user = User(
         id=uuid.uuid4(),
         group_id=brand_group_id,
         brand_id=site.brand_id,
         name=site.name,
-        email=f"master-{site.id}@system.zedread.internal",
-        password_hash=hash_password(secrets.token_urlsafe(32)),
+        email=master_email,
+        password_hash=hash_password(master_password),
         is_active=True,
         is_master_user=True,
     )
     db.add(master_user)
     await db.flush()
+
+    # Seed default PIN "1337" so the master user can log in at a terminal immediately
+    db.add(UserPIN(user_id=master_user.id, pin_hash=hash_password("1337"), is_pin_reset_required=False))
 
     await log_action(
         db=db,
@@ -323,7 +330,7 @@ async def create_site(
 
     # Every site gets exactly one immutable Master User, created atomically
     # with the site itself (ROLE_MODEL.md Master User role).
-    await _create_master_user(db, site, actor)
+    await _create_master_user(db, site, actor, payload.master_email, payload.master_password)
 
     await db.commit()
     await db.refresh(site)

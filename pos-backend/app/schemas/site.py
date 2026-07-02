@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 class SiteCreate(BaseModel):
@@ -28,6 +28,8 @@ class SiteCreate(BaseModel):
     address_street: str = Field(default="", max_length=255)
     address_state: str = Field(default="", max_length=100)
     address_postcode: str = Field(default="", max_length=20)
+    master_email: EmailStr = Field(..., description="Login email for the auto-created Site master user")
+    master_password: str = Field(..., min_length=8, description="Password for the auto-created Site master user")
 
 
 class SiteUpdate(BaseModel):

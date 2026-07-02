@@ -5,6 +5,7 @@
 export type TokenType = 'portal_access' | 'mgmt_access'
 
 export interface GrantSummary {
+  user_id: string
   grant_id: string
   scope: 'site' | 'brand' | 'group'
   scope_name: string
@@ -40,6 +41,10 @@ export interface MgmtTokenPayload {
   group_id?: string
   name?: string
   email?: string
+  /** Set when this token was issued via admin impersonation. */
+  imp_id?: string
+  imp_email?: string
+  imp_name?: string
 }
 
 /** Auth-context user for a management JWT holder. */
@@ -53,6 +58,10 @@ export interface MgmtUser {
   site_id?: string
   brand_id?: string
   group_id?: string
+  /** Set when this session is an admin impersonation. */
+  imp_id?: string
+  imp_email?: string
+  imp_name?: string
 }
 
 // ── Hierarchy ─────────────────────────────────────────────────────────────────

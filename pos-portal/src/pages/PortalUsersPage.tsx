@@ -16,7 +16,7 @@ async function fetchPortalUsers(): Promise<PortalUser[]> {
 
 const ROLES = [
   { value: 'admin', label: 'Admin' },
-  { value: 'reseller_staff', label: 'Reseller Staff' },
+  { value: 'reseller_staff', label: 'Reseller' },
 ] as const
 
 export function PortalUsersPage() {

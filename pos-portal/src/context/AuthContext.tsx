@@ -19,6 +19,10 @@ interface AuthContextValue {
   user: AuthUser | null
   tokenType: TokenType | null
   isLoading: boolean
+  /** True when the current management session was initiated by an admin impersonation. */
+  isImpersonated: boolean
+  /** Display name of the impersonating admin when isImpersonated is true. */
+  impersonatorName: string | null
   /** Non-null when POS user logged in with multiple grants; cleared after selectGrant(). */
   pendingGrants: GrantSummary[] | null
   pendingUserId: string | null
@@ -59,6 +63,9 @@ function mgmtUserFromPayload(payload: Record<string, unknown>): MgmtUser {
     site_id: p.site_id,
     brand_id: p.brand_id,
     group_id: p.group_id,
+    imp_id: p.imp_id,
+    imp_email: p.imp_email,
+    imp_name: p.imp_name,
   }
 }
 
@@ -69,8 +76,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [pendingGrants, setPendingGrants] = useState<GrantSummary[] | null>(null)
   const [pendingUserId, setPendingUserId] = useState<string | null>(null)
 
-  /** Restore session from a stored access token. */
+  /** Restore session from a stored access token, or from an impersonation token in sessionStorage. */
   const restoreSession = useCallback(async () => {
+    // Admin impersonation: token placed in sessionStorage by the admin portal
+    const impToken = sessionStorage.getItem('imp_token')
+    if (impToken) {
+      sessionStorage.removeItem('imp_token')
+      try {
+        const payload = decodePayload(impToken)
+        setTokens(impToken, '', 'mgmt_access')
+        setUser(mgmtUserFromPayload(payload))
+        setTokenType('mgmt_access')
+      } catch {
+        // Malformed token — fall through to normal session restore
+      } finally {
+        setIsLoading(false)
+        return
+      }
+    }
+
     const token = getAccessToken()
     const storedType = getTokenType()
     if (!token || !storedType) {
@@ -161,8 +185,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const mgmtUser = isMgmtUser(user) ? user : null
+  const isImpersonated = !!mgmtUser?.imp_id
+  const impersonatorName = mgmtUser?.imp_name ?? null
+
   return (
-    <AuthContext.Provider value={{ user, tokenType, isLoading, pendingGrants, pendingUserId, login, selectGrant, logout }}>
+    <AuthContext.Provider value={{ user, tokenType, isLoading, isImpersonated, impersonatorName, pendingGrants, pendingUserId, login, selectGrant, logout }}>
       {children}
     </AuthContext.Provider>
   )

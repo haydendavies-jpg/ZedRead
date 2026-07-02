@@ -42,6 +42,8 @@ export function SitesPage() {
   const [editing, setEditing] = useState<Site | null>(null)
   const [name, setName] = useState('')
   const [brandId, setBrandId] = useState('')
+  const [masterEmail, setMasterEmail] = useState('')
+  const [masterPassword, setMasterPassword] = useState('')
   const [profile, setProfile] = useState<CompanyProfileValues>(DEFAULT_COMPANY_PROFILE_VALUES)
   const [address, setAddress] = useState<AddressValues>(DEFAULT_ADDRESS_VALUES)
   const [formError, setFormError] = useState<string | null>(null)
@@ -49,13 +51,15 @@ export function SitesPage() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ['sites'] })
 
   const createMutation = useMutation({
-    mutationFn: (body: { name: string; brand_id: string } & CompanyProfileValues & AddressValues) =>
+    mutationFn: (body: { name: string; brand_id: string; master_email: string; master_password: string } & CompanyProfileValues & AddressValues) =>
       api.post('/sites/', body),
     onSuccess: () => {
       invalidate()
       setShowCreate(false)
       setName('')
       setBrandId('')
+      setMasterEmail('')
+      setMasterPassword('')
       setProfile(DEFAULT_COMPANY_PROFILE_VALUES)
       setAddress(DEFAULT_ADDRESS_VALUES)
     },
@@ -84,6 +88,8 @@ export function SitesPage() {
   const openCreate = () => {
     setName('')
     setBrandId(brands[0]?.id ?? '')
+    setMasterEmail('')
+    setMasterPassword('')
     setProfile(DEFAULT_COMPANY_PROFILE_VALUES)
     setAddress(DEFAULT_ADDRESS_VALUES)
     setFormError(null)
@@ -114,7 +120,7 @@ export function SitesPage() {
       if (!confirmCurrencyChange(editing.currency, profile.currency, 'site')) return
       updateMutation.mutate({ id: editing.id, body: { name, ...profile, ...address } })
     } else {
-      createMutation.mutate({ name, brand_id: brandId, ...profile, ...address })
+      createMutation.mutate({ name, brand_id: brandId, master_email: masterEmail, master_password: masterPassword, ...profile, ...address })
     }
   }
 
@@ -261,6 +267,32 @@ export function SitesPage() {
                 placeholder="Sydney CBD"
               />
             </div>
+            {!editing && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Site email</label>
+                  <input
+                    type="email"
+                    value={masterEmail}
+                    onChange={(e) => setMasterEmail(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    placeholder="manager@example.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Password (min 8 chars)</label>
+                  <input
+                    type="password"
+                    value={masterPassword}
+                    onChange={(e) => setMasterPassword(e.target.value)}
+                    required
+                    minLength={8}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                </div>
+              </>
+            )}
             <CompanyProfileFields values={profile} onChange={setProfile} />
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Street address</label>

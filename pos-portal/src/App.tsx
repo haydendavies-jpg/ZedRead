@@ -147,6 +147,7 @@ export default function App() {
               />
 
               {/* Management routes — available to both portal and management users */}
+              <Route path="management" element={<Navigate to="/management/products" replace />} />
               <Route path="management/products" element={<ProductsPage />} />
               <Route path="management/categories" element={<CategoriesPage />} />
               <Route path="management/tax" element={<TaxPage />} />

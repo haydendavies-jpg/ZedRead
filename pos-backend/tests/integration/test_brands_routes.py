@@ -33,6 +33,9 @@ _UPLOAD_IMAGE_PATH = "app.services.brand_service.upload_image"
 # Patch target for request-billing-info tests so no real Resend call goes out
 _SEND_BILLING_EMAIL_PATH = "app.services.branding_service.send_billing_info_request_email"
 
+# Master-user credentials required on every POST /brands/ since Change 1
+_MASTER_CREDS = {"master_email": "owner@brandtest.example", "master_password": "TestPass123!"}
+
 
 # ── Happy path ────────────────────────────────────────────────────────────────
 
@@ -41,7 +44,7 @@ async def test_create_brand_returns_201(client, portal_auth_headers, test_group)
     """POST /brands creates a brand and returns 201 with the correct shape."""
     response = await client.post(
         "/brands/",
-        json={"group_id": str(test_group.id), "name": "Burger Chain"},
+        json={"group_id": str(test_group.id), "name": "Burger Chain", **_MASTER_CREDS},
         headers=portal_auth_headers,
     )
 
@@ -56,7 +59,7 @@ async def test_create_brand_auto_creates_uncategorised_category(client, db, port
     """Creating a brand automatically creates an 'Uncategorised' system category."""
     response = await client.post(
         "/brands/",
-        json={"group_id": str(test_group.id), "name": "Pizza Place"},
+        json={"group_id": str(test_group.id), "name": "Pizza Place", **_MASTER_CREDS},
         headers=portal_auth_headers,
     )
     brand_id = response.json()["id"]
@@ -153,7 +156,7 @@ async def test_create_brand_unknown_group_returns_404(client, portal_auth_header
     """POST /brands with a non-existent group_id returns 404."""
     response = await client.post(
         "/brands/",
-        json={"group_id": str(uuid.uuid4()), "name": "Orphan Brand"},
+        json={"group_id": str(uuid.uuid4()), "name": "Orphan Brand", **_MASTER_CREDS},
         headers=portal_auth_headers,
     )
     assert response.status_code == 404
@@ -179,7 +182,7 @@ async def test_create_brand_writes_audit_log(client, db, portal_auth_headers, te
     """POST /brands writes a BRAND_CREATED audit row."""
     response = await client.post(
         "/brands/",
-        json={"group_id": str(test_group.id), "name": "Audit Brand"},
+        json={"group_id": str(test_group.id), "name": "Audit Brand", **_MASTER_CREDS},
         headers=portal_auth_headers,
     )
     brand_id = response.json()["id"]
@@ -232,7 +235,7 @@ async def test_create_brand_seeds_brand_master_profile(client, db, portal_auth_h
     """POST /brands seeds the brand's Master User AccessProfile (among the 5 system tiers)."""
     response = await client.post(
         "/brands/",
-        json={"group_id": str(test_group.id), "name": "Profile Test Brand"},
+        json={"group_id": str(test_group.id), "name": "Profile Test Brand", **_MASTER_CREDS},
         headers=portal_auth_headers,
     )
     brand_id = response.json()["id"]
@@ -252,7 +255,7 @@ async def test_create_brand_auto_creates_master_user(client, db, portal_auth_hea
     """POST /brands auto-creates an immutable Master User scoped to the brand."""
     response = await client.post(
         "/brands/",
-        json={"group_id": str(test_group.id), "name": "Master User Test Brand"},
+        json={"group_id": str(test_group.id), "name": "Master User Test Brand", **_MASTER_CREDS},
         headers=portal_auth_headers,
     )
     brand_id = response.json()["id"]
@@ -284,7 +287,7 @@ async def test_create_brand_master_user_writes_audit_logs(client, db, portal_aut
 
     response = await client.post(
         "/brands/",
-        json={"group_id": str(test_group.id), "name": "Audit Master Brand"},
+        json={"group_id": str(test_group.id), "name": "Audit Master Brand", **_MASTER_CREDS},
         headers=portal_auth_headers,
     )
     brand_id = response.json()["id"]
@@ -329,6 +332,7 @@ async def test_create_brand_with_profile_fields(client, portal_auth_headers, tes
             "country": "US",
             "tax_id_value": "12-3456789",
             "billing_email": "billing@example.com",
+            **_MASTER_CREDS,
         },
         headers=portal_auth_headers,
     )

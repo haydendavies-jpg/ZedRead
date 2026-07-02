@@ -1,6 +1,5 @@
 """Business logic for Group CRUD operations."""
 
-import secrets
 import uuid
 
 import structlog
@@ -23,6 +22,7 @@ from app.models.group import Group
 from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
+from app.models.user_pin import UserPIN
 from app.schemas.group import GroupCreate, GroupUpdate
 from app.services import branding_service
 from app.services.access_profile_service import seed_group_master_profile
@@ -134,20 +134,29 @@ async def get_group(db: AsyncSession, group_id: uuid.UUID, actor: SuperAdmin) ->
     return await _get_or_404(db, group_id, actor)
 
 
-async def _create_group_master_user(db: AsyncSession, group: Group, actor: SuperAdmin) -> User:
+async def _create_group_master_user(
+    db: AsyncSession,
+    group: Group,
+    actor: SuperAdmin,
+    master_email: str,
+    master_password: str,
+) -> User:
     """
     Auto-create the immutable Master User for a newly created group.
 
     Mirrors site_service._create_master_user() and
-    brand_service._create_brand_master_user(): synthetic email/unusable
-    password, full fixed access via the group's seeded Master User access
-    profile, backend_role='admin' always on. A group-level Master User has
-    no brand (User.brand_id is NULL) — its scope is the whole group.
+    brand_service._create_brand_master_user(). Uses the supplied real
+    credentials so the operator can log in immediately. A group-level
+    Master User has no brand (User.brand_id is NULL) — its scope is the
+    whole group. Also seeds a default PIN of "1337" so the master user
+    can authenticate at a POS terminal without a separate PIN-set step.
 
     Args:
         db: Active database session (transaction already open from caller).
         group: The newly created, already-flushed Group.
         actor: The portal admin who created the group (for audit attribution).
+        master_email: Real login email for the master user.
+        master_password: Real login password for the master user.
 
     Returns:
         User: The newly created Master User.
@@ -175,13 +184,16 @@ async def _create_group_master_user(db: AsyncSession, group: Group, actor: Super
         group_id=group.id,
         brand_id=None,
         name=group.name,
-        email=f"master-{group.id}@system.zedread.internal",
-        password_hash=hash_password(secrets.token_urlsafe(32)),
+        email=master_email,
+        password_hash=hash_password(master_password),
         is_active=True,
         is_master_user=True,
     )
     db.add(master_user)
     await db.flush()
+
+    # Seed default PIN "1337" so the master user can log in at a terminal immediately
+    db.add(UserPIN(user_id=master_user.id, pin_hash=hash_password("1337"), is_pin_reset_required=False))
 
     await log_action(
         db=db,
@@ -291,7 +303,7 @@ async def create_group(
     # with the group itself (ROLE_MODEL.md Master User role, extended to Group).
     await seed_group_master_profile(db, group.id)
     await db.flush()  # Profile must be visible to the lookup in _create_group_master_user (autoflush=False)
-    await _create_group_master_user(db, group, actor)
+    await _create_group_master_user(db, group, actor, payload.master_email, payload.master_password)
 
     await db.commit()
     await db.refresh(group)

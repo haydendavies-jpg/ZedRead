@@ -130,3 +130,6 @@ INVOICE_DISCOUNT_APPLIED = "invoice.discount.applied"
 BILLING_INFO_REQUESTED = "billing_info.requested"
 EMAIL_TEMPLATE_CREATED = "email_template.created"
 EMAIL_TEMPLATE_UPDATED = "email_template.updated"
+
+# ── Phase 5 / Stage 15 — Admin Impersonation ─────────────────────────────────
+ADMIN_IMPERSONATION_STARTED = "admin.impersonation.started"
