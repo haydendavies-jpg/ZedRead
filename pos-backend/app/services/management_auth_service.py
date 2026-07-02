@@ -61,10 +61,10 @@ async def _load_superadmin(db: AsyncSession, email: str) -> SuperAdmin | None:
     return result.scalar_one_or_none()
 
 
-async def _load_user(db: AsyncSession, email: str) -> User | None:
-    """Fetch a user by email."""
+async def _load_users(db: AsyncSession, email: str) -> list[User]:
+    """Fetch all users with the given email (multiple allowed — same person can manage several entities)."""
     result = await db.execute(select(User).where(User.email == email))
-    return result.scalar_one_or_none()
+    return list(result.scalars().all())
 
 
 async def _portal_capable_grants(
@@ -260,6 +260,7 @@ async def _resolve_user_login(db: AsyncSession, user: User) -> UnifiedLoginRespo
         profile = prof_r.scalar_one_or_none()
         summaries.append(
             GrantSummary(
+                user_id=user.id,
                 grant_id=grant.id,
                 scope=grant.scope,
                 scope_name=name,
@@ -314,22 +315,28 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
         and superadmin.is_active
     )
 
-    user = await _load_user(db, payload.email)
-    user_creds_valid = (
-        user is not None
-        and verify_password(payload.password, user.password_hash)
-        and user.is_active
-    )
-    user_grants = await _portal_capable_grants(db, user.id) if user_creds_valid else []
-    user_valid = user_creds_valid and bool(user_grants)
+    # Support shared emails — same operator may have master-user accounts at multiple entities.
+    # Collect all users with this email, validate each independently, merge their grants.
+    all_users = await _load_users(db, payload.email)
+    authenticated_user_grants: list[tuple[User, list[UserAccessGrant]]] = []
+    any_user_creds_valid = False
+    for candidate in all_users:
+        if not candidate.is_active or not verify_password(payload.password, candidate.password_hash):
+            continue
+        any_user_creds_valid = True
+        grants = await _portal_capable_grants(db, candidate.id)
+        if grants:
+            authenticated_user_grants.append((candidate, grants))
+    user_valid = bool(authenticated_user_grants)
 
     # ── Both identities valid for this email → disambiguate, issue no tokens yet ──
     if superadmin_valid and user_valid:
         log.info("auth.portal.login.identity_selection", email=payload.email)
+        first_user = authenticated_user_grants[0][0]
         return UnifiedLoginResponse(
             available_identities=[
                 IdentitySummary(identity_type="superadmin", display_name=superadmin.name),
-                IdentitySummary(identity_type="user", display_name=user.name),
+                IdentitySummary(identity_type="user", display_name=first_user.name),
             ]
         )
 
@@ -337,21 +344,72 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
     if superadmin_valid:
         return await _issue_superadmin_tokens(db, superadmin)
 
-    # ── Only user valid (with grants) ────────────────────────────────────
+    # ── One or more users valid with grants ──────────────────────────────
     if user_valid:
-        return await _resolve_user_login(db, user)
+        # Flatten all (user, grant) pairs across all authenticated users
+        flat: list[tuple[User, UserAccessGrant]] = [
+            (u, g) for u, grants in authenticated_user_grants for g in grants
+        ]
+        if len(flat) == 1:
+            user, grant = flat[0]
+            access, refresh = _build_mgmt_token(user, grant)
+            await log_action(
+                db=db,
+                action=MGMT_LOGIN_SUCCESS,
+                entity_type="user",
+                entity_id=str(user.id),
+                actor_type=ActorType.USER,
+                actor_id=user.id,
+                actor_email=user.email,
+                actor_name=user.name,
+            )
+            await db.commit()
+            log.info("auth.portal.mgmt.login.success", user_id=str(user.id), scope=grant.scope)
+            return UnifiedLoginResponse(
+                access_token=access,
+                refresh_token=refresh,
+                user_id=user.id,
+                user_name=user.name,
+            )
 
-    # ── User matched credentials but has no portal-capable grants ───────
-    if user_creds_valid:
+        # Multiple grants across one or more users → show picker; caller selects via management-token
+        summaries: list[GrantSummary] = []
+        for u, g in flat:
+            name = await _scope_name(db, g)
+            prof_r = await db.execute(
+                select(AccessProfile).where(AccessProfile.id == g.access_profile_id)
+            )
+            profile = prof_r.scalar_one_or_none()
+            summaries.append(
+                GrantSummary(
+                    user_id=u.id,
+                    grant_id=g.id,
+                    scope=g.scope,
+                    scope_name=name,
+                    access_profile_name=profile.name if profile else "",
+                )
+            )
+        first_user = authenticated_user_grants[0][0]
+        log.info("auth.portal.mgmt.login.grant_selection", grant_count=len(summaries))
+        return UnifiedLoginResponse(
+            user_id=first_user.id,
+            user_name=first_user.name,
+            available_grants=summaries,
+        )
+
+    # ── User(s) matched credentials but none have portal-capable grants ──
+    if any_user_creds_valid:
+        # Log against the first matched user for audit trail
+        failed_user = all_users[0]
         await log_action(
             db=db,
             action=MGMT_LOGIN_FAILED,
             entity_type="user",
-            entity_id=str(user.id),
+            entity_id=str(failed_user.id),
             actor_type=ActorType.USER,
-            actor_id=user.id,
-            actor_email=user.email,
-            actor_name=user.name,
+            actor_id=failed_user.id,
+            actor_email=failed_user.email,
+            actor_name=failed_user.name,
         )
         await db.commit()
         raise HTTPException(
@@ -372,7 +430,7 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
             actor_name=None,
         )
     else:
-        entity_id = str(user.id) if user else payload.email
+        entity_id = str(all_users[0].id) if all_users else payload.email
         await log_action(
             db=db,
             action=MGMT_LOGIN_FAILED,
@@ -429,35 +487,66 @@ async def issue_identity_token(
         return await _issue_superadmin_tokens(db, superadmin)
 
     if payload.identity_type == "user":
-        user = await _load_user(db, payload.email)
-        if (
-            user is None
-            or not verify_password(payload.password, user.password_hash)
-            or not user.is_active
-        ):
+        # Same multi-user logic as login() — same email may belong to multiple Users
+        all_users = await _load_users(db, payload.email)
+        authenticated_user_grants: list[tuple[User, list[UserAccessGrant]]] = []
+        any_creds_valid = False
+        for candidate in all_users:
+            if not candidate.is_active or not verify_password(payload.password, candidate.password_hash):
+                continue
+            any_creds_valid = True
+            grants = await _portal_capable_grants(db, candidate.id)
+            if grants:
+                authenticated_user_grants.append((candidate, grants))
+
+        if not any_creds_valid:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        grant_rows = await _portal_capable_grants(db, user.id)
-        if not grant_rows:
+        if not authenticated_user_grants:
+            failed_user = all_users[0]
             await log_action(
                 db=db,
                 action=MGMT_LOGIN_FAILED,
                 entity_type="user",
-                entity_id=str(user.id),
+                entity_id=str(failed_user.id),
                 actor_type=ActorType.USER,
-                actor_id=user.id,
-                actor_email=user.email,
-                actor_name=user.name,
+                actor_id=failed_user.id,
+                actor_email=failed_user.email,
+                actor_name=failed_user.name,
             )
             await db.commit()
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No portal-capable access grants for this account",
             )
-        return await _resolve_user_login(db, user)
+        # Single user → use existing _resolve_user_login path
+        if len(authenticated_user_grants) == 1:
+            return await _resolve_user_login(db, authenticated_user_grants[0][0])
+        # Multiple users → show combined picker
+        flat: list[tuple[User, UserAccessGrant]] = [
+            (u, g) for u, grants in authenticated_user_grants for g in grants
+        ]
+        summaries: list[GrantSummary] = []
+        for u, g in flat:
+            name = await _scope_name(db, g)
+            prof_r = await db.execute(
+                select(AccessProfile).where(AccessProfile.id == g.access_profile_id)
+            )
+            profile = prof_r.scalar_one_or_none()
+            summaries.append(
+                GrantSummary(
+                    user_id=u.id,
+                    grant_id=g.id,
+                    scope=g.scope,
+                    scope_name=name,
+                    access_profile_name=profile.name if profile else "",
+                )
+            )
+        first_user = authenticated_user_grants[0][0]
+        return UnifiedLoginResponse(user_id=first_user.id, user_name=first_user.name, available_grants=summaries)
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

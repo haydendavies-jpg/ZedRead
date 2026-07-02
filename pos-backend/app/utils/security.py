@@ -187,6 +187,59 @@ def create_mgmt_access_token(
     )
 
 
+def create_impersonation_token(
+    user_id: str,
+    scope: str,
+    grant_id: str,
+    site_id: str | None,
+    brand_id: str | None,
+    group_id: str | None,
+    admin_id: str,
+    admin_email: str,
+    admin_name: str,
+) -> str:
+    """
+    Create a management access JWT for an admin impersonation session.
+
+    Identical to create_mgmt_access_token() but embeds imp_id, imp_email,
+    and imp_name claims so resolve_management_access() can attribute all
+    actions to the admin rather than the entity's master user.
+
+    Args:
+        user_id: Master user's UUID string (entity being impersonated).
+        scope: Grant scope — 'site', 'brand', or 'group'.
+        grant_id: UUID of the active grant for the impersonated entity.
+        site_id: Site UUID string (set only when scope='site').
+        brand_id: Brand UUID string (set only when scope='brand' or 'site').
+        group_id: Group UUID string (set only when scope='group').
+        admin_id: UUID string of the SuperAdmin performing impersonation.
+        admin_email: Snapshotted email of the impersonating admin.
+        admin_name: Snapshotted display name of the impersonating admin.
+
+    Returns:
+        str: A signed management access JWT with impersonation claims.
+    """
+    extra: dict = {
+        "scope": scope,
+        "grant_id": grant_id,
+        "imp_id": admin_id,
+        "imp_email": admin_email,
+        "imp_name": admin_name,
+    }
+    if site_id:
+        extra["site_id"] = site_id
+    if brand_id:
+        extra["brand_id"] = brand_id
+    if group_id:
+        extra["group_id"] = group_id
+    return _make_token(
+        subject=user_id,
+        token_type="mgmt_access",
+        expires_delta=timedelta(minutes=60),
+        extra_claims=extra,
+    )
+
+
 def create_mgmt_refresh_token(user_id: str) -> str:
     """
     Create a long-lived refresh JWT for management portal session renewal.
