@@ -82,10 +82,9 @@ class User(Base):
     )
     email: Mapped[str | None] = mapped_column(
         String(255),
-        unique=True,
         nullable=True,
         index=True,
-        comment="Login email. Required once any grant has a backend_role.",
+        comment="Login email. Required once any grant has a backend_role. Non-unique — the same person may manage multiple entities as master user.",
     )
     # Argon2 password hash — never store plaintext (rule 15)
     password_hash: Mapped[str | None] = mapped_column(
