@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 export interface AddressSuggestion {
   display_name: string
   road: string
+  city: string
   state: string
   postcode: string
 }
@@ -17,9 +18,18 @@ function extractParts(result: Record<string, unknown>): AddressSuggestion {
   const houseNumber = addr['house_number'] ?? ''
   const road = addr['road'] ?? ''
   const street = houseNumber ? `${houseNumber} ${road}` : road
+  // Nominatim returns suburb > city_district > city > town > village for the locality
+  const city =
+    addr['suburb'] ??
+    addr['city_district'] ??
+    addr['city'] ??
+    addr['town'] ??
+    addr['village'] ??
+    ''
   return {
     display_name: (result['display_name'] as string) ?? '',
     road: street,
+    city,
     state: addr['state'] ?? '',
     postcode: addr['postcode'] ?? '',
   }

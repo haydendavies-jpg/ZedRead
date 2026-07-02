@@ -97,6 +97,12 @@ class Site(Base):
         nullable=False,
         comment="Street address of this physical site.",
     )
+    address_city: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        server_default="",
+        comment="Suburb/city of this physical site.",
+    )
     address_state: Mapped[str] = mapped_column(
         String(100),
         nullable=False,

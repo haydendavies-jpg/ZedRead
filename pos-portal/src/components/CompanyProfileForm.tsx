@@ -48,6 +48,7 @@ export function CompanyProfileForm({ entityType, entity, inherited, invalidateKe
   })
   const [address, setAddress] = useState({
     address_street: siteEntity?.address_street ?? '',
+    address_city: siteEntity?.address_city ?? '',
     address_state: siteEntity?.address_state ?? '',
     address_postcode: siteEntity?.address_postcode ?? '',
   })
@@ -176,7 +177,7 @@ export function CompanyProfileForm({ entityType, entity, inherited, invalidateKe
                     <li
                       key={i}
                       onMouseDown={() => {
-                        setAddress({ address_street: s.road, address_state: s.state, address_postcode: s.postcode })
+                        setAddress({ address_street: s.road, address_city: s.city, address_state: s.state, address_postcode: s.postcode })
                         setShowSuggestions(false)
                       }}
                       className="px-3 py-2 hover:bg-brand-50 cursor-pointer text-gray-700 truncate"
@@ -187,6 +188,14 @@ export function CompanyProfileForm({ entityType, entity, inherited, invalidateKe
                   ))}
                 </ul>
               )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Suburb / City</label>
+              <input
+                value={address.address_city}
+                onChange={(e) => setAddress({ ...address, address_city: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>

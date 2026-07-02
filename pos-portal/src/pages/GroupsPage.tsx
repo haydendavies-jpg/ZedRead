@@ -30,8 +30,27 @@ export function GroupsPage() {
   const [masterPassword, setMasterPassword] = useState('')
   const [profile, setProfile] = useState<CompanyProfileValues>(DEFAULT_COMPANY_PROFILE_VALUES)
   const [formError, setFormError] = useState<string | null>(null)
+  const [sessioningId, setSessioningId] = useState<string | null>(null)
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['groups'] })
+
+  const handleSessionInto = async (groupId: string) => {
+    setSessioningId(groupId)
+    try {
+      const { data: grantData } = await api.get<{ grant_id: string }>('/admin/master-grant', {
+        params: { group_id: groupId },
+      })
+      const { data: tokenData } = await api.post<{ access_token: string }>('/admin/impersonate', {
+        grant_id: grantData.grant_id,
+      })
+      sessionStorage.setItem('imp_token', tokenData.access_token)
+      window.open('/management', '_blank')
+    } catch {
+      // error is surfaced on the group detail page
+    } finally {
+      setSessioningId(null)
+    }
+  }
 
   const createMutation = useMutation({
     mutationFn: (body: { name: string; master_email: string; master_password: string } & CompanyProfileValues) => api.post('/groups/', body),
@@ -171,6 +190,13 @@ export function GroupsPage() {
                     ) : (
                       <button onClick={() => activateMutation.mutate(g.id)} className="text-green-600 hover:underline text-xs">Activate</button>
                     )}
+                    <button
+                      onClick={() => handleSessionInto(g.id)}
+                      disabled={sessioningId === g.id}
+                      className="text-brand-600 hover:underline text-xs disabled:opacity-50"
+                    >
+                      {sessioningId === g.id ? '…' : 'Session into'}
+                    </button>
                   </td>
                 </tr>
               ))}
