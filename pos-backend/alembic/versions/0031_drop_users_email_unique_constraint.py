@@ -18,11 +18,22 @@ depends_on = None
 
 
 def upgrade() -> None:
-    """Drop the column-level unique constraint and the explicit unique index on users.email."""
-    # Column-level UNIQUE constraint created by migration 0005's unique=True on the column
-    op.drop_constraint("pos_users_email_key", "users", type_="unique")
-    # Explicit unique index created in 0005 as ix_pos_users_email, renamed to ix_users_email in 0021
-    op.drop_index("ix_users_email", table_name="users")
+    """Drop every unique constraint/index on users.email, then recreate a non-unique index.
+
+    Object names vary by how the database was originally provisioned: a pure
+    migration history yields pos_users_email_key (constraint from 0005's
+    unique=True, name survives 0021's table rename) and ix_users_email
+    (0005's ix_pos_users_email, renamed in 0021), but a database bootstrapped
+    from metadata would name the constraint users_email_key instead. Use
+    IF EXISTS on all known variants so this migration succeeds against any of
+    those states instead of crashing app startup.
+    """
+    # Column-level UNIQUE constraint — both possible names depending on provenance
+    op.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS pos_users_email_key")
+    op.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key")
+    # Explicit unique index — current name and pre-0021 name
+    op.execute("DROP INDEX IF EXISTS ix_users_email")
+    op.execute("DROP INDEX IF EXISTS ix_pos_users_email")
     # Recreate as non-unique — keeps query performance, removes the uniqueness requirement
     op.create_index("ix_users_email", "users", ["email"], unique=False)
 
