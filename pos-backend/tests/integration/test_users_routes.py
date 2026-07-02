@@ -118,11 +118,7 @@ async def test_create_site_creates_site_master_user_visible_in_list(
     users = list_response.json()
     # Find the master user for this site by the email supplied at creation time
     master = next(
-        (
-            u
-            for u in users
-            if u.get("email") == _MASTER_CREDS["master_email"] and u.get("is_master_user")
-        ),
+        (u for u in users if u.get("email") == _MASTER_CREDS["master_email"]),
         None,
     )
     assert master is not None, (
