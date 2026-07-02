@@ -14,6 +14,9 @@ import uuid
 import pytest
 from sqlalchemy import select
 
+# Master-user credentials required on POST /sites/ since Change 1
+_MASTER_CREDS = {"master_email": "owner@userstest.example", "master_password": "TestPass123!"}
+
 from app.models.user import User
 
 pytestmark = pytest.mark.asyncio
@@ -101,6 +104,7 @@ async def test_create_site_creates_site_master_user_visible_in_list(
             "address_street": "1 Test St",
             "address_state": "NSW",
             "address_postcode": "2000",
+            **_MASTER_CREDS,
         },
         headers=portal_auth_headers,
     )
@@ -112,13 +116,9 @@ async def test_create_site_creates_site_master_user_visible_in_list(
     assert list_response.status_code == 200
 
     users = list_response.json()
-    # Find the synthetic master user for this site
+    # Find the master user for this site by the email supplied at creation time
     master = next(
-        (
-            u
-            for u in users
-            if u.get("email", "").startswith(f"master-{site_id}")
-        ),
+        (u for u in users if u.get("email") == _MASTER_CREDS["master_email"]),
         None,
     )
     assert master is not None, (

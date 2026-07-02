@@ -5,7 +5,6 @@ transaction — this category cannot be deleted and is used as the fallback for
 products not assigned to any other category.
 """
 
-import secrets
 import uuid
 
 import structlog
@@ -30,6 +29,7 @@ from app.models.group import Group
 from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
+from app.models.user_pin import UserPIN
 from app.schemas.brand import BrandCreate, BrandUpdate
 from app.services import branding_service
 from app.services.access_profile_service import seed_system_profiles
@@ -41,18 +41,26 @@ from app.utils.storage import ALLOWED_LOGO_TYPES, MAX_LOGO_BYTES, extension_for_
 log = structlog.get_logger(__name__)
 
 
-async def _create_brand_master_user(db: AsyncSession, brand: Brand, actor: SuperAdmin) -> User:
+async def _create_brand_master_user(
+    db: AsyncSession,
+    brand: Brand,
+    actor: SuperAdmin,
+    master_email: str,
+    master_password: str,
+) -> User:
     """
     Auto-create the immutable Master User for a newly created brand.
 
-    Mirrors site_service._create_master_user(): synthetic email/unusable
-    password, full fixed access via the brand's seeded Master User access
-    profile, backend_role='admin' always on.
+    Uses the supplied real credentials so the operator can log in
+    immediately. Also seeds a default PIN of "1337" so the master user
+    can authenticate at a POS terminal without a separate PIN-set step.
 
     Args:
         db: Active database session (transaction already open from caller).
         brand: The newly created, already-flushed Brand.
         actor: The portal admin who created the brand (for audit attribution).
+        master_email: Real login email for the master user.
+        master_password: Real login password for the master user.
 
     Returns:
         User: The newly created Master User.
@@ -80,13 +88,16 @@ async def _create_brand_master_user(db: AsyncSession, brand: Brand, actor: Super
         group_id=brand.group_id,
         brand_id=brand.id,
         name=brand.name,
-        email=f"master-{brand.id}@system.zedread.internal",
-        password_hash=hash_password(secrets.token_urlsafe(32)),
+        email=master_email,
+        password_hash=hash_password(master_password),
         is_active=True,
         is_master_user=True,
     )
     db.add(master_user)
     await db.flush()
+
+    # Seed default PIN "1337" so the master user can log in at a terminal immediately
+    db.add(UserPIN(user_id=master_user.id, pin_hash=hash_password("1337"), is_pin_reset_required=False))
 
     await log_action(
         db=db,
@@ -303,7 +314,7 @@ async def create_brand(
 
     # Every brand gets exactly one immutable Master User, created atomically
     # with the brand itself (ROLE_MODEL.md Master User role, extended to Brand).
-    await _create_brand_master_user(db, brand, actor)
+    await _create_brand_master_user(db, brand, actor, payload.master_email, payload.master_password)
 
     await log_action(
         db=db,

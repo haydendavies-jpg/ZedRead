@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 class GroupCreate(BaseModel):
@@ -21,6 +21,8 @@ class GroupCreate(BaseModel):
     country: str = Field(default="AU", min_length=2, max_length=2)
     tax_id_value: str | None = Field(default=None, max_length=50)
     billing_email: str | None = Field(default=None, max_length=255)
+    master_email: EmailStr = Field(..., description="Login email for the auto-created Group master user")
+    master_password: str = Field(..., min_length=8, description="Password for the auto-created Group master user")
 
 
 class GroupUpdate(BaseModel):

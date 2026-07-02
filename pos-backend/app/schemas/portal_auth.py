@@ -29,6 +29,7 @@ class RefreshRequest(BaseModel):
 class GrantSummary(BaseModel):
     """Describes one available management grant during scope selection."""
 
+    user_id: uuid.UUID
     grant_id: uuid.UUID
     scope: str
     scope_name: str

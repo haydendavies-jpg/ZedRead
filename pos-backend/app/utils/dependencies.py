@@ -27,6 +27,21 @@ from app.utils.security import decode_token
 
 
 @dataclass
+class ImpersonatorSnapshot:
+    """
+    Carries the SuperAdmin's identity during an impersonation session.
+
+    Snapshotted from JWT claims at token-decode time so no extra DB query is
+    needed per request. Used by _actor_from_mgmt() to attribute audit log
+    rows to the admin, not the entity's master user.
+    """
+
+    id: uuid.UUID
+    email: str
+    name: str
+
+
+@dataclass
 class POSAccess:
     """
     Holds the authenticated POS user, their current site, and the access
@@ -53,6 +68,10 @@ class ManagementAccess:
       scope='site'  → site and brand are both populated
       scope='brand' → brand is populated; site is None
       scope='group' → group is populated; brand and site are None
+
+    impersonator is set when a SuperAdmin obtained this token via
+    POST /admin/impersonate. All audit logs for the session must use
+    the impersonator's id/email/name rather than the master user's.
     """
 
     user: User
@@ -62,6 +81,7 @@ class ManagementAccess:
     brand: Brand | None
     group: Group | None
     grant_id: uuid.UUID
+    impersonator: ImpersonatorSnapshot | None = None
 
 
 @dataclass
@@ -103,11 +123,20 @@ class CatalogAccess:
         )
 
     @property
-    def actor_user(self) -> "User | SuperAdmin":
-        """The authenticated user, regardless of token type."""
+    def actor_user(self) -> "User | SuperAdmin | ImpersonatorSnapshot":
+        """
+        The effective actor for audit logging.
+
+        During impersonation the admin is the actor, not the entity's master
+        user — every audit row must carry the admin's id/email/name so the
+        audit trail is attributable to the person who actually made the change.
+        """
         if self.pos_access:
             return self.pos_access.user
         if self.mgmt_access:
+            # Return impersonator snapshot so audit logging uses admin identity
+            if self.mgmt_access.impersonator:
+                return self.mgmt_access.impersonator
             return self.mgmt_access.user
         return self.portal_access  # type: ignore[return-value]
 
@@ -154,6 +183,35 @@ log = structlog.get_logger(__name__)
 
 # Extracts the Bearer token from the Authorization header
 _bearer = HTTPBearer()
+
+
+def _actor_from_mgmt(mgmt: ManagementAccess) -> dict:
+    """
+    Return audit-log actor kwargs for a management-portal request.
+
+    During impersonation the admin is the effective actor; otherwise the
+    entity's master user is. Call as ``**_actor_from_mgmt(mgmt)`` inside
+    log_action() to attribute the row to the correct identity.
+
+    Args:
+        mgmt: The resolved ManagementAccess for the current request.
+
+    Returns:
+        dict: Keys actor_id, actor_email, actor_name ready for log_action().
+    """
+    if mgmt.impersonator:
+        return {
+            "actor_id": mgmt.impersonator.id,
+            "actor_email": mgmt.impersonator.email,
+            "actor_name": mgmt.impersonator.name,
+            "impersonator_id": mgmt.impersonator.id,
+            "impersonator_email": mgmt.impersonator.email,
+        }
+    return {
+        "actor_id": mgmt.user.id,
+        "actor_email": mgmt.user.email,
+        "actor_name": mgmt.user.name,
+    }
 
 
 async def get_current_superadmin(
@@ -387,6 +445,9 @@ async def resolve_management_access(
     user_id_str: str = payload.get("sub", "")
     grant_id_str: str = payload.get("grant_id", "")
     scope: str = payload.get("scope", "")
+    imp_id_str: str | None = payload.get("imp_id")
+    imp_email: str = payload.get("imp_email", "")
+    imp_name: str = payload.get("imp_name", "")
 
     if not user_id_str or not grant_id_str or not scope:
         raise HTTPException(
@@ -398,6 +459,10 @@ async def resolve_management_access(
     try:
         user_id = uuid.UUID(user_id_str)
         grant_id = uuid.UUID(grant_id_str)
+        impersonator: ImpersonatorSnapshot | None = (
+            ImpersonatorSnapshot(id=uuid.UUID(imp_id_str), email=imp_email, name=imp_name)
+            if imp_id_str else None
+        )
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -486,6 +551,7 @@ async def resolve_management_access(
         brand=resolved_brand,
         group=resolved_group,
         grant_id=grant_id,
+        impersonator=impersonator,
     )
 
 
@@ -541,6 +607,15 @@ async def resolve_catalog_access(
         user_id = uuid.UUID(payload.get("sub", ""))
         grant_id = uuid.UUID(payload.get("grant_id", ""))
         scope = payload.get("scope", "")
+        _imp_id = payload.get("imp_id")
+        _catalog_impersonator: ImpersonatorSnapshot | None = (
+            ImpersonatorSnapshot(
+                id=uuid.UUID(_imp_id),
+                email=payload.get("imp_email", ""),
+                name=payload.get("imp_name", ""),
+            )
+            if _imp_id else None
+        )
 
         user_r = await db.execute(select(User).where(User.id == user_id))
         user = user_r.scalar_one_or_none()
@@ -598,6 +673,7 @@ async def resolve_catalog_access(
             brand=resolved_brand,
             group=resolved_group,
             grant_id=grant_id,
+            impersonator=_catalog_impersonator,
         )
         return CatalogAccess(pos_access=None, mgmt_access=mgmt, portal_access=None)
 

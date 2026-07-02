@@ -10,6 +10,7 @@ import { api } from '../api/axios'
 import type { Brand, Group, Site } from '../types'
 import { CompanyProfileFields, type CompanyProfileValues } from './CompanyProfileFields'
 import { confirmCurrencyChange } from '../utils/companyProfile'
+import { useAddressSearch } from '../hooks/useAddressSearch'
 
 export type EntityType = 'group' | 'brand' | 'site'
 type Entity = Group | Brand | Site
@@ -52,6 +53,8 @@ export function CompanyProfileForm({ entityType, entity, inherited, invalidateKe
   })
   const [formError, setFormError] = useState<string | null>(null)
   const [billingInfoMessage, setBillingInfoMessage] = useState<string | null>(null)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const { suggestions } = useAddressSearch(isSite ? address.address_street : '')
 
   const invalidate = () => invalidateKeys.forEach((key) => qc.invalidateQueries({ queryKey: key }))
 
@@ -153,13 +156,37 @@ export function CompanyProfileForm({ entityType, entity, inherited, invalidateKe
 
         {isSite && (
           <>
-            <div>
+            <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-1">Street address</label>
               <input
                 value={address.address_street}
-                onChange={(e) => setAddress({ ...address, address_street: e.target.value })}
+                onChange={(e) => {
+                  setAddress({ ...address, address_street: e.target.value })
+                  setShowSuggestions(true)
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setShowSuggestions(false) }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                autoComplete="off"
               />
+              {showSuggestions && suggestions.length > 0 && (
+                <ul className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg text-sm divide-y divide-gray-100 max-h-48 overflow-y-auto">
+                  {suggestions.map((s, i) => (
+                    <li
+                      key={i}
+                      onMouseDown={() => {
+                        setAddress({ address_street: s.road, address_state: s.state, address_postcode: s.postcode })
+                        setShowSuggestions(false)
+                      }}
+                      className="px-3 py-2 hover:bg-brand-50 cursor-pointer text-gray-700 truncate"
+                      title={s.display_name}
+                    >
+                      {s.display_name}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
