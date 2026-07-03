@@ -14,20 +14,18 @@ import { BrandContext } from '../../context/BrandContext'
 import { CompanyProfileForm } from '../../components/CompanyProfileForm'
 import { ProductsPage } from '../management/ProductsPage'
 import { CategoriesPage } from '../management/CategoriesPage'
-import { TaxPage } from '../management/TaxPage'
 import { ReportsPage } from '../management/ReportsPage'
 import { UsersPage } from '../management/UsersPage'
 import { SiteOverridesPage } from '../management/SiteOverridesPage'
 import { sessionInto } from '../../utils/impersonation'
 import type { Brand, Group } from '../../types'
 
-type Tab = 'overview' | 'products' | 'categories' | 'tax' | 'overrides' | 'reports' | 'users'
+type Tab = 'overview' | 'products' | 'categories' | 'overrides' | 'reports' | 'users'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'products', label: 'Products' },
   { id: 'categories', label: 'Categories' },
-  { id: 'tax', label: 'Tax' },
   { id: 'overrides', label: 'Site Overrides' },
   { id: 'reports', label: 'Reports' },
   { id: 'users', label: 'Users & Grants' },
@@ -116,7 +114,6 @@ export function BrandDetailPage() {
           {activeTab === 'overview' && brand && <BrandOverview brand={brand} />}
           {activeTab === 'products' && <ProductsPage />}
           {activeTab === 'categories' && <CategoriesPage />}
-          {activeTab === 'tax' && <TaxPage />}
           {activeTab === 'overrides' && <SiteOverridesPage />}
           {activeTab === 'reports' && <ReportsPage />}
           {activeTab === 'users' && <UsersPage />}

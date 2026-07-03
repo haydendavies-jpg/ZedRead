@@ -12,6 +12,22 @@ function centsToDisplay(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
 }
 
+/** The brand's system "Tax Free" category, if seeded. */
+function taxFreeCategory(taxCategories: TaxCategory[]): TaxCategory | undefined {
+  return taxCategories.find((t) => t.is_tax_free && t.is_active)
+}
+
+/** The brand's system "Standard" (taxed) category, if seeded. */
+function taxedCategory(taxCategories: TaxCategory[]): TaxCategory | undefined {
+  return taxCategories.find((t) => t.is_system && !t.is_tax_free && t.is_active)
+}
+
+/** A product is tax-free only when explicitly assigned the Tax Free category; default is taxed. */
+function isProductTaxFree(product: Product, taxCategories: TaxCategory[]): boolean {
+  const free = taxFreeCategory(taxCategories)
+  return !!free && product.tax_category_id === free.id
+}
+
 export function ProductsPage() {
   const qc = useQueryClient()
   const brandId = useMgmtBrandId()
@@ -73,6 +89,7 @@ export function ProductsPage() {
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Price</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Tax</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
                 <th className="px-4 py-3" />
               </tr>
@@ -82,6 +99,13 @@ export function ProductsPage() {
                 <tr key={p.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-900">{p.name}</td>
                   <td className="px-4 py-3 text-gray-700">{centsToDisplay(p.base_price_cents)}</td>
+                  <td className="px-4 py-3">
+                    {isProductTaxFree(p, taxCategories) ? (
+                      <span className="text-xs text-gray-500">Tax free</span>
+                    ) : (
+                      <span className="text-xs text-gray-700">Taxed</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={p.is_active ? "active" : "disabled"} />
                   </td>
@@ -151,7 +175,11 @@ function ProductFormModal({ product, brandId, categories, taxCategories, onClose
     product ? (product.base_price_cents / 100).toFixed(2) : ''
   )
   const [categoryId, setCategoryId] = useState(product?.category_id ?? categories[0]?.id ?? '')
-  const [taxCategoryId, setTaxCategoryId] = useState(product?.tax_category_id ?? '')
+  // Tax is a simple Taxed / Tax free choice mapped onto the brand's system
+  // categories; rates themselves come from admin tax templates at sale time.
+  const taxedCat = taxedCategory(taxCategories)
+  const freeCat = taxFreeCategory(taxCategories)
+  const [taxFree, setTaxFree] = useState(product ? isProductTaxFree(product, taxCategories) : false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -170,7 +198,8 @@ function ProductFormModal({ product, brandId, categories, taxCategories, onClose
         description: description || null,
         base_price_cents: priceCents,
         category_id: categoryId,
-        tax_category_id: taxCategoryId || null,
+        // Map the Taxed / Tax free choice to the brand's system category
+        tax_category_id: taxFree ? (freeCat?.id ?? null) : (taxedCat?.id ?? null),
       }
       if (product) {
         await api.patch(`/products/${product.id}`, body, { params: qParams })
@@ -224,17 +253,18 @@ function ProductFormModal({ product, brandId, categories, taxCategories, onClose
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Tax category</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Tax</label>
           <select
-            value={taxCategoryId}
-            onChange={(e) => setTaxCategoryId(e.target.value)}
+            value={taxFree ? 'free' : 'taxed'}
+            onChange={(e) => setTaxFree(e.target.value === 'free')}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
-            <option value="">None</option>
-            {taxCategories.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
+            <option value="taxed">Taxed</option>
+            <option value="free">Tax free</option>
           </select>
+          <p className="text-xs text-gray-400 mt-1">
+            Rates are set by the administrator per region and applied automatically at each site.
+          </p>
         </div>
 
         <div>

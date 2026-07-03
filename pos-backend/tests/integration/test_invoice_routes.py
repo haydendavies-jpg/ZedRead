@@ -20,27 +20,40 @@ from app.models.invoice import Invoice
 from app.models.invoice_line_item import InvoiceLineItem
 from app.models.payment import Payment
 from app.models.tax_category import TaxCategory
-from app.models.tax_rate import TaxRate
+from app.models.tax_template import TaxTemplate
+from app.models.tax_template_rate import TaxTemplateRate
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
+async def _seed_au_template(db: AsyncSession, tax_model: str) -> None:
+    """Create an AU country-level tax template with a single 10% GST rate."""
+    template = TaxTemplate(id=uuid.uuid4(), name="Australia GST", country="AU", is_active=True)
+    db.add(template)
+    await db.flush()
+    db.add(
+        TaxTemplateRate(
+            id=uuid.uuid4(),
+            tax_template_id=template.id,
+            name="GST",
+            rate_percent=Decimal("10.0000"),
+            tax_model=tax_model,
+            is_active=True,
+        )
+    )
+
+
 @pytest_asyncio.fixture()
 async def test_tax_cat_exclusive(db: AsyncSession, test_brand) -> TaxCategory:
-    """A TaxCategory with one 10% exclusive rate."""
-    tc = TaxCategory(id=uuid.uuid4(), brand_id=test_brand.id, name="GST", is_active=True)
+    """A taxed (non-tax-free) category plus an AU template with a 10% exclusive rate.
+
+    Rates now come from admin templates matched to the site's location, not the
+    brand tax category — the category only marks the product as taxed vs tax-free.
+    """
+    tc = TaxCategory(id=uuid.uuid4(), brand_id=test_brand.id, name="Standard", is_active=True, is_system=True, is_tax_free=False)
     db.add(tc)
-    await db.flush()
-    tr = TaxRate(
-        id=uuid.uuid4(),
-        tax_category_id=tc.id,
-        name="GST",
-        rate_percent=Decimal("10.0000"),
-        tax_model="exclusive",
-        is_active=True,
-    )
-    db.add(tr)
+    await _seed_au_template(db, "exclusive")
     await db.commit()
     await db.refresh(tc)
     return tc
@@ -48,19 +61,10 @@ async def test_tax_cat_exclusive(db: AsyncSession, test_brand) -> TaxCategory:
 
 @pytest_asyncio.fixture()
 async def test_tax_cat_inclusive(db: AsyncSession, test_brand) -> TaxCategory:
-    """A TaxCategory with one 10% inclusive rate."""
-    tc = TaxCategory(id=uuid.uuid4(), brand_id=test_brand.id, name="GST-inc", is_active=True)
+    """A taxed category plus an AU template with a 10% inclusive rate."""
+    tc = TaxCategory(id=uuid.uuid4(), brand_id=test_brand.id, name="Standard", is_active=True, is_system=True, is_tax_free=False)
     db.add(tc)
-    await db.flush()
-    tr = TaxRate(
-        id=uuid.uuid4(),
-        tax_category_id=tc.id,
-        name="GST",
-        rate_percent=Decimal("10.0000"),
-        tax_model="inclusive",
-        is_active=True,
-    )
-    db.add(tr)
+    await _seed_au_template(db, "inclusive")
     await db.commit()
     await db.refresh(tc)
     return tc
@@ -195,6 +199,40 @@ async def test_add_line_item_calculates_exclusive_tax(
     assert data["subtotal_cents"] == 3000
     assert data["tax_cents"] == 300
     assert data["line_total_cents"] == 3300
+
+
+@pytest.mark.asyncio
+async def test_add_line_item_tax_free_product_has_no_tax(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    test_brand,
+    test_tax_cat_exclusive: TaxCategory,
+    db: AsyncSession,
+) -> None:
+    """A product in a Tax Free category gets zero tax even when a template matches the site."""
+    from app.models.product import Product
+    from app.models.tax_category import TaxCategory as TC
+
+    # test_tax_cat_exclusive also seeded the AU template; add a Tax Free category
+    free = TC(id=uuid.uuid4(), brand_id=test_brand.id, name="Tax Free", is_active=True, is_system=True, is_tax_free=True)
+    db.add(free)
+    await db.flush()  # insert the category before the product FK references it
+    product = await db.get(Product, test_product.id)
+    product.tax_category_id = free.id
+    await db.commit()
+
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    resp = await client.post(
+        f"/invoices/{invoice_id}/line-items",
+        json={"product_id": str(test_product.id), "quantity": 2},
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["subtotal_cents"] == 3000
+    assert data["tax_cents"] == 0
+    assert data["line_total_cents"] == 3000
 
 
 @pytest.mark.asyncio

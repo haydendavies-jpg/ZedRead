@@ -26,6 +26,7 @@ from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.category import Category
 from app.models.group import Group
+from app.models.tax_category import TaxCategory
 from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
@@ -307,6 +308,12 @@ async def create_brand(
         is_active=True,
     )
     db.add(uncategorised)
+
+    # Auto-create the two system taxability classes. Rates are NOT stored here —
+    # they resolve at sale time from admin tax templates matched to the site's
+    # location; these categories only mark products as taxed or tax-free.
+    db.add(TaxCategory(id=uuid.uuid4(), brand_id=brand.id, name="Standard", is_active=True, is_system=True, is_tax_free=False))
+    db.add(TaxCategory(id=uuid.uuid4(), brand_id=brand.id, name="Tax Free", is_active=True, is_system=True, is_tax_free=True))
 
     # Seed the 5 system access profiles (Admin, Reporting Only, Manager, Staff, Master User)
     await seed_system_profiles(db, brand.id)

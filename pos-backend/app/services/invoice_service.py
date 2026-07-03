@@ -40,7 +40,7 @@ from app.models.payment import Payment
 from app.models.user import User
 from app.models.product import Product
 from app.models.tax_category import TaxCategory
-from app.models.tax_rate import TaxRate
+from app.services.tax_resolution_service import resolve_rates_for_site
 from app.services.audit_service import log_action
 from app.services.tax_calculation_service import calculate_line_tax
 
@@ -159,28 +159,6 @@ async def _get_invoice_or_404(
     if inv is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
     return inv
-
-
-async def _load_tax_rates_for_category(
-    db: AsyncSession, tax_category_id: uuid.UUID
-) -> list[dict]:
-    """Load all active TaxRate rows for a TaxCategory as rate spec dicts."""
-    result = await db.execute(
-        select(TaxRate).where(
-            TaxRate.tax_category_id == tax_category_id,
-            TaxRate.is_active == True,  # noqa: E712
-        )
-    )
-    rates = result.scalars().all()
-    return [
-        {
-            "rate_id": str(r.id),
-            "rate_name": r.name,
-            "rate_percent": r.rate_percent,
-            "tax_model": r.tax_model,
-        }
-        for r in rates
-    ]
 
 
 async def _recompute_invoice_totals(db: AsyncSession, invoice: Invoice) -> None:
@@ -340,12 +318,12 @@ async def add_line_item(
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
 
-    # Determine effective tax category (product → category fallback not needed here;
-    # tax_category_id is already on the product or None)
+    # Taxability comes from the product's tax category (Standard vs Tax Free);
+    # the RATES come from admin tax templates matched to the site's location.
     tax_category_name: str | None = None
     aggregate_rate = Decimal("0")
     tax_model_snapshot = "exclusive"
-    rates: list[dict] = []
+    is_tax_free = False
 
     if product.tax_category_id is not None:
         tc_result = await db.execute(
@@ -354,11 +332,14 @@ async def add_line_item(
         tax_cat = tc_result.scalar_one_or_none()
         if tax_cat is not None:
             tax_category_name = tax_cat.name
-            rates = await _load_tax_rates_for_category(db, product.tax_category_id)
-            if rates:
-                # Snapshot the dominant tax model and aggregate rate for reporting
-                aggregate_rate = sum(r["rate_percent"] for r in rates)
-                tax_model_snapshot = rates[0]["tax_model"]
+            is_tax_free = tax_cat.is_tax_free
+
+    # Products default to taxed — only an explicit Tax Free category exempts them
+    rates: list[dict] = [] if is_tax_free else await resolve_rates_for_site(db, invoice.site_id)
+    if rates:
+        # Snapshot the dominant tax model and aggregate rate for reporting
+        aggregate_rate = sum(r["rate_percent"] for r in rates)
+        tax_model_snapshot = rates[0]["tax_model"]
 
     # Calculate tax using the snapshot price
     tax_result = calculate_line_tax(
@@ -388,13 +369,15 @@ async def add_line_item(
     db.add(line)
     await db.flush()
 
-    # Upsert tax breakdown rows
+    # Upsert tax breakdown rows. tax_rate_id stays NULL: rates now come from
+    # admin tax templates, not the brand-scoped tax_rates table this FK targets —
+    # the snapshot name/percent/model columns carry everything reporting needs.
     for breakdown in tax_result.rate_breakdowns:
         db.add(
             InvoiceTaxBreakdown(
                 id=uuid.uuid4(),
                 invoice_id=invoice.id,
-                tax_rate_id=uuid.UUID(breakdown["rate_id"]),
+                tax_rate_id=None,
                 tax_rate_name=breakdown["rate_name"],
                 rate_percent=breakdown["rate_percent"],
                 tax_model=breakdown["tax_model"],

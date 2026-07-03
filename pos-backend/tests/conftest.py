@@ -195,6 +195,8 @@ _ALL_TABLES = [
     "site_product_overrides",
     "products",
     "categories",
+    "tax_template_rates",
+    "tax_templates",
     "tax_rates",
     "tax_categories",
     "sites",

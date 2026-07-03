@@ -49,6 +49,20 @@ class TaxCategory(Base):
         default=True,
         comment="False when soft-deleted; inactive categories cannot be assigned",
     )
+    is_system: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="True for the auto-seeded Standard/Tax Free taxability classes — read-only in the portal",
+    )
+    is_tax_free: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="True when items in this category are exempt — the invoice engine applies no site rates",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

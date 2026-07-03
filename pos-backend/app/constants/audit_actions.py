@@ -88,6 +88,13 @@ TAX_CATEGORY_UPDATED = "tax_category.updated"
 TAX_RATE_CREATED = "tax_rate.created"
 TAX_RATE_UPDATED = "tax_rate.updated"
 
+TAX_TEMPLATE_CREATED = "tax_template.created"
+TAX_TEMPLATE_UPDATED = "tax_template.updated"
+TAX_TEMPLATE_DELETED = "tax_template.deleted"
+TAX_TEMPLATE_RATE_CREATED = "tax_template_rate.created"
+TAX_TEMPLATE_RATE_UPDATED = "tax_template_rate.updated"
+TAX_TEMPLATE_RATE_DELETED = "tax_template_rate.deleted"
+
 SITE_PRODUCT_OVERRIDE_SET = "site_product_override.set"
 SITE_PRODUCT_OVERRIDE_REMOVED = "site_product_override.removed"
 
