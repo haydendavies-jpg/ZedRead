@@ -11,6 +11,7 @@ import { Modal } from '../components/Modal'
 import { CompanyProfileFields, type CompanyProfileValues } from '../components/CompanyProfileFields'
 import { DEFAULT_COMPANY_PROFILE_VALUES, confirmCurrencyChange } from '../utils/companyProfile'
 import { apiErrorMessage } from '../utils/apiError'
+import { sessionInto } from '../utils/impersonation'
 
 async function fetchGroups(): Promise<Group[]> {
   const { data } = await api.get('/groups/', { params: { limit: 200 } })
@@ -38,14 +39,7 @@ export function GroupsPage() {
   const handleSessionInto = async (groupId: string) => {
     setSessioningId(groupId)
     try {
-      const { data: grantData } = await api.get<{ grant_id: string }>('/admin/master-grant', {
-        params: { group_id: groupId },
-      })
-      const { data: tokenData } = await api.post<{ access_token: string }>('/admin/impersonate', {
-        grant_id: grantData.grant_id,
-      })
-      sessionStorage.setItem('imp_token', tokenData.access_token)
-      window.open('/management', '_blank')
+      await sessionInto('group', groupId)
     } catch {
       // error is surfaced on the group detail page
     } finally {

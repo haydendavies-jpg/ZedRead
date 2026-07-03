@@ -11,6 +11,7 @@ import { Modal } from '../components/Modal'
 import { CompanyProfileFields, type CompanyProfileValues } from '../components/CompanyProfileFields'
 import { DEFAULT_COMPANY_PROFILE_VALUES, confirmCurrencyChange } from '../utils/companyProfile'
 import { apiErrorMessage } from '../utils/apiError'
+import { sessionInto } from '../utils/impersonation'
 
 async function fetchBrands(): Promise<Brand[]> {
   const { data } = await api.get('/brands/', { params: { limit: 200 } })
@@ -46,14 +47,7 @@ export function BrandsPage() {
   const handleSessionInto = async (brandId: string) => {
     setSessioningId(brandId)
     try {
-      const { data: grantData } = await api.get<{ grant_id: string }>('/admin/master-grant', {
-        params: { brand_id: brandId },
-      })
-      const { data: tokenData } = await api.post<{ access_token: string }>('/admin/impersonate', {
-        grant_id: grantData.grant_id,
-      })
-      sessionStorage.setItem('imp_token', tokenData.access_token)
-      window.open('/management', '_blank')
+      await sessionInto('brand', brandId)
     } catch {
       // error is surfaced on the brand detail page
     } finally {
