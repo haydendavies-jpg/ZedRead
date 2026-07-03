@@ -10,6 +10,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
 import { CompanyProfileFields, type CompanyProfileValues } from '../components/CompanyProfileFields'
 import { DEFAULT_COMPANY_PROFILE_VALUES, confirmCurrencyChange } from '../utils/companyProfile'
+import { apiErrorMessage } from '../utils/apiError'
 import { useAddressSearch } from '../hooks/useAddressSearch'
 
 interface AddressValues {
@@ -69,14 +70,14 @@ export function SitesPage() {
       setProfile(DEFAULT_COMPANY_PROFILE_VALUES)
       setAddress(DEFAULT_ADDRESS_VALUES)
     },
-    onError: () => { invalidate(); setFormError('Failed to create site.') },
+    onError: (e: unknown) => { invalidate(); setFormError(apiErrorMessage(e, 'Failed to create site.')) },
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, body }: { id: string; body: { name: string } & CompanyProfileValues & AddressValues }) =>
       api.patch(`/sites/${id}`, body),
     onSuccess: () => { invalidate(); setEditing(null); setName('') },
-    onError: () => { invalidate(); setFormError('Failed to update site.') },
+    onError: (e: unknown) => { invalidate(); setFormError(apiErrorMessage(e, 'Failed to update site.')) },
   })
 
   const suspendMutation = useMutation({

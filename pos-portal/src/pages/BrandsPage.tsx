@@ -10,6 +10,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
 import { CompanyProfileFields, type CompanyProfileValues } from '../components/CompanyProfileFields'
 import { DEFAULT_COMPANY_PROFILE_VALUES, confirmCurrencyChange } from '../utils/companyProfile'
+import { apiErrorMessage } from '../utils/apiError'
 
 async function fetchBrands(): Promise<Brand[]> {
   const { data } = await api.get('/brands/', { params: { limit: 200 } })
@@ -64,14 +65,14 @@ export function BrandsPage() {
     mutationFn: (body: { name: string; group_id: string; master_email: string; master_password: string } & CompanyProfileValues) =>
       api.post('/brands/', body),
     onSuccess: () => { invalidate(); setShowCreate(false); setName(''); setGroupId(''); setMasterEmail(''); setMasterPassword(''); setProfile(DEFAULT_COMPANY_PROFILE_VALUES) },
-    onError: () => { invalidate(); setFormError('Failed to create brand.') },
+    onError: (e: unknown) => { invalidate(); setFormError(apiErrorMessage(e, 'Failed to create brand.')) },
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, body }: { id: string; body: { name: string } & CompanyProfileValues }) =>
       api.patch(`/brands/${id}`, body),
     onSuccess: () => { invalidate(); setEditing(null); setName('') },
-    onError: () => { invalidate(); setFormError('Failed to update brand.') },
+    onError: (e: unknown) => { invalidate(); setFormError(apiErrorMessage(e, 'Failed to update brand.')) },
   })
 
   const suspendMutation = useMutation({
