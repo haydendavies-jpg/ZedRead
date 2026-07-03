@@ -127,11 +127,36 @@ async def _scope_name(
     return "Unknown"
 
 
-def _build_mgmt_token(user: User, grant: UserAccessGrant) -> tuple[str, str]:
+async def resolve_grant_brand_id(db: AsyncSession, grant: UserAccessGrant) -> str | None:
+    """
+    Resolve the brand_id claim to embed in a management token for a grant.
+
+    Site-scope grants store only site_id (brand_id is NULL on the grant row),
+    but the portal relies on the token's brand_id claim to drive brand-scoped
+    catalog pages — so derive it from the Site row for site-scope grants.
+
+    Args:
+        db: Active database session.
+        grant: The grant whose brand context to resolve.
+
+    Returns:
+        str | None: The brand UUID string, or None for group-scope grants.
+    """
+    if grant.brand_id:
+        return str(grant.brand_id)
+    if grant.scope == GrantScope.SITE and grant.site_id:
+        result = await db.execute(select(Site.brand_id).where(Site.id == grant.site_id))
+        brand_id = result.scalar_one_or_none()
+        return str(brand_id) if brand_id else None
+    return None
+
+
+async def _build_mgmt_token(db: AsyncSession, user: User, grant: UserAccessGrant) -> tuple[str, str]:
     """
     Issue a management access + refresh token pair for the given grant.
 
     Args:
+        db: Active database session (needed to derive brand_id for site-scope grants).
         user: The authenticated POS user.
         grant: The active grant to embed in the token.
 
@@ -143,7 +168,7 @@ def _build_mgmt_token(user: User, grant: UserAccessGrant) -> tuple[str, str]:
         scope=grant.scope,
         grant_id=str(grant.id),
         site_id=str(grant.site_id) if grant.site_id else None,
-        brand_id=str(grant.brand_id) if grant.brand_id else None,
+        brand_id=await resolve_grant_brand_id(db, grant),
         group_id=str(grant.group_id) if grant.group_id else None,
     )
     refresh = create_mgmt_refresh_token(str(user.id))
@@ -202,7 +227,7 @@ async def _resolve_user_login(db: AsyncSession, user: User) -> UnifiedLoginRespo
     # Single grant → issue token immediately
     if len(grant_rows) == 1:
         grant = grant_rows[0]
-        access, refresh = _build_mgmt_token(user, grant)
+        access, refresh = await _build_mgmt_token(db, user, grant)
         await log_action(
             db=db,
             action=MGMT_LOGIN_SUCCESS,
@@ -226,7 +251,7 @@ async def _resolve_user_login(db: AsyncSession, user: User) -> UnifiedLoginRespo
     default_grants = [g for g in grant_rows if g.is_default]
     if default_grants:
         grant = default_grants[0]
-        access, refresh = _build_mgmt_token(user, grant)
+        access, refresh = await _build_mgmt_token(db, user, grant)
         await log_action(
             db=db,
             action=MGMT_LOGIN_SUCCESS,
@@ -352,7 +377,7 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
         ]
         if len(flat) == 1:
             user, grant = flat[0]
-            access, refresh = _build_mgmt_token(user, grant)
+            access, refresh = await _build_mgmt_token(db, user, grant)
             await log_action(
                 db=db,
                 action=MGMT_LOGIN_SUCCESS,
@@ -608,7 +633,7 @@ async def issue_management_token(
             detail="This grant does not have backend access configured",
         )
 
-    access, refresh = _build_mgmt_token(user, grant)
+    access, refresh = await _build_mgmt_token(db, user, grant)
 
     await log_action(
         db=db,
@@ -697,7 +722,7 @@ async def refresh_management_token(
 
     if len(grant_rows) == 1:
         grant = grant_rows[0]
-        new_access, new_refresh = _build_mgmt_token(user, grant)
+        new_access, new_refresh = await _build_mgmt_token(db, user, grant)
         await log_action(
             db=db,
             action=AUTH_TOKEN_REFRESHED,
@@ -721,7 +746,7 @@ async def refresh_management_token(
     default_grants = [g for g in grant_rows if g.is_default]
     if default_grants:
         grant = default_grants[0]
-        new_access, new_refresh = _build_mgmt_token(user, grant)
+        new_access, new_refresh = await _build_mgmt_token(db, user, grant)
         await log_action(
             db=db,
             action=AUTH_TOKEN_REFRESHED,

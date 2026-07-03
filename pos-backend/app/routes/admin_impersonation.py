@@ -19,6 +19,7 @@ from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
 from app.services.audit_service import log_action
+from app.services.management_auth_service import resolve_grant_brand_id
 from app.utils.dependencies import require_super_admin
 from app.utils.security import create_impersonation_token
 
@@ -162,7 +163,9 @@ async def impersonate(
         scope=grant.scope,
         grant_id=str(grant.id),
         site_id=str(grant.site_id) if grant.site_id else None,
-        brand_id=str(grant.brand_id) if grant.brand_id else None,
+        # Site-scope grants store no brand_id — derived from the Site row so the
+        # portal's brand-scoped catalog pages work inside a site session
+        brand_id=await resolve_grant_brand_id(db, grant),
         group_id=str(grant.group_id) if grant.group_id else None,
         admin_id=str(admin.id),
         admin_email=admin.email,

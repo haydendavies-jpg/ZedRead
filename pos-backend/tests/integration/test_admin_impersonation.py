@@ -242,6 +242,102 @@ async def test_impersonate_non_master_grant_returns_403(
     assert response.status_code == 403
 
 
+# ── Site-scope tokens must carry the site's brand_id ─────────────────────────
+
+
+async def _create_group_brand_site(client, portal_auth_headers, tag: str) -> tuple[str, str, str]:
+    """Create a Group → Brand → Site chain and return their IDs as strings."""
+    g = await client.post(
+        "/groups/",
+        json={
+            "name": f"{tag} Group",
+            "master_email": f"{tag.lower()}-group@example.com",
+            "master_password": "SecurePass1!",
+        },
+        headers=portal_auth_headers,
+    )
+    assert g.status_code == 201
+    group_id = g.json()["id"]
+
+    b = await client.post(
+        "/brands/",
+        json={
+            "group_id": group_id,
+            "name": f"{tag} Brand",
+            "master_email": f"{tag.lower()}-brand@example.com",
+            "master_password": "SecurePass1!",
+        },
+        headers=portal_auth_headers,
+    )
+    assert b.status_code == 201
+    brand_id = b.json()["id"]
+
+    s = await client.post(
+        "/sites/",
+        json={
+            "brand_id": brand_id,
+            "name": f"{tag} Site",
+            "master_email": f"{tag.lower()}-site@example.com",
+            "master_password": "SecurePass1!",
+        },
+        headers=portal_auth_headers,
+    )
+    assert s.status_code == 201
+    site_id = s.json()["id"]
+
+    return group_id, brand_id, site_id
+
+
+async def test_impersonate_site_grant_token_carries_brand_id(client, db, portal_auth_headers):
+    """A site-scope impersonation token embeds the site's brand_id.
+
+    Site master grants store only site_id, so brand_id must be derived from
+    the Site row — the portal's brand-scoped catalog pages (Products,
+    Categories, Tax) depend on the token's brand_id claim.
+    """
+    _, brand_id, site_id = await _create_group_brand_site(client, portal_auth_headers, "SiteBrandClaim")
+
+    grant_resp = await client.get(
+        "/admin/master-grant",
+        params={"site_id": site_id},
+        headers=portal_auth_headers,
+    )
+    assert grant_resp.status_code == 200
+    grant_id = grant_resp.json()["grant_id"]
+
+    imp_resp = await client.post(
+        "/admin/impersonate",
+        json={"grant_id": grant_id},
+        headers=portal_auth_headers,
+    )
+    assert imp_resp.status_code == 200
+
+    payload = decode_token(imp_resp.json()["access_token"], "mgmt_access")
+    assert payload["scope"] == "site"
+    assert payload["site_id"] == site_id
+    # The derived brand claim — without it the portal shows "No brand context available"
+    assert payload["brand_id"] == brand_id
+
+
+async def test_site_master_login_token_carries_brand_id(client, db, portal_auth_headers):
+    """Logging in as a site master user yields a mgmt token with the site's brand_id."""
+    _, brand_id, site_id = await _create_group_brand_site(client, portal_auth_headers, "SiteLoginClaim")
+
+    login_resp = await client.post(
+        "/auth/portal/login",
+        json={"email": "siteloginclaim-site@example.com", "password": "SecurePass1!"},
+    )
+    assert login_resp.status_code == 200
+    body = login_resp.json()
+    # Single-grant master user — token issued directly, no grant picker
+    assert body.get("access_token")
+
+    payload = decode_token(body["access_token"], "mgmt_access")
+    assert payload["scope"] == "site"
+    assert payload["site_id"] == site_id
+    assert payload["brand_id"] == brand_id
+
+
 # ── Shared email across multiple entities (multi-User same email) ─────────────
 
 
