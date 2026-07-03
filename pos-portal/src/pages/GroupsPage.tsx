@@ -10,6 +10,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
 import { CompanyProfileFields, type CompanyProfileValues } from '../components/CompanyProfileFields'
 import { DEFAULT_COMPANY_PROFILE_VALUES, confirmCurrencyChange } from '../utils/companyProfile'
+import { apiErrorMessage } from '../utils/apiError'
 
 async function fetchGroups(): Promise<Group[]> {
   const { data } = await api.get('/groups/', { params: { limit: 200 } })
@@ -55,14 +56,14 @@ export function GroupsPage() {
   const createMutation = useMutation({
     mutationFn: (body: { name: string; master_email: string; master_password: string } & CompanyProfileValues) => api.post('/groups/', body),
     onSuccess: () => { invalidate(); setShowCreate(false); setName(''); setMasterEmail(''); setMasterPassword(''); setProfile(DEFAULT_COMPANY_PROFILE_VALUES) },
-    onError: () => { invalidate(); setFormError('Failed to create group.') },
+    onError: (e: unknown) => { invalidate(); setFormError(apiErrorMessage(e, 'Failed to create group.')) },
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, body }: { id: string; body: { name: string } & CompanyProfileValues }) =>
       api.patch(`/groups/${id}`, body),
     onSuccess: () => { invalidate(); setEditing(null); setName('') },
-    onError: () => { invalidate(); setFormError('Failed to update group.') },
+    onError: (e: unknown) => { invalidate(); setFormError(apiErrorMessage(e, 'Failed to update group.')) },
   })
 
   const suspendMutation = useMutation({
