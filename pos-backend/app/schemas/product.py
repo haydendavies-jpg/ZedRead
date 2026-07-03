@@ -6,13 +6,19 @@ from pydantic import BaseModel, Field
 
 
 class ProductCreate(BaseModel):
-    """Payload for POST /products."""
+    """Payload for POST /products.
+
+    base_price_cents is the tax-INCLUSIVE price. The tax-exclusive price is
+    derived server-side from the brand's country tax rate; is_taxable decides
+    which price is charged at sale.
+    """
 
     category_id: uuid.UUID
     tax_category_id: uuid.UUID | None = None
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
-    base_price_cents: int = Field(..., ge=0, description="Price in cents — never a float")
+    base_price_cents: int = Field(..., ge=0, description="Tax-inclusive price in cents — never a float")
+    is_taxable: bool = Field(True, description="True → charge inclusive price with GST; False → charge exclusive price")
     display_order: int = Field(0, ge=0)
 
 
@@ -23,7 +29,8 @@ class ProductUpdate(BaseModel):
     tax_category_id: uuid.UUID | None = None
     name: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
-    base_price_cents: int | None = Field(None, ge=0)
+    base_price_cents: int | None = Field(None, ge=0, description="Tax-inclusive price in cents")
+    is_taxable: bool | None = None
     display_order: int | None = Field(None, ge=0)
 
 
@@ -37,6 +44,8 @@ class ProductResponse(BaseModel):
     name: str
     description: str | None
     base_price_cents: int
+    price_ex_cents: int
+    is_taxable: bool
     photo_url: str | None
     display_order: int
     is_active: bool

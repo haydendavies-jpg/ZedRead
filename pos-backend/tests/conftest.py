@@ -731,7 +731,11 @@ async def test_product(db: AsyncSession, test_brand: Brand, test_site: Site) -> 
         tax_category_id=None,
         name="Test Burger",
         description=None,
+        # Inclusive price; ex == inc by default so the base fixture carries no
+        # embedded tax. Tax-specific tests set price_ex_cents/is_taxable directly.
         base_price_cents=1500,
+        price_ex_cents=1500,
+        is_taxable=True,
         display_order=0,
         is_active=True,
     )

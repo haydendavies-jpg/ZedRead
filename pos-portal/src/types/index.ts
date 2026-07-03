@@ -247,6 +247,8 @@ export interface Product {
   name: string
   description: string | null
   base_price_cents: number
+  price_ex_cents: number
+  is_taxable: boolean
   display_order: number
   is_active: boolean
   created_at: string

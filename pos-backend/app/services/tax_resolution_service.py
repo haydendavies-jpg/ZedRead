@@ -12,11 +12,13 @@ row, and the rates sum — the foundation for regional tax markets.
 """
 
 import uuid
+from decimal import ROUND_HALF_UP, Decimal
 
 import structlog
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.brand import Brand
 from app.models.site import Site
 from app.models.tax_template import TaxTemplate
 from app.models.tax_template_rate import TaxTemplateRate
@@ -102,6 +104,68 @@ async def resolve_rates_for_location(
         }
         for r in rates
     ]
+
+
+async def country_inclusive_rate(db: AsyncSession, country: str) -> Decimal:
+    """
+    Return the combined inclusive tax percentage for a country's national templates.
+
+    Sums the active inclusive rates of every country-level template (no
+    state/county/city set) for the country — for AU that is a single 10% GST.
+    Used to split a product's tax-inclusive price into its exclusive component
+    at product-save time.
+
+    Args:
+        db: Active database session.
+        country: ISO 3166-1 alpha-2 country code.
+
+    Returns:
+        Decimal: The combined inclusive rate percentage (0 when none exists).
+    """
+    result = await db.execute(
+        select(func.coalesce(func.sum(TaxTemplateRate.rate_percent), 0))
+        .select_from(TaxTemplate)
+        .join(TaxTemplateRate, TaxTemplateRate.tax_template_id == TaxTemplate.id)
+        .where(
+            TaxTemplate.is_active == True,  # noqa: E712
+            func.lower(TaxTemplate.country) == country.strip().lower(),
+            TaxTemplate.state.is_(None),
+            TaxTemplate.county.is_(None),
+            TaxTemplate.city.is_(None),
+            TaxTemplateRate.is_active == True,  # noqa: E712
+            TaxTemplateRate.tax_model == "inclusive",
+        )
+    )
+    return Decimal(str(result.scalar_one()))
+
+
+async def derive_ex_price_cents(db: AsyncSession, brand_id: uuid.UUID, inc_cents: int) -> int:
+    """
+    Derive the tax-exclusive price from a tax-inclusive price for a brand.
+
+    Uses the brand's country combined inclusive rate: ex = inc × 100 / (100 + rate),
+    rounded to the nearest cent. When the brand's country has no inclusive
+    template the rate is 0 and the exclusive price equals the inclusive price.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand the product belongs to.
+        inc_cents: The tax-inclusive price in cents.
+
+    Returns:
+        int: The tax-exclusive price in cents.
+    """
+    brand_result = await db.execute(select(Brand.country).where(Brand.id == brand_id))
+    country = brand_result.scalar_one_or_none()
+    if country is None:
+        return inc_cents
+
+    rate = await country_inclusive_rate(db, country)
+    if rate == 0:
+        return inc_cents
+
+    ex = Decimal(inc_cents) * Decimal("100") / (Decimal("100") + rate)
+    return int(ex.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 async def resolve_rates_for_site(db: AsyncSession, site_id: uuid.UUID) -> list[dict]:

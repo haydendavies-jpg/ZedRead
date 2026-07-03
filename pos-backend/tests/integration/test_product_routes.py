@@ -269,3 +269,86 @@ async def test_create_product_negative_price_returns_422(client, db, pos_auth_he
     )
 
     assert response.status_code == 422
+
+
+# ── Tax-inclusive/exclusive price derivation ─────────────────────────────────
+
+
+async def _seed_au_inclusive_template(db, rate_percent: str = "10.0000") -> None:
+    """Seed an AU country-level template with a single inclusive GST rate."""
+    from decimal import Decimal
+
+    from app.models.tax_template import TaxTemplate
+    from app.models.tax_template_rate import TaxTemplateRate
+
+    template = TaxTemplate(id=uuid.uuid4(), name="Australia GST", country="AU", is_active=True)
+    db.add(template)
+    await db.flush()
+    db.add(
+        TaxTemplateRate(
+            id=uuid.uuid4(),
+            tax_template_id=template.id,
+            name="GST",
+            rate_percent=Decimal(rate_percent),
+            tax_model="inclusive",
+            is_active=True,
+        )
+    )
+    await db.commit()
+
+
+async def test_create_product_derives_ex_price_from_country_rate(client, db, pos_auth_headers, test_brand):
+    """A product's exclusive price is derived from the brand's country inclusive rate at save."""
+    await _seed_au_inclusive_template(db)  # test_brand.country == "AU"
+    category_id = await _get_or_create_category(db, test_brand.id)
+
+    response = await client.post(
+        "/products",
+        json={"category_id": str(category_id), "name": "Latte", "base_price_cents": 1100},
+        headers=pos_auth_headers,
+    )
+    assert response.status_code == 201
+    body = response.json()
+    # inc 1100 at 10% inclusive → ex = round(1100 / 1.1) = 1000
+    assert body["base_price_cents"] == 1100
+    assert body["price_ex_cents"] == 1000
+    assert body["is_taxable"] is True
+
+
+async def test_create_product_no_template_ex_equals_inc(client, db, pos_auth_headers, test_brand):
+    """With no matching country template the exclusive price equals the inclusive price."""
+    category_id = await _get_or_create_category(db, test_brand.id)
+
+    response = await client.post(
+        "/products",
+        json={"category_id": str(category_id), "name": "Water", "base_price_cents": 500, "is_taxable": False},
+        headers=pos_auth_headers,
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["price_ex_cents"] == 500
+    assert body["is_taxable"] is False
+
+
+async def test_update_product_reprices_ex_on_inclusive_change(client, db, pos_auth_headers, test_brand):
+    """Changing the inclusive price re-derives the exclusive price."""
+    await _seed_au_inclusive_template(db)
+    category_id = await _get_or_create_category(db, test_brand.id)
+
+    created = await client.post(
+        "/products",
+        json={"category_id": str(category_id), "name": "Mocha", "base_price_cents": 1100},
+        headers=pos_auth_headers,
+    )
+    product_id = created.json()["id"]
+
+    updated = await client.patch(
+        f"/products/{product_id}",
+        json={"base_price_cents": 2200},
+        headers=pos_auth_headers,
+    )
+    assert updated.status_code == 200
+    body = updated.json()
+    # inc 2200 at 10% inclusive → ex = 2000
+    assert body["base_price_cents"] == 2200
+    assert body["price_ex_cents"] == 2000

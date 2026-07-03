@@ -39,10 +39,7 @@ from app.models.modifier_option import ModifierOption
 from app.models.payment import Payment
 from app.models.user import User
 from app.models.product import Product
-from app.models.tax_category import TaxCategory
-from app.services.tax_resolution_service import resolve_rates_for_site
 from app.services.audit_service import log_action
-from app.services.tax_calculation_service import calculate_line_tax
 
 log = structlog.get_logger(__name__)
 
@@ -318,35 +315,31 @@ async def add_line_item(
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
 
-    # Taxability comes from the product's tax category (Standard vs Tax Free);
-    # the RATES come from admin tax templates matched to the site's location.
-    tax_category_name: str | None = None
-    aggregate_rate = Decimal("0")
-    tax_model_snapshot = "exclusive"
-    is_tax_free = False
-
-    if product.tax_category_id is not None:
-        tc_result = await db.execute(
-            select(TaxCategory).where(TaxCategory.id == product.tax_category_id)
-        )
-        tax_cat = tc_result.scalar_one_or_none()
-        if tax_cat is not None:
-            tax_category_name = tax_cat.name
-            is_tax_free = tax_cat.is_tax_free
-
-    # Products default to taxed — only an explicit Tax Free category exempts them
-    rates: list[dict] = [] if is_tax_free else await resolve_rates_for_site(db, invoice.site_id)
-    if rates:
-        # Snapshot the dominant tax model and aggregate rate for reporting
-        aggregate_rate = sum(r["rate_percent"] for r in rates)
-        tax_model_snapshot = rates[0]["tax_model"]
-
-    # Calculate tax using the snapshot price
-    tax_result = calculate_line_tax(
-        unit_price_cents=product.base_price_cents,
-        quantity=payload.quantity,
-        rates=rates,
-    )
+    # Price and tax are NOT computed from rates at sale time. Each product stores
+    # a tax-inclusive price and a derived tax-exclusive price; the is_taxable
+    # flag picks which is charged. Taxable → inclusive price with GST embedded;
+    # not taxable → exclusive price with no tax.
+    qty = payload.quantity
+    if product.is_taxable:
+        unit_price_cents = product.base_price_cents           # inclusive
+        subtotal = unit_price_cents * qty
+        # GST embedded in the inclusive price = inc − ex, per unit × quantity
+        tax_cents = (product.base_price_cents - product.price_ex_cents) * qty
+        line_total = subtotal                                  # tax already embedded
+        tax_model_snapshot = "inclusive"
+        # Effective percent for the receipt, derived from the stored split
+        rate_pct = (
+            (Decimal(tax_cents) / Decimal(product.price_ex_cents * qty) * Decimal("100"))
+            if product.price_ex_cents > 0
+            else Decimal("0")
+        ).quantize(Decimal("0.0001"))
+    else:
+        unit_price_cents = product.price_ex_cents             # exclusive, no tax
+        subtotal = unit_price_cents * qty
+        tax_cents = 0
+        line_total = subtotal
+        tax_model_snapshot = "exclusive"
+        rate_pct = Decimal("0")
 
     line = InvoiceLineItem(
         id=uuid.uuid4(),
@@ -354,35 +347,35 @@ async def add_line_item(
         product_id=product.id,
         # ── SNAPSHOT FIELDS ──
         product_name=product.name,
-        unit_price_cents=product.base_price_cents,
-        tax_category_name=tax_category_name,
-        tax_rate_percent=aggregate_rate,
+        unit_price_cents=unit_price_cents,
+        tax_category_name="Taxable" if product.is_taxable else "Tax free",
+        tax_rate_percent=rate_pct,
         tax_model=tax_model_snapshot,
         # ── Computed quantities ──
-        quantity=payload.quantity,
-        subtotal_cents=tax_result.subtotal_cents,
-        tax_cents=tax_result.tax_cents,
-        line_total_cents=tax_result.line_total_cents,
+        quantity=qty,
+        subtotal_cents=subtotal,
+        tax_cents=tax_cents,
+        line_total_cents=line_total,
         display_order=payload.display_order,
         notes=payload.notes,
     )
     db.add(line)
     await db.flush()
 
-    # Upsert tax breakdown rows. tax_rate_id stays NULL: rates now come from
-    # admin tax templates, not the brand-scoped tax_rates table this FK targets —
-    # the snapshot name/percent/model columns carry everything reporting needs.
-    for breakdown in tax_result.rate_breakdowns:
+    # Record the GST breakdown for the receipt when tax applies. tax_rate_id is
+    # NULL — the amount comes from the product's stored inc/ex split, not a
+    # brand tax_rates row. taxable_amount is the exclusive (pre-tax) base.
+    if tax_cents > 0:
         db.add(
             InvoiceTaxBreakdown(
                 id=uuid.uuid4(),
                 invoice_id=invoice.id,
                 tax_rate_id=None,
-                tax_rate_name=breakdown["rate_name"],
-                rate_percent=breakdown["rate_percent"],
-                tax_model=breakdown["tax_model"],
-                taxable_amount_cents=breakdown["taxable_amount_cents"],
-                tax_amount_cents=breakdown["tax_amount_cents"],
+                tax_rate_name="Tax",
+                rate_percent=rate_pct,
+                tax_model=tax_model_snapshot,
+                taxable_amount_cents=product.price_ex_cents * qty,
+                tax_amount_cents=tax_cents,
             )
         )
 
@@ -407,7 +400,7 @@ async def add_line_item(
             "invoice_id": str(invoice.id),
             "product_id": str(product.id),
             "quantity": payload.quantity,
-            "subtotal_cents": tax_result.subtotal_cents,
+            "subtotal_cents": subtotal,
         },
     )
 

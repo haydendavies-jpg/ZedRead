@@ -67,7 +67,22 @@ class Product(Base):
     base_price_cents: Mapped[int] = mapped_column(
         BigInteger,
         nullable=False,
-        comment="Default shelf price in cents — overridable per site via site_product_overrides",
+        comment="Tax-INCLUSIVE shelf price in cents (operator-entered) — used at sale when is_taxable",
+    )
+    price_ex_cents: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        server_default="0",
+        comment="Tax-EXCLUSIVE price in cents — derived from base_price_cents and the brand's country "
+        "tax rate at save time; used at sale when NOT is_taxable",
+    )
+    is_taxable: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+        comment="True → sold at the tax-inclusive price with GST embedded; False → sold at the "
+        "tax-exclusive price with no tax",
     )
     photo_url: Mapped[str | None] = mapped_column(
         String(1024),
