@@ -9,18 +9,8 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/axios'
 import { CompanyProfileForm, type EntityType, type InheritedInfo } from '../../components/CompanyProfileForm'
+import { sessionInto } from '../../utils/impersonation'
 import type { Brand, Group, Site } from '../../types'
-
-async function sessionInto(siteId: string): Promise<void> {
-  const { data: grantData } = await api.get<{ grant_id: string }>('/admin/master-grant', {
-    params: { site_id: siteId },
-  })
-  const { data: tokenData } = await api.post<{ access_token: string }>('/admin/impersonate', {
-    grant_id: grantData.grant_id,
-  })
-  sessionStorage.setItem('imp_token', tokenData.access_token)
-  window.open('/management', '_blank')
-}
 
 function resolveInherited(brand: Brand | undefined, group: Group | undefined): InheritedInfo {
   let logoUrl: string | null = null
@@ -75,7 +65,7 @@ export function SiteDetailPage() {
     setSessionError(null)
     setIsSessioning(true)
     try {
-      await sessionInto(siteId)
+      await sessionInto('site', siteId)
     } catch {
       setSessionError('Could not start session. Ensure the site has an active master user.')
     } finally {

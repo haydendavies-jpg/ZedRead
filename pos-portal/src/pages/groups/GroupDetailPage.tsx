@@ -5,18 +5,8 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/axios'
 import { CompanyProfileForm } from '../../components/CompanyProfileForm'
+import { sessionInto } from '../../utils/impersonation'
 import type { Group } from '../../types'
-
-async function sessionInto(groupId: string): Promise<void> {
-  const { data: grantData } = await api.get<{ grant_id: string }>('/admin/master-grant', {
-    params: { group_id: groupId },
-  })
-  const { data: tokenData } = await api.post<{ access_token: string }>('/admin/impersonate', {
-    grant_id: grantData.grant_id,
-  })
-  sessionStorage.setItem('imp_token', tokenData.access_token)
-  window.open('/management', '_blank')
-}
 
 export function GroupDetailPage() {
   const { groupId } = useParams<{ groupId: string }>()
@@ -35,7 +25,7 @@ export function GroupDetailPage() {
     setSessionError(null)
     setIsSessioning(true)
     try {
-      await sessionInto(groupId)
+      await sessionInto('group', groupId)
     } catch {
       setSessionError('Could not start session. Ensure the group has an active master user.')
     } finally {

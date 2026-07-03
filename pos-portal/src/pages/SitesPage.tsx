@@ -11,6 +11,7 @@ import { Modal } from '../components/Modal'
 import { CompanyProfileFields, type CompanyProfileValues } from '../components/CompanyProfileFields'
 import { DEFAULT_COMPANY_PROFILE_VALUES, confirmCurrencyChange } from '../utils/companyProfile'
 import { apiErrorMessage } from '../utils/apiError'
+import { sessionInto } from '../utils/impersonation'
 import { useAddressSearch } from '../hooks/useAddressSearch'
 
 interface AddressValues {
@@ -93,14 +94,7 @@ export function SitesPage() {
   const handleSessionInto = async (siteId: string) => {
     setSessioningId(siteId)
     try {
-      const { data: grantData } = await api.get<{ grant_id: string }>('/admin/master-grant', {
-        params: { site_id: siteId },
-      })
-      const { data: tokenData } = await api.post<{ access_token: string }>('/admin/impersonate', {
-        grant_id: grantData.grant_id,
-      })
-      sessionStorage.setItem('imp_token', tokenData.access_token)
-      window.open('/management', '_blank')
+      await sessionInto('site', siteId)
     } catch {
       // error shown on the detail page; silently clear loading state here
     } finally {

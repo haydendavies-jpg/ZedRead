@@ -18,6 +18,7 @@ import { TaxPage } from '../management/TaxPage'
 import { ReportsPage } from '../management/ReportsPage'
 import { UsersPage } from '../management/UsersPage'
 import { SiteOverridesPage } from '../management/SiteOverridesPage'
+import { sessionInto } from '../../utils/impersonation'
 import type { Brand, Group } from '../../types'
 
 type Tab = 'overview' | 'products' | 'categories' | 'tax' | 'overrides' | 'reports' | 'users'
@@ -31,17 +32,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'reports', label: 'Reports' },
   { id: 'users', label: 'Users & Grants' },
 ]
-
-async function sessionInto(brandId: string): Promise<void> {
-  const { data: grantData } = await api.get<{ grant_id: string }>('/admin/master-grant', {
-    params: { brand_id: brandId },
-  })
-  const { data: tokenData } = await api.post<{ access_token: string }>('/admin/impersonate', {
-    grant_id: grantData.grant_id,
-  })
-  sessionStorage.setItem('imp_token', tokenData.access_token)
-  window.open('/management', '_blank')
-}
 
 export function BrandDetailPage() {
   const { brandId } = useParams<{ brandId: string }>()
@@ -61,7 +51,7 @@ export function BrandDetailPage() {
     setSessionError(null)
     setIsSessioning(true)
     try {
-      await sessionInto(brandId)
+      await sessionInto('brand', brandId)
     } catch {
       setSessionError('Could not start session. Ensure the brand has an active master user.')
     } finally {

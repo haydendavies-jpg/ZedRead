@@ -10,7 +10,7 @@
  */
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { api, clearTokens, getAccessToken, getTokenType, setTokens } from '../api/axios'
+import { api, clearTokens, getAccessToken, getTokenType, setImpersonationSession, setTokens } from '../api/axios'
 import type { GrantSummary, MgmtTokenPayload, MgmtUser, PortalUser, TokenType, UnifiedLoginResponse } from '../types'
 
 export type AuthUser = PortalUser | MgmtUser
@@ -78,13 +78,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   /** Restore session from a stored access token, or from an impersonation token in sessionStorage. */
   const restoreSession = useCallback(async () => {
-    // Admin impersonation: token placed in sessionStorage by the admin portal
+    // Admin impersonation: token placed in sessionStorage by the admin portal.
+    // Store it per-tab ONLY (never via setTokens/localStorage — that would
+    // overwrite the admin's own session in every other open tab).
     const impToken = sessionStorage.getItem('imp_token')
     if (impToken) {
       sessionStorage.removeItem('imp_token')
       try {
         const payload = decodePayload(impToken)
-        setTokens(impToken, '', 'mgmt_access')
+        setImpersonationSession(impToken)
         setUser(mgmtUserFromPayload(payload))
         setTokenType('mgmt_access')
       } catch {

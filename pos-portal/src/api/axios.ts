@@ -23,10 +23,32 @@ export const api = axios.create({
 
 // ── Token helpers ──────────────────────────────────────────────────────────────
 
-export const getAccessToken = () => localStorage.getItem('access_token')
-export const getRefreshToken = () => localStorage.getItem('refresh_token')
+/**
+ * Impersonated ("Session into") management sessions are scoped to a single tab
+ * via sessionStorage. They must NEVER be written to localStorage: localStorage
+ * is shared across tabs, so storing the impersonation token there would hijack
+ * the admin's own session in every other open tab.
+ */
+const IMP_SESSION_KEY = 'imp_access_token'
+
+/** True when this tab is running an admin-impersonated management session. */
+export const isImpersonationSession = () => sessionStorage.getItem(IMP_SESSION_KEY) !== null
+
+/** Store the impersonation token for this tab only. */
+export const setImpersonationSession = (token: string) =>
+  sessionStorage.setItem(IMP_SESSION_KEY, token)
+
+export const getAccessToken = () =>
+  sessionStorage.getItem(IMP_SESSION_KEY) ?? localStorage.getItem('access_token')
+
+// Impersonation tokens are short-lived and have no refresh token; returning
+// null prevents the 401 interceptor from refreshing with the admin's portal
+// refresh token, which would swap a portal token into a management tab.
+export const getRefreshToken = () =>
+  isImpersonationSession() ? null : localStorage.getItem('refresh_token')
+
 export const getTokenType = (): TokenType | null =>
-  localStorage.getItem('token_type') as TokenType | null
+  isImpersonationSession() ? 'mgmt_access' : (localStorage.getItem('token_type') as TokenType | null)
 
 export const setTokens = (access: string, refresh: string, tokenType: TokenType) => {
   localStorage.setItem('access_token', access)
@@ -35,6 +57,12 @@ export const setTokens = (access: string, refresh: string, tokenType: TokenType)
 }
 
 export const clearTokens = () => {
+  // In an impersonated tab, end only this tab's session — the admin's real
+  // tokens in localStorage belong to their other tab(s) and must survive.
+  if (isImpersonationSession()) {
+    sessionStorage.removeItem(IMP_SESSION_KEY)
+    return
+  }
   localStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')
   localStorage.removeItem('token_type')
