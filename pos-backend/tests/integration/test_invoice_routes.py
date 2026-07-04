@@ -7,10 +7,8 @@ Written BEFORE any service code (TDD gate — Stage 10 plan rule).
 """
 
 import uuid
-from decimal import Decimal
 
 import pytest
-import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,51 +17,27 @@ from app.models.audit_log import AuditLog
 from app.models.invoice import Invoice
 from app.models.invoice_line_item import InvoiceLineItem
 from app.models.payment import Payment
-from app.models.tax_category import TaxCategory
-from app.models.tax_rate import TaxRate
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
-@pytest_asyncio.fixture()
-async def test_tax_cat_exclusive(db: AsyncSession, test_brand) -> TaxCategory:
-    """A TaxCategory with one 10% exclusive rate."""
-    tc = TaxCategory(id=uuid.uuid4(), brand_id=test_brand.id, name="GST", is_active=True)
-    db.add(tc)
-    await db.flush()
-    tr = TaxRate(
-        id=uuid.uuid4(),
-        tax_category_id=tc.id,
-        name="GST",
-        rate_percent=Decimal("10.0000"),
-        tax_model="exclusive",
-        is_active=True,
-    )
-    db.add(tr)
-    await db.commit()
-    await db.refresh(tc)
-    return tc
+async def _set_product_prices(
+    db: AsyncSession, product_id, *, inc_cents: int, ex_cents: int, is_taxable: bool
+) -> None:
+    """Set a product's stored inclusive/exclusive prices and taxability directly.
 
+    Tax is no longer computed from rates at sale time — the invoice engine reads
+    these precomputed prices, so tests seed them on the product rather than
+    creating tax categories/rates.
+    """
+    from app.models.product import Product
 
-@pytest_asyncio.fixture()
-async def test_tax_cat_inclusive(db: AsyncSession, test_brand) -> TaxCategory:
-    """A TaxCategory with one 10% inclusive rate."""
-    tc = TaxCategory(id=uuid.uuid4(), brand_id=test_brand.id, name="GST-inc", is_active=True)
-    db.add(tc)
-    await db.flush()
-    tr = TaxRate(
-        id=uuid.uuid4(),
-        tax_category_id=tc.id,
-        name="GST",
-        rate_percent=Decimal("10.0000"),
-        tax_model="inclusive",
-        is_active=True,
-    )
-    db.add(tr)
+    product = await db.get(Product, product_id)
+    product.base_price_cents = inc_cents
+    product.price_ex_cents = ex_cents
+    product.is_taxable = is_taxable
     await db.commit()
-    await db.refresh(tc)
-    return tc
 
 
 # ── Helper: create an invoice via the API ─────────────────────────────────────
@@ -166,21 +140,15 @@ async def test_add_line_item_unknown_product_returns_404(
 
 
 @pytest.mark.asyncio
-async def test_add_line_item_calculates_exclusive_tax(
+async def test_add_line_item_taxable_charges_inclusive_price(
     client: AsyncClient,
     pos_auth_headers: dict,
     test_product,
-    test_brand,
-    test_tax_cat_exclusive: TaxCategory,
     db: AsyncSession,
 ) -> None:
-    """Line item with exclusive 10% tax: tax_cents and line_total_cents are correct."""
-    from app.models.product import Product
-
-    # Attach the tax category to the product
-    product = await db.get(Product, test_product.id)
-    product.tax_category_id = test_tax_cat_exclusive.id
-    await db.commit()
+    """A taxable product is charged its inclusive price; tax = (inc − ex) per unit."""
+    # inc 1100, ex 1000 → embedded GST of 100/unit
+    await _set_product_prices(db, test_product.id, inc_cents=1100, ex_cents=1000, is_taxable=True)
 
     invoice_id = await _create_invoice(client, pos_auth_headers)
     resp = await client.post(
@@ -190,11 +158,34 @@ async def test_add_line_item_calculates_exclusive_tax(
     )
     assert resp.status_code == 201
     data = resp.json()
-    # base_price = 1500 (from conftest test_product), qty=2, subtotal=3000
-    # exclusive 10% tax = 300, line_total = 3300
-    assert data["subtotal_cents"] == 3000
-    assert data["tax_cents"] == 300
-    assert data["line_total_cents"] == 3300
+    # qty 2 → subtotal 2200 (inclusive), tax = (1100-1000)*2 = 200, total embedded
+    assert data["subtotal_cents"] == 2200
+    assert data["tax_cents"] == 200
+    assert data["line_total_cents"] == 2200
+
+
+@pytest.mark.asyncio
+async def test_add_line_item_tax_free_product_charges_exclusive_price(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    db: AsyncSession,
+) -> None:
+    """A non-taxable product is charged its exclusive price with zero tax."""
+    await _set_product_prices(db, test_product.id, inc_cents=1100, ex_cents=1000, is_taxable=False)
+
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    resp = await client.post(
+        f"/invoices/{invoice_id}/line-items",
+        json={"product_id": str(test_product.id), "quantity": 2},
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    # qty 2 → charged at ex price 1000 → subtotal 2000, no tax
+    assert data["subtotal_cents"] == 2000
+    assert data["tax_cents"] == 0
+    assert data["line_total_cents"] == 2000
 
 
 @pytest.mark.asyncio

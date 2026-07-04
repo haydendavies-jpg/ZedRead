@@ -27,13 +27,13 @@ import { GroupDetailPage } from './pages/groups/GroupDetailPage'
 import { SiteDetailPage } from './pages/sites/SiteDetailPage'
 import { ProductsPage } from './pages/management/ProductsPage'
 import { CategoriesPage } from './pages/management/CategoriesPage'
-import { TaxPage } from './pages/management/TaxPage'
 import { ReportsPage } from './pages/management/ReportsPage'
 import { UsersPage } from './pages/management/UsersPage'
 import { SiteOverridesPage } from './pages/management/SiteOverridesPage'
 import { CompanyProfilePage } from './pages/management/CompanyProfilePage'
 import { PosUsersPage } from './pages/PosUsersPage'
 import { EmailTemplatesPage } from './pages/EmailTemplatesPage'
+import { TaxTemplatesPage } from './pages/TaxTemplatesPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -145,12 +145,19 @@ export default function App() {
                   </PrivateRoute>
                 }
               />
+              <Route
+                path="tax-templates"
+                element={
+                  <PrivateRoute requirePortalUser>
+                    <TaxTemplatesPage />
+                  </PrivateRoute>
+                }
+              />
 
               {/* Management routes — available to both portal and management users */}
               <Route path="management" element={<Navigate to="/management/products" replace />} />
               <Route path="management/products" element={<ProductsPage />} />
               <Route path="management/categories" element={<CategoriesPage />} />
-              <Route path="management/tax" element={<TaxPage />} />
               <Route path="management/reports" element={<ReportsPage />} />
               <Route path="management/users" element={<UsersPage />} />
               <Route path="management/overrides" element={<SiteOverridesPage />} />

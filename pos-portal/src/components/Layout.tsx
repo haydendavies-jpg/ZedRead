@@ -16,14 +16,14 @@ const PORTAL_ADMIN_NAV = [
 const PORTAL_SUPER_ADMIN_NAV = [
   { to: '/portal-users', label: 'Portal Users' },
   { to: '/pos-users', label: 'POS Users' },
+  { to: '/tax-templates', label: 'Tax Templates' },
   { to: '/email-templates', label: 'Email Templates' },
 ]
 
-/** Nav items shown to all management users. */
+/** Nav items shown to all management users. Tax is admin-only (see Tax Templates). */
 const MGMT_NAV = [
   { to: '/management/products', label: 'Products' },
   { to: '/management/categories', label: 'Categories' },
-  { to: '/management/tax', label: 'Tax' },
   { to: '/management/reports', label: 'Reports' },
   { to: '/management/company-profile', label: 'Company Profile' },
 ]

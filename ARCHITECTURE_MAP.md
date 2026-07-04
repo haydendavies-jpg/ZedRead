@@ -16,7 +16,9 @@ Group ──┬── Brand ──┬── Site (physical location, one Android
          └── Licenses (per-site subscription/billing)
 ```
 
-Transaction flow: Invoice → line items (snapshot product/price) → modifiers → discount → tax breakdown
+Transaction flow: Invoice → line items (each product stores a tax-INCLUSIVE price and a derived
+tax-EXCLUSIVE price; is_taxable picks which is charged — taxable → inclusive with GST embedded,
+not taxable → exclusive; no rate math at sale) → modifiers → discount → tax breakdown
 → payment → paid/voided/refunded. Refunds are a new Invoice linked via `refund_of_id`, not a mutation.
 
 ## Deployment topology
@@ -52,7 +54,8 @@ Tokens stored in localStorage (portal) or DataStore (Android). No rate-limiting/
 | products.py | CRUD, soft-delete, photo upload (Supabase Storage) |
 | categories.py | list/create/update (system categories protected) |
 | invoices.py | create, line-items, modifiers, discount, pay, void, refund |
-| tax.py | tax category/rate management |
+| tax.py | brand tax category CRUD (taxability classes only — rates come from admin templates) |
+| admin_tax_templates.py | SuperAdmin-only jurisdiction tax templates + rates; invoice engine resolves site rates from these |
 | licenses.py | CRUD, disable/enable |
 | pos_users.py / portal_users.py | CRUD, suspend/activate, PIN admin set, grants |
 | access_grants.py / access_profiles | grant CRUD, permission tiers |
@@ -66,7 +69,11 @@ Tokens stored in localStorage (portal) or DataStore (Android). No rate-limiting/
 
 Hierarchy: `groups` ← `brands` (group_id) ← `sites` (brand_id).
 Catalog: `categories`, `products` (base_price_cents BIGINT), `product_variants`, `product_combo_groups/options`,
-`modifier_groups/options`, `product_modifier_group_links` (M:N), `tax_categories`, `tax_rates`.
+`modifier_groups/options`, `product_modifier_group_links` (M:N). Products carry `base_price_cents`
+(tax-inclusive), `price_ex_cents` (derived), and `is_taxable`. `tax_templates`/`tax_template_rates`
+(admin-owned, jurisdiction-scoped country→state→county→city) supply the country rate used to derive
+a product's exclusive price at save time. `tax_categories`/`tax_rates` are legacy (retained, not used
+for invoice tax).
 Identity: `pos_users` (brand-scoped), `portal_users` (super-admin, no scope), `user_access_grants`
 (site|brand|group scope + access_profile_id), `access_profiles` (permission tiers, JSON perms), `user_pins`.
 Transactions: `invoices`, `invoice_line_items` (snapshotted name/price), `invoice_line_modifiers`,

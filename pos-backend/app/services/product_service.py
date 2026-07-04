@@ -27,6 +27,7 @@ from app.models.user import User
 from app.models.product import Product
 from app.schemas.product import ProductCreate, ProductUpdate
 from app.services.audit_service import log_action
+from app.services.tax_resolution_service import derive_ex_price_cents
 from app.utils.storage import extension_for_content_type, upload_image
 
 log = structlog.get_logger(__name__)
@@ -180,6 +181,9 @@ async def create_product(
     """
     await _validate_category(db, brand_id, payload.category_id)
 
+    # Derive the tax-exclusive price from the inclusive price + brand country rate
+    price_ex_cents = await derive_ex_price_cents(db, brand_id, payload.base_price_cents)
+
     product = Product(
         id=uuid.uuid4(),
         brand_id=brand_id,
@@ -188,6 +192,8 @@ async def create_product(
         name=payload.name,
         description=payload.description,
         base_price_cents=payload.base_price_cents,
+        price_ex_cents=price_ex_cents,
+        is_taxable=payload.is_taxable,
         display_order=payload.display_order,
         is_active=True,
     )
@@ -255,6 +261,10 @@ async def update_product(
         product.description = payload.description
     if payload.base_price_cents is not None:
         product.base_price_cents = payload.base_price_cents
+        # Re-derive the exclusive price whenever the inclusive price changes
+        product.price_ex_cents = await derive_ex_price_cents(db, brand_id, payload.base_price_cents)
+    if payload.is_taxable is not None:
+        product.is_taxable = payload.is_taxable
     if payload.display_order is not None:
         product.display_order = payload.display_order
 

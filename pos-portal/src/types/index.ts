@@ -202,6 +202,31 @@ export interface TaxCategory {
   brand_id: string
   name: string
   is_active: boolean
+  is_system: boolean
+  is_tax_free: boolean
+}
+
+export interface TaxTemplateRate {
+  id: string
+  tax_template_id: string
+  name: string
+  rate_percent: string
+  tax_model: 'exclusive' | 'inclusive' | 'compound'
+  display_order: number
+  is_active: boolean
+}
+
+export interface TaxTemplate {
+  id: string
+  name: string
+  country: string
+  state: string | null
+  county: string | null
+  city: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  rates: TaxTemplateRate[]
 }
 
 export interface TaxRate {
@@ -222,6 +247,8 @@ export interface Product {
   name: string
   description: string | null
   base_price_cents: number
+  price_ex_cents: number
+  is_taxable: boolean
   display_order: number
   is_active: boolean
   created_at: string
