@@ -36,13 +36,17 @@ not taxable → exclusive; no rate math at sale) → modifiers → discount → 
 
 ## Auth (stateless JWT, no server sessions)
 
-1. **Portal Access JWT** — PortalUser (super-admin). Issued by `portal_auth_service`.
-2. **Management JWT** — POS user who also has portal-capable access grant; issued after a scope-selection
-   step (`/auth/portal/management-token`) when the user has multiple grants.
-3. **POS Access JWT** — terminal-scoped (single site); PIN verification returns a fresh token for
-   quick user-switching without full logout.
+1. **Portal Access JWT** (`type=access`) — SuperAdmin. Issued by `portal_auth_service`.
+2. **Management JWT** (`type=mgmt_access`) — User with a `backend_role` on an active grant; issued
+   after a scope-selection step (`/auth/portal/management-token`) when the user has multiple grants.
+   Admin impersonation (`POST /admin/impersonate`) issues the same token type with `imp_*` claims
+   so audit rows attribute to the admin.
+3. **POS Access JWT** (`type=pos_access`) — terminal-scoped (single site); PIN verification returns
+   a fresh token for quick user-switching without full logout.
 
-Tokens stored in localStorage (portal) or DataStore (Android). No rate-limiting/sessions exist.
+Tokens stored in localStorage (portal; impersonation tokens per-tab in sessionStorage) or DataStore
+(Android). No rate-limiting exists. `user_pos_sessions.token_jti` is written at POS login but never
+checked on request — there is no logout route and no server-side token revocation for any token type.
 
 ## Routes inventory (pos-backend/app/routes)
 
@@ -57,8 +61,10 @@ Tokens stored in localStorage (portal) or DataStore (Android). No rate-limiting/
 | tax.py | brand tax category CRUD (taxability classes only — rates come from admin templates) |
 | admin_tax_templates.py | SuperAdmin-only jurisdiction tax templates + rates; invoice engine resolves site rates from these |
 | licenses.py | CRUD, disable/enable |
-| pos_users.py / portal_users.py | CRUD, suspend/activate, PIN admin set, grants |
-| access_grants.py / access_profiles | grant CRUD, permission tiers |
+| users.py / superadmins.py | CRUD, suspend/activate, PIN admin set, grants |
+| access_grants.py (+ profiles_router) | grant CRUD, permission tiers, page permissions |
+| admin_impersonation.py | SuperAdmin "session into" an entity's master-user grant |
+| email_templates.py / reference_data.py | admin-editable email templates; countries/timezones/tax-id labels |
 | reports.py | daily-sales, product-revenue, payment-methods, tax-collected |
 | modifiers.py / combos.py / variants.py | catalog extras management |
 | site_overrides.py | per-site price/availability overrides |
@@ -74,8 +80,9 @@ Catalog: `categories`, `products` (base_price_cents BIGINT), `product_variants`,
 (admin-owned, jurisdiction-scoped country→state→county→city) supply the country rate used to derive
 a product's exclusive price at save time. `tax_categories`/`tax_rates` are legacy (retained, not used
 for invoice tax).
-Identity: `pos_users` (brand-scoped), `portal_users` (super-admin, no scope), `user_access_grants`
-(site|brand|group scope + access_profile_id), `access_profiles` (permission tiers, JSON perms), `user_pins`.
+Identity: `users` (brand- or group-scoped staff), `superadmins` (portal admin, no scope),
+`user_access_grants` (site|brand|group scope + access_profile_id + backend_role + is_default),
+`access_profiles` (permission tiers, JSON perms), `access_profile_page_permissions`, `user_pins`.
 Transactions: `invoices`, `invoice_line_items` (snapshotted name/price), `invoice_line_modifiers`,
 `invoice_tax_breakdowns`, `payments`.
 Billing: `licenses` (site_id, one per site), `license_invoices`.
@@ -89,8 +96,8 @@ Ops: `user_pos_sessions`, `pos_devices`, `audit_logs` (immutable), `user_invites
 | Group | Top-level tenant, no parent |
 | Brand | Business under a Group; owns catalog, staff, access profiles |
 | Site | Location under a Brand; one license, one Android terminal |
-| POS User | Brand-scoped staff; logs into terminal; granted access to sites. **Target rename: "User" — see `ROLE_MODEL.md`** |
-| Portal User | Super-admin; unrelated to Brand/Site scoping. **Target rename: "SuperAdmin" — see `ROLE_MODEL.md`** |
+| User | Staff (model `User`, table `users`); logs into terminal; granted access to sites. Renamed from "POS User" per `ROLE_MODEL.md` |
+| SuperAdmin | Portal admin (model `SuperAdmin`, table `superadmins`); unrelated to Brand/Site scoping. Renamed from "Portal User" per `ROLE_MODEL.md` |
 | Access Grant | Join record: user + scope (site/brand/group) + Access Profile |
 | Access Profile | Named permission tier (JSON perms) belonging to a Brand |
 | Management JWT | Issued to a POS user with portal access after they pick a scope/grant |
@@ -106,10 +113,10 @@ Ops: `user_pos_sessions`, `pos_devices`, `audit_logs` (immutable), `user_invites
 - Portal has no backend logic of its own — pure static SPA REST client.
 - Live code already covers invoices/modifiers/combos/reports (Phase 3 territory per CLAUDE.md rollout
   table) — if a summary claims an earlier active stage, reconcile against actual route/model inventory above.
-- `ROLE_MODEL.md` defines a target naming/role redesign (PortalUser→SuperAdmin, POSUser→User, 5 named
-  User roles, page-category permission hierarchy) that is **not yet implemented**. Code today still uses
-  `PortalUser`/`POSUser`/`backend_role` enum (`admin|users|reporting`) exactly as documented above, and
-  there is no page-category permission system anywhere in the codebase. Don't assume `ROLE_MODEL.md`
-  naming is live until this map is updated to match.
+- The `ROLE_MODEL.md` redesign is **partially implemented**: the rename is live (models
+  `SuperAdmin`/`User`, tables `superadmins`/`users`, routes `superadmins.py`/`users.py`) and
+  `access_profile_page_permissions` exists, but grants still reference `access_profiles` and the
+  `backend_role` enum — the full 5-role model is not complete. Verify against code before assuming
+  either the old or the target model.
 
-*Last mapped: 2026-06-27. Re-verify against code if it has changed significantly since.*
+*Last mapped: 2026-07-04. Re-verify against code if it has changed significantly since.*
