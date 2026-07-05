@@ -45,8 +45,10 @@ not taxable → exclusive; no rate math at sale) → modifiers → discount → 
    a fresh token for quick user-switching without full logout.
 
 Tokens stored in localStorage (portal; impersonation tokens per-tab in sessionStorage) or DataStore
-(Android). No rate-limiting exists. `user_pos_sessions.token_jti` is written at POS login but never
-checked on request — there is no logout route and no server-side token revocation for any token type.
+(Android). No rate-limiting exists. POS access tokens are revocable: each carries a `jti` matched to
+an active `user_pos_sessions` row, `resolve_access`/`resolve_catalog_access` reject a token whose
+session has ended, and `POST /auth/pos/logout` ends the session. Portal and management (mgmt_access)
+tokens still have no server-side revocation — logout there is client-side only until expiry.
 
 ## Routes inventory (pos-backend/app/routes)
 

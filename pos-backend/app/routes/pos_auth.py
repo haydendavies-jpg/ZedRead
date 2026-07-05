@@ -1,6 +1,7 @@
 """POS terminal authentication routes: login, PIN set, and PIN verify."""
 
 from fastapi import APIRouter, Depends, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -10,11 +11,16 @@ from app.schemas.pos_auth import (
     PINVerifyResponse,
     POSLoginRequest,
     POSLoginResponse,
+    POSLogoutResponse,
 )
 from app.services import pos_auth_service
 from app.utils.dependencies import POSAccess, resolve_access
+from app.utils.security import decode_token
 
 router = APIRouter(prefix="/auth/pos", tags=["pos-auth"])
+
+# Extracts the Bearer token so logout can read the session jti from the token
+_bearer = HTTPBearer()
 
 
 @router.post("/login", response_model=POSLoginResponse, status_code=status.HTTP_200_OK)
@@ -56,6 +62,33 @@ async def set_pin(
         db: Active database session.
     """
     await pos_auth_service.set_pin(db, access.user, payload)
+
+
+@router.post("/logout", response_model=POSLogoutResponse, status_code=status.HTTP_200_OK)
+async def pos_logout(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+    access: POSAccess = Depends(resolve_access),
+    db: AsyncSession = Depends(get_db),
+) -> POSLogoutResponse:
+    """
+    End the current POS session, revoking the presented access token.
+
+    Requires a valid POS access token (resolve_access also confirms the session
+    is still active). The token's jti is read to end exactly this session, so a
+    switched-out user's other sessions are unaffected.
+
+    Args:
+        credentials: Bearer token — the jti identifies which session to end.
+        access: Resolved POS access (authenticates the caller).
+        db: Active database session.
+
+    Returns:
+        POSLogoutResponse: Confirmation the session was ended.
+    """
+    # resolve_access already validated the token; decode again only to read jti
+    payload = decode_token(credentials.credentials, expected_type="pos_access")
+    await pos_auth_service.logout(db, access.user, payload.get("jti", ""))
+    return POSLogoutResponse()
 
 
 @router.post("/pin/verify", response_model=PINVerifyResponse, status_code=status.HTTP_200_OK)

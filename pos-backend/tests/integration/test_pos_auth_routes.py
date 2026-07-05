@@ -16,6 +16,7 @@ from sqlalchemy import select
 from app.constants.audit_actions import (
     POS_LOGIN_FAILED,
     POS_LOGIN_SUCCESS,
+    POS_LOGOUT,
     POS_PIN_SET,
     POS_PIN_VERIFIED,
 )
@@ -94,6 +95,72 @@ async def test_pos_login_success_writes_audit_log(client, db, test_user, test_si
     row = result.scalar_one()
     assert row.actor_email == "posuser@test.com"
     assert row.actor_id == test_user.id
+
+
+# ── Logout / session revocation ───────────────────────────────────────────────
+
+
+async def _login_pos(client, test_site) -> str:
+    """Log in the standard test POS user and return the access token."""
+    resp = await client.post(
+        "/auth/pos/login",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "site_id": str(test_site.id),
+        },
+    )
+    assert resp.status_code == 200
+    return resp.json()["access_token"]
+
+
+async def test_pos_logout_ends_session(client, db, test_user, test_site, test_access_grant):
+    """Logout returns 200 and sets ended_at on the user's active session."""
+    token = await _login_pos(client, test_site)
+
+    resp = await client.post("/auth/pos/logout", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+
+    result = await db.execute(
+        select(UserPOSSession).where(UserPOSSession.user_id == test_user.id)
+    )
+    session = result.scalar_one()
+    assert session.ended_at is not None  # Session has been ended
+
+
+async def test_pos_logout_writes_audit_log(client, db, test_user, test_site, test_access_grant):
+    """Logout writes a POS_LOGOUT audit row attributed to the user."""
+    token = await _login_pos(client, test_site)
+
+    await client.post("/auth/pos/logout", headers={"Authorization": f"Bearer {token}"})
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_user.id),
+            AuditLog.action == POS_LOGOUT,
+        )
+    )
+    row = result.scalar_one()
+    assert row.actor_id == test_user.id
+
+
+async def test_pos_token_rejected_after_logout(client, test_user, test_site, test_access_grant):
+    """A POS token is rejected on protected routes once its session is logged out."""
+    token = await _login_pos(client, test_site)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Token works before logout
+    assert (await client.get("/products", headers=headers)).status_code == 200
+
+    # Log out, then the same token must be rejected
+    assert (await client.post("/auth/pos/logout", headers=headers)).status_code == 200
+    assert (await client.get("/products", headers=headers)).status_code == 401
+
+
+async def test_pos_logout_requires_authentication(client):
+    """Logout with no token returns 403 (no credentials)."""
+    resp = await client.post("/auth/pos/logout")
+    assert resp.status_code == 403
 
 
 # ── Login failure ─────────────────────────────────────────────────────────────
