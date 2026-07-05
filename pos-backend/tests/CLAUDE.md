@@ -6,8 +6,9 @@ Never use the development or production database.
 Use the async test engine fixture from `tests/conftest.py` — database `zedread_test`.
 Never mock the database. Use real queries against the real test schema.
 
-**Port:** Docker is not available in this environment. PostgreSQL runs on the local host at
-**port 5432** (not 5433). Always run tests with the env var override:
+**Connection:** the default is the Docker Compose `postgres-test` service on **port 5433**
+(this is also what CI uses). If PostgreSQL runs natively on the host instead (no Docker),
+override via env var:
 
 ```bash
 TEST_DATABASE_URL="postgresql+asyncpg://test:test@localhost:5432/zedread_test" python -m pytest
@@ -16,26 +17,7 @@ TEST_DATABASE_URL="postgresql+asyncpg://test:test@localhost:5432/zedread_test" p
 If the schema is stale after a model change, drop and recreate it:
 
 ```bash
-psql -U test -h localhost -p 5432 zedread_test -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
-```
-
-```python
-# tests/conftest.py — required setup
-import pytest
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from app.database import Base
-
-# Default in conftest.py is 5433 (Docker) — always override via TEST_DATABASE_URL env var
-TEST_DB_URL = 'postgresql+asyncpg://test:test@localhost:5432/zedread_test'
-
-@pytest.fixture(scope='session')
-async def db_engine():
-    engine = create_async_engine(TEST_DB_URL)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+psql -U test -h localhost -p <port> zedread_test -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 ```
 
 ---
@@ -68,10 +50,10 @@ Every test for a write operation must assert that the correct audit row was writ
 This is not optional — the audit trail is a core feature.
 
 ```python
-async def test_void_invoice_writes_audit_log(client, db, auth_headers):
+async def test_void_invoice_writes_audit_log(client, db, pos_auth_headers):
     """Voiding an invoice writes the correct audit log row."""
     invoice = await create_test_paid_invoice(db)
-    await client.post(f'/invoices/{invoice.id}/void', headers=auth_headers)
+    await client.post(f'/invoices/{invoice.id}/void', headers=pos_auth_headers)
 
     audit = await db.execute(
         select(AuditLog).where(
@@ -100,10 +82,6 @@ test_calculate_tax_inclusive_gst_10_percent
 test_invoices_post_disabled_license_returns_403
 test_category_wrong_brand_returns_400
 test_invoice_void_writes_audit_log
-test_tax_calculation_inclusive_gst
-test_invoices_post_returns_201
-test_category_brand_mismatch_returns_400
-test_invoice_void_writes_audit_log
 ```
 
 ---
@@ -119,18 +97,22 @@ Integration tests: tests/integration/test_{resource_name}_routes.py
 
 ## Standard fixtures — always use from conftest.py, never recreate them
 
+These are the fixtures that actually exist in `tests/conftest.py` (check there for the full,
+current list before writing tests — it grows with each stage):
+
 | Fixture | Provides |
 |---|---|
-| `db_engine` | Async SQLAlchemy engine, session-scoped, creates/drops all tables |
 | `db` | `AsyncSession` that rolls back after each test, function-scoped |
-| `client` | FastAPI TestClient on the test DB, function-scoped |
-| `test_group` | A created `groups` row |
-| `test_brand` | A created `brands` row under `test_group` |
-| `test_site` | A created `sites` row under `test_brand` |
-| `test_portal_user` | An admin `portal_users` row |
-| `test_pos_user` | A `users` row with a grant for `test_brand` |
-| `portal_auth_headers` | `Authorization` header dict for `test_portal_user` JWT |
-| `pos_auth_headers` | `Authorization` header dict for `test_pos_user` JWT |
+| `client` | httpx `AsyncClient` against the app on the test DB, function-scoped |
+| `test_group` / `test_brand` / `test_site` | Created hierarchy rows (each under the previous) |
+| `test_superadmin` | An Admin-role `superadmins` row |
+| `portal_auth_headers` | `Authorization` header dict for `test_superadmin` JWT |
+| `test_user` | A `users` row scoped to `test_brand` |
+| `test_access_profile` / `test_manager_profile` | `access_profiles` rows for `test_brand` |
+| `test_access_grant` / `test_portal_grant` / `test_brand_grant` | Grants for `test_user` |
+| `pos_auth_headers` / `mgmt_auth_headers` | Auth headers for POS / management JWTs |
+| `test_license` / `test_device` | License + registered device for `test_site` |
+| `test_tax_category` / `test_product` | Catalog rows for `test_brand` |
 
 ---
 
@@ -176,36 +158,4 @@ def test_calculate_tax_inclusive_10_percent():
     )
     assert tax == 91       # 10/110 * 1000 rounded
     assert subtotal == 909 # 1000 - 91
-
-def test_calculate_tax_exclusive_10_percent():
-    """Exclusive GST at 10% on $10.00 adds correct tax."""
-    tax, total = calculate_tax(
-        amount_cents=1000,
-        rate_percent=Decimal('10.0000'),
-        model='exclusive',
-    )
-    assert tax == 100
-    assert total == 1100
 ```
-
----
-
-## Minimum test count for Stage 10 (invoice engine)
-
-The invoice engine is the most critical stage. Write at least 15 test scenarios before
-implementing. If you cannot write 15, the task is not well enough defined — keep planning.
-
-Required scenarios include:
-- Inclusive tax calculation (at least 2 rates)
-- Exclusive tax calculation (at least 2 rates)
-- Compound tax (GST + PST)
-- Snapshot immutability (changing a product does not change an existing line item)
-- License check (disabled license returns 403)
-- Required modifier group blocks payment until satisfied
-- Split payment: two partial payments summing to total sets status = paid
-- Overpayment rejected
-- Void by staff returns 403
-- Void by manager succeeds and writes audit log
-- Refund creates new invoice with `type = 'refund'` and `refund_of_id` set
-- Invoice paid audit log written with correct actor
-- Invoice void audit log written with correct metadata (including authorising user)

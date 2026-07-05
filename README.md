@@ -28,6 +28,7 @@ Multi-tenant POS platform. The hierarchy is **Group → Brand → Site**. A Grou
 | 2 — POS Catalog | 7–9 | POS auth, product catalog, variants, modifiers, combos | ✅ Complete |
 | 3 — Transactions | 10–12 | Invoice engine, payments, reporting | ✅ Complete |
 | 4 — Android App | 13–14 | Complete POS Android application | 🚧 In Progress |
+| 5 — Identity & Permissions Redesign | 15 | SuperAdmin/User rename, 5-role model (`ROLE_MODEL.md`) | 🚧 In Progress |
 
 ## Stage summary
 

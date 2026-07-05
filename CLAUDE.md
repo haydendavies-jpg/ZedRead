@@ -4,19 +4,21 @@
 Android POS system with a FastAPI/PostgreSQL backend and a React super-admin portal.
 Multi-tenant hierarchy: Group → Brand → Site.
 
-## Design document
-**pos_master_v5.docx** — reference the relevant chapter before implementing any feature.
-Never implement a feature that contradicts the design document without flagging it first.
+## Read these first
+- **ARCHITECTURE_MAP.md** — functional map of the actual codebase (routes, models, deployment,
+  terminology), derived from code. Read this when picking up the project in a new session.
+  If it conflicts with any other doc, the code (and this map) wins — flag the conflict.
+- **pos_master_v5.docx** — design document. Reference the relevant chapter before implementing
+  a feature; never contradict it without flagging first.
 
-## Architecture map (ground truth)
-**ARCHITECTURE_MAP.md** — a functional map of the actual codebase (routes, models, Redis usage,
-deployment topology, terminology), derived from reading code rather than docs/comments. Read this
-first when picking up the project in a new session. If it conflicts with the design doc or other
-written summaries, the code (and this map) wins — flag the conflict.
+## Scoped rules (auto-loaded when working in those directories)
+- Backend code style, naming, FastAPI patterns: `pos-backend/app/CLAUDE.md`
+- Testing rules and fixtures: `pos-backend/tests/CLAUDE.md`
+- Portal (React) style, components, brand: `pos-portal/CLAUDE.md`
 
 ## Rollout plan
-The project is built in 5 phases across 15 stages. Always work within the current stage.
-Never implement features from future stages unless explicitly instructed.
+Built in 5 phases across 15 stages. Work within the current stage only; never implement
+future-stage features unless explicitly instructed.
 
 | Phase | Stages | Summary |
 |---|---|---|
@@ -24,67 +26,42 @@ Never implement features from future stages unless explicitly instructed.
 | 2 — POS Catalog | 7–9 | POS auth, products, variants, modifiers, combos |
 | 3 — Transactions | 10–12 | Invoice engine, payments, reporting, deploy |
 | 4 — Android App | 13–14 | Kotlin + Jetpack Compose POS application |
-| 5 — Identity & Permissions Redesign | 15 | PortalUser→SuperAdmin, POSUser→User rename, 5-role model, page-category permission hierarchy — see `ROLE_MODEL.md` |
+| 5 — Identity & Permissions Redesign | 15 | Rename + 5-role model — see `ROLE_MODEL.md` |
 
-**Stage 15 scope (current):** implement the rename and role/permission model defined in `ROLE_MODEL.md` —
-SuperAdmin (Admin/Reseller Staff), User (Master User/Admin/Reporting Only/Manager/Staff), required-field
-rules, access_profiles replaced by the 5 roles, per-page permission grants within the 5 page categories,
-license gating, and cross-identity login disambiguation. The concrete per-category page list (§6 of
-`ROLE_MODEL.md`) is still open — define it as part of this stage's implementation, then update
+**Stage 15 scope (current):** implement the rename and role/permission model in `ROLE_MODEL.md` —
+SuperAdmin (Admin/Reseller Staff), User (Master User/Admin/Reporting Only/Manager/Staff),
+required-field rules, access_profiles replaced by the 5 roles, per-page permission grants within
+the 5 page categories, license gating, and cross-identity login disambiguation. The per-category
+page list (§6 of `ROLE_MODEL.md`) is still open — define it during this stage, then update
 `ROLE_MODEL.md` to record it as resolved.
 
-## Folder structure
+## Folder structure (backend)
 ```
 pos-backend/
 ├── app/
-│   ├── main.py              ← FastAPI app, router registration, middleware
-│   ├── database.py          ← SQLAlchemy engine, session factory, Base
-│   ├── models/              ← SQLAlchemy ORM models
-│   ├── schemas/             ← Pydantic request/response schemas
-│   ├── routes/              ← FastAPI route handlers (thin — logic goes in services/)
-│   ├── services/            ← All business logic
-│   ├── constants/           ← String constants: audit actions, status enums
-│   ├── utils/               ← Shared utilities: security, formatting, ID generation
-│   ├── middleware/          ← FastAPI middleware: logging, CORS, error handling
-│   └── cli.py               ← Management CLI: bootstrap, seed commands
-├── tests/
-│   ├── conftest.py          ← Shared fixtures: DB engine, test client, test users
-│   ├── unit/                ← Unit tests mirroring app/ structure
-│   └── integration/         ← Integration tests mirroring app/routes/ structure
-├── alembic/                 ← Database migrations
-├── docker-compose.yml
-├── requirements.txt
-└── .env.example
+│   ├── main.py         ← FastAPI app, router registration, middleware
+│   ├── database.py     ← SQLAlchemy engine, session factory, Base
+│   ├── models/         ← SQLAlchemy ORM models
+│   ├── schemas/        ← Pydantic request/response schemas
+│   ├── routes/         ← Route handlers (thin — logic goes in services/)
+│   ├── services/       ← All business logic
+│   ├── constants/      ← Audit actions, status enums, reference data
+│   ├── utils/          ← Security, email, storage, dependencies
+│   ├── middleware/     ← Logging, CORS, error handling
+│   └── cli.py          ← Management CLI: bootstrap, seed commands
+├── tests/              ← unit/ and integration/ mirror app/ structure
+├── alembic/            ← Database migrations
+└── docker-compose.yml
 ```
-
 New files always go in the correct folder. Never create files outside this structure.
 
-## Logging is threaded throughout — not a separate stage
-
-Logging is present from Stage 1 and grows with the system.
-
-| Component | Stage | What gets added |
-|---|---|---|
-| structlog setup | 1 | JSON renderer for prod, ColourRenderer for dev, controlled by LOG_FORMAT env var |
-| Request ID middleware | 1 | Every request gets a UUID; all log lines carry the same request_id |
-| audit_logs table | 1 | Created in the first migration — exists from day one |
-| log_action() helper | 1 | app/services/audit_service.py — written and unit-tested before anything calls it |
-| Portal auth audit logging | 2 | Login and logout write audit rows |
-| Hierarchy CRUD audit logging | 3 | Every group/brand/site create and status change writes an audit row |
-| License audit logging | 4 | License created/disabled/enabled/expired; nightly job uses actor_type = 'system' |
-| POS auth audit logging | 7 | POS login, logout, failed login, PIN set, PIN reset |
-| Product audit logging | 8 | Product created, updated, price changed, deactivated |
-| Invoice audit logging | 10 | Invoice paid, voided, refunded, discount applied |
-
-## Sub-rules
-- Code style, naming, and FastAPI patterns: see **app/CLAUDE.md**
-- Testing rules: see **tests/CLAUDE.md**
-- Portal (React) style, components, and brand: see **pos-portal/CLAUDE.md**
+## Logging
+Logging is threaded through every stage, not a separate feature: structlog (JSON in prod via
+`LOG_FORMAT`), request-ID middleware, and the `audit_logs` table exist from Stage 1. Every
+auth/CRUD/license/invoice write audits via `log_action()` (`app/services/audit_service.py`);
+nightly jobs audit with `actor_type='system'`.
 
 ## Absolute rules — no exceptions
-
-These 15 rules apply to every task in every stage:
-
 1. Type hint every function parameter and return value.
 2. Docstring every function, class, and module.
 3. Inline comment every non-obvious line.
@@ -93,17 +70,16 @@ These 15 rules apply to every task in every stage:
 6. Routes are thin — all logic lives in services.
 7. Every service write calls `log_action()` in the same transaction.
 8. Use constants from `app/constants/` — never hardcode action strings or status values.
-9. Never use float for money — use int (cents) for storage, Decimal for calculation.
+9. Never use float for money — int (cents) for storage, Decimal for calculation.
 10. Never mock the database in tests — use the real test DB fixture.
 11. Every test for a write must assert the correct audit_logs row was written.
 12. Every route must declare a `response_model`.
 13. Every list route must support pagination with `skip` and `limit`.
 14. Never catch an exception and do nothing — log it at ERROR and re-raise.
 15. Never commit `.env` files, never store plaintext passwords, tokens, or PINs.
-16. Every portal page must be mobile-friendly: use `overflow-x-auto` on all table containers, responsive padding (`p-4 sm:p-6`), and `flex-wrap` on header/filter rows so they stack on narrow screens. Test layouts at 375px width before marking a task complete.
-
-Additional rules:
-- Never build SQL with f-strings or string concatenation.
-- Never skip writing tests for a completed task.
-- Never leave a TODO comment without a GitHub issue number: `# TODO(#42): description`
-- Never run a migration against production without reviewing it first.
+16. Every portal page must be mobile-friendly: `overflow-x-auto` on table containers,
+    responsive padding (`p-4 sm:p-6`), `flex-wrap` on header/filter rows. Test at 375px width.
+17. Never build SQL with f-strings or string concatenation.
+18. Never skip writing tests for a completed task.
+19. Never leave a TODO comment without an issue number: `# TODO(#42): description`.
+20. Never run a migration against production without reviewing it first.
