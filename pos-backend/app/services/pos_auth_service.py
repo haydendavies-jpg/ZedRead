@@ -1,6 +1,7 @@
-"""Business logic for POS terminal authentication: login, PIN set, and PIN verify."""
+"""Business logic for POS terminal authentication: login, logout, PIN set, and PIN verify."""
 
 import uuid
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import HTTPException, status
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants.audit_actions import (
     POS_LOGIN_FAILED,
     POS_LOGIN_SUCCESS,
+    POS_LOGOUT,
     POS_PIN_SET,
     POS_PIN_VERIFIED,
 )
@@ -231,6 +233,52 @@ async def login(db: AsyncSession, payload: POSLoginRequest) -> POSLoginResponse:
         access_profile_name=access_profile.name,
         is_pin_reset_required=is_pin_reset_required,
     )
+
+
+async def logout(db: AsyncSession, user: User, jti: str) -> None:
+    """
+    End the POS session identified by the token's jti, revoking that token.
+
+    Sets ``ended_at`` on the matching ``user_pos_sessions`` row so
+    resolve_access() rejects the token on its next use. Idempotent: if the
+    session is already ended (or unknown), the call still succeeds so a
+    double-logout from the terminal is not an error.
+
+    Args:
+        db: Active database session.
+        user: The authenticated POS user (from resolve_access).
+        jti: The ``jti`` claim of the token being logged out.
+
+    Returns:
+        None
+    """
+    log.info("pos_auth.logout", user_id=str(user.id))
+
+    # Find the still-active session for this token
+    session_result = await db.execute(
+        select(UserPOSSession).where(
+            UserPOSSession.token_jti == jti,
+            UserPOSSession.ended_at.is_(None),  # only an active session can be ended
+        )
+    )
+    session = session_result.scalar_one_or_none()
+
+    if session is not None:
+        # Mark the session ended — this is what revokes the token going forward
+        session.ended_at = datetime.now(UTC)
+
+    await log_action(
+        db=db,
+        action=POS_LOGOUT,
+        entity_type="user",
+        entity_id=str(user.id),
+        actor_id=user.id,
+        actor_email=user.email,
+        actor_name=user.name,
+        after_state={"session_jti": jti},
+    )
+    await db.commit()
+    log.info("pos_auth.logout.complete", user_id=str(user.id))
 
 
 async def set_pin(

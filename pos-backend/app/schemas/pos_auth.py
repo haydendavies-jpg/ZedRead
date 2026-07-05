@@ -76,3 +76,9 @@ class PINVerifyResponse(BaseModel):
     user_name: str
     access_profile_name: str
     is_pin_reset_required: bool
+
+
+class POSLogoutResponse(BaseModel):
+    """Response returned on successful POS logout — confirms the session was ended."""
+
+    detail: str = "Logged out"

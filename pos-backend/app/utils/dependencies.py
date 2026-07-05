@@ -23,6 +23,7 @@ from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
+from app.models.user_pos_session import UserPOSSession
 from app.utils.security import decode_token
 
 
@@ -183,6 +184,44 @@ log = structlog.get_logger(__name__)
 
 # Extracts the Bearer token from the Authorization header
 _bearer = HTTPBearer()
+
+
+async def _assert_pos_session_active(db: AsyncSession, jti: str) -> None:
+    """
+    Verify the POS token's session has not been revoked (logged out).
+
+    Every POS access token carries a ``jti`` that matches a ``user_pos_sessions``
+    row written at login/PIN-verify time. Logout sets ``ended_at`` on that row;
+    this check rejects any token whose session is missing or already ended, which
+    is what makes POS tokens revocable before their natural expiry.
+
+    Args:
+        db: The active database session.
+        jti: The ``jti`` claim from the decoded POS token.
+
+    Raises:
+        HTTPException: 401 if the jti is absent, unknown, or its session ended.
+    """
+    if not jti:
+        # Older tokens minted before revocation existed carried a jti too, so a
+        # missing jti means a malformed/forged token — reject it.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Malformed POS token — missing session id",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    session_result = await db.execute(
+        select(UserPOSSession).where(
+            UserPOSSession.token_jti == jti,
+            UserPOSSession.ended_at.is_(None),  # active sessions only
+        )
+    )
+    if session_result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="POS session has ended — please log in again",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 def _actor_from_mgmt(mgmt: ManagementAccess) -> dict:
@@ -401,6 +440,9 @@ async def resolve_access(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Access profile not found for grant",
         )
+
+    # Reject tokens whose session has been revoked via logout
+    await _assert_pos_session_active(db, payload.get("jti", ""))
 
     return POSAccess(user=user, site=site, access_profile=access_profile)
 
@@ -718,6 +760,9 @@ async def resolve_catalog_access(
                 access_profile_id=str(grant.access_profile_id),
             )
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Access profile missing")
+
+        # Reject tokens whose session has been revoked via logout
+        await _assert_pos_session_active(db, payload.get("jti", ""))
 
         pos_access = POSAccess(user=user, site=site, access_profile=access_profile)
         return CatalogAccess(pos_access=pos_access, mgmt_access=None, portal_access=None)
