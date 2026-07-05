@@ -14,6 +14,7 @@ from sqlalchemy.exc import OperationalError
 from app.database import engine
 from app.logging_config import configure_logging
 from app.middleware.logging import RequestLoggingMiddleware
+from app.utils.security import validate_secret_key
 from app.routes import access_grants, admin_impersonation, admin_tax_templates, brands, categories, combos, email_templates, groups, invoices, license_invoices, licenses, modifiers, portal_auth, reference_data, superadmins, pos_auth, pos_devices, users, products, reports, site_overrides, sites, tax, user_invites, variants
 from app.routes.access_grants import profiles_router
 
@@ -37,9 +38,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     Yields:
         None: Control passes to the running application.
     """
+    import os
+
+    # Refuse to boot with an insecure JWT signing key outside dev/test — a
+    # placeholder SECRET_KEY in production lets anyone forge admin tokens.
+    # ENVIRONMENT defaults to "development" so local runs need no extra config.
+    validate_secret_key(os.getenv("ENVIRONMENT", "development"))
+
     # Verify database is reachable before accepting traffic
     # Skipped in test environments where the engine may point at the dev DB
-    import os
     if os.getenv("SKIP_DB_STARTUP_CHECK", "").lower() != "true":
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))

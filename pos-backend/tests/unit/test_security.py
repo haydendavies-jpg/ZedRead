@@ -8,10 +8,13 @@ import pytest
 from jose import JWTError
 
 from app.utils.security import (
+    _MIN_SECRET_KEY_LENGTH,
+    _SECRET_KEY_PLACEHOLDER,
     create_access_token,
     create_refresh_token,
     decode_token,
     hash_password,
+    validate_secret_key,
     verify_password,
 )
 
@@ -94,3 +97,40 @@ def test_access_token_different_from_refresh_token():
     access = create_access_token(user_id, "admin")
     refresh = create_refresh_token(user_id)
     assert access != refresh
+
+
+# ── SECRET_KEY validation (fail-fast) ─────────────────────────────────────────
+
+# A key long enough to satisfy the minimum-length rule
+_STRONG_KEY = "x" * _MIN_SECRET_KEY_LENGTH
+
+
+def test_validate_secret_key_placeholder_in_production_raises():
+    """The built-in placeholder is rejected in a production environment."""
+    with pytest.raises(RuntimeError, match="placeholder"):
+        validate_secret_key("production", secret_key=_SECRET_KEY_PLACEHOLDER)
+
+
+def test_validate_secret_key_empty_in_production_raises():
+    """An unset (empty) key is rejected in a production environment."""
+    with pytest.raises(RuntimeError, match="unset or still uses"):
+        validate_secret_key("production", secret_key="")
+
+
+def test_validate_secret_key_short_in_production_raises():
+    """A key shorter than the minimum length is rejected in production."""
+    with pytest.raises(RuntimeError, match="too short"):
+        validate_secret_key("production", secret_key="short-key")
+
+
+def test_validate_secret_key_strong_in_production_passes():
+    """A sufficiently long, non-placeholder key is accepted in production."""
+    # Should not raise
+    validate_secret_key("production", secret_key=_STRONG_KEY)
+
+
+@pytest.mark.parametrize("environment", ["development", "dev", "local", "test", "testing", "TEST"])
+def test_validate_secret_key_placeholder_allowed_in_dev_and_test(environment):
+    """Dev and test environments may run on the placeholder (no extra config)."""
+    # Should not raise even with the placeholder — matched case-insensitively
+    validate_secret_key(environment, secret_key=_SECRET_KEY_PLACEHOLDER)
