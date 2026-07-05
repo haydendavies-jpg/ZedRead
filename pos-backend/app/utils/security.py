@@ -14,11 +14,68 @@ log = structlog.get_logger(__name__)
 # Argon2 hasher — default parameters are safe for 2024+ hardware
 _hasher = PasswordHasher()
 
+# Built-in placeholder — safe for local dev, MUST be overridden in any real
+# deployment. validate_secret_key() refuses to start the server if this value
+# (or one that is too short) is still in effect outside dev/test.
+_SECRET_KEY_PLACEHOLDER: str = "change-me-in-production-use-32-plus-chars"
+
+# Minimum acceptable secret length for a non-dev environment. HS256 keys shorter
+# than 32 bytes materially weaken the signature against offline brute-forcing.
+_MIN_SECRET_KEY_LENGTH: int = 32
+
+# Environment names treated as non-production — the insecure-default check is
+# skipped for these so local dev and the test suite run without extra config.
+_DEV_ENVIRONMENTS: frozenset[str] = frozenset({"development", "dev", "local", "test", "testing"})
+
 # JWT settings from environment — sensible defaults for local dev
-_SECRET_KEY: str = os.getenv("SECRET_KEY", "change-me-in-production-use-32-plus-chars")
+_SECRET_KEY: str = os.getenv("SECRET_KEY", _SECRET_KEY_PLACEHOLDER)
 _ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
 _ACCESS_TOKEN_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
 _REFRESH_TOKEN_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+
+
+def validate_secret_key(environment: str, secret_key: str | None = None) -> None:
+    """
+    Refuse to start with an insecure JWT signing key in a non-dev environment.
+
+    The signing key protects every access, refresh, management, POS, and
+    impersonation token. If the built-in placeholder is left in place in
+    production, anyone who has read the (public) source can forge a valid
+    admin token, so a misconfigured deployment must fail loudly at startup
+    rather than boot with a known key.
+
+    Dev and test environments are exempt so local runs and CI need no extra
+    configuration.
+
+    Args:
+        environment: The deployment environment name (e.g. "production").
+            Matched case-insensitively against the dev/test allowlist.
+        secret_key: The key to validate. Defaults to the module's configured
+            SECRET_KEY; accepted as an argument to keep the check unit-testable.
+
+    Raises:
+        RuntimeError: If, outside dev/test, the key is unset/placeholder or
+            shorter than the minimum length.
+    """
+    # Fall back to the process-wide configured key when no explicit value is given
+    key = secret_key if secret_key is not None else _SECRET_KEY
+
+    # Local dev and CI are allowed to run on the placeholder — skip the check
+    if environment.strip().lower() in _DEV_ENVIRONMENTS:
+        return
+
+    if not key or key == _SECRET_KEY_PLACEHOLDER:
+        raise RuntimeError(
+            "SECRET_KEY is unset or still uses the built-in placeholder. "
+            "Set a strong, unique SECRET_KEY (32+ characters) before starting "
+            f"in environment '{environment}'."
+        )
+
+    if len(key) < _MIN_SECRET_KEY_LENGTH:
+        raise RuntimeError(
+            f"SECRET_KEY is too short ({len(key)} chars); it must be at least "
+            f"{_MIN_SECRET_KEY_LENGTH} characters in environment '{environment}'."
+        )
 
 
 def hash_password(plain: str) -> str:
