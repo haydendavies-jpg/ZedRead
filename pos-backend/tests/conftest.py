@@ -12,6 +12,7 @@ import os
 import uuid
 from collections.abc import AsyncGenerator
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
@@ -207,6 +208,20 @@ _ALL_TABLES = [
 
 
 # ── Per-test session ──────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Clear the in-process auth rate limiter before/after each test.
+
+    The limiter state is process-global, so without this reset attempts would
+    accumulate across tests (all sharing one test client) and trip 429s.
+    """
+    from app.utils import rate_limit
+
+    rate_limit.reset()
+    yield
+    rate_limit.reset()
 
 
 @pytest_asyncio.fixture()

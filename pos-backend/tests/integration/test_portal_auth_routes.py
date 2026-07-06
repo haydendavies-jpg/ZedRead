@@ -64,6 +64,22 @@ async def test_login_success_writes_audit_log(client, db, test_superadmin):
     assert row.actor_id == test_superadmin.id
 
 
+# ── Rate limiting ─────────────────────────────────────────────────────────────
+
+
+async def test_login_throttled_after_repeated_attempts(client, test_superadmin):
+    """Repeated login attempts for one account eventually return 429."""
+    # Default budget is 10 attempts/account/window; the 11th is throttled.
+    last_status = None
+    for _ in range(11):
+        resp = await client.post(
+            "/auth/portal/login",
+            json={"email": "admin@test.com", "password": "wrong-password"},
+        )
+        last_status = resp.status_code
+    assert last_status == 429
+
+
 # ── Login failure ─────────────────────────────────────────────────────────────
 
 

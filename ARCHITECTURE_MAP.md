@@ -45,7 +45,9 @@ not taxable → exclusive; no rate math at sale) → modifiers → discount → 
    a fresh token for quick user-switching without full logout.
 
 Tokens stored in localStorage (portal; impersonation tokens per-tab in sessionStorage) or DataStore
-(Android). No rate-limiting exists. All token types are now revocable server-side:
+(Android). Login and PIN-verify are rate-limited per account (in-process sliding window,
+`app/utils/rate_limit.py`; configurable via `LOGIN_RATE_LIMIT`/`PIN_RATE_LIMIT`, disable with
+`RATE_LIMIT_ENABLED=false`). All token types are now revocable server-side:
 - **POS** access tokens carry a `jti` matched to an active `user_pos_sessions` row;
   `resolve_access`/`resolve_catalog_access` reject a token whose session has ended, and
   `POST /auth/pos/logout` ends the session.

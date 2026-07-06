@@ -10,6 +10,7 @@ both identities (ROLE_MODEL.md §3) and must select one via
 POST /auth/portal/identity-token before either token type is issued.
 """
 
+import os
 import uuid
 
 import structlog
@@ -43,6 +44,7 @@ from app.schemas.portal_auth import (
     UnifiedLoginResponse,
 )
 from app.services.audit_service import log_action
+from app.utils.rate_limit import check_rate_limit
 from app.utils.security import (
     create_access_token,
     create_mgmt_access_token,
@@ -53,6 +55,10 @@ from app.utils.security import (
 )
 
 log = structlog.get_logger(__name__)
+
+# Login throttle: at most _LOGIN_MAX_ATTEMPTS per account per window
+_LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_RATE_LIMIT", "10"))
+_LOGIN_WINDOW_SECONDS = int(os.getenv("LOGIN_RATE_WINDOW_SECONDS", "300"))
 
 
 async def _load_superadmin(db: AsyncSession, email: str) -> SuperAdmin | None:
@@ -333,6 +339,14 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
             but has no portal-capable grants.
     """
     log.info("auth.portal.login.attempt", email=payload.email)
+
+    # Throttle repeated attempts against a single account before doing any
+    # credential work — mitigates password brute-forcing (review finding S3).
+    check_rate_limit(
+        f"portal_login:{payload.email.lower()}",
+        max_attempts=_LOGIN_MAX_ATTEMPTS,
+        window_seconds=_LOGIN_WINDOW_SECONDS,
+    )
 
     superadmin = await _load_superadmin(db, payload.email)
     superadmin_valid = (

@@ -75,8 +75,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[_portal_origin],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # Pin methods/headers to what the SPA actually uses instead of "*" — the
+    # wildcards were broader than necessary for a credentialed CORS policy.
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # ── Routers ───────────────────────────────────────────────────────────────────
