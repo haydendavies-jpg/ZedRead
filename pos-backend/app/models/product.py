@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,6 +23,9 @@ class Product(Base):
 
     photo_url points to Supabase Storage — upload is handled by the product
     service, not directly stored here as binary data.
+
+    ref surfaces the PRD-000001-style sequence column added by migration 0013
+    (previously dormant — never wired into the ORM until Stage 24).
     """
 
     __tablename__ = "products"
@@ -32,6 +35,13 @@ class Product(Base):
         primary_key=True,
         default=uuid.uuid4,
         comment="Primary key — UUID generated at insert time",
+    )
+    ref: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        unique=True,
+        server_default=text("'PRD-' || LPAD(nextval('products_ref_seq')::text, 6, '0')"),
+        comment="Human-readable reference ID, e.g. PRD-000001",
     )
     brand_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -63,6 +73,11 @@ class Product(Base):
         nullable=True,
         comment="Optional description shown in the portal and product detail screens",
     )
+    print_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Alternative name for production dockets — falls back to name when NULL",
+    )
     # BIGINT cents — rule 4: every monetary column ends in _cents (rule 9: never float)
     base_price_cents: Mapped[int] = mapped_column(
         BigInteger,
@@ -87,7 +102,15 @@ class Product(Base):
     photo_url: Mapped[str | None] = mapped_column(
         String(1024),
         nullable=True,
-        comment="Supabase Storage URL for the product photo (max 500 KB enforced in service)",
+        comment="Supabase Storage URL for the product photo (max 1 MB enforced in service)",
+    )
+    is_open_item: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="True → sold with a freely-enterable name/price at sale time, defaulting to "
+        "name/base_price_cents; gated by the actor's can_use_open_item capability",
     )
     display_order: Mapped[int] = mapped_column(
         Integer,
@@ -112,3 +135,8 @@ class Product(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+    @property
+    def effective_print_name(self) -> str:
+        """Return print_name, falling back to name when unset."""
+        return self.print_name if self.print_name is not None else self.name
