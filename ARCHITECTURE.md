@@ -221,7 +221,7 @@ The Celery worker reads from the same PostgreSQL database and shares all service
 | TanStack Query | 5.100.9 | Server state, caching, retries |
 | axios | 1.16.0 | HTTP client with interceptors |
 
-### Android (Stage 13–14)
+### Android (Stage 25–26)
 
 | Library | Role |
 |---------|------|

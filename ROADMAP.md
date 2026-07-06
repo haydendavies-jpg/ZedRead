@@ -1,6 +1,6 @@
 # ZedRead POS — Roadmap
 
-This document tracks the four-phase build plan. For detailed per-stage status, see [STAGE_STATUS.md](STAGE_STATUS.md).
+This document tracks the ten-phase build plan. For detailed per-stage status, see [STAGE_STATUS.md](STAGE_STATUS.md).
 
 ---
 
@@ -30,10 +30,36 @@ gantt
     Stage 11 · Reporting             :done, s11, after s10, 14d
     Stage 12 · Deploy Phase 2        :done, s12, after s11, 7d
 
-    section Phase 4 · Android App
-    Stage 13 · Auth & Catalog        :active, s13, after s12, 28d
-    Stage 14 · Payments & Printing   :s14, after s13, 28d
+    section Phase 4 · Identity & Permissions
+    Stage 15 · Rename + role model   :active, s15, after s12, 21d
+
+    section Phase 5 · Catalog Foundations
+    Stage 16 · Reporting Groups      :s16, after s15, 14d
+    Stage 17 · Delegated User Creation :s17, after s16, 10d
+    Stage 18 · Permission Scopes UI  :s18, after s17, 10d
+
+    section Phase 6 · Catalog Data & Table UX
+    Stage 19 · Bulk Import/Export    :s19, after s18, 14d
+    Stage 20 · Table UX              :s20, after s19, 10d
+
+    section Phase 7 · Invoices & Extended Catalog
+    Stage 21 · Invoice Reporting     :s21, after s20, 14d
+    Stage 22 · Variants & Combos UI  :s22, after s21, 14d
+
+    section Phase 8 · POS Menu Builder
+    Stage 23 · Menu Builder          :s23, after s22, 21d
+
+    section Phase 9 · Product Model Extensions
+    Stage 24 · Product Extensions    :s24, after s23, 10d
+
+    section Phase 10 · Android App
+    Stage 25 · Auth & Catalog        :s25, after s24, 28d
+    Stage 26 · Payments & Printing   :s26, after s25, 28d
 ```
+
+Stages 13–14 (previously the Android phase's numbers) are retired — the Android phase is renumbered
+to Stages 25–26 to make room for the catalog/reporting/permissions work in Stages 16–24, which was
+planned after Stage 15 was already underway.
 
 ---
 
@@ -82,16 +108,105 @@ gantt
 
 ---
 
-## Phase 4 — Android App 🚧
+## Phase 4 — Identity & Permissions Redesign 🚧
+
+**Goal:** Rename Portal User → SuperAdmin and POS User → User, and replace the 4 system access
+profiles with the 5-role model. See `ROLE_MODEL.md` for the full design.
+
+| Stage | Summary | Key outcome |
+|-------|---------|-------------|
+| **15** | **Rename + 5-role model** | SuperAdmin/User rename, per-page permission grants, license gating, cross-identity login |
+
+**Status:** backend implementation in progress (page catalog, access-profile page permissions,
+identity-token login flow are built). Portal frontend still uses the old "Portal Users"/"POS Users"
+naming and has no UI yet for managing page permissions — closed out in Stage 18.
+
+---
+
+## Phase 5 — Catalog Foundations 🔜
+
+**Goal:** Introduce Reporting Groups above Categories, let backend users delegate account creation
+within their own scope, and give the Stage 15 permission system its first portal UI.
+
+| Stage | Summary | Key outcome |
+|-------|---------|-------------|
+| **16** | **Reporting Groups** | Brand-scoped grouping above Categories; default group per brand; required on every Category |
+| **17** | **Delegated User Creation** | Site/Brand/Group-scoped users can create Users at or below their own scope and role |
+| **18** | **Permission Scopes Portal UI** | First portal UI for access-profile page permissions; reconciles page catalog going forward |
+
+**Exit criteria:** A brand admin can create reporting groups, every category belongs to one, a
+site-level user can create a new Staff user at their own site (and no higher), and any backend user
+can see/toggle which pages a role can access from the portal.
+
+---
+
+## Phase 6 — Catalog Data & Table UX 🔜
+
+**Goal:** Give Products, Categories, and Reporting Groups proper bulk data tooling and table UX.
+
+| Stage | Summary | Key outcome |
+|-------|---------|-------------|
+| **19** | **Bulk Import/Export (XLSX)** | Shared import/export service; template + full export; keyed on human-readable `ref` codes; partial-update on import |
+| **20** | **Table UX** | Reporting Group + Category columns on Products; inline edit and filters on all three catalog pages |
+
+**Exit criteria:** A brand manager can export a template, bulk-edit it in Excel, re-import it, and see
+the changes reflected immediately in a filterable, inline-editable table.
+
+---
+
+## Phase 7 — Invoices & Extended Catalog 🔜
+
+**Goal:** Make invoices fully reportable and bring Variants/Combos into the portal.
+
+| Stage | Summary | Key outcome |
+|-------|---------|-------------|
+| **21** | **Invoice Reporting** | Filtered list + XLSX export, detail view, PDF export, change log (from existing `audit_logs`) |
+| **22** | **Variants & Combos Portal Pages** | Combined Variants/Combos page with `ref` codes, `display_name`, filters, import/export (Modifiers stay inline on the Product page) |
+
+**Exit criteria:** A portal user can filter invoices, export the filtered set to XLSX, open one
+invoice to see its full history of refunds/edits, print a PDF copy, and manage variants and combos
+from their own portal page with the same table UX as Products.
+
+---
+
+## Phase 8 — POS Menu Builder 🔜
+
+**Goal:** A graphical POS menu layout tool (tabs of product buttons) that publishes to the Android app.
+
+| Stage | Summary | Key outcome |
+|-------|---------|-------------|
+| **23** | **Menu Builder Prototype** | `menu_layouts`/`menu_tabs`/`menu_buttons`, buttons reference products by code, publish pipeline |
+
+**Exit criteria:** A brand manager can build a single-level tab/button menu layout referencing
+existing products by code and publish it; more than one layout can be published at once (e.g. per
+site or day-part).
+
+---
+
+## Phase 9 — Product Model Extensions 🔜
+
+**Goal:** Close out the remaining product-field asks ahead of Android.
+
+| Stage | Summary | Key outcome |
+|-------|---------|-------------|
+| **24** | **Product Extensions** | Product code surfaced from dormant `ref` column, `print_name`, open item (flexible price/name with permission + price ceiling) |
+
+**Exit criteria:** Every product shows its code in the table and via import/export; a print name is
+settable independent of the sale name; an "open item" product can be flagged, permissioned, and
+price-limited.
+
+---
+
+## Phase 10 — Android App 🚧
 
 **Goal:** Deliver the complete Android POS application using the fully-built backend. This is the commercially shippable end product.
 
 | Stage | Summary | Key outcome |
 |-------|---------|-------------|
-| **13** | **Auth & Catalog** | Login, PIN, site selector, product grid, cart |
-| **14** | **Payments & Printing** | Payments, docket printing, switch user, inline auth |
+| **25** | **Auth & Catalog** | Login, PIN, site selector, product grid, cart |
+| **26** | **Payments & Printing** | Payments, docket printing, switch user, inline auth |
 
-### Stage 13 — Android Auth & Catalog
+### Stage 25 — Android Auth & Catalog
 
 **What gets built:**
 
@@ -110,7 +225,7 @@ Login screen
 
 **Screens scaffolded:** `auth/`, `cart/`, `catalog/`, `switchuser/`
 
-### Stage 14 — Android Payments & Printing
+### Stage 26 — Android Payments & Printing
 
 **What gets built:**
 
@@ -131,9 +246,9 @@ Cart screen
 
 ---
 
-## Post-Phase 4 Considerations
+## Post-Phase 10 Considerations
 
-The following items are outside the current 14-stage plan. They are **not committed** but are worth tracking for prioritisation.
+The following items are outside the current 26-stage plan. They are **not committed** but are worth tracking for prioritisation.
 
 | Item | Why it matters |
 |------|---------------|
@@ -142,7 +257,6 @@ The following items are outside the current 14-stage plan. They are **not commit
 | Push notifications | License expiry warnings to portal users |
 | Multi-currency | Schema supports `_cents` with an implied currency; no currency field or FX rate table exists yet |
 | Kitchen Display System (KDS) | WebSocket push of new invoice lines to a kitchen screen |
-| Loyalty / customer accounts | No customer table exists today |
+| Loyalty / customer accounts | `ROLE_MODEL.md` already reserves a "Customers & Loyalty" permission category, but no customer table exists yet — the permission category is ahead of the schema |
 | Tax compound edge cases | PST-on-GST compound stacking not validated against real-world AU/CA tax rules |
-
-<!-- TODO: verify which of these are covered in pos_master_v5.docx later chapters -->
+| Production docket printing | Stage 24 adds `print_name`, but the docket printing feature itself is out of scope until scheduled |

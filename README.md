@@ -46,12 +46,22 @@ Multi-tenant POS platform. The hierarchy is **Group → Brand → Site**. A Grou
 | 10 | Invoice Engine | Sales, payments, void, refund, split payments — all audit logged |
 | 11 | Reporting | 8 PostgreSQL reporting views, scope-enforced API routes |
 | 12 | Deploy Phase 2 | **Full backend live.** All routes available and tested |
-| 13 | Android — Auth & Catalog | Login, PIN, site selector, product grid, cart |
-| 14 | Android — Payments & Printing | Payments, docket printing, switch user, inline auth |
+| 15 | Identity & Permissions Redesign | SuperAdmin/User rename, 5-role model, per-page permissions |
+| 16 | Reporting Groups | Brand-scoped grouping above Categories |
+| 17 | Delegated User Creation | Scope- and rank-limited user creation from the portal |
+| 18 | Permission Scopes Portal UI | First portal UI for the Stage 15 page-permission system |
+| 19 | Bulk Import/Export (XLSX) | Template/full export + import for Products, Categories, Reporting Groups |
+| 20 | Table UX | Inline edit, filters, and new columns on the catalog pages |
+| 21 | Invoice Reporting | Filtered list, XLSX export, detail view, PDF export, change log |
+| 22 | Variants & Combos Portal Pages | Combined portal page, human-readable codes, display names |
+| 23 | POS Menu Builder | Graphical tab/button menu layout + publish pipeline |
+| 24 | Product Model Extensions | Product code, print name, open item |
+| 25 | Android — Auth & Catalog | Login, PIN, site selector, product grid, cart |
+| 26 | Android — Payments & Printing | Payments, docket printing, switch user, inline auth |
 
 **Stage 6 = first commercially usable product** (reseller can onboard customers via portal).  
 **Stage 12 = complete backend** (full audit trail, all routes live).  
-**Stage 14 = complete system** (Android app ships).
+**Stage 26 = complete system** (Android app ships).
 
 ## Local development
 
@@ -91,10 +101,6 @@ npm run dev
 | `pos-backend/app/CLAUDE.md` | Backend code style and FastAPI patterns |
 | `tests/CLAUDE.md` | Testing rules |
 | `pos-portal/CLAUDE.md` | React style, components, and brand |
-
-## Design document
-
-All features are specified in **pos_master_v5.docx**. Reference the relevant chapter before implementing any feature. Never implement anything that contradicts the design doc without flagging it first.
 
 ## Key rules
 
