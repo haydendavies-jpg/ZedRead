@@ -174,12 +174,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # ── Health check ──────────────────────────────────────────────────────────────
 
 
-class HealthResponse(JSONResponse):
-    """Typed response model for the health check route."""
-
-    pass
-
-
 @app.get("/health", response_model=dict, tags=["meta"])
 async def health_check() -> dict:
     """
