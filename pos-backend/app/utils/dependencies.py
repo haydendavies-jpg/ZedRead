@@ -301,6 +301,14 @@ async def get_current_superadmin(
             detail="Account is inactive",
         )
 
+    # Reject tokens minted before a token_version bump (password change/logout)
+    if payload.get("tv", 0) != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session has been revoked — please log in again",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     return user
 
 
@@ -527,6 +535,14 @@ async def resolve_management_access(
             detail="POS user account is inactive",
         )
 
+    # Reject tokens minted before a token_version bump (logout-everywhere)
+    if payload.get("tv", 0) != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session has been revoked — please log in again",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     # Validate the grant — must belong to this user and still be active
     grant_result = await db.execute(
         select(UserAccessGrant).where(
@@ -663,6 +679,14 @@ async def resolve_catalog_access(
         user = user_r.scalar_one_or_none()
         if not user or not user.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="POS user inactive")
+
+        # Reject tokens minted before a token_version bump (logout-everywhere)
+        if payload.get("tv", 0) != user.token_version:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session has been revoked — please log in again",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
         grant_r = await db.execute(
             select(UserAccessGrant).where(

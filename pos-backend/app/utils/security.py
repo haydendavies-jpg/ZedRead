@@ -139,13 +139,15 @@ def _make_token(
     return jwt.encode(payload, _SECRET_KEY, algorithm=_ALGORITHM)
 
 
-def create_access_token(user_id: str, role: str) -> str:
+def create_access_token(user_id: str, role: str, token_version: int = 0) -> str:
     """
     Create a short-lived access JWT for portal authentication.
 
     Args:
         user_id: The portal user's UUID as a string.
         role: The user's role string (e.g. "admin", "reseller_staff").
+        token_version: The admin's current token_version, embedded as the 'tv'
+            claim so the token is revoked when the column is bumped.
 
     Returns:
         str: A signed access JWT.
@@ -154,7 +156,7 @@ def create_access_token(user_id: str, role: str) -> str:
         subject=user_id,
         token_type="access",
         expires_delta=timedelta(minutes=_ACCESS_TOKEN_MINUTES),
-        extra_claims={"role": role},
+        extra_claims={"role": role, "tv": token_version},
     )
 
 
@@ -183,7 +185,7 @@ def create_pos_access_token(user_id: str, site_id: str, jti: str) -> str:
     )
 
 
-def create_refresh_token(user_id: str) -> str:
+def create_refresh_token(user_id: str, token_version: int = 0) -> str:
     """
     Create a long-lived refresh JWT for obtaining new access tokens.
 
@@ -192,6 +194,8 @@ def create_refresh_token(user_id: str) -> str:
 
     Args:
         user_id: The portal user's UUID as a string.
+        token_version: The admin's current token_version, embedded as 'tv' so a
+            bump (password change/reset, logout) invalidates the refresh token.
 
     Returns:
         str: A signed refresh JWT.
@@ -200,6 +204,7 @@ def create_refresh_token(user_id: str) -> str:
         subject=user_id,
         token_type="refresh",
         expires_delta=timedelta(days=_REFRESH_TOKEN_DAYS),
+        extra_claims={"tv": token_version},
     )
 
 
@@ -210,6 +215,7 @@ def create_mgmt_access_token(
     site_id: str | None,
     brand_id: str | None,
     group_id: str | None,
+    token_version: int = 0,
 ) -> str:
     """
     Create a management access JWT for backend portal authentication.
@@ -225,11 +231,13 @@ def create_mgmt_access_token(
         site_id: Site UUID string (set only when scope='site').
         brand_id: Brand UUID string (set only when scope='brand' or 'site').
         group_id: Group UUID string (set only when scope='group').
+        token_version: The user's current token_version, embedded as 'tv' so a
+            bump (logout-everywhere) revokes the token.
 
     Returns:
         str: A signed management access JWT.
     """
-    extra: dict = {"scope": scope, "grant_id": grant_id}
+    extra: dict = {"scope": scope, "grant_id": grant_id, "tv": token_version}
     if site_id:
         extra["site_id"] = site_id
     if brand_id:
@@ -254,6 +262,7 @@ def create_impersonation_token(
     admin_id: str,
     admin_email: str,
     admin_name: str,
+    token_version: int = 0,
 ) -> str:
     """
     Create a management access JWT for an admin impersonation session.
@@ -279,6 +288,7 @@ def create_impersonation_token(
     extra: dict = {
         "scope": scope,
         "grant_id": grant_id,
+        "tv": token_version,
         "imp_id": admin_id,
         "imp_email": admin_email,
         "imp_name": admin_name,
@@ -297,12 +307,14 @@ def create_impersonation_token(
     )
 
 
-def create_mgmt_refresh_token(user_id: str) -> str:
+def create_mgmt_refresh_token(user_id: str, token_version: int = 0) -> str:
     """
     Create a long-lived refresh JWT for management portal session renewal.
 
     Args:
         user_id: The POS user's UUID string.
+        token_version: The user's current token_version, embedded as 'tv' so a
+            bump (logout-everywhere) invalidates the refresh token.
 
     Returns:
         str: A signed management refresh JWT.
@@ -311,6 +323,7 @@ def create_mgmt_refresh_token(user_id: str) -> str:
         subject=user_id,
         token_type="mgmt_refresh",
         expires_delta=timedelta(days=_REFRESH_TOKEN_DAYS),
+        extra_claims={"tv": token_version},
     )
 
 

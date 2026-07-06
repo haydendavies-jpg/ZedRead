@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, func, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -104,6 +104,16 @@ class User(Base):
         nullable=False,
         default=True,
         comment="False when the user is suspended and cannot log in",
+    )
+    # Bumped to invalidate all previously issued management tokens for this user
+    # (logout-everywhere / password change). Tokens carry the value they were
+    # minted with; a mismatch against this column rejects the token.
+    token_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="Monotonic counter; a token whose 'tv' claim != this is revoked",
     )
     is_master_user: Mapped[bool] = mapped_column(
         Boolean,
