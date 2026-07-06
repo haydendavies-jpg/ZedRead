@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, func, text
+from sqlalchemy import Boolean, DateTime, Integer, String, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -42,6 +42,16 @@ class SuperAdmin(Base):
     # Role values defined in SuperAdminRole enum in app/constants/statuses.py
     role: Mapped[str] = mapped_column(String(50), nullable=False, default="admin")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Bumped to invalidate all previously issued portal tokens for this admin
+    # (logout-everywhere / password change/reset). Tokens carry the value they
+    # were minted with; a mismatch against this column rejects the token.
+    token_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="Monotonic counter; a token whose 'tv' claim != this is revoked",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

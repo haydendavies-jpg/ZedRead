@@ -170,6 +170,7 @@ async def impersonate(
         admin_id=str(admin.id),
         admin_email=admin.email,
         admin_name=admin.name,
+        token_version=master_user.token_version,
     )
 
     await log_action(

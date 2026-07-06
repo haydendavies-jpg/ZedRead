@@ -17,6 +17,7 @@ from sqlalchemy import select
 from app.constants.audit_actions import (
     AUTH_LOGIN_FAILED,
     AUTH_LOGIN_SUCCESS,
+    AUTH_LOGOUT,
     AUTH_PASSWORD_RESET_COMPLETED,
     AUTH_PASSWORD_RESET_REQUESTED,
     AUTH_TOKEN_REFRESHED,
@@ -352,3 +353,101 @@ async def test_reset_password_writes_audit_log(client, db, test_superadmin):
     )
     row = result.scalar_one()
     assert row.actor_id == test_superadmin.id
+
+
+# ── Token revocation (token_version) ──────────────────────────────────────────
+
+
+async def _login_portal(client) -> str:
+    """Log the test superadmin in and return the portal access token."""
+    resp = await client.post(
+        "/auth/portal/login",
+        json={"email": "admin@test.com", "password": "TestPassword123!"},
+    )
+    assert resp.status_code == 200
+    return resp.json()["access_token"]
+
+
+async def test_portal_logout_returns_204(client, test_superadmin):
+    """Logout with a valid access token returns 204."""
+    token = await _login_portal(client)
+    resp = await client.post("/auth/portal/logout", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 204
+
+
+async def test_portal_logout_revokes_all_tokens(client, test_superadmin):
+    """After logout, the same access token is rejected (token_version bumped)."""
+    token = await _login_portal(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # First logout succeeds and bumps token_version
+    assert (await client.post("/auth/portal/logout", headers=headers)).status_code == 204
+    # The same token is now revoked — a second protected call is rejected
+    assert (await client.post("/auth/portal/logout", headers=headers)).status_code == 401
+
+
+async def test_portal_logout_writes_audit_log(client, db, test_superadmin):
+    """Logout writes an AUTH_LOGOUT audit row for the admin."""
+    token = await _login_portal(client)
+    await client.post("/auth/portal/logout", headers={"Authorization": f"Bearer {token}"})
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_superadmin.id),
+            AuditLog.action == AUTH_LOGOUT,
+        )
+    )
+    row = result.scalar_one()
+    assert row.actor_id == test_superadmin.id
+
+
+async def test_portal_change_password_revokes_old_token(client, test_superadmin):
+    """Changing the password revokes tokens issued under the old password."""
+    token = await _login_portal(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = await client.post(
+        "/auth/portal/change-password",
+        headers=headers,
+        json={"current_password": "TestPassword123!", "new_password": "ChangedPassword123!"},
+    )
+    assert resp.status_code == 204
+
+    # The token that authorised the change is now revoked
+    assert (await client.post("/auth/portal/logout", headers=headers)).status_code == 401
+
+
+async def test_portal_reset_password_revokes_old_token(client, db, test_superadmin):
+    """Completing a password reset revokes tokens issued before the reset."""
+    token = await _login_portal(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    with patch(_SEND_RESET_EMAIL_PATH, new_callable=AsyncMock):
+        await client.post("/auth/portal/forgot-password", json={"email": "admin@test.com"})
+    await db.refresh(test_superadmin)
+
+    resp = await client.post(
+        "/auth/portal/reset-password",
+        json={"token": test_superadmin.password_reset_token, "new_password": "ResetPassword123!"},
+    )
+    assert resp.status_code == 204
+
+    # Pre-reset token is revoked
+    assert (await client.post("/auth/portal/logout", headers=headers)).status_code == 401
+
+
+async def test_portal_refresh_rejected_after_logout(client, test_superadmin):
+    """A refresh token is revoked once token_version is bumped by logout."""
+    resp = await client.post(
+        "/auth/portal/login",
+        json={"email": "admin@test.com", "password": "TestPassword123!"},
+    )
+    tokens = resp.json()
+    access, refresh = tokens["access_token"], tokens["refresh_token"]
+
+    # Log out (bumps token_version)
+    await client.post("/auth/portal/logout", headers={"Authorization": f"Bearer {access}"})
+
+    # The pre-logout refresh token can no longer mint new tokens
+    refresh_resp = await client.post("/auth/portal/refresh", json={"refresh_token": refresh})
+    assert refresh_resp.status_code == 401

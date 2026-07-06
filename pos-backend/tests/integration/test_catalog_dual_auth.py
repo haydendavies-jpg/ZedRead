@@ -109,6 +109,23 @@ async def test_list_products_refresh_token_rejected(client, test_superadmin):
     assert response.status_code == 401
 
 
+async def test_management_token_revoked_after_token_version_bump(
+    client, db, test_brand, test_brand_grant, test_user
+):
+    """A management JWT is rejected once the user's token_version is bumped."""
+    headers = _mgmt_headers(test_user, test_brand_grant)  # minted at tv=0
+
+    # Works while the token's tv matches the user's token_version
+    assert (await client.get("/products", headers=headers)).status_code == 200
+
+    # Simulate a logout-everywhere / password change bumping the counter
+    test_user.token_version += 1
+    await db.commit()
+
+    # The pre-bump token is now revoked
+    assert (await client.get("/products", headers=headers)).status_code == 401
+
+
 # ── Tax routes ────────────────────────────────────────────────────────────────
 
 

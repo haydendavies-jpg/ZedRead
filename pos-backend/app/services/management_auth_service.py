@@ -170,8 +170,9 @@ async def _build_mgmt_token(db: AsyncSession, user: User, grant: UserAccessGrant
         site_id=str(grant.site_id) if grant.site_id else None,
         brand_id=await resolve_grant_brand_id(db, grant),
         group_id=str(grant.group_id) if grant.group_id else None,
+        token_version=user.token_version,
     )
-    refresh = create_mgmt_refresh_token(str(user.id))
+    refresh = create_mgmt_refresh_token(str(user.id), user.token_version)
     return access, refresh
 
 
@@ -188,8 +189,8 @@ async def _issue_superadmin_tokens(db: AsyncSession, superadmin: SuperAdmin) -> 
     Returns:
         UnifiedLoginResponse: Portal token pair, no user_id/grant fields.
     """
-    access_token = create_access_token(str(superadmin.id), superadmin.role)
-    refresh_token = create_refresh_token(str(superadmin.id))
+    access_token = create_access_token(str(superadmin.id), superadmin.role, superadmin.token_version)
+    refresh_token = create_refresh_token(str(superadmin.id), superadmin.token_version)
     await log_action(
         db=db,
         action=AUTH_LOGIN_SUCCESS,
@@ -707,6 +708,14 @@ async def refresh_management_token(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or inactive",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Reject a management refresh token minted before a token_version bump
+    if payload.get("tv", 0) != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session has been revoked — please log in again",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

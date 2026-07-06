@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.audit_actions import AUTH_PASSWORD_CHANGED
+from app.constants.audit_actions import AUTH_LOGOUT, AUTH_PASSWORD_CHANGED
 from app.database import get_db
 from app.models.superadmin import SuperAdmin
 from app.schemas.portal_auth import (
@@ -142,6 +142,9 @@ async def change_password(
         )
 
     user.password_hash = hash_password(payload.new_password)
+    # Revoke tokens issued under the old password (including the one making this
+    # request) — the caller's client re-authenticates with the new credential
+    user.token_version += 1
 
     await log_action(
         db=db,
@@ -154,6 +157,36 @@ async def change_password(
         after_state={"password_changed": True},
     )
 
+    await db.commit()
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    db: AsyncSession = Depends(get_db),
+    actor: SuperAdmin = Depends(get_current_superadmin),
+) -> None:
+    """
+    Log the authenticated portal admin out of all sessions.
+
+    Bumps token_version so every previously issued access and refresh token for
+    this admin (across devices/tabs) fails validation on next use. Portal auth
+    is stateless, so this "logout everywhere" is the meaningful server-side
+    revocation — there is no per-session token to selectively drop.
+    """
+    result = await db.execute(select(SuperAdmin).where(SuperAdmin.id == actor.id))
+    user = result.scalar_one()
+    user.token_version += 1  # invalidate all outstanding tokens for this admin
+
+    await log_action(
+        db=db,
+        actor_id=user.id,
+        actor_email=user.email,
+        actor_name=user.name,
+        action=AUTH_LOGOUT,
+        entity_type="superadmin",
+        entity_id=str(user.id),
+        after_state={"logged_out": True},
+    )
     await db.commit()
 
 

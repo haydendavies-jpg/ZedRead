@@ -100,9 +100,10 @@ async def login(db: AsyncSession, payload: LoginRequest) -> TokenResponse:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Success — issue tokens and audit the login
-    access_token = create_access_token(str(user.id), user.role)
-    refresh_token = create_refresh_token(str(user.id))
+    # Success — issue tokens and audit the login. token_version is embedded so
+    # a later bump (password change/reset, logout) revokes these tokens.
+    access_token = create_access_token(str(user.id), user.role, user.token_version)
+    refresh_token = create_refresh_token(str(user.id), user.token_version)
 
     await log_action(
         db=db,
@@ -159,8 +160,16 @@ async def refresh(db: AsyncSession, refresh_token: str) -> TokenResponse:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    new_access = create_access_token(str(user.id), user.role)
-    new_refresh = create_refresh_token(str(user.id))
+    # Reject a refresh token minted before a token_version bump
+    if payload.get("tv", 0) != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session has been revoked — please log in again",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    new_access = create_access_token(str(user.id), user.role, user.token_version)
+    new_refresh = create_refresh_token(str(user.id), user.token_version)
 
     await log_action(
         db=db,
@@ -263,6 +272,9 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> Non
     # Single-use — clear the token so it cannot be replayed
     user.password_reset_token = None
     user.password_reset_token_expires_at = None
+    # Revoke every previously issued token for this admin — a reset implies the
+    # old credential (and any session riding on it) can no longer be trusted
+    user.token_version += 1
 
     await log_action(
         db=db,
