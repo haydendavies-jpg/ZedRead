@@ -138,6 +138,8 @@ within their own scope, and give the Stage 15 permission system its first portal
 site-level user can create a new Staff user at their own site (and no higher), and any backend user
 can see/toggle which pages a role can access from the portal.
 
+**Full detail:** [`STAGE_PLAN_16-24.md`](STAGE_PLAN_16-24.md) §16–§18.
+
 ---
 
 ## Phase 6 — Catalog Data & Table UX 🔜
@@ -151,6 +153,8 @@ can see/toggle which pages a role can access from the portal.
 
 **Exit criteria:** A brand manager can export a template, bulk-edit it in Excel, re-import it, and see
 the changes reflected immediately in a filterable, inline-editable table.
+
+**Full detail:** [`STAGE_PLAN_16-24.md`](STAGE_PLAN_16-24.md) §19–§20.
 
 ---
 
@@ -167,6 +171,8 @@ the changes reflected immediately in a filterable, inline-editable table.
 invoice to see its full history of refunds/edits, print a PDF copy, and manage variants and combos
 from their own portal page with the same table UX as Products.
 
+**Full detail:** [`STAGE_PLAN_16-24.md`](STAGE_PLAN_16-24.md) §21–§22.
+
 ---
 
 ## Phase 8 — POS Menu Builder 🔜
@@ -181,6 +187,8 @@ from their own portal page with the same table UX as Products.
 existing products by code and publish it; more than one layout can be published at once (e.g. per
 site or day-part).
 
+**Full detail:** [`STAGE_PLAN_16-24.md`](STAGE_PLAN_16-24.md) §23.
+
 ---
 
 ## Phase 9 — Product Model Extensions 🔜
@@ -194,6 +202,8 @@ site or day-part).
 **Exit criteria:** Every product shows its code in the table and via import/export; a print name is
 settable independent of the sale name; an "open item" product can be flagged, permissioned, and
 price-limited.
+
+**Full detail:** [`STAGE_PLAN_16-24.md`](STAGE_PLAN_16-24.md) §24.
 
 ---
 
