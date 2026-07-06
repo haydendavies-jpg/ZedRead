@@ -8,8 +8,11 @@ Multi-tenant hierarchy: Group → Brand → Site.
 - **ARCHITECTURE_MAP.md** — functional map of the actual codebase (routes, models, deployment,
   terminology), derived from code. Read this when picking up the project in a new session.
   If it conflicts with any other doc, the code (and this map) wins — flag the conflict.
-- **pos_master_v5.docx** — design document. Reference the relevant chapter before implementing
-  a feature; never contradict it without flagging first.
+- **ROADMAP.md** / **STAGE_STATUS.md** — phase and stage tracking; keep in sync with this file's
+  rollout table whenever stages are added or completed.
+
+`pos_master_v5.docx` is retired — it was never maintained past early stages and is no longer a
+reference. Do not look for it or gate implementation on it.
 
 ## Scoped rules (auto-loaded when working in those directories)
 - Backend code style, naming, FastAPI patterns: `pos-backend/app/CLAUDE.md`
@@ -17,7 +20,7 @@ Multi-tenant hierarchy: Group → Brand → Site.
 - Portal (React) style, components, brand: `pos-portal/CLAUDE.md`
 
 ## Rollout plan
-Built in 5 phases across 15 stages. Work within the current stage only; never implement
+Built in 10 phases across 26 stages. Work within the current stage only; never implement
 future-stage features unless explicitly instructed.
 
 | Phase | Stages | Summary |
@@ -25,15 +28,58 @@ future-stage features unless explicitly instructed.
 | 1 — Foundation & Portal | 1–6 | DB, auth, hierarchy, licenses, React portal, deploy |
 | 2 — POS Catalog | 7–9 | POS auth, products, variants, modifiers, combos |
 | 3 — Transactions | 10–12 | Invoice engine, payments, reporting, deploy |
-| 4 — Android App | 13–14 | Kotlin + Jetpack Compose POS application |
-| 5 — Identity & Permissions Redesign | 15 | Rename + 5-role model — see `ROLE_MODEL.md` |
+| 4 — Identity & Permissions Redesign | 15 | Rename + 5-role model — see `ROLE_MODEL.md` |
+| 5 — Catalog Foundations | 16–18 | Reporting groups, delegated user creation, permissions UI |
+| 6 — Catalog Data & Table UX | 19–20 | Bulk XLSX import/export, inline edit, filters, columns |
+| 7 — Invoices & Extended Catalog | 21–22 | Invoice detail/PDF/XLSX reporting + change log; Variants/Combos portal pages |
+| 8 — POS Menu Builder | 23 | Graphical menu layout prototype + publish pipeline |
+| 9 — Product Model Extensions | 24 | Product code, print name, open item |
+| 10 — Android App | 25–26 | Kotlin + Jetpack Compose POS application |
+
+Stage numbers 13–14 are retired (previously reserved for the Android phase, now renumbered to
+25–26 to make room for Stages 16–24 ahead of it — see ROADMAP.md/STAGE_STATUS.md for the rationale).
 
 **Stage 15 scope (current):** implement the rename and role/permission model in `ROLE_MODEL.md` —
 SuperAdmin (Admin/Reseller Staff), User (Master User/Admin/Reporting Only/Manager/Staff),
 required-field rules, access_profiles replaced by the 5 roles, per-page permission grants within
 the 5 page categories, license gating, and cross-identity login disambiguation. The per-category
-page list (§6 of `ROLE_MODEL.md`) is still open — define it during this stage, then update
-`ROLE_MODEL.md` to record it as resolved.
+page list (§6 of `ROLE_MODEL.md`) is resolved and implemented — do not re-open it.
+
+**Stages 16–24 scope (planned, not started):** see `ROADMAP.md` Phases 5–9 for full detail. Summary:
+- **16 — Reporting Groups:** brand-scoped, a level above Categories. Default group per brand
+  (system, undeletable); every Category has a required `reporting_group_id`, prompted on creation.
+  New sidebar page. Add `reporting_groups` page key to `app/constants/pages.py` and ROLE_MODEL.md §6.
+- **17 — Delegated User Creation:** a backend user can create Users only at or below their own scope
+  (site/brand/group) and can only grant a role/access level ≤ their own. Master User is never
+  delegable (see ROLE_MODEL.md §2).
+- **18 — Permission Scopes Portal UI:** first-ever portal UI for the Stage 15 page-permission system
+  (backend routes already exist, unused by the frontend). Every subsequent stage that adds a portal
+  page must add its `page_key` to the catalog and ROLE_MODEL.md §6 in the same commit.
+- **19 — Bulk Import/Export (XLSX):** shared import/export service for Products, Categories,
+  Reporting Groups, keyed on each entity's human-readable `ref` code; partial-update semantics
+  (only columns present in the uploaded header row are touched); template export includes
+  data-validation dropdowns for category/reporting-group columns.
+- **20 — Table UX:** Reporting Group + Category columns on the Products table; inline cell edit and
+  filter bars (category, reporting group, active state, text search) on Products/Categories/
+  Reporting-Groups pages.
+- **21 — Invoice Reporting:** filtered list + XLSX export, detail view, PDF export (standard layout),
+  and a change-log panel sourced from the existing `audit_logs` table filtered by
+  `entity_type='invoice'` — no new table, `invoice_service.py` already audits every mutation with
+  before/after state.
+- **22 — Variants & Combos Portal Pages:** one combined portal page/sidebar entry for Variants and
+  Combos (not Modifiers — Modifiers stay edited inline within the Product page). New `ref` codes
+  (`VAR-000001`, `CMB-000001`) and a `display_name` field on both Variant and Combo (not on
+  Modifiers). Filters, inline edit, import/export via Stage 19's framework.
+- **23 — POS Menu Builder:** new `menu_layouts` / `menu_tabs` / `menu_buttons` tables. Buttons
+  reference products by `ref` code (not FK), so a layout survives product recreation. Prototype
+  scope: single-level tabs + buttons only, no nested sub-menus. More than one layout can be
+  published at once (e.g. per-site or day-part menus).
+- **24 — Product Model Extensions:** surface the dormant `products.ref` DB column (added in
+  migration `0013`, never wired into the ORM model/schema) as "product code"; add `print_name`
+  (falls back to `name`); add `is_open_item` with a new `can_use_open_item` capability flag +
+  optional `open_item_max_price_cents` ceiling on `AccessProfile` (a capability flag, not a page
+  grant, since it's an action permission not a page). `description` and `photo_url` already exist
+  on Product — no work needed there.
 
 ## Folder structure (backend)
 ```

@@ -49,7 +49,7 @@ some new constraints:
 | Field | Rule | Status |
 |---|---|---|
 | First name, Last name | Required for every User except Master User (see below). | Enforced at creation (`UserCreate`, `InviteAcceptRequest`); columns nullable in the DB, mirroring the existing `is_master_user` exception pattern. |
-| PIN | Required for every User except Master User. | Already satisfied by existing mechanics — `UserPIN` is set lazily, and `pos_auth_service` treats an absent PIN as `is_pin_reset_required=True`, so a User can never reach a state where POS PIN entry is silently skipped. No blocking creation-time check added (no PIN-primary login flow exists yet — Android app is Stage 13-14, out of scope here). |
+| PIN | Required for every User except Master User. | Already satisfied by existing mechanics — `UserPIN` is set lazily, and `pos_auth_service` treats an absent PIN as `is_pin_reset_required=True`, so a User can never reach a state where POS PIN entry is silently skipped. No blocking creation-time check added (no PIN-primary login flow exists yet — Android app is Stage 25-26, out of scope here). |
 | Email | Optional, **unless** the user has backend access granted — then required. | Enforced: setting `backend_role` on the `User` row (`routes/users.py update_user()`) or on a `UserAccessGrant` (`access_grant_service.update_grant()`) is rejected with 409 unless the user already has both email and password_hash set. |
 | Backend password | Only required if a backend access permission is set on at least one grant. | Enforced via the same email+password_hash check above; `UserCreate` additionally rejects a half-supplied email/password pair (both or neither). |
 

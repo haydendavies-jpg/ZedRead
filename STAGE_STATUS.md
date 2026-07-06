@@ -11,7 +11,16 @@ Last updated: 2026-05-22
 | 1 — Foundation & Portal | 1–6 | ✅ Complete |
 | 2 — POS Catalog | 7–9 | ✅ Complete |
 | 3 — Transactions | 10–12 | ✅ Complete |
-| 4 — Android App | 13–14 | 🚧 In Progress |
+| 4 — Identity & Permissions Redesign | 15 | 🚧 In Progress |
+| 5 — Catalog Foundations | 16–18 | 🔜 Planned |
+| 6 — Catalog Data & Table UX | 19–20 | 🔜 Planned |
+| 7 — Invoices & Extended Catalog | 21–22 | 🔜 Planned |
+| 8 — POS Menu Builder | 23 | 🔜 Planned |
+| 9 — Product Model Extensions | 24 | 🔜 Planned |
+| 10 — Android App | 25–26 | 🚧 In Progress (scaffolding only) |
+
+Stage numbers 13–14 are retired — the Android phase is renumbered to 25–26 to make room for
+Stages 16–24, which were planned after Android scaffolding had already begun.
 
 ---
 
@@ -191,9 +200,135 @@ Last updated: 2026-05-22
 
 ---
 
-## Phase 4 — Android App
+## Phase 4 — Identity & Permissions Redesign
 
-### Stage 13 — Android Auth & Catalog 🚧
+### Stage 15 — Rename + 5-Role Model 🚧
+
+**Deliverables:**
+- [x] `app/constants/pages.py` — 17-page catalog across 5 categories (Product & Menus, App
+  Configuration, Reports, User Management, Customers & Loyalty)
+- [x] `AccessProfilePagePermission` model + `access_profile_service.py` grant/revoke/resolve functions
+- [x] `app/constants/license_plans.py` — per-tier page allowlists (starter/pro/enterprise)
+- [x] Routes: `GET/POST /access-profiles/{id}/pages`, `DELETE .../{page_key}`, `GET .../visible-pages`
+- [x] `POST /auth/portal/identity-token` — cross-identity (SuperAdmin vs User) login disambiguation
+- [x] Backend rename: `portal_users` → `superadmins` (migration `0020`), `pos_users` → `users`
+  (migration `0021`)
+- [x] Required-field rules for Users (first/last name, PIN, email+password gating on backend access)
+- [ ] Portal frontend rename: nav/routes still say "Portal Users"/"POS Users" (`Layout.tsx`)
+- [ ] Portal UI for page permissions — no page calls the access-profile-pages endpoints yet
+  (closed out in Stage 18)
+
+---
+
+## Phase 5 — Catalog Foundations
+
+### Stage 16 — Reporting Groups 🔜
+
+**Deliverables:**
+- [ ] Migration: `reporting_groups` table (brand-scoped), `ref` sequence (`RPG-000001`)
+- [ ] System default reporting group seeded per brand, undeletable
+- [ ] `categories.reporting_group_id` — NOT NULL FK, backfilled to each brand's default group
+- [ ] Category create/update requires `reporting_group_id` (prompted in portal, enforced in service)
+- [ ] Reporting Groups CRUD routes + service, block delete while categories reference it
+- [ ] Portal: new sidebar page, plus required Reporting Group select added to Category modal
+- [ ] `reporting_groups` page key added to `PAGE_CATALOG` and ROLE_MODEL.md §6
+
+### Stage 17 — Delegated User Creation 🔜
+
+**Deliverables:**
+- [ ] Scope-and-rank check in grant creation: creator can only grant scope ≤ their own (site/brand/group)
+  and role ≤ their own highest grant; Master User excluded from delegated creation
+- [ ] Audit logging on grant creation (and rejected attempts) with actor + granted scope/role
+- [ ] Portal: Users create form filters scope-picker and role-picker to what the current user may grant
+
+### Stage 18 — Permission Scopes Portal UI 🔜
+
+**Deliverables:**
+- [ ] Portal page: list access profiles per scope, toggle page-level permission grants
+- [ ] License-gated pages shown disabled/greyed-out with reason, not silently omitted
+- [ ] Reconcile CLAUDE.md Stage 15 note and ensure ROLE_MODEL.md §6 stays in sync going forward
+
+---
+
+## Phase 6 — Catalog Data & Table UX
+
+### Stage 19 — Bulk Import/Export (XLSX) 🔜
+
+**Deliverables:**
+- [ ] Surface dormant `products.ref` / `categories.ref` columns (migration `0013`) into ORM model + schema
+- [ ] Shared `export_service.py` / `import_service.py`: template export, filtered full export, validate-then-upsert import
+- [ ] Products/Categories/Reporting Groups import matches existing rows by `ref`; partial-update
+  semantics (only columns present in the uploaded header row are changed)
+- [ ] Template export includes data-validation dropdowns for category/reporting-group columns
+- [ ] Each import writes one `audit_logs` row per changed record, grouped by a batch `import_id`
+
+### Stage 20 — Table UX 🔜
+
+**Deliverables:**
+- [ ] Products table: Reporting Group + Category columns (via join, no denormalization)
+- [ ] Inline cell edit on Products/Categories/Reporting-Groups tables
+- [ ] Filter bar (category, reporting group, active/inactive, text search) reused across all three pages
+- [ ] Filter bar `flex-wrap`s at 375px (CLAUDE.md rule 16)
+
+---
+
+## Phase 7 — Invoices & Extended Catalog
+
+### Stage 21 — Invoice Reporting 🔜
+
+**Deliverables:**
+- [ ] Invoice list filters (date range, site, payment status, amount range) + XLSX export via Stage 19 framework
+- [ ] Invoice detail view: line items, modifiers, tax breakdown, payments
+- [ ] Change-log panel sourced from `audit_logs` filtered by `entity_type='invoice'` (already
+  populated by `invoice_service.py` — no new table)
+- [ ] PDF export: standard invoice layout (recommend `weasyprint`, HTML/CSS-authored layout — no
+  existing PDF generation to match style against)
+
+### Stage 22 — Variants & Combos Portal Pages 🔜
+
+**Deliverables:**
+- [ ] `ref` sequences for Variants (`VAR-000001`) and Combos (`CMB-000001`)
+- [ ] `display_name` field on `Variant` and `Combo` (not Modifiers — Modifiers stay edited inline on
+  the Product page, no separate sidebar entry)
+- [ ] Combined portal page: Variants + Combos in one sidebar entry, filters (by product, active state),
+  inline edit, import/export via Stage 19 framework
+- [ ] Product page/table shows linked variants; Variant page shows its linked product
+
+---
+
+## Phase 8 — POS Menu Builder
+
+### Stage 23 — Menu Builder Prototype 🔜
+
+**Deliverables:**
+- [ ] Migration: `menu_layouts` (scope, name, `is_published`, version), `menu_tabs` (ordered),
+  `menu_buttons` (tab_id, product `ref` code — not FK, so a button survives product recreation)
+- [ ] Portal builder UI: drag/drop tabs and buttons, live name/price preview from the catalog by code
+- [ ] Publish warns if a button's code no longer resolves to an active product
+- [ ] Multiple layouts may be published at once (e.g. per-site or day-part menus)
+- [ ] `GET /pos/menu-layout?site_id=` contract for Android to consume (Android consumption is out of
+  scope for this stage)
+- [ ] Prototype scope: single-level tabs + buttons only, no nested sub-menus
+
+---
+
+## Phase 9 — Product Model Extensions
+
+### Stage 24 — Product Extensions 🔜
+
+**Deliverables:**
+- [ ] `products.ref` wired into ORM model + schema as "product code" (may land as part of Stage 19 instead — same underlying change)
+- [ ] `print_name` column (nullable, falls back to `name`)
+- [ ] `is_open_item` flag; flexible price/name at time of sale, defaulting to the product's own fields
+- [ ] `can_use_open_item` capability flag + optional `open_item_max_price_cents` ceiling on `AccessProfile`
+  (a capability flag, not a page grant — it's an action permission, not a page)
+- [x] `description` and `photo_url` already exist on Product — no work needed
+
+---
+
+## Phase 10 — Android App
+
+### Stage 25 — Android Auth & Catalog 🚧
 
 **Deliverables:**
 - [x] Android project initialised: Kotlin + Jetpack Compose + Hilt + Retrofit + Room
@@ -210,7 +345,7 @@ Last updated: 2026-05-22
 - [ ] Room local cache for catalog (offline-capable browsing)
 - [ ] Hilt DI modules for network, database, repositories
 
-### Stage 14 — Android Payments & Printing 🔜
+### Stage 26 — Android Payments & Printing 🔜
 
 **Deliverables:**
 - [ ] Payment screen (cash / card / voucher / split)
@@ -245,7 +380,7 @@ Last updated: 2026-05-22
 | Circular combo reference: no DB constraint | `combo_service.py` graph traversal only | Low |
 | Photo size limit: no DB constraint | `product_service.py` check only | Low |
 | Invoice line `notes` column: not exposed in API | `invoice_line_items.notes` exists in model | Low |
-| Split payment: backend done, Android UI pending | Stage 14 | High |
-| Offline sync strategy: not documented | Android Stage 13–14 | High |
+| Split payment: backend done, Android UI pending | Stage 26 | High |
+| Offline sync strategy: not documented | Android Stage 25–26 | High |
 | Tax compound edge cases (PST on GST): not validated | `tax_calculation_service.py` | Medium |
 | Accounting/journal integration for refunds | Not started | Future |
