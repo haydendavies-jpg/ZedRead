@@ -18,7 +18,6 @@ pycountry==24.6.1
 # Authentication
 python-jose[cryptography]==3.3.0
 argon2-cffi==23.1.0
-bcrypt==4.2.1
 
 # Task queue
 celery==5.4.0
