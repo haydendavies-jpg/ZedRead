@@ -1,5 +1,6 @@
 """Business logic for POS terminal authentication: login, logout, PIN set, and PIN verify."""
 
+import os
 import uuid
 from datetime import UTC, datetime
 
@@ -30,6 +31,7 @@ from app.schemas.pos_auth import (
     POSLoginResponse,
 )
 from app.services.audit_service import log_action
+from app.utils.rate_limit import check_rate_limit
 from app.utils.security import (
     create_pos_access_token,
     hash_password,
@@ -37,6 +39,13 @@ from app.utils.security import (
 )
 
 log = structlog.get_logger(__name__)
+
+# Login/PIN throttle: at most N attempts per account per window. PINs are only
+# 4–6 digits, so throttling per-account is the main brute-force defence (S3).
+_LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_RATE_LIMIT", "10"))
+_LOGIN_WINDOW_SECONDS = int(os.getenv("LOGIN_RATE_WINDOW_SECONDS", "300"))
+_PIN_MAX_ATTEMPTS = int(os.getenv("PIN_RATE_LIMIT", "10"))
+_PIN_WINDOW_SECONDS = int(os.getenv("PIN_RATE_WINDOW_SECONDS", "300"))
 
 
 async def _get_user_by_email(db: AsyncSession, email: str) -> User | None:
@@ -113,6 +122,13 @@ async def login(db: AsyncSession, payload: POSLoginRequest) -> POSLoginResponse:
                        the site does not exist, or the user has no grant.
     """
     log.info("pos_auth.login.attempt", email=payload.email, site_id=str(payload.site_id))
+
+    # Throttle repeated login attempts against a single account (review S3)
+    check_rate_limit(
+        f"pos_login:{payload.email.lower()}",
+        max_attempts=_LOGIN_MAX_ATTEMPTS,
+        window_seconds=_LOGIN_WINDOW_SECONDS,
+    )
 
     user = await _get_user_by_email(db, payload.email)
 
@@ -360,6 +376,13 @@ async def verify_pin(
         HTTPException: 401 if the PIN is wrong or the user/grant does not exist.
     """
     log.info("pos_auth.pin.verify.attempt", email=payload.email, site_id=str(payload.site_id))
+
+    # Throttle PIN guessing against a single account — PINs are only 4–6 digits
+    check_rate_limit(
+        f"pos_pin:{payload.email.lower()}",
+        max_attempts=_PIN_MAX_ATTEMPTS,
+        window_seconds=_PIN_WINDOW_SECONDS,
+    )
 
     user = await _get_user_by_email(db, payload.email)
 
