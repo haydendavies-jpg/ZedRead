@@ -1,4 +1,4 @@
-/** Admin page for managing POS users — list, create, edit (with grants, PIN, backend role). */
+/** Admin page for managing Users — list, create, edit (with grants, PIN, backend role). */
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -19,7 +19,7 @@ interface SiteGrant {
   can_access_portal: boolean
 }
 
-interface PosUser {
+interface AppUser {
   id: string
   ref: string
   brand_id: string | null
@@ -71,7 +71,7 @@ async function fetchSites(): Promise<Site[]> {
   return data
 }
 
-async function fetchPosUsers(brandId: string): Promise<PosUser[]> {
+async function fetchUsers(brandId: string): Promise<AppUser[]> {
   const params: Record<string, unknown> = { limit: 200 }
   if (brandId) params.brand_id = brandId
   const { data } = await api.get('/users', { params })
@@ -99,7 +99,7 @@ const BACKEND_ROLES = [
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function PosUsersPage() {
+export function UsersPage() {
   const qc = useQueryClient()
 
   const { data: brands = [] } = useQuery({ queryKey: ['brands'], queryFn: fetchBrands })
@@ -108,8 +108,8 @@ export function PosUsersPage() {
   const [selectedBrandId, setSelectedBrandId] = useState('')
 
   const { data: users = [], isLoading } = useQuery({
-    queryKey: ['pos-users', selectedBrandId],
-    queryFn: () => fetchPosUsers(selectedBrandId),
+    queryKey: ['users', selectedBrandId],
+    queryFn: () => fetchUsers(selectedBrandId),
   })
 
   const brandSites = selectedBrandId ? sites.filter((s) => s.brand_id === selectedBrandId) : sites
@@ -128,7 +128,7 @@ export function PosUsersPage() {
   const [createError, setCreateError] = useState<string | null>(null)
 
   // ── Edit user state ───────────────────────────────────────────────────────
-  const [editUser, setEditUser] = useState<PosUser | null>(null)
+  const [editUser, setEditUser] = useState<AppUser | null>(null)
   const [editName, setEditName] = useState('')
   const [editEmail, setEditEmail] = useState('')
   const [editError, setEditError] = useState<string | null>(null)
@@ -155,7 +155,7 @@ export function PosUsersPage() {
     enabled: !!editUser,
   })
 
-  const invalidateUsers = () => qc.invalidateQueries({ queryKey: ['pos-users', selectedBrandId] })
+  const invalidateUsers = () => qc.invalidateQueries({ queryKey: ['users', selectedBrandId] })
   const invalidateAccess = () => qc.invalidateQueries({ queryKey: ['group-access', editUser?.id] })
 
   // ── Mutations ─────────────────────────────────────────────────────────────
@@ -251,7 +251,7 @@ export function PosUsersPage() {
     setShowCreate(true)
   }
 
-  const openEdit = (user: PosUser) => {
+  const openEdit = (user: AppUser) => {
     setEditName(user.name)
     setEditEmail(user.email)
     setEditError(null)
@@ -329,7 +329,7 @@ export function PosUsersPage() {
     <div className="p-4 sm:p-6">
       {/* ── Page header ─────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h1 className="text-xl font-semibold text-gray-900">POS Users</h1>
+        <h1 className="text-xl font-semibold text-gray-900">Users</h1>
         <button
           onClick={openCreate}
           disabled={!selectedBrandId}
@@ -488,7 +488,7 @@ export function PosUsersPage() {
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
-                    {users.length === 0 ? 'No POS users yet. Create one above.' : 'No users match the current filters.'}
+                    {users.length === 0 ? 'No users yet. Create one above.' : 'No users match the current filters.'}
                   </td>
                 </tr>
               )}
@@ -499,7 +499,7 @@ export function PosUsersPage() {
 
       {/* ── Create user modal ─────────────────────────────────────────────── */}
       {showCreate && (
-        <Modal title="New POS User" onClose={() => setShowCreate(false)}>
+        <Modal title="New User" onClose={() => setShowCreate(false)}>
           <form onSubmit={handleCreate} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>

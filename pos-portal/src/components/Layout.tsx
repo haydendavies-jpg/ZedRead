@@ -2,20 +2,20 @@
 
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { useAuth, isPortalUser, isMgmtUser } from '../context/AuthContext'
+import { useAuth, isSuperAdmin, isMgmtUser } from '../context/AuthContext'
 import { ChangePasswordModal } from '../pages/ChangePasswordPage'
 import { ImpersonationBanner } from './ImpersonationBanner'
 
-const PORTAL_ADMIN_NAV = [
+const SUPER_ADMIN_NAV = [
   { to: '/groups', label: 'Groups' },
   { to: '/brands', label: 'Brands' },
   { to: '/sites', label: 'Sites' },
   { to: '/licenses', label: 'Licenses' },
 ]
 
-const PORTAL_SUPER_ADMIN_NAV = [
-  { to: '/portal-users', label: 'Portal Users' },
-  { to: '/pos-users', label: 'POS Users' },
+const SUPER_ADMIN_ONLY_NAV = [
+  { to: '/superadmins', label: 'SuperAdmins' },
+  { to: '/users', label: 'Users' },
   { to: '/tax-templates', label: 'Tax Templates' },
   { to: '/email-templates', label: 'Email Templates' },
 ]
@@ -47,13 +47,13 @@ export function Layout() {
   const [showChangePassword, setShowChangePassword] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const mgmtUser = isMgmtUser(user) ? user : null
-  const portalUser = isPortalUser(user) ? user : null
+  const superAdmin = isSuperAdmin(user) ? user : null
   const isBrandOrGroupScope = mgmtUser && (mgmtUser.scope === 'brand' || mgmtUser.scope === 'group')
 
   const ROLE_LABELS: Record<string, string> = { admin: 'Admin', reseller_staff: 'Reseller' }
   const scopeLabel = mgmtUser
     ? `${mgmtUser.scope.charAt(0).toUpperCase() + mgmtUser.scope.slice(1)} scope`
-    : (portalUser?.role ? ROLE_LABELS[portalUser.role] ?? portalUser.role : undefined)
+    : (superAdmin?.role ? ROLE_LABELS[superAdmin.role] ?? superAdmin.role : undefined)
 
   const closeSidebar = () => setSidebarOpen(false)
 
@@ -67,19 +67,19 @@ export function Layout() {
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1">
-        {portalUser && (
+        {superAdmin && (
           <>
-            {PORTAL_ADMIN_NAV.map(({ to, label }) => (
+            {SUPER_ADMIN_NAV.map(({ to, label }) => (
               <NavLink key={to} to={to} className={linkClass} onClick={closeSidebar}>
                 {label}
               </NavLink>
             ))}
-            {portalUser.role === 'admin' && (
+            {superAdmin.role === 'admin' && (
               <>
                 <div className="pt-3 pb-1 px-3 text-xs font-medium text-gray-400 uppercase tracking-wide">
                   Admin
                 </div>
-                {PORTAL_SUPER_ADMIN_NAV.map(({ to, label }) => (
+                {SUPER_ADMIN_ONLY_NAV.map(({ to, label }) => (
                   <NavLink key={to} to={to} className={linkClass} onClick={closeSidebar}>
                     {label}
                   </NavLink>

@@ -1,15 +1,15 @@
-/** Portal Users management page — Admin-role SuperAdmin only. */
+/** SuperAdmins management page — Admin-role SuperAdmin only. */
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/axios'
 import { useAuth } from '../context/AuthContext'
-import type { PortalUser } from '../types'
+import type { SuperAdmin } from '../types'
 import { EntityIdChip } from '../components/EntityIdChip'
 import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
 
-async function fetchPortalUsers(): Promise<PortalUser[]> {
+async function fetchSuperAdmins(): Promise<SuperAdmin[]> {
   const { data } = await api.get('/portal-users/', { params: { limit: 200 } })
   return data
 }
@@ -19,10 +19,10 @@ const ROLES = [
   { value: 'reseller_staff', label: 'Reseller' },
 ] as const
 
-export function PortalUsersPage() {
+export function SuperAdminsPage() {
   const { user: me } = useAuth()
   const qc = useQueryClient()
-  const { data: users = [], isLoading } = useQuery({ queryKey: ['portal-users'], queryFn: fetchPortalUsers })
+  const { data: users = [], isLoading } = useQuery({ queryKey: ['superadmins'], queryFn: fetchSuperAdmins })
 
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
@@ -32,11 +32,11 @@ export function PortalUsersPage() {
   const [form, setForm] = useState({ email: '', name: '', password: '', role: 'admin' })
   const [formError, setFormError] = useState<string | null>(null)
 
-  const [editUser, setEditUser] = useState<PortalUser | null>(null)
+  const [editUser, setEditUser] = useState<SuperAdmin | null>(null)
   const [editForm, setEditForm] = useState({ name: '', role: '' })
   const [editError, setEditError] = useState<string | null>(null)
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['portal-users'] })
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['superadmins'] })
 
   const createMutation = useMutation({
     mutationFn: (payload: typeof form) => api.post('/portal-users/', payload),
@@ -80,7 +80,7 @@ export function PortalUsersPage() {
     },
   })
 
-  const openEdit = (u: PortalUser) => {
+  const openEdit = (u: SuperAdmin) => {
     setEditForm({ name: u.name, role: u.role })
     setEditError(null)
     setEditUser(u)
@@ -109,7 +109,7 @@ export function PortalUsersPage() {
     <div className="p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Portal Users</h1>
+          <h1 className="text-xl font-semibold text-gray-900">SuperAdmins</h1>
           <p className="text-xs text-gray-400 mt-0.5">Super admin access only</p>
         </div>
         <button
@@ -255,7 +255,7 @@ export function PortalUsersPage() {
       )}
 
       {showCreate && (
-        <Modal title="New Portal User" onClose={() => setShowCreate(false)}>
+        <Modal title="New SuperAdmin" onClose={() => setShowCreate(false)}>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>

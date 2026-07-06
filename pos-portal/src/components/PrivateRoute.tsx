@@ -1,15 +1,14 @@
 /** Guards routes that require authentication. Redirects to /login if not signed in. */
 
 import { Navigate } from 'react-router-dom'
-import { useAuth, isPortalUser } from '../context/AuthContext'
+import { useAuth, isSuperAdmin } from '../context/AuthContext'
 
 interface Props {
   children: React.ReactNode
   requireSuperAdmin?: boolean
-  requirePortalUser?: boolean
 }
 
-export function PrivateRoute({ children, requireSuperAdmin = false, requirePortalUser = false }: Props) {
+export function PrivateRoute({ children, requireSuperAdmin = false }: Props) {
   const { user, isLoading } = useAuth()
 
   if (isLoading) {
@@ -22,11 +21,7 @@ export function PrivateRoute({ children, requireSuperAdmin = false, requirePorta
 
   if (!user) return <Navigate to="/login" replace />
 
-  if (requireSuperAdmin && (!isPortalUser(user) || user.role !== 'admin')) {
-    return <Navigate to="/" replace />
-  }
-
-  if (requirePortalUser && !isPortalUser(user)) {
+  if (requireSuperAdmin && !isSuperAdmin(user)) {
     return <Navigate to="/" replace />
   }
 

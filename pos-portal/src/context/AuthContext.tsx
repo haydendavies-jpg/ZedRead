@@ -2,7 +2,7 @@
  * Authentication context — provides current user, login, and logout to the tree.
  *
  * Supports two user types:
- *   portal_access — PortalUser (admin, reseller_staff); fetched from API.
+ *   portal_access — SuperAdmin (admin, reseller_staff); fetched from API.
  *   mgmt_access   — MgmtUser (POS manager with portal access); decoded from JWT.
  *
  * When login returns available_grants (multi-grant POS user), the context exposes
@@ -11,9 +11,9 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { api, clearTokens, getAccessToken, getTokenType, setImpersonationSession, setTokens } from '../api/axios'
-import type { GrantSummary, MgmtTokenPayload, MgmtUser, PortalUser, TokenType, UnifiedLoginResponse } from '../types'
+import type { GrantSummary, MgmtTokenPayload, MgmtUser, SuperAdmin, TokenType, UnifiedLoginResponse } from '../types'
 
-export type AuthUser = PortalUser | MgmtUser
+export type AuthUser = SuperAdmin | MgmtUser
 
 interface AuthContextValue {
   user: AuthUser | null
@@ -112,7 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setTokenType('mgmt_access')
       } else {
         const id = payload['sub'] as string
-        const { data } = await api.get<PortalUser>(`/portal-users/${id}`)
+        const { data } = await api.get<SuperAdmin>(`/portal-users/${id}`)
         setUser(data)
         setTokenType('portal_access')
       }
@@ -143,8 +143,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setTokenType('mgmt_access')
       } else {
         const id = payload['sub'] as string
-        const { data: portalUser } = await api.get<PortalUser>(`/portal-users/${id}`)
-        setUser(portalUser)
+        const { data: superAdmin } = await api.get<SuperAdmin>(`/portal-users/${id}`)
+        setUser(superAdmin)
         setTokenType('portal_access')
       }
       return 'direct'
@@ -204,8 +204,8 @@ export function useAuth(): AuthContextValue {
   return ctx
 }
 
-/** True if the logged-in user is a portal admin (admin, reseller_staff). */
-export function isPortalUser(user: AuthUser | null): user is PortalUser {
+/** True if the logged-in user is a SuperAdmin (admin, reseller_staff). */
+export function isSuperAdmin(user: AuthUser | null): user is SuperAdmin {
   return user !== null && 'role' in user
 }
 
