@@ -37,6 +37,31 @@ _MAX_PHOTO_BYTES = 500 * 1024  # 500 KB
 _ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
+async def _compute_price_ex_cents(
+    db: AsyncSession, brand_id: uuid.UUID, base_price_cents: int, is_taxable: bool
+) -> int:
+    """
+    Resolve the tax-exclusive price for a product given its current taxability.
+
+    Taxable products have GST embedded in base_price_cents (tax-inclusive) —
+    the exclusive price is derived by stripping the brand's country rate.
+    Tax-free products have no tax to strip: the exclusive price is exactly
+    the entered price, since there is no tax component to remove.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand the product belongs to (resolves the country rate).
+        base_price_cents: The tax-inclusive price as currently entered.
+        is_taxable: Whether the product is sold with tax applied.
+
+    Returns:
+        int: The tax-exclusive price in cents.
+    """
+    if not is_taxable:
+        return base_price_cents
+    return await derive_ex_price_cents(db, brand_id, base_price_cents)
+
+
 async def _get_or_404(db: AsyncSession, brand_id: uuid.UUID, product_id: uuid.UUID) -> Product:
     """
     Fetch a Product by ID scoped to a brand, or raise HTTP 404.
@@ -181,8 +206,9 @@ async def create_product(
     """
     await _validate_category(db, brand_id, payload.category_id)
 
-    # Derive the tax-exclusive price from the inclusive price + brand country rate
-    price_ex_cents = await derive_ex_price_cents(db, brand_id, payload.base_price_cents)
+    price_ex_cents = await _compute_price_ex_cents(
+        db, brand_id, payload.base_price_cents, payload.is_taxable
+    )
 
     product = Product(
         id=uuid.uuid4(),
@@ -261,10 +287,16 @@ async def update_product(
         product.description = payload.description
     if payload.base_price_cents is not None:
         product.base_price_cents = payload.base_price_cents
-        # Re-derive the exclusive price whenever the inclusive price changes
-        product.price_ex_cents = await derive_ex_price_cents(db, brand_id, payload.base_price_cents)
     if payload.is_taxable is not None:
         product.is_taxable = payload.is_taxable
+    # Re-derive the exclusive price whenever either input to the derivation
+    # changes — the inclusive price, or taxability itself (switching a product
+    # to Tax Free must stop stripping a rate that no longer applies, and vice
+    # versa switching to Taxed must start applying the country rate).
+    if payload.base_price_cents is not None or payload.is_taxable is not None:
+        product.price_ex_cents = await _compute_price_ex_cents(
+            db, brand_id, product.base_price_cents, product.is_taxable
+        )
     if payload.display_order is not None:
         product.display_order = payload.display_order
 

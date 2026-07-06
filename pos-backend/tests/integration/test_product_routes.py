@@ -352,3 +352,95 @@ async def test_update_product_reprices_ex_on_inclusive_change(client, db, pos_au
     # inc 2200 at 10% inclusive → ex = 2000
     assert body["base_price_cents"] == 2200
     assert body["price_ex_cents"] == 2000
+
+
+async def test_create_tax_free_product_not_rate_stripped_when_template_exists(
+    client, db, pos_auth_headers, test_brand
+):
+    """A Tax Free product keeps its entered price exactly, even with a country rate active.
+
+    Regression test: price_ex_cents must equal the entered price when is_taxable
+    is false — there is no tax to strip out, so deriving via the country rate
+    would silently undercharge (e.g. $10.00 becoming $9.09 at 10% GST).
+    """
+    await _seed_au_inclusive_template(db)
+    category_id = await _get_or_create_category(db, test_brand.id)
+
+    response = await client.post(
+        "/products",
+        json={
+            "category_id": str(category_id),
+            "name": "Gift Card",
+            "base_price_cents": 1000,
+            "is_taxable": False,
+        },
+        headers=pos_auth_headers,
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["base_price_cents"] == 1000
+    assert body["price_ex_cents"] == 1000
+    assert body["is_taxable"] is False
+
+
+async def test_toggle_to_tax_free_reprices_without_rate_stripping(
+    client, db, pos_auth_headers, test_brand
+):
+    """Switching an existing taxable product to Tax Free recomputes price_ex_cents
+    to equal the inclusive price, undoing the previously-stripped GST."""
+    await _seed_au_inclusive_template(db)
+    category_id = await _get_or_create_category(db, test_brand.id)
+
+    created = await client.post(
+        "/products",
+        json={"category_id": str(category_id), "name": "Coffee", "base_price_cents": 1100},
+        headers=pos_auth_headers,
+    )
+    product_id = created.json()["id"]
+    assert created.json()["price_ex_cents"] == 1000  # GST stripped while taxable
+
+    updated = await client.patch(
+        f"/products/{product_id}",
+        json={"is_taxable": False},
+        headers=pos_auth_headers,
+    )
+    assert updated.status_code == 200
+    body = updated.json()
+    assert body["is_taxable"] is False
+    # No price change was submitted — base_price_cents stays 1100, but ex must
+    # now equal it exactly since the product no longer carries any tax.
+    assert body["base_price_cents"] == 1100
+    assert body["price_ex_cents"] == 1100
+
+
+async def test_toggle_to_taxed_reapplies_rate_derivation(
+    client, db, pos_auth_headers, test_brand
+):
+    """Switching an existing tax-free product to Taxed re-derives the exclusive
+    price from the country rate instead of leaving it equal to the inclusive price."""
+    await _seed_au_inclusive_template(db)
+    category_id = await _get_or_create_category(db, test_brand.id)
+
+    created = await client.post(
+        "/products",
+        json={
+            "category_id": str(category_id),
+            "name": "Book",
+            "base_price_cents": 1100,
+            "is_taxable": False,
+        },
+        headers=pos_auth_headers,
+    )
+    product_id = created.json()["id"]
+    assert created.json()["price_ex_cents"] == 1100  # no tax while tax-free
+
+    updated = await client.patch(
+        f"/products/{product_id}",
+        json={"is_taxable": True},
+        headers=pos_auth_headers,
+    )
+    assert updated.status_code == 200
+    body = updated.json()
+    assert body["is_taxable"] is True
+    assert body["base_price_cents"] == 1100
+    assert body["price_ex_cents"] == 1000  # GST now stripped out

@@ -146,18 +146,33 @@ interface ProductFormProps {
   onSaved: () => void
 }
 
+/** The price actually charged at sale under a given taxability: inclusive when taxed, exclusive when not. */
+function effectivePriceCents(product: Product, taxable: boolean): number {
+  return taxable ? product.base_price_cents : product.price_ex_cents
+}
+
 function ProductFormModal({ product, brandId, categories, onClose, onSaved }: ProductFormProps) {
   const [name, setName] = useState(product?.name ?? '')
   const [description, setDescription] = useState(product?.description ?? '')
+  // Taxability is a plain product flag. When taxed, the field holds the
+  // tax-inclusive price and the exclusive price is derived server-side from
+  // the brand's country rate. When tax free there is no tax to derive — the
+  // field holds the exact price charged, so it shows/edits price_ex_cents.
+  const [taxable, setTaxable] = useState(product ? product.is_taxable : true)
   const [priceStr, setPriceStr] = useState(
-    product ? (product.base_price_cents / 100).toFixed(2) : ''
+    product ? (effectivePriceCents(product, product.is_taxable) / 100).toFixed(2) : ''
   )
   const [categoryId, setCategoryId] = useState(product?.category_id ?? categories[0]?.id ?? '')
-  // Taxability is a plain product flag; the tax-exclusive price is derived
-  // server-side from the brand's country rate when the product is saved.
-  const [taxable, setTaxable] = useState(product ? product.is_taxable : true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+
+  /** Switch the Tax setting, updating the displayed price to what's actually charged under it. */
+  const handleTaxableChange = (nextTaxable: boolean) => {
+    setTaxable(nextTaxable)
+    if (product) {
+      setPriceStr((effectivePriceCents(product, nextTaxable) / 100).toFixed(2))
+    }
+  }
 
   const handleSave = async () => {
     const priceCents = Math.round(parseFloat(priceStr) * 100)
@@ -203,7 +218,9 @@ function ProductFormModal({ product, brandId, categories, onClose, onSaved }: Pr
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Price ($, tax-inclusive)</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            {taxable ? 'Price ($, tax-inclusive)' : 'Price ($, no tax)'}
+          </label>
           <input
             type="number"
             step="0.01"
@@ -212,7 +229,7 @@ function ProductFormModal({ product, brandId, categories, onClose, onSaved }: Pr
             onChange={(e) => setPriceStr(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
-          {product && (
+          {product && taxable && (
             <p className="text-xs text-gray-400 mt-1">
               Tax-exclusive price (auto-calculated): {centsToDisplay(product.price_ex_cents)}
             </p>
@@ -236,14 +253,16 @@ function ProductFormModal({ product, brandId, categories, onClose, onSaved }: Pr
           <label className="block text-sm font-medium text-gray-700 mb-1">Tax</label>
           <select
             value={taxable ? 'taxed' : 'free'}
-            onChange={(e) => setTaxable(e.target.value === 'taxed')}
+            onChange={(e) => handleTaxableChange(e.target.value === 'taxed')}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="taxed">Taxed (sold at inclusive price)</option>
-            <option value="free">Tax free (sold at exclusive price)</option>
+            <option value="free">Tax free (no tax applied)</option>
           </select>
           <p className="text-xs text-gray-400 mt-1">
-            The tax rate is set by the administrator per country and used to split the inclusive price.
+            {taxable
+              ? 'The tax rate is set by the administrator per country and used to split the inclusive price.'
+              : 'No tax is applied — the price above is charged exactly as entered.'}
           </p>
         </div>
 
