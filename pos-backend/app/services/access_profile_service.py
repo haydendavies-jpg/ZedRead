@@ -46,7 +46,7 @@ _DEFAULT_ROLE_PAGES: dict[SystemAccessProfile, frozenset[str]] = {
     SystemAccessProfile.MANAGER: PAGE_KEYS - frozenset(
         {"users", "access_grants", "access_profiles", "license_billing"}
     ),
-    SystemAccessProfile.STAFF: frozenset({"products", "categories", "customers"}),
+    SystemAccessProfile.STAFF: frozenset({"products", "categories", "reporting_groups", "customers"}),
 }
 
 

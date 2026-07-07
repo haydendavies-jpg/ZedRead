@@ -17,6 +17,7 @@ STARTER_PLAN_PAGES: frozenset[str] = frozenset(
     {
         "products",
         "categories",
+        "reporting_groups",
         "site_settings",
         "daily_sales",
         "invoices",
@@ -31,6 +32,7 @@ PRO_PLAN_PAGES: frozenset[str] = frozenset(
         "variants_modifiers",
         "combos",
         "categories",
+        "reporting_groups",
         "site_settings",
         "devices",
         "tax_settings",

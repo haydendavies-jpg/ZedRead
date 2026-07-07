@@ -50,6 +50,7 @@ from app.models import (  # noqa: F401
     ProductModifierGroupLink,
     ProductVariant,
     ProductVariantAttribute,
+    ReportingGroup,
     Site,
     SiteProductOverride,
     SiteVariantOverride,
@@ -722,7 +723,41 @@ async def test_tax_category(db: AsyncSession, test_brand: Brand) -> TaxCategory:
 
 
 @pytest_asyncio.fixture()
-async def test_product(db: AsyncSession, test_brand: Brand, test_site: Site) -> Product:
+async def test_reporting_group(db: AsyncSession, test_brand: Brand) -> ReportingGroup:
+    """
+    A persisted system default ReportingGroup row for test_brand.
+
+    test_brand only seeds access profiles, not the reporting group/category
+    pair create_brand() normally seeds atomically — this fixture fills that gap
+    for tests that need a default reporting group to exist.
+
+    Returns:
+        ReportingGroup: A saved, system default ReportingGroup instance.
+    """
+    from sqlalchemy import select as _select
+
+    result = await db.execute(
+        _select(ReportingGroup).where(ReportingGroup.brand_id == test_brand.id, ReportingGroup.is_default == True)  # noqa: E712
+    )
+    group = result.scalar_one_or_none()
+    if group is None:
+        group = ReportingGroup(
+            id=uuid.uuid4(),
+            brand_id=test_brand.id,
+            name="Default",
+            is_default=True,
+            is_system=True,
+        )
+        db.add(group)
+        await db.commit()
+        await db.refresh(group)
+    return group
+
+
+@pytest_asyncio.fixture()
+async def test_product(
+    db: AsyncSession, test_brand: Brand, test_site: Site, test_reporting_group: ReportingGroup
+) -> Product:
     """
     A persisted active Product row for test_brand.
 
@@ -743,6 +778,7 @@ async def test_product(db: AsyncSession, test_brand: Brand, test_site: Site) -> 
         cat = Category(
             id=uuid.uuid4(),
             brand_id=test_brand.id,
+            reporting_group_id=test_reporting_group.id,
             name="Uncategorised",
             is_system=True,
             is_active=True,

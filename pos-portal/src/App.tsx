@@ -27,6 +27,7 @@ import { GroupDetailPage } from './pages/groups/GroupDetailPage'
 import { SiteDetailPage } from './pages/sites/SiteDetailPage'
 import { ProductsPage } from './pages/management/ProductsPage'
 import { CategoriesPage } from './pages/management/CategoriesPage'
+import { ReportingGroupsPage } from './pages/management/ReportingGroupsPage'
 import { ReportsPage } from './pages/management/ReportsPage'
 import { UsersPage as MgmtUsersPage } from './pages/management/UsersPage'
 import { SiteOverridesPage } from './pages/management/SiteOverridesPage'
@@ -158,6 +159,7 @@ export default function App() {
               <Route path="management" element={<Navigate to="/management/products" replace />} />
               <Route path="management/products" element={<ProductsPage />} />
               <Route path="management/categories" element={<CategoriesPage />} />
+              <Route path="management/reporting-groups" element={<ReportingGroupsPage />} />
               <Route path="management/reports" element={<ReportsPage />} />
               <Route path="management/users" element={<MgmtUsersPage />} />
               <Route path="management/overrides" element={<SiteOverridesPage />} />
