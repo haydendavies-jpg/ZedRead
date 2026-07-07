@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, String, func
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -78,6 +78,20 @@ class AccessProfile(Base):
         nullable=False,
         default=False,
         comment="True when holders of this profile may log into the management portal",
+    )
+    can_use_open_item: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="True when holders of this profile may sell a product flagged is_open_item "
+        "with a freely-entered name/price (Stage 24 capability flag, not a page grant)",
+    )
+    open_item_max_price_cents: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+        comment="Optional ceiling on the price a holder may enter for an open item; "
+        "NULL means no ceiling",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

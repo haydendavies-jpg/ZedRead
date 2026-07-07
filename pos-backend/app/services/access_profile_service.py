@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
+    ACCESS_PROFILE_CAPABILITIES_UPDATED,
     ACCESS_PROFILE_PAGE_GRANTED,
     ACCESS_PROFILE_PAGE_REVOKED,
 )
@@ -28,6 +29,7 @@ from app.models.access_profile_page_permission import AccessProfilePagePermissio
 from app.models.license import License
 from app.models.superadmin import SuperAdmin
 from app.models.user import User
+from app.schemas.access_profile import AccessProfileCapabilitiesUpdate
 from app.services.audit_service import log_action
 
 log = structlog.get_logger(__name__)
@@ -375,3 +377,61 @@ async def resolve_visible_pages(db: AsyncSession, access_profile_id: uuid.UUID, 
     plan_name = license_row.plan_name if license_row else None
 
     return granted & allowed_pages_for_plan(plan_name)
+
+
+async def update_capabilities(
+    db: AsyncSession,
+    access_profile_id: uuid.UUID,
+    payload: AccessProfileCapabilitiesUpdate,
+    actor: User | SuperAdmin,
+) -> AccessProfile:
+    """
+    Update an AccessProfile's open-item capability flag and/or price ceiling.
+
+    Only fields present in payload.model_fields_set are written, so callers
+    can update either field independently.
+
+    Args:
+        db: Active database session.
+        access_profile_id: UUID of the profile to update.
+        payload: Fields to update.
+        actor: The authenticated user performing the action.
+
+    Returns:
+        AccessProfile: The updated profile.
+
+    Raises:
+        HTTPException: 404 if the profile does not exist.
+    """
+    profile = await _load_profile_or_404(db, access_profile_id)
+
+    before = {
+        "can_use_open_item": profile.can_use_open_item,
+        "open_item_max_price_cents": profile.open_item_max_price_cents,
+    }
+
+    if "can_use_open_item" in payload.model_fields_set:
+        profile.can_use_open_item = payload.can_use_open_item
+    if "open_item_max_price_cents" in payload.model_fields_set:
+        profile.open_item_max_price_cents = payload.open_item_max_price_cents
+
+    await log_action(
+        db=db,
+        action=ACCESS_PROFILE_CAPABILITIES_UPDATED,
+        entity_type="access_profile",
+        entity_id=str(profile.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state=before,
+        after_state={
+            "can_use_open_item": profile.can_use_open_item,
+            "open_item_max_price_cents": profile.open_item_max_price_cents,
+        },
+    )
+
+    await db.commit()
+    await db.refresh(profile)
+    log.info("access_profile.capabilities.updated", access_profile_id=str(profile.id))
+    return profile

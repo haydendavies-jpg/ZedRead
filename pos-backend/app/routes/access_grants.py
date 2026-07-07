@@ -190,6 +190,7 @@ async def set_default_grant(
 # ── Access profiles listing (for portal admin UI) ─────────────────────────────
 
 from app.models.access_profile import AccessProfile as AccessProfileModel
+from app.schemas.access_profile import AccessProfileCapabilitiesUpdate
 from pydantic import BaseModel
 from sqlalchemy import select
 from app.utils.dependencies import get_current_superadmin
@@ -200,6 +201,8 @@ class AccessProfileOut(BaseModel):
     name: str
     is_system: bool
     can_access_portal: bool
+    can_use_open_item: bool
+    open_item_max_price_cents: int | None
     model_config = {"from_attributes": True}
 
 profiles_router = APIRouter(prefix="/access-profiles", tags=["access-profiles"])
@@ -375,3 +378,43 @@ async def get_visible_pages(
         site_id=site_id,
         page_keys=sorted(page_keys),
     )
+
+
+# ── Open-item capability flags (Stage 24) ─────────────────────────────────────
+
+
+@profiles_router.patch(
+    "/{access_profile_id}/capabilities",
+    response_model=AccessProfileOut,
+    status_code=status.HTTP_200_OK,
+)
+async def update_capabilities(
+    access_profile_id: uuid.UUID,
+    payload: AccessProfileCapabilitiesUpdate,
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> AccessProfileOut:
+    """
+    Update an access profile's open-item capability flag and/or price ceiling.
+
+    This is an action-permission capability, not a page grant, so it lives
+    outside the page-permission hierarchy managed by the /pages routes above.
+
+    Args:
+        access_profile_id: UUID of the profile to update.
+        payload: Fields to update — only fields explicitly set are written.
+        access: Resolved catalog access (any non-POS token type).
+        db: Active database session.
+
+    Returns:
+        AccessProfileOut: The updated profile.
+    """
+    if access.pos_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access profile management requires a management or portal JWT",
+        )
+    actor = access.mgmt_access.user if access.mgmt_access else access.portal_access
+    assert actor is not None
+    profile = await access_profile_service.update_capabilities(db, access_profile_id, payload, actor)
+    return AccessProfileOut.model_validate(profile)

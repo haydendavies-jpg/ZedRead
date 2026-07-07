@@ -68,6 +68,48 @@ async def test_create_product_returns_201(client, db, pos_auth_headers, test_bra
     assert body["base_price_cents"] == 1299
     assert body["brand_id"] == str(test_brand.id)
     assert body["is_active"] is True
+    assert body["ref"].startswith("PRD-")
+    assert body["print_name"] is None
+    assert body["effective_print_name"] == "Chicken Burger"
+    assert body["is_open_item"] is False
+
+
+async def test_create_product_with_print_name_and_open_item(client, db, pos_auth_headers, test_brand):
+    """print_name and is_open_item round-trip through create."""
+    category_id = await _get_or_create_category(db, test_brand.id)
+
+    response = await client.post(
+        "/products",
+        json={
+            "category_id": str(category_id),
+            "name": "Misc Item",
+            "print_name": "MISC",
+            "base_price_cents": 0,
+            "is_open_item": True,
+        },
+        headers=pos_auth_headers,
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["print_name"] == "MISC"
+    assert body["effective_print_name"] == "MISC"
+    assert body["is_open_item"] is True
+
+
+async def test_update_product_print_name_and_open_item(client, pos_auth_headers, test_product):
+    """PATCH /products/{id} updates print_name and is_open_item."""
+    response = await client.patch(
+        f"/products/{test_product.id}",
+        json={"print_name": "DOCKET NAME", "is_open_item": True},
+        headers=pos_auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["print_name"] == "DOCKET NAME"
+    assert body["effective_print_name"] == "DOCKET NAME"
+    assert body["is_open_item"] is True
 
 
 async def test_create_product_writes_audit_log(client, db, pos_auth_headers, test_brand, test_user):

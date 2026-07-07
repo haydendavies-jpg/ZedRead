@@ -84,7 +84,11 @@ Tokens stored in localStorage (portal; impersonation tokens per-tab in sessionSt
 Hierarchy: `groups` ← `brands` (group_id) ← `sites` (brand_id).
 Catalog: `categories`, `products` (base_price_cents BIGINT), `product_variants`, `product_combo_groups/options`,
 `modifier_groups/options`, `product_modifier_group_links` (M:N). Products carry `base_price_cents`
-(tax-inclusive), `price_ex_cents` (derived), and `is_taxable`. `tax_templates`/`tax_template_rates`
+(tax-inclusive), `price_ex_cents` (derived), `is_taxable`, `ref` (human-readable PRD-000001 code,
+wired into the ORM/schema in Stage 24 — previously dormant since migration `0013`), `print_name`
+(nullable, falls back to `name`), and `is_open_item` (flexible price/name at sale time, gated by the
+`can_use_open_item` capability + optional `open_item_max_price_cents` ceiling on `AccessProfile`).
+`tax_templates`/`tax_template_rates`
 (admin-owned, jurisdiction-scoped country→state→county→city) supply the country rate used to derive
 a product's exclusive price at save time. `tax_categories`/`tax_rates` are legacy (retained, not used
 for invoice tax).
@@ -127,4 +131,4 @@ Ops: `user_pos_sessions`, `pos_devices`, `audit_logs` (immutable), `user_invites
   `backend_role` enum — the full 5-role model is not complete. Verify against code before assuming
   either the old or the target model.
 
-*Last mapped: 2026-07-04. Re-verify against code if it has changed significantly since.*
+*Last mapped: 2026-07-06. Re-verify against code if it has changed significantly since.*

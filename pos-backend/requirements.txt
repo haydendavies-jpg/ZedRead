@@ -36,6 +36,7 @@ resend==2.4.0
 # File upload / storage
 supabase==2.10.0
 python-multipart==0.0.20
+Pillow==11.0.0
 
 # CLI
 typer==0.15.1

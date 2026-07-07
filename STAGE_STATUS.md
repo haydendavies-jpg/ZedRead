@@ -16,7 +16,7 @@ Last updated: 2026-07-06
 | 6 — Catalog Data & Table UX | 19–20 | 🔜 Planned |
 | 7 — Invoices & Extended Catalog | 21–22 | 🔜 Planned |
 | 8 — POS Menu Builder | 23 | 🔜 Planned |
-| 9 — Product Model Extensions | 24 | 🔜 Planned |
+| 9 — Product Model Extensions | 24 | ✅ Complete |
 | 10 — Android App | 25–26 | 🚧 In Progress (scaffolding only) |
 
 Stage numbers 13–14 are retired — the Android phase is renumbered to 25–26 to make room for
@@ -316,14 +316,18 @@ Stages 16–24, which were planned after Android scaffolding had already begun.
 
 ## Phase 9 — Product Model Extensions
 
-### Stage 24 — Product Extensions 🔜
+### Stage 24 — Product Extensions ✅
 
 **Deliverables:**
-- [ ] `products.ref` wired into ORM model + schema as "product code" (may land as part of Stage 19 instead — same underlying change)
-- [ ] `print_name` column (nullable, falls back to `name`)
-- [ ] `is_open_item` flag; flexible price/name at time of sale, defaulting to the product's own fields
-- [ ] `can_use_open_item` capability flag + optional `open_item_max_price_cents` ceiling on `AccessProfile`
-  (a capability flag, not a page grant — it's an action permission, not a page)
+- [x] `products.ref` wired into ORM model + schema as "product code" (migration `0037`)
+- [x] `print_name` column (nullable, falls back to `name`; `effective_print_name` computed property/response field)
+- [x] `is_open_item` flag; flexible price/name at time of sale, defaulting to the product's own fields
+  (Android sale-time UI itself is out of scope — data model only)
+- [x] `can_use_open_item` capability flag + optional `open_item_max_price_cents` ceiling on `AccessProfile`
+  (a capability flag, not a page grant — it's an action permission, not a page); exposed via
+  `PATCH /access-profiles/{id}/capabilities`
+- [x] Photo upload cap raised 500 KB → 1 MB; 500x500 minimum resolution enforced (422 if smaller);
+  1:1 ratio surfaced as portal UI guidance only, not a hard rule
 - [x] `description` and `photo_url` already exist on Product — no work needed
 
 ---

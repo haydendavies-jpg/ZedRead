@@ -1,16 +1,19 @@
 """Business logic for Product CRUD and photo upload.
 
 Photo upload is handled via the upload_photo() helper which:
-  - Enforces the 500 KB size limit (raises HTTP 413 if exceeded)
+  - Enforces the 1 MB size limit (raises HTTP 413 if exceeded)
+  - Enforces a 500x500 minimum resolution (raises HTTP 422 if too small)
   - Uploads to Supabase Storage and returns the public URL
   - Called separately from create/update so the product route can accept
     a multipart form with a JSON body + file part
 """
 
+import io
 import uuid
 
 import structlog
 from fastapi import HTTPException, UploadFile, status
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,8 +36,41 @@ from app.utils.storage import extension_for_content_type, upload_image
 log = structlog.get_logger(__name__)
 
 # Maximum photo size enforced before attempting Supabase upload
-_MAX_PHOTO_BYTES = 500 * 1024  # 500 KB
+_MAX_PHOTO_BYTES = 1 * 1024 * 1024  # 1 MB
 _ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
+# Minimum resolution — a 1:1 ratio is recommended in the portal upload UI but
+# not enforced here, since the requester called it a recommendation, not a rule.
+_MIN_PHOTO_DIMENSION_PX = 500
+
+
+def _validate_photo_dimensions(contents: bytes) -> None:
+    """
+    Raise HTTP 422 if the image is smaller than the 500x500 minimum.
+
+    Args:
+        contents: Raw image bytes already read from the upload.
+
+    Raises:
+        HTTPException: 422 if either dimension is below the minimum, or the
+            bytes cannot be decoded as an image.
+    """
+    try:
+        with Image.open(io.BytesIO(contents)) as image:
+            width, height = image.size
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Uploaded file is not a valid image",
+        ) from exc
+
+    if width < _MIN_PHOTO_DIMENSION_PX or height < _MIN_PHOTO_DIMENSION_PX:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Image must be at least {_MIN_PHOTO_DIMENSION_PX}x{_MIN_PHOTO_DIMENSION_PX}px "
+                f"(received {width}x{height})"
+            ),
+        )
 
 
 async def _compute_price_ex_cents(
@@ -217,9 +253,11 @@ async def create_product(
         tax_category_id=payload.tax_category_id,
         name=payload.name,
         description=payload.description,
+        print_name=payload.print_name,
         base_price_cents=payload.base_price_cents,
         price_ex_cents=price_ex_cents,
         is_taxable=payload.is_taxable,
+        is_open_item=payload.is_open_item,
         display_order=payload.display_order,
         is_active=True,
     )
@@ -285,10 +323,14 @@ async def update_product(
         product.name = payload.name
     if payload.description is not None:
         product.description = payload.description
+    if payload.print_name is not None:
+        product.print_name = payload.print_name
     if payload.base_price_cents is not None:
         product.base_price_cents = payload.base_price_cents
     if payload.is_taxable is not None:
         product.is_taxable = payload.is_taxable
+    if payload.is_open_item is not None:
+        product.is_open_item = payload.is_open_item
     # Re-derive the exclusive price whenever either input to the derivation
     # changes — the inclusive price, or taxability itself (switching a product
     # to Tax Free must stop stripping a rate that no longer applies, and vice
@@ -378,9 +420,10 @@ async def upload_photo(
     """
     Upload a product photo to Supabase Storage and save the URL on the product.
 
-    Enforces a 500 KB limit before attempting the upload. Raises HTTP 413 if
+    Enforces a 1 MB limit before attempting the upload. Raises HTTP 413 if
     the file exceeds the limit. Raises HTTP 415 if the content type is not an
-    accepted image type.
+    accepted image type. Raises HTTP 422 if the image is smaller than the
+    500x500 minimum recommended resolution.
 
     Args:
         db: Active database session.
@@ -394,12 +437,14 @@ async def upload_photo(
 
     Raises:
         HTTPException: 404 if the product is not found.
-        HTTPException: 413 if the file exceeds 500 KB.
+        HTTPException: 413 if the file exceeds 1 MB.
         HTTPException: 415 if the content type is not an accepted image type.
+        HTTPException: 422 if the image is smaller than 500x500px.
     """
     product = await _get_or_404(db, brand_id, product_id)
 
     contents = await file.read()
+    _validate_photo_dimensions(contents)
     ext = extension_for_content_type(file.content_type or "")
     photo_url = await upload_image(
         bucket="product-photos",
