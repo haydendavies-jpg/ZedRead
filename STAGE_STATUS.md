@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-05-22
+Last updated: 2026-07-06
 
 ---
 
@@ -11,7 +11,7 @@ Last updated: 2026-05-22
 | 1 — Foundation & Portal | 1–6 | ✅ Complete |
 | 2 — POS Catalog | 7–9 | ✅ Complete |
 | 3 — Transactions | 10–12 | ✅ Complete |
-| 4 — Identity & Permissions Redesign | 15 | 🚧 In Progress |
+| 4 — Identity & Permissions Redesign | 15 | ✅ Complete |
 | 5 — Catalog Foundations | 16–18 | 🔜 Planned |
 | 6 — Catalog Data & Table UX | 19–20 | 🔜 Planned |
 | 7 — Invoices & Extended Catalog | 21–22 | 🔜 Planned |
@@ -202,7 +202,7 @@ Stages 16–24, which were planned after Android scaffolding had already begun.
 
 ## Phase 4 — Identity & Permissions Redesign
 
-### Stage 15 — Rename + 5-Role Model 🚧
+### Stage 15 — Rename + 5-Role Model ✅
 
 **Deliverables:**
 - [x] `app/constants/pages.py` — 17-page catalog across 5 categories (Product & Menus, App
@@ -214,7 +214,9 @@ Stages 16–24, which were planned after Android scaffolding had already begun.
 - [x] Backend rename: `portal_users` → `superadmins` (migration `0020`), `pos_users` → `users`
   (migration `0021`)
 - [x] Required-field rules for Users (first/last name, PIN, email+password gating on backend access)
-- [ ] Portal frontend rename: nav/routes still say "Portal Users"/"POS Users" (`Layout.tsx`)
+- [x] Portal frontend rename: nav/routes/components renamed to SuperAdmins (`/superadmins`) and
+  Users (`/users`); `isPortalUser` → `isSuperAdmin`, `PortalUser` type → `SuperAdmin` (`Layout.tsx`,
+  `AuthContext.tsx`, `PrivateRoute.tsx`, `App.tsx`, `SuperAdminsPage.tsx`, `UsersPage.tsx`)
 - [ ] Portal UI for page permissions — no page calls the access-profile-pages endpoints yet
   (closed out in Stage 18)
 

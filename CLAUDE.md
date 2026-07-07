@@ -39,11 +39,17 @@ future-stage features unless explicitly instructed.
 Stage numbers 13–14 are retired (previously reserved for the Android phase, now renumbered to
 25–26 to make room for Stages 16–24 ahead of it — see ROADMAP.md/STAGE_STATUS.md for the rationale).
 
-**Stage 15 scope (current):** implement the rename and role/permission model in `ROLE_MODEL.md` —
-SuperAdmin (Admin/Reseller Staff), User (Master User/Admin/Reporting Only/Manager/Staff),
-required-field rules, access_profiles replaced by the 5 roles, per-page permission grants within
-the 5 page categories, license gating, and cross-identity login disambiguation. The per-category
-page list (§6 of `ROLE_MODEL.md`) is resolved and implemented — do not re-open it.
+**Stage 15 — complete:** the rename and role/permission model in `ROLE_MODEL.md` — SuperAdmin
+(Admin/Reseller Staff), User (Master User/Admin/Reporting Only/Manager/Staff), required-field
+rules, access_profiles replaced by the 5 roles, per-page permission grants within the 5 page
+categories, license gating, cross-identity login disambiguation, and the portal frontend rename
+(nav/routes/components now say SuperAdmins/Users) are all implemented. The per-category page list
+(§6 of `ROLE_MODEL.md`) is resolved and implemented — do not re-open it. Portal UI for toggling
+page permissions is intentionally deferred to Stage 18.
+
+**Stage 16 scope (current):** see `ROADMAP.md` Phase 5 for full detail — Reporting Groups
+(brand-scoped, a level above Categories; default group per brand, undeletable; every Category gets
+a required `reporting_group_id`). Do not begin Stage 17/18 work yet.
 
 **Stages 16–24 scope (planned, not started):** see `ROADMAP.md` Phases 5–9 for full detail. Summary:
 - **16 — Reporting Groups:** brand-scoped, a level above Categories. Default group per brand

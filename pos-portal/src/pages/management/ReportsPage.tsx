@@ -3,7 +3,7 @@
  *
  * Site-scope management users: site_id comes from JWT automatically.
  * Brand/group-scope management users: pick a site from the brand's list.
- * Portal users: must supply brand_id via URL param and pick a site.
+ * SuperAdmins: must supply brand_id via URL param and pick a site.
  */
 
 import { useState } from 'react'
@@ -51,7 +51,7 @@ export function ReportsPage() {
   const fixedSiteId = mgmtUser?.site_id ?? null
   const siteId = fixedSiteId ?? selectedSiteId
 
-  // Fetch sites list for the brand (only when brand-scope or portal users need to pick)
+  // Fetch sites list for the brand (only when brand-scope or SuperAdmin needs to pick)
   const needsSiteSelector = !fixedSiteId && !!brandId
   const { data: sites = [] } = useQuery<Site[]>({
     queryKey: ['sites-for-brand', brandId],

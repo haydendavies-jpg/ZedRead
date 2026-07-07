@@ -165,7 +165,7 @@ export interface LicenseInvoice {
   created_at: string
 }
 
-export interface PortalUser {
+export interface SuperAdmin {
   id: string
   ref: string
   email: string
@@ -265,7 +265,7 @@ export interface AccessProfile {
   can_access_portal: boolean
 }
 
-export interface POSUser {
+export interface User {
   id: string
   ref: string
   brand_id: string

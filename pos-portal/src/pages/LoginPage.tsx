@@ -1,4 +1,4 @@
-/** Portal login page — handles portal users and multi-grant POS manager scope selection. */
+/** Portal login page — handles SuperAdmin and multi-grant Manager scope selection. */
 
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'

@@ -2,11 +2,11 @@
  * Root application component — router + providers.
  *
  * Routes are split by user type:
- *   Portal admin routes (/groups, /brands, /sites, /licenses, /portal-users)
- *   Management routes   (/management/products, /categories, /tax, /reports, /users)
+ *   SuperAdmin routes  (/groups, /brands, /sites, /licenses, /superadmins, /users)
+ *   Management routes  (/management/products, /categories, /tax, /reports, /users)
  *
  * The Layout sidebar adapts based on JWT type (portal_access vs mgmt_access).
- * PrivateRoute enforces authentication; requirePortalUser guards admin-only routes.
+ * PrivateRoute enforces authentication; requireSuperAdmin guards admin-only routes.
  */
 
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
@@ -21,17 +21,17 @@ import { GroupsPage } from './pages/GroupsPage'
 import { BrandsPage } from './pages/BrandsPage'
 import { SitesPage } from './pages/SitesPage'
 import { LicensesPage } from './pages/LicensesPage'
-import { PortalUsersPage } from './pages/PortalUsersPage'
+import { SuperAdminsPage } from './pages/SuperAdminsPage'
 import { BrandDetailPage } from './pages/brands/BrandDetailPage'
 import { GroupDetailPage } from './pages/groups/GroupDetailPage'
 import { SiteDetailPage } from './pages/sites/SiteDetailPage'
 import { ProductsPage } from './pages/management/ProductsPage'
 import { CategoriesPage } from './pages/management/CategoriesPage'
 import { ReportsPage } from './pages/management/ReportsPage'
-import { UsersPage } from './pages/management/UsersPage'
+import { UsersPage as MgmtUsersPage } from './pages/management/UsersPage'
 import { SiteOverridesPage } from './pages/management/SiteOverridesPage'
 import { CompanyProfilePage } from './pages/management/CompanyProfilePage'
-import { PosUsersPage } from './pages/PosUsersPage'
+import { UsersPage } from './pages/UsersPage'
 import { EmailTemplatesPage } from './pages/EmailTemplatesPage'
 import { TaxTemplatesPage } from './pages/TaxTemplatesPage'
 
@@ -61,14 +61,14 @@ export default function App() {
                 </PrivateRoute>
               }
             >
-              {/* Default redirect — portal users → /groups, mgmt users → /management/products */}
+              {/* Default redirect — SuperAdmins → /groups, mgmt users → /management/products */}
               <Route index element={<SmartRedirect />} />
 
-              {/* Portal admin routes */}
+              {/* SuperAdmin routes */}
               <Route
                 path="groups"
                 element={
-                  <PrivateRoute requirePortalUser>
+                  <PrivateRoute requireSuperAdmin>
                     <GroupsPage />
                   </PrivateRoute>
                 }
@@ -76,7 +76,7 @@ export default function App() {
               <Route
                 path="groups/:groupId"
                 element={
-                  <PrivateRoute requirePortalUser>
+                  <PrivateRoute requireSuperAdmin>
                     <GroupDetailPage />
                   </PrivateRoute>
                 }
@@ -84,7 +84,7 @@ export default function App() {
               <Route
                 path="brands"
                 element={
-                  <PrivateRoute requirePortalUser>
+                  <PrivateRoute requireSuperAdmin>
                     <BrandsPage />
                   </PrivateRoute>
                 }
@@ -92,7 +92,7 @@ export default function App() {
               <Route
                 path="brands/:brandId"
                 element={
-                  <PrivateRoute requirePortalUser>
+                  <PrivateRoute requireSuperAdmin>
                     <BrandDetailPage />
                   </PrivateRoute>
                 }
@@ -100,7 +100,7 @@ export default function App() {
               <Route
                 path="sites"
                 element={
-                  <PrivateRoute requirePortalUser>
+                  <PrivateRoute requireSuperAdmin>
                     <SitesPage />
                   </PrivateRoute>
                 }
@@ -108,7 +108,7 @@ export default function App() {
               <Route
                 path="sites/:siteId"
                 element={
-                  <PrivateRoute requirePortalUser>
+                  <PrivateRoute requireSuperAdmin>
                     <SiteDetailPage />
                   </PrivateRoute>
                 }
@@ -116,31 +116,31 @@ export default function App() {
               <Route
                 path="licenses"
                 element={
-                  <PrivateRoute requirePortalUser>
+                  <PrivateRoute requireSuperAdmin>
                     <LicensesPage />
                   </PrivateRoute>
                 }
               />
               <Route
-                path="portal-users"
+                path="superadmins"
                 element={
-                  <PrivateRoute requirePortalUser>
-                    <PortalUsersPage />
+                  <PrivateRoute requireSuperAdmin>
+                    <SuperAdminsPage />
                   </PrivateRoute>
                 }
               />
               <Route
-                path="pos-users"
+                path="users"
                 element={
-                  <PrivateRoute requirePortalUser>
-                    <PosUsersPage />
+                  <PrivateRoute requireSuperAdmin>
+                    <UsersPage />
                   </PrivateRoute>
                 }
               />
               <Route
                 path="email-templates"
                 element={
-                  <PrivateRoute requirePortalUser>
+                  <PrivateRoute requireSuperAdmin>
                     <EmailTemplatesPage />
                   </PrivateRoute>
                 }
@@ -148,18 +148,18 @@ export default function App() {
               <Route
                 path="tax-templates"
                 element={
-                  <PrivateRoute requirePortalUser>
+                  <PrivateRoute requireSuperAdmin>
                     <TaxTemplatesPage />
                   </PrivateRoute>
                 }
               />
 
-              {/* Management routes — available to both portal and management users */}
+              {/* Management routes — available to both SuperAdmin and management users */}
               <Route path="management" element={<Navigate to="/management/products" replace />} />
               <Route path="management/products" element={<ProductsPage />} />
               <Route path="management/categories" element={<CategoriesPage />} />
               <Route path="management/reports" element={<ReportsPage />} />
-              <Route path="management/users" element={<UsersPage />} />
+              <Route path="management/users" element={<MgmtUsersPage />} />
               <Route path="management/overrides" element={<SiteOverridesPage />} />
               <Route path="management/company-profile" element={<CompanyProfilePage />} />
             </Route>

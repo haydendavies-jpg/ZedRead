@@ -1,10 +1,10 @@
 /**
  * Renders children only when the management JWT scope meets the minimum level.
- * Portal users always pass through. Management users are checked against
+ * SuperAdmins always pass through. Management users are checked against
  * the required scope hierarchy: group > brand > site.
  */
 
-import { useAuth, isMgmtUser, isPortalUser } from '../context/AuthContext'
+import { useAuth, isMgmtUser, isSuperAdmin } from '../context/AuthContext'
 
 const SCOPE_LEVEL: Record<string, number> = { site: 1, brand: 2, group: 3 }
 
@@ -19,7 +19,7 @@ export function ScopeGuard({ minScope, children }: Props) {
 
   if (!user) return null
 
-  if (isPortalUser(user)) return <>{children}</>
+  if (isSuperAdmin(user)) return <>{children}</>
 
   if (isMgmtUser(user)) {
     if (SCOPE_LEVEL[user.scope] >= SCOPE_LEVEL[minScope]) {
