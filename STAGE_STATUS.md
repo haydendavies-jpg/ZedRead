@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-07
+Last updated: 2026-07-07 (Stage 18)
 
 ---
 
@@ -12,7 +12,7 @@ Last updated: 2026-07-07
 | 2 — POS Catalog | 7–9 | ✅ Complete |
 | 3 — Transactions | 10–12 | ✅ Complete |
 | 4 — Identity & Permissions Redesign | 15 | ✅ Complete |
-| 5 — Catalog Foundations | 16–18 | 🚧 In Progress (Stages 16–17 complete) |
+| 5 — Catalog Foundations | 16–18 | ✅ Complete |
 | 6 — Catalog Data & Table UX | 19–20 | 🔜 Planned |
 | 7 — Invoices & Extended Catalog | 21–22 | 🔜 Planned |
 | 8 — POS Menu Builder | 23 | 🔜 Planned |
@@ -280,12 +280,35 @@ lists sites/brands/users today (`/sites`, `/brands`, `/users` are all portal-adm
 those was out of scope for this stage. Flagged for Stage 18 or a follow-up if a friendlier picker is
 wanted.
 
-### Stage 18 — Permission Scopes Portal UI 🔜
+### Stage 18 — Permission Scopes Portal UI ✅
 
 **Deliverables:**
-- [ ] Portal page: list access profiles per scope, toggle page-level permission grants
-- [ ] License-gated pages shown disabled/greyed-out with reason, not silently omitted
-- [ ] Reconcile CLAUDE.md Stage 15 note and ensure ROLE_MODEL.md §6 stays in sync going forward
+- [x] New portal page `management/AccessProfilesPage.tsx` at `/management/access-profiles`
+  ("Permission Scopes" in the sidebar, `MGMT_BRAND_NAV` — brand/group scope, same `ScopeGuard
+  minScope="brand"` as Users & Grants): lists an brand's access profiles as a pill selector, and for
+  the selected profile renders every `PAGE_CATALOG` page grouped by category with a checkbox wired
+  to the existing `GET/POST /access-profiles/{id}/pages` and `DELETE .../pages/{page_key}` routes
+  (built in Stage 15, unused by the frontend until now) — no backend changes were needed.
+- [x] License-gated pages are never hidden. Where a site context is available, a granted-but-
+  license-blocked page shows a "License-gated" badge (tooltip explains why) computed from `GET
+  .../visible-pages?site_id=` — a page in the granted set but absent from the resolved visible set
+  is blocked purely by the site's license plan. The toggle itself stays interactive either way,
+  since the grant and the license gate are independent axes (ROLE_MODEL.md §4): revoking a
+  license-gated page is still a real, useful action.
+- [x] Site context for the preview: SuperAdmins get a "Preview site" dropdown (they can call
+  `GET /sites?brand_id=`); a site-scope management user's own site is read straight from their JWT.
+- [x] `PAGE_CATALOG` / `PAGE_CATEGORY_LABELS` mirrored client-side in `types/index.ts` for rendering
+  (page_key validity is still enforced server-side on grant/revoke) — extends the Stage 18 standing
+  rule: every future stage that ships a portal page now updates three places in the same commit:
+  `app/constants/pages.py`, `ROLE_MODEL.md` §6, and this frontend mirror.
+
+**Known limitation:** brand/group-scope management users (unlike SuperAdmins and site-scope
+management users) have no route to resolve a specific site to preview the license gate against —
+`/sites` and `/licenses` are both portal-admin-only, and Stage 17 already flagged the lack of a
+management-JWT-scoped sites list as a gap. For those callers the page shows a plain notice instead
+of a preview; the grant/revoke toggles work regardless, since license gating only affects whether a
+User's session can actually see a page, not whether an admin may grant it. Revisit if a
+management-scoped `GET /sites` (or similar) is added for another stage.
 
 ---
 

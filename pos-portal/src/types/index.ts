@@ -302,6 +302,60 @@ export interface AccessGrant {
   created_at: string
 }
 
+// ── Page-category permission hierarchy (ROLE_MODEL.md §4/§6, Stage 18) ─────────
+//
+// Mirrors app.constants.pages.PAGE_CATALOG for rendering only — page_key
+// validity is enforced server-side (grant/revoke 422s on an unknown key).
+// Every stage that ships a new portal page must add its key here in the
+// same commit it adds one to pages.py and ROLE_MODEL.md §6.
+
+export type PageCategory =
+  | 'product_menus'
+  | 'app_configuration'
+  | 'reports'
+  | 'user_management'
+  | 'customers_loyalty'
+
+export const PAGE_CATEGORY_LABELS: Record<PageCategory, string> = {
+  product_menus: 'Product & Menus',
+  app_configuration: 'App Configuration',
+  reports: 'Reports',
+  user_management: 'User Management',
+  customers_loyalty: 'Customers & Loyalty',
+}
+
+export const PAGE_CATALOG: Array<{ key: string; category: PageCategory; label: string }> = [
+  { key: 'products', category: 'product_menus', label: 'Products' },
+  { key: 'variants_modifiers', category: 'product_menus', label: 'Variants & Modifiers' },
+  { key: 'combos', category: 'product_menus', label: 'Combos' },
+  { key: 'categories', category: 'product_menus', label: 'Categories' },
+  { key: 'reporting_groups', category: 'product_menus', label: 'Reporting Groups' },
+  { key: 'site_settings', category: 'app_configuration', label: 'Site Settings' },
+  { key: 'devices', category: 'app_configuration', label: 'Devices' },
+  { key: 'tax_settings', category: 'app_configuration', label: 'Tax Settings' },
+  { key: 'license_billing', category: 'app_configuration', label: 'License & Billing' },
+  { key: 'daily_sales', category: 'reports', label: 'Daily Sales' },
+  { key: 'tax_collected', category: 'reports', label: 'Tax Collected' },
+  { key: 'invoices', category: 'reports', label: 'Invoices' },
+  { key: 'audit_log', category: 'reports', label: 'Audit Log' },
+  { key: 'users', category: 'user_management', label: 'Users' },
+  { key: 'access_grants', category: 'user_management', label: 'Access Grants' },
+  { key: 'access_profiles', category: 'user_management', label: 'Access Profiles' },
+  { key: 'customers', category: 'customers_loyalty', label: 'Customers' },
+  { key: 'loyalty_programs', category: 'customers_loyalty', label: 'Loyalty Programs' },
+]
+
+export interface PagePermissionsResponse {
+  access_profile_id: string
+  page_keys: string[]
+}
+
+export interface VisiblePagesResponse {
+  access_profile_id: string
+  site_id: string
+  page_keys: string[]
+}
+
 // ── Report types ──────────────────────────────────────────────────────────────
 
 export interface DailySales {
