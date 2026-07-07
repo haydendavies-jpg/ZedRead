@@ -192,9 +192,22 @@ export interface PaginationParams {
 export interface Category {
   id: string
   brand_id: string
+  reporting_group_id: string
   name: string
   is_system: boolean
   is_active: boolean
+  display_order: number
+}
+
+export interface ReportingGroup {
+  id: string
+  brand_id: string
+  ref: string
+  name: string
+  is_default: boolean
+  is_system: boolean
+  created_at: string
+  updated_at: string
 }
 
 export interface TaxCategory {

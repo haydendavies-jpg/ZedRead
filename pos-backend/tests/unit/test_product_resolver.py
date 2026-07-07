@@ -15,6 +15,7 @@ from sqlalchemy import select
 
 from app.models.category import Category
 from app.models.product import Product
+from app.models.reporting_group import ReportingGroup
 from app.models.site_product_override import SiteProductOverride
 from app.services.product_resolver import resolve_products_for_site
 
@@ -38,10 +39,22 @@ async def _make_product(db, brand_id: uuid.UUID, category_id: uuid.UUID, name: s
 
 
 async def _make_category(db, brand_id: uuid.UUID, name: str = "Test Cat") -> Category:
-    """Insert a category and return the persisted instance."""
+    """Insert a category (and its brand's default reporting group, if missing) and return the persisted instance."""
+    result = await db.execute(
+        select(ReportingGroup).where(ReportingGroup.brand_id == brand_id, ReportingGroup.is_default == True)  # noqa: E712
+    )
+    reporting_group = result.scalar_one_or_none()
+    if reporting_group is None:
+        reporting_group = ReportingGroup(
+            id=uuid.uuid4(), brand_id=brand_id, name="Default", is_default=True, is_system=True
+        )
+        db.add(reporting_group)
+        await db.flush()
+
     cat = Category(
         id=uuid.uuid4(),
         brand_id=brand_id,
+        reporting_group_id=reporting_group.id,
         name=name,
         is_system=False,
         is_active=True,

@@ -141,3 +141,8 @@ EMAIL_TEMPLATE_UPDATED = "email_template.updated"
 
 # ── Phase 5 / Stage 15 — Admin Impersonation ─────────────────────────────────
 ADMIN_IMPERSONATION_STARTED = "admin.impersonation.started"
+
+# ── Phase 5 / Stage 16 — Reporting Groups ────────────────────────────────────
+REPORTING_GROUP_CREATED = "reporting_group.created"
+REPORTING_GROUP_UPDATED = "reporting_group.updated"
+REPORTING_GROUP_DELETED = "reporting_group.deleted"

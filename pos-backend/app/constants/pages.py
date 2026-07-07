@@ -21,6 +21,7 @@ PAGE_CATALOG: list[tuple[str, PageCategory, str]] = [
     ("variants_modifiers", PageCategory.PRODUCT_MENUS, "Variants & Modifiers"),
     ("combos", PageCategory.PRODUCT_MENUS, "Combos"),
     ("categories", PageCategory.PRODUCT_MENUS, "Categories"),
+    ("reporting_groups", PageCategory.PRODUCT_MENUS, "Reporting Groups"),
     # App Configuration
     ("site_settings", PageCategory.APP_CONFIGURATION, "Site Settings"),
     ("devices", PageCategory.APP_CONFIGURATION, "Devices"),

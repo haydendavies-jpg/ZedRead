@@ -96,3 +96,6 @@ class Brand(Base):
     categories: Mapped[list["Category"]] = relationship(  # type: ignore[name-defined]
         "Category", back_populates="brand", cascade="all, delete-orphan"
     )
+    reporting_groups: Mapped[list["ReportingGroup"]] = relationship(  # type: ignore[name-defined]
+        "ReportingGroup", back_populates="brand", cascade="all, delete-orphan"
+    )

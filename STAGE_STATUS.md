@@ -12,7 +12,7 @@ Last updated: 2026-07-06
 | 2 — POS Catalog | 7–9 | ✅ Complete |
 | 3 — Transactions | 10–12 | ✅ Complete |
 | 4 — Identity & Permissions Redesign | 15 | ✅ Complete |
-| 5 — Catalog Foundations | 16–18 | 🔜 Planned |
+| 5 — Catalog Foundations | 16–18 | 🚧 In Progress (Stage 16 complete) |
 | 6 — Catalog Data & Table UX | 19–20 | 🔜 Planned |
 | 7 — Invoices & Extended Catalog | 21–22 | 🔜 Planned |
 | 8 — POS Menu Builder | 23 | 🔜 Planned |
@@ -224,16 +224,26 @@ Stages 16–24, which were planned after Android scaffolding had already begun.
 
 ## Phase 5 — Catalog Foundations
 
-### Stage 16 — Reporting Groups 🔜
+### Stage 16 — Reporting Groups ✅
 
 **Deliverables:**
-- [ ] Migration: `reporting_groups` table (brand-scoped), `ref` sequence (`RPG-000001`)
-- [ ] System default reporting group seeded per brand, undeletable
-- [ ] `categories.reporting_group_id` — NOT NULL FK, backfilled to each brand's default group
-- [ ] Category create/update requires `reporting_group_id` (prompted in portal, enforced in service)
-- [ ] Reporting Groups CRUD routes + service, block delete while categories reference it
-- [ ] Portal: new sidebar page, plus required Reporting Group select added to Category modal
-- [ ] `reporting_groups` page key added to `PAGE_CATALOG` and ROLE_MODEL.md §6
+- [x] Migration `0038`: `reporting_groups` table (brand-scoped), `ref` sequence (`RPG-000001`)
+- [x] System default reporting group seeded per brand (existing brands backfilled by the
+  migration; new brands seeded atomically in `brand_service.create_brand()`), undeletable
+- [x] `categories.reporting_group_id` — NOT NULL FK, backfilled to each brand's default group
+- [x] Category create/update requires `reporting_group_id` (prompted in portal, auto-assigned to
+  the brand's default in `category_service.py` if omitted on create)
+- [x] Reporting Groups CRUD routes + service (`reporting_group_service.py`,
+  `routes/reporting_groups.py`), blocks deleting the default group or one still referenced by
+  categories
+- [x] Portal: new "Reporting Groups" sidebar page (`ReportingGroupsPage.tsx`), plus a required
+  Reporting Group select added to the Category create/edit modal
+- [x] `reporting_groups` page key added to `PAGE_CATALOG`, default role grants, license-tier page
+  sets, and `ROLE_MODEL.md` §6
+- [x] `categories.py` refactored into thin routes + `category_service.py`; fixed a pre-existing bug
+  where category audit rows used `PRODUCT_CREATED`/`PRODUCT_UPDATED` instead of the dedicated
+  `CATEGORY_CREATED`/`CATEGORY_UPDATED` constants
+- [x] Integration tests: `test_reporting_group_routes.py`, `test_categories_routes.py`
 
 ### Stage 17 — Delegated User Creation 🔜
 

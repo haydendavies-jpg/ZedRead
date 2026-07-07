@@ -16,11 +16,34 @@ from sqlalchemy import select
 from app.constants.audit_actions import PRODUCT_CREATED, PRODUCT_DEACTIVATED, PRODUCT_UPDATED
 from app.models.audit_log import AuditLog
 from app.models.category import Category
+from app.models.reporting_group import ReportingGroup
 
 pytestmark = pytest.mark.asyncio
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+async def _get_or_create_reporting_group(db, brand_id) -> uuid.UUID:
+    """Return the default reporting group ID for a brand, creating one if needed."""
+    result = await db.execute(
+        select(ReportingGroup).where(ReportingGroup.brand_id == brand_id, ReportingGroup.is_default == True)  # noqa: E712
+    )
+    group = result.scalar_one_or_none()
+    if group:
+        return group.id
+
+    group = ReportingGroup(
+        id=uuid.uuid4(),
+        brand_id=brand_id,
+        name="Default",
+        is_default=True,
+        is_system=True,
+    )
+    db.add(group)
+    await db.commit()
+    await db.refresh(group)
+    return group.id
 
 
 async def _get_or_create_category(db, brand_id) -> uuid.UUID:
@@ -32,9 +55,11 @@ async def _get_or_create_category(db, brand_id) -> uuid.UUID:
     if cat:
         return cat.id
 
+    reporting_group_id = await _get_or_create_reporting_group(db, brand_id)
     cat = Category(
         id=uuid.uuid4(),
         brand_id=brand_id,
+        reporting_group_id=reporting_group_id,
         name="Uncategorised",
         is_system=True,
         is_active=True,
@@ -227,9 +252,12 @@ async def test_create_product_cross_brand_category_returns_400(
         country="AU",
     )
     db.add(other_brand)
+    await db.flush()
+    other_reporting_group_id = await _get_or_create_reporting_group(db, other_brand.id)
     other_cat = Category(
         id=uuid.uuid4(),
         brand_id=other_brand.id,
+        reporting_group_id=other_reporting_group_id,
         name="Other Cat",
         is_system=False,
         is_active=True,

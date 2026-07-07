@@ -26,6 +26,7 @@ from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.category import Category
 from app.models.group import Group
+from app.models.reporting_group import ReportingGroup
 from app.models.tax_category import TaxCategory
 from app.models.superadmin import SuperAdmin
 from app.models.user import User
@@ -299,10 +300,23 @@ async def create_brand(
     db.add(brand)
     await db.flush()  # Brand must be in DB before Category and AccessProfile FK inserts
 
+    # Auto-create the brand's default reporting group (Stage 16) before the
+    # 'Uncategorised' category, which must reference it
+    default_reporting_group = ReportingGroup(
+        id=uuid.uuid4(),
+        brand_id=brand.id,
+        name="Default",
+        is_default=True,
+        is_system=True,
+    )
+    db.add(default_reporting_group)
+    await db.flush()  # Reporting group must be in DB before the category FK insert
+
     # Auto-create the system 'Uncategorised' category for every new brand
     uncategorised = Category(
         id=uuid.uuid4(),
         brand_id=brand.id,
+        reporting_group_id=default_reporting_group.id,
         name="Uncategorised",
         is_system=True,
         is_active=True,

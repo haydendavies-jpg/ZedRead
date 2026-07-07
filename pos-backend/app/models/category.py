@@ -48,6 +48,13 @@ class Category(Base):
         nullable=True,
         comment="Default tax category for products in this category (optional)",
     )
+    reporting_group_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("reporting_groups.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+        comment="Required reporting group this category rolls up to (Stage 16)",
+    )
     name: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
@@ -95,3 +102,6 @@ class Category(Base):
     )
 
     brand: Mapped["Brand"] = relationship("Brand", back_populates="categories")  # type: ignore[name-defined]
+    reporting_group: Mapped["ReportingGroup"] = relationship(  # type: ignore[name-defined]
+        "ReportingGroup", back_populates="categories"
+    )

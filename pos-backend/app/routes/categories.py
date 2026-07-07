@@ -1,61 +1,21 @@
-"""Category management routes — list and create product categories.
+"""Category management routes — list, create, and update product categories.
 
 Accessible to management JWT users and portal admins via resolve_catalog_access.
 POS terminal JWT users can list categories (read-only); write operations require
-management or portal JWT.
+management or portal JWT. All business logic lives in category_service.py.
 """
 
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.audit_actions import PRODUCT_CREATED, PRODUCT_UPDATED
-from app.constants.statuses import ActorType
 from app.database import get_db
-from app.models.category import Category
-from app.services.audit_service import log_action
+from app.schemas.category import CategoryCreate, CategoryOut, CategoryUpdate
+from app.services import category_service
 from app.utils.dependencies import CatalogAccess, resolve_catalog_access
 
 router = APIRouter(prefix="/categories", tags=["categories"])
-
-
-class CategoryResponse:
-    """Pydantic-free response helper — categories use simple dict serialisation."""
-    pass
-
-
-from pydantic import BaseModel
-
-
-class CategoryOut(BaseModel):
-    """Serialised category for API responses."""
-
-    id: uuid.UUID
-    brand_id: uuid.UUID
-    name: str
-    is_system: bool
-    is_active: bool
-    display_order: int
-
-    model_config = {"from_attributes": True}
-
-
-class CategoryCreate(BaseModel):
-    """Payload for creating a new product category."""
-
-    name: str
-    brand_id: uuid.UUID
-    display_order: int = 0
-
-
-class CategoryUpdate(BaseModel):
-    """Payload for updating a category's mutable fields."""
-
-    name: str | None = None
-    display_order: int | None = None
-    is_active: bool | None = None
 
 
 @router.get("", response_model=list[CategoryOut], status_code=status.HTTP_200_OK)
@@ -80,14 +40,7 @@ async def list_categories(
         list[CategoryOut]: Active categories ordered by display_order.
     """
     effective_brand_id = access.effective_brand_id(brand_id)
-    result = await db.execute(
-        select(Category)
-        .where(Category.brand_id == effective_brand_id, Category.is_active == True)  # noqa: E712
-        .order_by(Category.display_order, Category.name)
-        .offset(skip)
-        .limit(limit)
-    )
-    cats = result.scalars().all()
+    cats = await category_service.list_categories(db, effective_brand_id, skip, limit)
     return [CategoryOut.model_validate(c) for c in cats]
 
 
@@ -116,28 +69,7 @@ async def create_category(
             detail="Category management requires a management or portal JWT",
         )
     effective_brand_id = access.effective_brand_id(brand_id)
-    cat = Category(
-        id=uuid.uuid4(),
-        brand_id=effective_brand_id,
-        name=payload.name,
-        display_order=payload.display_order,
-        is_system=False,
-        is_active=True,
-    )
-    db.add(cat)
-    await log_action(
-        db=db,
-        action=PRODUCT_CREATED,
-        entity_type="category",
-        entity_id=str(cat.id),
-        actor_type=ActorType.USER,
-        actor_id=access.actor_user.id,
-        actor_email=access.actor_user.email,
-        actor_name=access.actor_user.name,
-        after_state={"name": payload.name},
-    )
-    await db.commit()
-    await db.refresh(cat)
+    cat = await category_service.create_category(db, effective_brand_id, payload, access.actor_user)
     return CategoryOut.model_validate(cat)
 
 
@@ -170,42 +102,5 @@ async def update_category(
             detail="Category management requires a management or portal JWT",
         )
     effective_brand_id = access.effective_brand_id(brand_id)
-    result = await db.execute(
-        select(Category).where(Category.id == category_id, Category.brand_id == effective_brand_id)
-    )
-    cat = result.scalar_one_or_none()
-    if cat is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
-
-    if cat.is_system and (payload.name is not None or payload.is_active is False):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="System categories cannot be renamed or deactivated",
-        )
-
-    before: dict = {}
-    if payload.name is not None:
-        before["name"] = cat.name
-        cat.name = payload.name
-    if payload.display_order is not None:
-        before["display_order"] = cat.display_order
-        cat.display_order = payload.display_order
-    if payload.is_active is not None:
-        before["is_active"] = cat.is_active
-        cat.is_active = payload.is_active
-
-    await log_action(
-        db=db,
-        action=PRODUCT_UPDATED,
-        entity_type="category",
-        entity_id=str(cat.id),
-        actor_type=ActorType.USER,
-        actor_id=access.actor_user.id,
-        actor_email=access.actor_user.email,
-        actor_name=access.actor_user.name,
-        before_state=before,
-        after_state=payload.model_dump(exclude_none=True),
-    )
-    await db.commit()
-    await db.refresh(cat)
+    cat = await category_service.update_category(db, effective_brand_id, category_id, payload, access.actor_user)
     return CategoryOut.model_validate(cat)

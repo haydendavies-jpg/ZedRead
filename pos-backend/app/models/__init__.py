@@ -27,6 +27,7 @@ from app.models.product_combo_option import ProductComboOption
 from app.models.product_modifier_group_link import ProductModifierGroupLink
 from app.models.product_variant import ProductVariant
 from app.models.product_variant_attribute import ProductVariantAttribute
+from app.models.reporting_group import ReportingGroup
 from app.models.site import Site
 from app.models.site_product_override import SiteProductOverride
 from app.models.site_variant_override import SiteVariantOverride
@@ -67,6 +68,7 @@ __all__ = [
     "ProductModifierGroupLink",
     "ProductVariant",
     "ProductVariantAttribute",
+    "ReportingGroup",
     "Site",
     "SiteProductOverride",
     "SiteVariantOverride",

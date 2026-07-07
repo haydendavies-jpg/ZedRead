@@ -1,0 +1,205 @@
+"""Business logic for Category CRUD operations.
+
+Every category must belong to a Reporting Group (Stage 16, brand-scoped, one
+level above Category). create_category() auto-assigns the brand's default
+reporting group when the caller omits reporting_group_id, so the API
+guarantees the column is never left unset even though the portal always
+prompts for one.
+"""
+
+import uuid
+
+import structlog
+from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.constants.audit_actions import CATEGORY_CREATED, CATEGORY_UPDATED
+from app.models.category import Category
+from app.models.reporting_group import ReportingGroup
+from app.models.superadmin import SuperAdmin
+from app.models.user import User
+from app.schemas.category import CategoryCreate, CategoryUpdate
+from app.services.audit_service import log_action
+from app.services.reporting_group_service import get_default_reporting_group
+
+log = structlog.get_logger(__name__)
+
+
+async def _validate_reporting_group(
+    db: AsyncSession, brand_id: uuid.UUID, reporting_group_id: uuid.UUID
+) -> None:
+    """
+    Raise HTTP 400 if the reporting group does not belong to the given brand.
+
+    Args:
+        db: Active database session.
+        brand_id: Expected brand owner of the reporting group.
+        reporting_group_id: UUID of the reporting group to validate.
+
+    Raises:
+        HTTPException: 404 if the reporting group does not exist.
+        HTTPException: 400 if the reporting group belongs to a different brand.
+    """
+    result = await db.execute(select(ReportingGroup).where(ReportingGroup.id == reporting_group_id))
+    group = result.scalar_one_or_none()
+    if group is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reporting group not found")
+    if group.brand_id != brand_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reporting group belongs to a different brand",
+        )
+
+
+async def list_categories(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    skip: int = 0,
+    limit: int = 200,
+) -> list[Category]:
+    """
+    List active categories for a brand, paginated.
+
+    Args:
+        db: Active database session.
+        brand_id: UUID of the brand to list categories for.
+        skip: Pagination offset.
+        limit: Maximum number of categories to return.
+
+    Returns:
+        list[Category]: Active categories ordered by display_order.
+    """
+    result = await db.execute(
+        select(Category)
+        .where(Category.brand_id == brand_id, Category.is_active == True)  # noqa: E712
+        .order_by(Category.display_order, Category.name)
+        .offset(skip)
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def create_category(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    payload: CategoryCreate,
+    actor: User | SuperAdmin,
+) -> Category:
+    """
+    Create a new product category, auto-assigning the brand's default reporting group if omitted.
+
+    Args:
+        db: Active database session.
+        brand_id: UUID of the brand to create the category under.
+        payload: Category creation data.
+        actor: The authenticated user performing the action (for audit logging).
+
+    Returns:
+        Category: The created category.
+
+    Raises:
+        HTTPException: 404/400 if an explicit reporting_group_id is invalid for this brand.
+    """
+    if payload.reporting_group_id is not None:
+        await _validate_reporting_group(db, brand_id, payload.reporting_group_id)
+        reporting_group_id = payload.reporting_group_id
+    else:
+        default_group = await get_default_reporting_group(db, brand_id)
+        reporting_group_id = default_group.id
+
+    cat = Category(
+        id=uuid.uuid4(),
+        brand_id=brand_id,
+        reporting_group_id=reporting_group_id,
+        name=payload.name,
+        display_order=payload.display_order,
+        is_system=False,
+        is_active=True,
+    )
+    db.add(cat)
+    await log_action(
+        db=db,
+        action=CATEGORY_CREATED,
+        entity_type="category",
+        entity_id=str(cat.id),
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        after_state={"name": payload.name, "reporting_group_id": str(reporting_group_id)},
+    )
+    await db.commit()
+    await db.refresh(cat)
+    return cat
+
+
+async def update_category(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    category_id: uuid.UUID,
+    payload: CategoryUpdate,
+    actor: User | SuperAdmin,
+) -> Category:
+    """
+    Update a category's mutable fields. System categories cannot be renamed or deactivated.
+
+    Args:
+        db: Active database session.
+        brand_id: UUID of the brand the category belongs to.
+        category_id: UUID of the category to update.
+        payload: Fields to update.
+        actor: The authenticated user performing the action (for audit logging).
+
+    Returns:
+        Category: The updated category.
+
+    Raises:
+        HTTPException: 404 if the category does not exist for this brand.
+        HTTPException: 403 if a system category is renamed/deactivated.
+        HTTPException: 404/400 if a new reporting_group_id is invalid for this brand.
+    """
+    result = await db.execute(select(Category).where(Category.id == category_id, Category.brand_id == brand_id))
+    cat = result.scalar_one_or_none()
+    if cat is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+
+    if cat.is_system and (payload.name is not None or payload.is_active is False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="System categories cannot be renamed or deactivated",
+        )
+
+    before: dict = {}
+    after: dict = {}
+    if payload.name is not None:
+        before["name"] = cat.name
+        cat.name = payload.name
+        after["name"] = payload.name
+    if payload.reporting_group_id is not None:
+        await _validate_reporting_group(db, brand_id, payload.reporting_group_id)
+        before["reporting_group_id"] = str(cat.reporting_group_id)
+        cat.reporting_group_id = payload.reporting_group_id
+        after["reporting_group_id"] = str(payload.reporting_group_id)
+    if payload.display_order is not None:
+        before["display_order"] = cat.display_order
+        cat.display_order = payload.display_order
+        after["display_order"] = payload.display_order
+    if payload.is_active is not None:
+        before["is_active"] = cat.is_active
+        cat.is_active = payload.is_active
+        after["is_active"] = payload.is_active
+
+    await log_action(
+        db=db,
+        action=CATEGORY_UPDATED,
+        entity_type="category",
+        entity_id=str(cat.id),
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state=before,
+        after_state=after,
+    )
+    await db.commit()
+    await db.refresh(cat)
+    return cat

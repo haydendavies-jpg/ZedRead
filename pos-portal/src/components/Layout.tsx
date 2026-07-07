@@ -24,6 +24,7 @@ const SUPER_ADMIN_ONLY_NAV = [
 const MGMT_NAV = [
   { to: '/management/products', label: 'Products' },
   { to: '/management/categories', label: 'Categories' },
+  { to: '/management/reporting-groups', label: 'Reporting Groups' },
   { to: '/management/reports', label: 'Reports' },
   { to: '/management/company-profile', label: 'Company Profile' },
 ]

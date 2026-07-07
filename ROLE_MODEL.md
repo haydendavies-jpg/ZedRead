@@ -165,31 +165,35 @@ on the Brand/Site's license plan, regardless of role. This is a second, independ
 
 ## 6. Page catalog (resolved)
 
-17 pages across the 5 categories, defined in `app/constants/pages.py`:
+18 pages across the 5 categories, defined in `app/constants/pages.py`:
 
 | Category | Pages |
 |---|---|
-| Product & Menus | products, variants_modifiers, combos, categories |
+| Product & Menus | products, variants_modifiers, combos, categories, reporting_groups |
 | App Configuration | site_settings, devices, tax_settings, license_billing |
 | Reports | daily_sales, tax_collected, invoices, audit_log |
 | User Management | users, access_grants, access_profiles |
 | Customers & Loyalty | customers, loyalty_programs |
 
+`reporting_groups` (Stage 16) was added to the Product & Menus category in the same commit that
+shipped the Reporting Groups portal page, per the Stage 18 standing rule that every new portal page
+adds its `page_key` here.
+
 Default role grants seeded by `seed_system_profiles()`:
 
 | Role | Default pages |
 |---|---|
-| Master User | All 17 |
-| Admin | All 17 |
+| Master User | All 18 |
+| Admin | All 18 |
 | Reporting Only | Reports category only (daily_sales, tax_collected, invoices, audit_log) |
 | Manager | All except users, access_grants, access_profiles, license_billing |
-| Staff | products, categories, customers |
+| Staff | products, categories, reporting_groups, customers |
 
 License-tier page sets (`app/constants/license_plans.py`) — a judgment call made without explicit
 business sign-off; flag for review if the user wants different tier boundaries:
 
 | Plan | Pages unlocked |
 |---|---|
-| starter | products, categories, site_settings, daily_sales, invoices, users, customers |
+| starter | products, categories, reporting_groups, site_settings, daily_sales, invoices, users, customers |
 | pro | All starter pages plus variants_modifiers, combos, devices, tax_settings, license_billing, tax_collected, audit_log, access_grants, loyalty_programs |
 | enterprise (and any unrecognised plan_name, including null) | Full catalog |

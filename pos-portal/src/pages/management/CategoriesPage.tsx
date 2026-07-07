@@ -1,12 +1,12 @@
 /** Product categories management page — list, create, rename categories. */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/axios'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { Modal } from '../../components/Modal'
 import { StatusBadge } from '../../components/StatusBadge'
-import type { Category } from '../../types'
+import type { Category, ReportingGroup } from '../../types'
 
 export function CategoriesPage() {
   const qc = useQueryClient()
@@ -127,18 +127,41 @@ interface CategoryFormProps {
 
 function CategoryFormModal({ category, brandId, onClose, onSaved }: CategoryFormProps) {
   const [name, setName] = useState(category?.name ?? '')
+  const [reportingGroupId, setReportingGroupId] = useState(category?.reporting_group_id ?? '')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+
+  const params = brandId ? { brand_id: brandId } : {}
+
+  const { data: reportingGroups = [] } = useQuery<ReportingGroup[]>({
+    queryKey: ['reporting-groups', brandId],
+    queryFn: () => api.get('/reporting-groups', { params }).then((r) => r.data),
+  })
+
+  // Every category requires a reporting group — default new categories to the brand's default group
+  useEffect(() => {
+    if (!category && !reportingGroupId && reportingGroups.length > 0) {
+      const defaultGroup = reportingGroups.find((g) => g.is_default) ?? reportingGroups[0]
+      setReportingGroupId(defaultGroup.id)
+    }
+  }, [category, reportingGroupId, reportingGroups])
 
   const handleSave = async () => {
     setSaving(true)
     setError(null)
     try {
-      const params = brandId ? { brand_id: brandId } : {}
       if (category) {
-        await api.patch(`/categories/${category.id}`, { name }, { params })
+        await api.patch(
+          `/categories/${category.id}`,
+          { name, reporting_group_id: reportingGroupId },
+          { params }
+        )
       } else {
-        await api.post('/categories', { name, brand_id: brandId, display_order: 0 }, { params })
+        await api.post(
+          '/categories',
+          { name, brand_id: brandId, reporting_group_id: reportingGroupId, display_order: 0 },
+          { params }
+        )
       }
       onSaved()
     } catch (err: unknown) {
@@ -150,7 +173,7 @@ function CategoryFormModal({ category, brandId, onClose, onSaved }: CategoryForm
   }
 
   return (
-    <Modal title={category ? 'Rename category' : 'Add category'} onClose={onClose}>
+    <Modal title={category ? 'Edit category' : 'Add category'} onClose={onClose}>
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
@@ -160,6 +183,19 @@ function CategoryFormModal({ category, brandId, onClose, onSaved }: CategoryForm
             autoFocus
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Reporting Group</label>
+          <select
+            value={reportingGroupId}
+            onChange={(e) => setReportingGroupId(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="" disabled>Select a reporting group…</option>
+            {reportingGroups.map((g) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
         </div>
         {error && (
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -172,7 +208,7 @@ function CategoryFormModal({ category, brandId, onClose, onSaved }: CategoryForm
           </button>
           <button
             onClick={handleSave}
-            disabled={saving || !name}
+            disabled={saving || !name || !reportingGroupId}
             className="px-4 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
           >
             {saving ? 'Saving…' : 'Save'}
