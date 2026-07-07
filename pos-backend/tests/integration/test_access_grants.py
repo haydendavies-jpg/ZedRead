@@ -8,6 +8,8 @@ Covers:
 5. POS JWT rejected on write routes (403)
 6. Portal JWT has full authority
 7. Audit log written for create and revoke
+8. Stage 17 — role ceiling (cannot grant a level above your own) and the
+   Master User profile being unconditionally ungrantable
 """
 
 import uuid
@@ -18,9 +20,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import ACCESS_GRANT_CREATED, ACCESS_GRANT_REVOKED
+from app.constants.statuses import SystemAccessProfile
 from app.models.access_profile import AccessProfile
 from app.models.audit_log import AuditLog
 from app.models.brand import Brand
+from app.models.group import Group
 from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
@@ -77,6 +81,68 @@ async def target_user(db: AsyncSession, test_brand: Brand) -> User:
     await db.commit()
     await db.refresh(user)
     return user
+
+
+@pytest_asyncio.fixture()
+async def admin_profile(db: AsyncSession, test_brand: Brand) -> AccessProfile:
+    """The system Admin profile for test_brand (seeded by seed_system_profiles)."""
+    result = await db.execute(
+        select(AccessProfile).where(
+            AccessProfile.brand_id == test_brand.id,
+            AccessProfile.name == SystemAccessProfile.ADMIN.value,
+        )
+    )
+    return result.scalar_one()
+
+
+@pytest_asyncio.fixture()
+async def staff_profile(db: AsyncSession, test_brand: Brand) -> AccessProfile:
+    """The system Staff profile for test_brand (seeded by seed_system_profiles)."""
+    result = await db.execute(
+        select(AccessProfile).where(
+            AccessProfile.brand_id == test_brand.id,
+            AccessProfile.name == SystemAccessProfile.STAFF.value,
+        )
+    )
+    return result.scalar_one()
+
+
+@pytest_asyncio.fixture()
+async def master_profile(db: AsyncSession, test_brand: Brand) -> AccessProfile:
+    """The system Master User profile for test_brand (seeded by seed_system_profiles)."""
+    result = await db.execute(
+        select(AccessProfile).where(
+            AccessProfile.brand_id == test_brand.id,
+            AccessProfile.name == SystemAccessProfile.MASTER.value,
+        )
+    )
+    return result.scalar_one()
+
+
+@pytest_asyncio.fixture()
+async def test_group_grant(
+    db: AsyncSession,
+    test_user: User,
+    test_group: Group,
+    test_manager_profile: AccessProfile,
+) -> UserAccessGrant:
+    """A persisted active group-scope UserAccessGrant for test_user with a Manager profile."""
+    grant = UserAccessGrant(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        scope="group",
+        site_id=None,
+        brand_id=None,
+        group_id=test_group.id,
+        access_profile_id=test_manager_profile.id,
+        granted_by_id=None,
+        is_active=True,
+        backend_role="admin",
+    )
+    db.add(grant)
+    await db.commit()
+    await db.refresh(grant)
+    return grant
 
 
 # ── List grants ────────────────────────────────────────────────────────────────
@@ -376,3 +442,221 @@ async def test_revoke_already_revoked_returns_409(
     # Second revoke — already inactive
     r2 = await client.delete(f"/access-grants/{test_portal_grant.id}", headers=headers)
     assert r2.status_code == 409
+
+
+# ── Stage 17: role ceiling — cannot grant a level above your own ──────────────
+
+
+async def test_create_grant_brand_scope_manager_cannot_grant_admin(
+    client, db, test_user, test_brand_grant, admin_profile, test_site, target_user
+):
+    """A Manager-profile brand-scope grantor cannot grant a higher-ranked Admin profile."""
+    headers = _mgmt_headers(test_user, test_brand_grant)
+    payload = {
+        "user_id": str(target_user.id),
+        "scope": "site",
+        "site_id": str(test_site.id),
+        "access_profile_id": str(admin_profile.id),
+    }
+    response = await client.post("/access-grants", headers=headers, json=payload)
+    assert response.status_code == 403
+
+
+async def test_create_grant_brand_scope_manager_can_grant_staff(
+    client, db, test_user, test_brand_grant, staff_profile, test_site, target_user
+):
+    """A Manager-profile grantor can grant a lower-ranked Staff profile."""
+    headers = _mgmt_headers(test_user, test_brand_grant)
+    payload = {
+        "user_id": str(target_user.id),
+        "scope": "site",
+        "site_id": str(test_site.id),
+        "access_profile_id": str(staff_profile.id),
+    }
+    response = await client.post("/access-grants", headers=headers, json=payload)
+    assert response.status_code == 201
+    assert response.json()["access_profile_id"] == str(staff_profile.id)
+
+
+async def test_create_grant_group_scope_manager_cannot_grant_admin(
+    client, db, test_user, test_group_grant, admin_profile, test_brand, target_user
+):
+    """A Manager-profile group-scope grantor cannot grant a higher-ranked Admin profile."""
+    headers = _mgmt_headers(test_user, test_group_grant)
+    payload = {
+        "user_id": str(target_user.id),
+        "scope": "brand",
+        "brand_id": str(test_brand.id),
+        "access_profile_id": str(admin_profile.id),
+    }
+    response = await client.post("/access-grants", headers=headers, json=payload)
+    assert response.status_code == 403
+
+
+async def test_create_grant_rejects_master_profile_for_management_caller(
+    client, db, test_user, test_brand_grant, master_profile, test_site, target_user
+):
+    """The Master User profile can never be granted through this endpoint."""
+    headers = _mgmt_headers(test_user, test_brand_grant)
+    payload = {
+        "user_id": str(target_user.id),
+        "scope": "site",
+        "site_id": str(test_site.id),
+        "access_profile_id": str(master_profile.id),
+    }
+    response = await client.post("/access-grants", headers=headers, json=payload)
+    assert response.status_code == 403
+
+
+async def test_create_grant_rejects_master_profile_for_portal_admin(
+    client, db, test_superadmin, master_profile, test_site, target_user
+):
+    """Even a portal admin cannot grant the Master User profile — it is auto-created per site."""
+    headers = _portal_headers(test_superadmin)
+    payload = {
+        "user_id": str(target_user.id),
+        "scope": "site",
+        "site_id": str(test_site.id),
+        "access_profile_id": str(master_profile.id),
+    }
+    response = await client.post("/access-grants", headers=headers, json=payload)
+    assert response.status_code == 403
+
+
+async def test_update_grant_brand_scope_manager_cannot_upgrade_to_admin(
+    client, db, test_user, test_brand_grant, test_portal_grant, admin_profile
+):
+    """PATCHing a grant's profile to Admin is rejected for a Manager-ranked grantor."""
+    headers = _mgmt_headers(test_user, test_brand_grant)
+    response = await client.patch(
+        f"/access-grants/{test_portal_grant.id}",
+        headers=headers,
+        json={"access_profile_id": str(admin_profile.id)},
+    )
+    assert response.status_code == 403
+
+
+async def test_update_grant_brand_scope_manager_can_downgrade_to_staff(
+    client, db, test_user, test_brand_grant, test_portal_grant, staff_profile
+):
+    """PATCHing a grant's profile to a lower-ranked Staff profile succeeds."""
+    headers = _mgmt_headers(test_user, test_brand_grant)
+    response = await client.patch(
+        f"/access-grants/{test_portal_grant.id}",
+        headers=headers,
+        json={"access_profile_id": str(staff_profile.id)},
+    )
+    assert response.status_code == 200
+    assert response.json()["access_profile_id"] == str(staff_profile.id)
+
+
+async def test_create_grant_role_ceiling_rejection_writes_no_audit_row(
+    client, db, test_user, test_brand_grant, admin_profile, test_site, target_user
+):
+    """A rejected role-ceiling attempt does not write an ACCESS_GRANT_CREATED audit row."""
+    headers = _mgmt_headers(test_user, test_brand_grant)
+    payload = {
+        "user_id": str(target_user.id),
+        "scope": "site",
+        "site_id": str(test_site.id),
+        "access_profile_id": str(admin_profile.id),
+    }
+    response = await client.post("/access-grants", headers=headers, json=payload)
+    assert response.status_code == 403
+
+    audit_r = await db.execute(
+        select(AuditLog).where(
+            AuditLog.action == ACCESS_GRANT_CREATED,
+            AuditLog.entity_type == "user_access_grant",
+        )
+    )
+    assert audit_r.scalar_one_or_none() is None
+
+
+# ── Stage 17: GET /access-profiles opened to management callers ──────────────
+#
+# This route used to require a portal JWT only. Stage 17's delegation UI needs
+# management callers to see the profiles they may grant (for role-picker
+# filtering), so it now accepts management JWTs too — scoped to their own
+# brand/group so it can't be used to browse other tenants' profile catalogs.
+
+
+@pytest_asyncio.fixture()
+async def foreign_brand(db: AsyncSession) -> Brand:
+    """A Brand under a brand-new, unrelated Group — outside test_brand/test_group's scope."""
+    from app.models.group import Group as GroupModel
+
+    group = GroupModel(
+        id=uuid.uuid4(),
+        name="Foreign Group",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+    )
+    db.add(group)
+    await db.flush()
+    brand = Brand(
+        id=uuid.uuid4(),
+        group_id=group.id,
+        name="Foreign Brand",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+    )
+    db.add(brand)
+    await db.commit()
+    await db.refresh(brand)
+    return brand
+
+
+async def test_list_access_profiles_brand_scope_within_scope(
+    client, db, test_user, test_brand_grant, test_brand
+):
+    """A brand-scope management caller can list profiles for their own brand."""
+    headers = _mgmt_headers(test_user, test_brand_grant)
+    response = await client.get("/access-profiles", headers=headers, params={"brand_id": str(test_brand.id)})
+    assert response.status_code == 200
+    names = {p["name"] for p in response.json()}
+    assert SystemAccessProfile.MANAGER.value in names
+
+
+async def test_list_access_profiles_brand_scope_outside_scope_returns_403(
+    client, db, test_user, test_brand_grant, foreign_brand
+):
+    """A brand-scope management caller cannot list another brand's profiles."""
+    headers = _mgmt_headers(test_user, test_brand_grant)
+    response = await client.get("/access-profiles", headers=headers, params={"brand_id": str(foreign_brand.id)})
+    assert response.status_code == 403
+
+
+async def test_list_access_profiles_group_scope_within_group(
+    client, db, test_user, test_group_grant, test_brand
+):
+    """A group-scope management caller can list profiles for any brand in their group."""
+    headers = _mgmt_headers(test_user, test_group_grant)
+    response = await client.get("/access-profiles", headers=headers, params={"brand_id": str(test_brand.id)})
+    assert response.status_code == 200
+
+
+async def test_list_access_profiles_group_scope_outside_group_returns_403(
+    client, db, test_user, test_group_grant, foreign_brand
+):
+    """A group-scope management caller cannot list a brand outside their group."""
+    headers = _mgmt_headers(test_user, test_group_grant)
+    response = await client.get("/access-profiles", headers=headers, params={"brand_id": str(foreign_brand.id)})
+    assert response.status_code == 403
+
+
+async def test_list_access_profiles_pos_jwt_forbidden(client, db, pos_auth_headers, test_brand):
+    """A POS terminal JWT cannot list access profiles."""
+    response = await client.get("/access-profiles", headers=pos_auth_headers, params={"brand_id": str(test_brand.id)})
+    assert response.status_code == 403
+
+
+async def test_list_access_profiles_portal_admin_any_brand(client, db, test_superadmin, foreign_brand):
+    """Portal admins retain full authority — no scope restriction."""
+    headers = _portal_headers(test_superadmin)
+    response = await client.get("/access-profiles", headers=headers, params={"brand_id": str(foreign_brand.id)})
+    assert response.status_code == 200

@@ -6,6 +6,14 @@ Scope enforcement rules:
   brand-scope management user  → can create site-scope grants within their brand
   site-scope management user   → cannot create grants (read-only)
   portal admin                 → full authority (bypasses scope checks)
+
+Role ceiling rule (Stage 17): a management user can only create or update a
+grant to an access profile ranked at or below the rank of the profile they
+themselves hold (see _ROLE_RANK below) — they can never delegate a level of
+access higher than their own. Portal admins bypass this, same as the scope
+check. The Master User profile can never be granted through this service at
+all (for any caller, including portal admins) — it is auto-created exactly
+once per site by site_service.create_site() and is never delegated into.
 """
 
 import uuid
@@ -22,7 +30,7 @@ from app.constants.audit_actions import (
     ACCESS_GRANT_REVOKED,
     ACCESS_PROFILE_PORTAL_UPDATED,
 )
-from app.constants.statuses import ActorType, GrantScope
+from app.constants.statuses import ActorType, GrantScope, SystemAccessProfile
 from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.group import Group
@@ -240,9 +248,14 @@ async def create_grant(
     if not access_profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Access profile not found or inactive")
 
+    # Master User is auto-created once per site (site_service.create_site()) and
+    # is never delegated into, by any caller (ROLE_MODEL.md §2, Stage 17).
+    _assert_not_master_profile(access_profile)
+
     # Enforce scope authority if the caller is a management user (not portal admin)
     if management_access:
         await _assert_create_authority(db, management_access, payload)
+        _assert_role_ceiling(management_access, access_profile)
 
     # Check for duplicate active grant
     dup_filter = [
@@ -523,7 +536,87 @@ async def _assert_create_authority(
                 )
 
 
-_BACKEND_ROLES = {"admin", "users", "reporting"}
+# Rank ladder for the 5 ROLE_MODEL.md system roles, lowest to highest authority.
+# A custom (non-system) profile's actual permission breadth is unknowable from
+# its name alone, so it is conservatively ranked at the top non-Master tier —
+# this is the safe direction on both sides of the ceiling check: it stops a
+# lower-ranked grantor from assigning an unverified custom profile, and it caps
+# a custom-profile holder's own delegation ceiling rather than under-ranking
+# them and accidentally over-restricting a legitimately senior custom role.
+_ROLE_RANK: dict[str, int] = {
+    SystemAccessProfile.STAFF.value: 1,
+    SystemAccessProfile.REPORTING_ONLY.value: 2,
+    SystemAccessProfile.MANAGER.value: 3,
+    SystemAccessProfile.ADMIN.value: 4,
+    SystemAccessProfile.MASTER.value: 5,
+}
+_UNRANKED_PROFILE_RANK = _ROLE_RANK[SystemAccessProfile.ADMIN.value]
+
+
+def _role_rank(profile_name: str) -> int:
+    """
+    Resolve an access profile's rank in the delegation ceiling ladder.
+
+    Args:
+        profile_name: The AccessProfile.name value (system role name or a
+            brand admin's custom profile name).
+
+    Returns:
+        int: Higher means more authority. Unrecognised (custom) names rank
+            just below Master User — see _ROLE_RANK's comment for why.
+    """
+    return _ROLE_RANK.get(profile_name, _UNRANKED_PROFILE_RANK)
+
+
+def _assert_not_master_profile(profile: AccessProfile) -> None:
+    """
+    Raise HTTP 403 if the profile being granted is the Master User tier.
+
+    Master User is auto-created exactly once per site by
+    site_service.create_site() and is immutable (ROLE_MODEL.md §2) — no
+    caller, including a portal admin, may grant it through this service.
+
+    Args:
+        profile: The access profile the caller is attempting to grant.
+
+    Raises:
+        HTTPException: 403 if profile is the Master User system profile.
+    """
+    if profile.name == SystemAccessProfile.MASTER.value:
+        log.warning("access_grant.create.master_profile_rejected", profile_id=str(profile.id))
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Master User access cannot be granted — it is fixed to its site",
+        )
+
+
+def _assert_role_ceiling(access: ManagementAccess, target_profile: AccessProfile) -> None:
+    """
+    Raise HTTP 403 if the target profile outranks the management caller's own.
+
+    Implements the Stage 17 rule: "a user cannot grant a level of access
+    higher than themself." The caller's rank comes from the access profile
+    tied to the grant they authenticated with (access.access_profile).
+
+    Args:
+        access: The management caller's resolved access context.
+        target_profile: The access profile being assigned to someone else.
+
+    Raises:
+        HTTPException: 403 if target_profile outranks the caller's own profile.
+    """
+    caller_rank = _role_rank(access.access_profile.name)
+    target_rank = _role_rank(target_profile.name)
+    if target_rank > caller_rank:
+        log.warning(
+            "access_grant.role_ceiling_rejected",
+            caller_profile=access.access_profile.name,
+            target_profile=target_profile.name,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot grant an access level higher than your own",
+        )
 
 
 async def _assert_not_master_user_grant(db: AsyncSession, grant: UserAccessGrant) -> None:
@@ -590,6 +683,10 @@ async def update_grant(
         new_profile = profile_r.scalar_one_or_none()
         if not new_profile:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Access profile not found or inactive")
+
+        _assert_not_master_profile(new_profile)
+        if management_access:
+            _assert_role_ceiling(management_access, new_profile)
 
         old_profile_id = grant.access_profile_id
         grant.access_profile_id = payload.access_profile_id

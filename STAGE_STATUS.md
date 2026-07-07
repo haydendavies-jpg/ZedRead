@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-06
+Last updated: 2026-07-07
 
 ---
 
@@ -12,7 +12,7 @@ Last updated: 2026-07-06
 | 2 — POS Catalog | 7–9 | ✅ Complete |
 | 3 — Transactions | 10–12 | ✅ Complete |
 | 4 — Identity & Permissions Redesign | 15 | ✅ Complete |
-| 5 — Catalog Foundations | 16–18 | 🚧 In Progress (Stage 16 complete) |
+| 5 — Catalog Foundations | 16–18 | 🚧 In Progress (Stages 16–17 complete) |
 | 6 — Catalog Data & Table UX | 19–20 | 🔜 Planned |
 | 7 — Invoices & Extended Catalog | 21–22 | 🔜 Planned |
 | 8 — POS Menu Builder | 23 | 🔜 Planned |
@@ -245,13 +245,40 @@ Stages 16–24, which were planned after Android scaffolding had already begun.
   `CATEGORY_CREATED`/`CATEGORY_UPDATED` constants
 - [x] Integration tests: `test_reporting_group_routes.py`, `test_categories_routes.py`
 
-### Stage 17 — Delegated User Creation 🔜
+### Stage 17 — Delegated User Creation ✅
 
 **Deliverables:**
-- [ ] Scope-and-rank check in grant creation: creator can only grant scope ≤ their own (site/brand/group)
-  and role ≤ their own highest grant; Master User excluded from delegated creation
-- [ ] Audit logging on grant creation (and rejected attempts) with actor + granted scope/role
-- [ ] Portal: Users create form filters scope-picker and role-picker to what the current user may grant
+- [x] Scope ladder was already enforced (`access_grant_service._assert_create_authority`, Stage 13);
+  this stage adds the missing **role ceiling**: `_assert_role_ceiling()` compares the rank of the
+  profile being granted against the rank of the caller's own access profile
+  (`access.access_profile`, resolved from the grant they authenticated with) and rejects with 403 if
+  the target outranks them. Rank ladder (`_ROLE_RANK` in `access_grant_service.py`): Staff <
+  Reporting Only < Manager < Admin < Master User. A custom (non-system) profile's real permission
+  breadth can't be inferred from its name, so it is conservatively ranked at the Admin tier on both
+  sides of the comparison — see the in-code comment for the reasoning.
+- [x] Master User is now unconditionally ungrantable through `POST/PATCH /access-grants` — checked
+  for *every* caller, including portal admins — since it must stay a single, auto-created,
+  immutable identity per site (`site_service.create_site()` is the only path that creates it).
+- [x] Applied to both grant creation and grant update (`access_profile_id` changes), since both are
+  ways to hand someone a higher access level.
+- [x] Rejected attempts write no audit row (not a state change) but structlog a `WARNING` with the
+  caller's and target's profile names for traceability, per the stage plan.
+- [x] `GET /access-profiles` — previously portal-admin-only — now also accepts management JWTs,
+  scoped to the caller's own brand (site/brand-scope) or any brand in their group (group-scope), so
+  the portal's role-picker can be populated without leaking other tenants' profile catalogs.
+- [x] Portal: `management/UsersPage.tsx` gained a "Grant Access" form (this page previously only
+  listed/revoked grants, with no creation UI at all). Scope options and the profile dropdown are
+  filtered client-side to what the logged-in management user may grant — the 403 guards above are
+  the actual enforcement; the UI filtering only avoids showing choices that would be rejected.
+- [x] Integration tests: 14 new cases in `test_access_grants.py` (brand-scope and group-scope role
+  ceiling, Master User rejection for both management and portal callers, update-grant ceiling, no
+  audit row on rejection, and the widened `/access-profiles` scope checks).
+
+**Known limitation:** the create-grant form takes the target user's ID and the site/brand ID as raw
+UUID text input rather than searchable dropdowns, because no existing management-JWT-scoped route
+lists sites/brands/users today (`/sites`, `/brands`, `/users` are all portal-admin-only) — adding
+those was out of scope for this stage. Flagged for Stage 18 or a follow-up if a friendlier picker is
+wanted.
 
 ### Stage 18 — Permission Scopes Portal UI 🔜
 
