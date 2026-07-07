@@ -47,9 +47,10 @@ categories, license gating, cross-identity login disambiguation, and the portal 
 (§6 of `ROLE_MODEL.md`) is resolved and implemented — do not re-open it. Portal UI for toggling
 page permissions is intentionally deferred to Stage 18.
 
-**Stage 16 scope (current):** see `ROADMAP.md` Phase 5 for full detail — Reporting Groups
-(brand-scoped, a level above Categories; default group per brand, undeletable; every Category gets
-a required `reporting_group_id`). Do not begin Stage 17/18 work yet.
+**Stages 16–17 — complete.** Reporting Groups (brand-scoped, above Categories) and Delegated User
+Creation (scope ladder + role ceiling on grant creation/update, Master User ungrantable through
+`/access-grants`) are both implemented — see `STAGE_STATUS.md` for details. **Stage 18 is current
+(not yet started):** see `ROADMAP.md` Phase 5 for full detail. Do not begin Stage 19+ work yet.
 
 **Stages 16–24 scope (planned, not started):** see `ROADMAP.md` Phases 5–9 for full detail. Summary:
 - **16 — Reporting Groups:** brand-scoped, a level above Categories. Default group per brand

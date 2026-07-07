@@ -123,7 +123,7 @@ naming and has no UI yet for managing page permissions — closed out in Stage 1
 
 ---
 
-## Phase 5 — Catalog Foundations 🔜
+## Phase 5 — Catalog Foundations 🚧
 
 **Goal:** Introduce Reporting Groups above Categories, let backend users delegate account creation
 within their own scope, and give the Stage 15 permission system its first portal UI.
@@ -133,6 +133,11 @@ within their own scope, and give the Stage 15 permission system its first portal
 | **16** | **Reporting Groups** | Brand-scoped grouping above Categories; default group per brand; required on every Category |
 | **17** | **Delegated User Creation** | Site/Brand/Group-scoped users can create Users at or below their own scope and role |
 | **18** | **Permission Scopes Portal UI** | First portal UI for access-profile page permissions; reconciles page catalog going forward |
+
+**Status:** Stages 16 and 17 are complete. Stage 18 (portal UI for page-level permissions) has not
+started — see `STAGE_STATUS.md` for the detailed Stage 17 deliverables (scope ladder + role ceiling
+in `access_grant_service.py`, Master User made unconditionally ungrantable, and a "Grant Access" form
+added to `management/UsersPage.tsx`).
 
 **Exit criteria:** A brand admin can create reporting groups, every category belongs to one, a
 site-level user can create a new Staff user at their own site (and no higher), and any backend user

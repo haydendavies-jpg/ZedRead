@@ -11,10 +11,11 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants.statuses import GrantScope
 from app.database import get_db
 from app.schemas.access_grant import AccessGrantCreate, AccessGrantResponse, AccessGrantUpdate
 from app.services import access_grant_service
-from app.utils.dependencies import CatalogAccess, resolve_catalog_access
+from app.utils.dependencies import CatalogAccess, ManagementAccess, resolve_catalog_access
 
 router = APIRouter(prefix="/access-grants", tags=["access-grants"])
 
@@ -187,13 +188,13 @@ async def set_default_grant(
     return AccessGrantResponse.model_validate(grant)
 
 
-# ── Access profiles listing (for portal admin UI) ─────────────────────────────
+# ── Access profiles listing (for portal admin UI + management delegation UI) ──
 
 from app.models.access_profile import AccessProfile as AccessProfileModel
+from app.models.brand import Brand as BrandModel
 from app.schemas.access_profile import AccessProfileCapabilitiesUpdate
 from pydantic import BaseModel
 from sqlalchemy import select
-from app.utils.dependencies import get_current_superadmin
 
 class AccessProfileOut(BaseModel):
     """Minimal access profile response for dropdowns."""
@@ -207,20 +208,63 @@ class AccessProfileOut(BaseModel):
 
 profiles_router = APIRouter(prefix="/access-profiles", tags=["access-profiles"])
 
+
+async def _assert_brand_in_management_scope(
+    db: AsyncSession, mgmt_access: ManagementAccess, brand_id: uuid.UUID
+) -> None:
+    """
+    Raise 403 if brand_id is outside a management caller's scope.
+
+    Site/brand-scope callers may only list profiles for their own brand;
+    group-scope callers may list profiles for any brand in their group.
+    Stage 17 delegation UI needs this so the role-picker can be filtered to
+    profiles the caller may actually grant, without leaking other brands'
+    profile catalogs to a management JWT.
+
+    Args:
+        db: Active database session.
+        mgmt_access: The management caller's resolved access context.
+        brand_id: The brand_id requested in the query string.
+
+    Raises:
+        HTTPException: 403 if brand_id is outside the caller's scope.
+    """
+    if mgmt_access.scope in (GrantScope.SITE, GrantScope.BRAND):
+        if mgmt_access.brand is None or mgmt_access.brand.id != brand_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Brand is outside your scope")
+    elif mgmt_access.scope == GrantScope.GROUP:
+        brand_r = await db.execute(select(BrandModel).where(BrandModel.id == brand_id))
+        brand = brand_r.scalar_one_or_none()
+        if brand is None or mgmt_access.group is None or brand.group_id != mgmt_access.group.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Brand is outside your scope")
+
+
 @profiles_router.get("", response_model=list[AccessProfileOut])
 async def list_access_profiles(
     brand_id: str,
     skip: int = 0,
     limit: int = 200,
+    access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_superadmin),
 ):
-    """List access profiles for a brand. Requires portal JWT.
+    """List access profiles for a brand. Requires a management or portal JWT.
 
     Lazily seeds system profiles (Admin, Reporting Only, Manager, Staff) on first
     call for any brand that predates the seeding feature, so the dropdown is never
     empty even if the startup seed step did not run.
+
+    Management callers (Stage 17) are restricted to brands within their own
+    scope, so the portal's delegation UI can safely use this to populate a
+    role-picker without exposing other brands' profile catalogs.
     """
+    if access.pos_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access profile listing requires a management or portal JWT",
+        )
+    if access.mgmt_access:
+        await _assert_brand_in_management_scope(db, access.mgmt_access, uuid.UUID(brand_id))
+
     from app.services.access_profile_service import seed_system_profiles
 
     # Seed missing system profiles on demand so legacy brands always show profiles
