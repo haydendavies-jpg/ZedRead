@@ -13,7 +13,12 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from app.constants.audit_actions import PRODUCT_CREATED, PRODUCT_DEACTIVATED, PRODUCT_UPDATED
+from app.constants.audit_actions import (
+    PRODUCT_CREATED,
+    PRODUCT_DEACTIVATED,
+    PRODUCT_REACTIVATED,
+    PRODUCT_UPDATED,
+)
 from app.models.audit_log import AuditLog
 from app.models.category import Category
 from app.models.reporting_group import ReportingGroup
@@ -306,6 +311,78 @@ async def test_list_products_filter_by_category(client, db, pos_auth_headers, te
     assert response.status_code == 200
     for product in response.json():
         assert product["category_id"] == str(test_product.category_id)
+
+
+# ── Stage 20 — joined columns, include_inactive, activate ───────────────────
+
+
+async def test_list_products_includes_joined_category_and_reporting_group(
+    client, pos_auth_headers, test_product, test_reporting_group
+):
+    """GET /products rows carry the joined category_name/reporting_group_id/reporting_group_name."""
+    response = await client.get("/products", headers=pos_auth_headers)
+
+    assert response.status_code == 200
+    row = next(p for p in response.json() if p["id"] == str(test_product.id))
+    assert row["category_name"]
+    assert row["reporting_group_id"] == str(test_reporting_group.id)
+    assert row["reporting_group_name"] == test_reporting_group.name
+
+
+async def test_list_products_excludes_inactive_by_default(client, pos_auth_headers, test_product):
+    """GET /products omits soft-deleted products unless include_inactive=true."""
+    await client.delete(f"/products/{test_product.id}", headers=pos_auth_headers)
+
+    response = await client.get("/products", headers=pos_auth_headers)
+
+    assert response.status_code == 200
+    ids = [p["id"] for p in response.json()]
+    assert str(test_product.id) not in ids
+
+
+async def test_list_products_include_inactive_returns_deactivated_row(client, pos_auth_headers, test_product):
+    """GET /products?include_inactive=true includes soft-deleted products."""
+    await client.delete(f"/products/{test_product.id}", headers=pos_auth_headers)
+
+    response = await client.get("/products?include_inactive=true", headers=pos_auth_headers)
+
+    assert response.status_code == 200
+    row = next(p for p in response.json() if p["id"] == str(test_product.id))
+    assert row["is_active"] is False
+
+
+async def test_activate_product_returns_200_and_reactivates(client, pos_auth_headers, test_product):
+    """POST /products/{id}/activate reactivates a deactivated product."""
+    await client.delete(f"/products/{test_product.id}", headers=pos_auth_headers)
+
+    response = await client.post(f"/products/{test_product.id}/activate", headers=pos_auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["is_active"] is True
+
+
+async def test_activate_product_writes_audit_log(client, db, pos_auth_headers, test_product, test_user):
+    """Reactivating a product writes a PRODUCT_REACTIVATED audit row."""
+    await client.delete(f"/products/{test_product.id}", headers=pos_auth_headers)
+
+    await client.post(f"/products/{test_product.id}/activate", headers=pos_auth_headers)
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.action == PRODUCT_REACTIVATED,
+            AuditLog.entity_id == str(test_product.id),
+        )
+    )
+    row = result.scalar_one()
+    assert row.actor_id == test_user.id
+
+
+async def test_activate_already_active_product_is_idempotent(client, pos_auth_headers, test_product):
+    """POST /products/{id}/activate on an already-active product is a silent no-op, not an error."""
+    response = await client.post(f"/products/{test_product.id}/activate", headers=pos_auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["is_active"] is True
 
 
 # ── Auth / input failures ─────────────────────────────────────────────────────
