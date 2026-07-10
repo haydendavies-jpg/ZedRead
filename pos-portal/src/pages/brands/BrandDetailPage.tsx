@@ -15,12 +15,13 @@ import { CompanyProfileForm } from '../../components/CompanyProfileForm'
 import { ProductsPage } from '../management/ProductsPage'
 import { CategoriesPage } from '../management/CategoriesPage'
 import { ReportsPage } from '../management/ReportsPage'
+import { InvoicesPage } from '../management/InvoicesPage'
 import { UsersPage } from '../management/UsersPage'
 import { SiteOverridesPage } from '../management/SiteOverridesPage'
 import { sessionInto } from '../../utils/impersonation'
 import type { Brand, Group } from '../../types'
 
-type Tab = 'overview' | 'products' | 'categories' | 'overrides' | 'reports' | 'users'
+type Tab = 'overview' | 'products' | 'categories' | 'overrides' | 'reports' | 'invoices' | 'users'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
@@ -28,6 +29,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'categories', label: 'Categories' },
   { id: 'overrides', label: 'Site Overrides' },
   { id: 'reports', label: 'Reports' },
+  { id: 'invoices', label: 'Invoices' },
   { id: 'users', label: 'Users & Grants' },
 ]
 
@@ -116,6 +118,7 @@ export function BrandDetailPage() {
           {activeTab === 'categories' && <CategoriesPage />}
           {activeTab === 'overrides' && <SiteOverridesPage />}
           {activeTab === 'reports' && <ReportsPage />}
+          {activeTab === 'invoices' && <InvoicesPage />}
           {activeTab === 'users' && <UsersPage />}
         </div>
       </div>

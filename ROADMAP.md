@@ -43,7 +43,7 @@ gantt
     Stage 20 · Table UX              :done, s20, after s19, 10d
 
     section Phase 7 · Invoices & Extended Catalog
-    Stage 21 · Invoice Reporting     :s21, after s20, 14d
+    Stage 21 · Invoice Reporting     :done, s21, after s20, 14d
     Stage 22 · Variants & Combos UI  :s22, after s21, 14d
 
     section Phase 8 · POS Menu Builder
@@ -173,14 +173,19 @@ the changes reflected immediately in a filterable, inline-editable table.
 
 ---
 
-## Phase 7 — Invoices & Extended Catalog 🔜
+## Phase 7 — Invoices & Extended Catalog 🚧
 
 **Goal:** Make invoices fully reportable and bring Variants/Combos into the portal.
 
 | Stage | Summary | Key outcome |
 |-------|---------|-------------|
-| **21** | **Invoice Reporting** | Filtered list + XLSX export, detail view, PDF export, change log (from existing `audit_logs`) |
+| **21** | **Invoice Reporting** ✅ | Filtered list + XLSX export, detail view, PDF export, change log (from existing `audit_logs`) |
 | **22** | **Variants & Combos Portal Pages** | Combined Variants/Combos page with `ref` codes, `display_name`, filters, import/export (Modifiers stay inline on the Product page) |
+
+**Stage 21 status:** complete — see `STAGE_STATUS.md` for full deliverables. New `/invoice-reports`
+routes (list with date/site/status/amount filters, XLSX export, detail view, PDF export, change log)
+sit alongside the untouched transactional engine in `routes/invoices.py`. `create_refund()` was
+fixed to also log the refund against the *original* invoice's `entity_id` so the change log shows it.
 
 **Exit criteria:** A portal user can filter invoices, export the filtered set to XLSX, open one
 invoice to see its full history of refunds/edits, print a PDF copy, and manage variants and combos

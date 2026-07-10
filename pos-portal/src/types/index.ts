@@ -379,3 +379,97 @@ export interface DailySales {
   discount_cents: number
   total_cents: number
 }
+
+// ── Invoice reporting types (Stage 21) ─────────────────────────────────────────
+
+export interface InvoiceReportRow {
+  id: string
+  brand_id: string
+  site_id: string
+  site_name: string
+  brand_name: string
+  created_by_id: string | null
+  invoice_type: string
+  status: string
+  subtotal_cents: number
+  tax_cents: number
+  discount_cents: number
+  total_cents: number
+  refund_of_id: string | null
+  is_refunded: boolean
+  voided_at: string | null
+  paid_at: string | null
+  created_at: string
+}
+
+export interface InvoicePayment {
+  id: string
+  invoice_id: string
+  method: string
+  amount_cents: number
+  reference: string | null
+  paid_at: string
+}
+
+export interface InvoiceDetailModifier {
+  id: string
+  modifier_name: string
+  price_delta_cents: number
+}
+
+export interface InvoiceDetailLineItem {
+  id: string
+  product_id: string | null
+  product_name: string
+  unit_price_cents: number
+  quantity: number
+  subtotal_cents: number
+  tax_cents: number
+  line_total_cents: number
+  display_order: number
+  modifiers: InvoiceDetailModifier[]
+}
+
+export interface InvoiceDetailTaxRow {
+  id: string
+  tax_rate_name: string
+  rate_percent: string
+  tax_model: string
+  taxable_amount_cents: number
+  tax_amount_cents: number
+}
+
+export interface InvoiceDetail {
+  id: string
+  brand_id: string
+  site_id: string
+  site_name: string
+  brand_name: string
+  created_by_id: string | null
+  invoice_type: string
+  status: string
+  subtotal_cents: number
+  tax_cents: number
+  discount_cents: number
+  discount_reason: string | null
+  total_cents: number
+  refund_of_id: string | null
+  is_refunded: boolean
+  voided_at: string | null
+  paid_at: string | null
+  created_at: string
+  line_items: InvoiceDetailLineItem[]
+  tax_breakdown: InvoiceDetailTaxRow[]
+  payments: InvoicePayment[]
+}
+
+export interface InvoiceChangeLogEntry {
+  id: string
+  action: string
+  actor_name: string | null
+  actor_email: string | null
+  actor_type: string
+  before_state: Record<string, unknown> | null
+  after_state: Record<string, unknown> | null
+  created_at: string
+}
