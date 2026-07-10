@@ -17,9 +17,20 @@ FROM python:3.12-slim AS runtime
 
 WORKDIR /app
 
-# Runtime-only system libraries
+# Runtime-only system libraries.
+# libpango/libcairo/libgdk-pixbuf/libffi/shared-mime-info are weasyprint's
+# runtime dependencies (Stage 21 PDF export, app/services/invoice_pdf_service.py) —
+# without them `import weasyprint` (pulled in transitively by main.py) crashes
+# the process on startup, so the container never answers /health. Mirrors the
+# system libraries .github/workflows/ci.yml already installs for the test suite.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libcairo2 \
+    libgdk-pixbuf2.0-0 \
+    libffi-dev \
+    shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder
