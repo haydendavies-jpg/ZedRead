@@ -9,6 +9,7 @@ class CategoryOut(BaseModel):
     """Serialised category for API responses."""
 
     id: uuid.UUID
+    ref: str
     brand_id: uuid.UUID
     reporting_group_id: uuid.UUID
     name: str

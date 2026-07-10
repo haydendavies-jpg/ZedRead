@@ -21,6 +21,7 @@ from app.constants.audit_actions import (
     PRODUCT_CREATED,
     PRODUCT_DEACTIVATED,
     PRODUCT_PHOTO_UPDATED,
+    PRODUCT_REACTIVATED,
     PRODUCT_UPDATED,
 )
 from app.constants.statuses import ActorType
@@ -220,6 +221,7 @@ async def create_product(
     brand_id: uuid.UUID,
     payload: ProductCreate,
     actor: User | SuperAdmin,
+    import_id: uuid.UUID | None = None,
 ) -> Product:
     """
     Create a new product in the catalog and write an audit log row.
@@ -232,6 +234,8 @@ async def create_product(
         brand_id: Brand to create the product under.
         payload: Product creation data.
         actor: The authenticated POS user performing the action.
+        import_id: Batch ID shared by every row of a bulk import (Stage 19) so
+            the audit trail can trace a whole upload; None for direct API calls.
 
     Returns:
         Product: The newly created product.
@@ -263,6 +267,14 @@ async def create_product(
     )
     db.add(product)
 
+    after_state: dict = {
+        "name": product.name,
+        "category_id": str(product.category_id),
+        "base_price_cents": product.base_price_cents,
+    }
+    if import_id is not None:
+        after_state["import_id"] = str(import_id)
+
     await log_action(
         db=db,
         action=PRODUCT_CREATED,
@@ -272,11 +284,7 @@ async def create_product(
         actor_id=actor.id,
         actor_email=actor.email,
         actor_name=actor.name,
-        after_state={
-            "name": product.name,
-            "category_id": str(product.category_id),
-            "base_price_cents": product.base_price_cents,
-        },
+        after_state=after_state,
     )
 
     await db.commit()
@@ -291,6 +299,7 @@ async def update_product(
     product_id: uuid.UUID,
     payload: ProductUpdate,
     actor: User | SuperAdmin,
+    import_id: uuid.UUID | None = None,
 ) -> Product:
     """
     Update a product's mutable fields and write an audit log row.
@@ -301,6 +310,8 @@ async def update_product(
         product_id: UUID of the product to update.
         payload: Fields to update (all optional).
         actor: The authenticated POS user performing the action.
+        import_id: Batch ID shared by every row of a bulk import (Stage 19) so
+            the audit trail can trace a whole upload; None for direct API calls.
 
     Returns:
         Product: The updated product.
@@ -342,6 +353,10 @@ async def update_product(
     if payload.display_order is not None:
         product.display_order = payload.display_order
 
+    after_state: dict = {"name": product.name, "base_price_cents": product.base_price_cents}
+    if import_id is not None:
+        after_state["import_id"] = str(import_id)
+
     await log_action(
         db=db,
         action=PRODUCT_UPDATED,
@@ -352,7 +367,7 @@ async def update_product(
         actor_email=actor.email,
         actor_name=actor.name,
         before_state=before,
-        after_state={"name": product.name, "base_price_cents": product.base_price_cents},
+        after_state=after_state,
     )
 
     await db.commit()
@@ -403,6 +418,66 @@ async def deactivate_product(
         actor_name=actor.name,
         before_state={"is_active": True},
         after_state={"is_active": False},
+    )
+
+    await db.commit()
+    await db.refresh(product)
+    return product
+
+
+async def set_product_active_state(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    product_id: uuid.UUID,
+    is_active: bool,
+    actor: User | SuperAdmin,
+    import_id: uuid.UUID | None = None,
+) -> Product:
+    """
+    Set a product's is_active flag directly (activate or soft-delete).
+
+    Unlike deactivate_product(), this is idempotent — setting the flag to its
+    current value is a silent no-op rather than a 409 conflict, since bulk
+    imports (Stage 19) commonly re-upload a full export where most rows are
+    unchanged. Used only by import_service.py; the dedicated DELETE route
+    keeps using deactivate_product() for its stricter 409-on-repeat semantics.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+        product_id: UUID of the product to update.
+        is_active: The desired active state.
+        actor: The authenticated user performing the action.
+        import_id: Batch ID shared by every row of a bulk import; None for direct calls.
+
+    Returns:
+        Product: The product, with is_active set to the requested value.
+
+    Raises:
+        HTTPException: 404 if not found.
+    """
+    product = await _get_or_404(db, brand_id, product_id)
+    if product.is_active == is_active:
+        return product
+
+    before_active = product.is_active
+    product.is_active = is_active
+
+    after_state: dict = {"is_active": is_active}
+    if import_id is not None:
+        after_state["import_id"] = str(import_id)
+
+    await log_action(
+        db=db,
+        action=PRODUCT_DEACTIVATED if not is_active else PRODUCT_REACTIVATED,
+        entity_type="product",
+        entity_id=str(product.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"is_active": before_active},
+        after_state=after_state,
     )
 
     await db.commit()

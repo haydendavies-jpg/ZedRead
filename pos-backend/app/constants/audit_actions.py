@@ -146,3 +146,8 @@ ADMIN_IMPERSONATION_STARTED = "admin.impersonation.started"
 REPORTING_GROUP_CREATED = "reporting_group.created"
 REPORTING_GROUP_UPDATED = "reporting_group.updated"
 REPORTING_GROUP_DELETED = "reporting_group.deleted"
+
+# ── Phase 6 / Stage 19 — Bulk Import/Export ──────────────────────────────────
+# Reactivation counterpart to PRODUCT_DEACTIVATED — only reachable via bulk
+# import today (no dedicated portal "reactivate" route exists for products).
+PRODUCT_REACTIVATED = "product.reactivated"

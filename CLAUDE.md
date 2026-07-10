@@ -50,8 +50,15 @@ categories, license gating, cross-identity login disambiguation, and the portal 
 Creation (scope ladder + role ceiling on grant creation/update, Master User ungrantable through
 `/access-grants`), and the Permission Scopes portal UI (toggle page grants per access profile, with
 a license-gate preview where a site context is available) are all implemented — see
-`STAGE_STATUS.md` for details. **Stage 19 is current (not yet started):** see `ROADMAP.md` Phase 6
-for full detail. Do not begin Stage 20+ work yet.
+`STAGE_STATUS.md` for details.
+
+**Stage 19 — complete.** Shared `export_service.py`/`import_service.py` (template export with
+data-validation dropdowns, full export, validate-then-upsert import) for Products, Categories, and
+Reporting Groups, keyed on each entity's `ref` code with partial-update semantics (only columns
+present in the uploaded header row are touched). `categories.ref` is now wired into the ORM/schema,
+joining the already-wired `products.ref` (Stage 24) and `reporting_groups.ref` (Stage 16). See
+`STAGE_STATUS.md` for full deliverables. **Stage 20 is current (not yet started):** see
+`ROADMAP.md` Phase 6 for full detail. Do not begin Stage 21+ work yet.
 
 **Stages 16–24 scope (planned, not started):** see `ROADMAP.md` Phases 5–9 for full detail. Summary:
 - **16 — Reporting Groups:** brand-scoped, a level above Categories. Default group per brand

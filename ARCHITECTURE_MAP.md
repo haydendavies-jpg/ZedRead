@@ -63,8 +63,8 @@ Tokens stored in localStorage (portal; impersonation tokens per-tab in sessionSt
 | portal_auth.py | login, refresh, management-token, mgmt-refresh, change-password |
 | pos_auth.py | login, pin/set, pin/verify |
 | brands.py / groups.py / sites.py | CRUD + suspend/activate, paginated list/filter |
-| products.py | CRUD, soft-delete, photo upload (Supabase Storage) |
-| categories.py | list/create/update (system categories protected) |
+| products.py | CRUD, soft-delete, photo upload (Supabase Storage), bulk XLSX export/template/import (Stage 19) |
+| categories.py | list/create/update (system categories protected), bulk XLSX export/template/import (Stage 19) |
 | invoices.py | create, line-items, modifiers, discount, pay, void, refund |
 | tax.py | brand tax category CRUD (taxability classes only — rates come from admin templates) |
 | admin_tax_templates.py | SuperAdmin-only jurisdiction tax templates + rates; invoice engine resolves site rates from these |
@@ -75,6 +75,7 @@ Tokens stored in localStorage (portal; impersonation tokens per-tab in sessionSt
 | email_templates.py / reference_data.py | admin-editable email templates; countries/timezones/tax-id labels |
 | reports.py | daily-sales, product-revenue, payment-methods, tax-collected |
 | modifiers.py / combos.py / variants.py | catalog extras management |
+| reporting_groups.py | Reporting Group CRUD (Stage 16), bulk XLSX export/template/import (Stage 19) |
 | site_overrides.py | per-site price/availability overrides |
 | pos_devices.py | terminal device registration |
 | user_invites.py / license_invoices.py | onboarding invites, recurring license billing |
@@ -83,11 +84,16 @@ Tokens stored in localStorage (portal; impersonation tokens per-tab in sessionSt
 
 Hierarchy: `groups` ← `brands` (group_id) ← `sites` (brand_id).
 Catalog: `categories`, `products` (base_price_cents BIGINT), `product_variants`, `product_combo_groups/options`,
-`modifier_groups/options`, `product_modifier_group_links` (M:N). Products carry `base_price_cents`
+`modifier_groups/options`, `product_modifier_group_links` (M:N), `reporting_groups` (Stage 16, one
+level above Category). Products carry `base_price_cents`
 (tax-inclusive), `price_ex_cents` (derived), `is_taxable`, `ref` (human-readable PRD-000001 code,
 wired into the ORM/schema in Stage 24 — previously dormant since migration `0013`), `print_name`
 (nullable, falls back to `name`), and `is_open_item` (flexible price/name at sale time, gated by the
 `can_use_open_item` capability + optional `open_item_max_price_cents` ceiling on `AccessProfile`).
+Categories' own `ref` (CAT-000001) was likewise dormant since migration `0013` and was wired into
+the ORM/schema in Stage 19, joining the already-wired `products.ref` and `reporting_groups.ref`
+(RPG-000001) as the matching key for the Stage 19 bulk XLSX import/export (`export_service.py` /
+`import_service.py`, shared across all three entities).
 `tax_templates`/`tax_template_rates`
 (admin-owned, jurisdiction-scoped country→state→county→city) supply the country rate used to derive
 a product's exclusive price at save time. `tax_categories`/`tax_rates` are legacy (retained, not used
@@ -131,4 +137,4 @@ Ops: `user_pos_sessions`, `pos_devices`, `audit_logs` (immutable), `user_invites
   `backend_role` enum — the full 5-role model is not complete. Verify against code before assuming
   either the old or the target model.
 
-*Last mapped: 2026-07-06. Re-verify against code if it has changed significantly since.*
+*Last mapped: 2026-07-10. Re-verify against code if it has changed significantly since.*

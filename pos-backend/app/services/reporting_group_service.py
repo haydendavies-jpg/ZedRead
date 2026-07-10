@@ -121,6 +121,7 @@ async def create_reporting_group(
     brand_id: uuid.UUID,
     payload: ReportingGroupCreate,
     actor: User | SuperAdmin,
+    import_id: uuid.UUID | None = None,
 ) -> ReportingGroup:
     """
     Create a new (non-default, non-system) reporting group for a brand.
@@ -130,6 +131,8 @@ async def create_reporting_group(
         brand_id: UUID of the brand to create the reporting group under.
         payload: Reporting group creation data.
         actor: The authenticated user performing the action (for audit logging).
+        import_id: Batch ID shared by every row of a bulk import (Stage 19) so
+            the audit trail can trace a whole upload; None for direct API calls.
 
     Returns:
         ReportingGroup: The created reporting group.
@@ -144,6 +147,10 @@ async def create_reporting_group(
     db.add(group)
     await db.flush()
 
+    after_state: dict = {"name": group.name, "brand_id": str(brand_id)}
+    if import_id is not None:
+        after_state["import_id"] = str(import_id)
+
     await log_action(
         db=db,
         action=REPORTING_GROUP_CREATED,
@@ -152,7 +159,7 @@ async def create_reporting_group(
         actor_id=actor.id,
         actor_email=actor.email,
         actor_name=actor.name,
-        after_state={"name": group.name, "brand_id": str(brand_id)},
+        after_state=after_state,
     )
     await db.commit()
     await db.refresh(group)
@@ -166,6 +173,7 @@ async def update_reporting_group(
     reporting_group_id: uuid.UUID,
     payload: ReportingGroupUpdate,
     actor: User | SuperAdmin,
+    import_id: uuid.UUID | None = None,
 ) -> ReportingGroup:
     """
     Rename a reporting group. The system default group cannot be renamed.
@@ -176,6 +184,8 @@ async def update_reporting_group(
         reporting_group_id: UUID of the reporting group to update.
         payload: Fields to update.
         actor: The authenticated user performing the action (for audit logging).
+        import_id: Batch ID shared by every row of a bulk import (Stage 19) so
+            the audit trail can trace a whole upload; None for direct API calls.
 
     Returns:
         ReportingGroup: The updated reporting group.
@@ -196,6 +206,10 @@ async def update_reporting_group(
         before["name"] = group.name
         group.name = payload.name
 
+    after_state = payload.model_dump(exclude_none=True)
+    if import_id is not None:
+        after_state["import_id"] = str(import_id)
+
     await log_action(
         db=db,
         action=REPORTING_GROUP_UPDATED,
@@ -205,7 +219,7 @@ async def update_reporting_group(
         actor_email=actor.email,
         actor_name=actor.name,
         before_state=before,
-        after_state=payload.model_dump(exclude_none=True),
+        after_state=after_state,
     )
     await db.commit()
     await db.refresh(group)

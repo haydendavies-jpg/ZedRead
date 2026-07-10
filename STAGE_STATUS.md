@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-07 (Stage 18)
+Last updated: 2026-07-10 (Stage 19)
 
 ---
 
@@ -13,7 +13,7 @@ Last updated: 2026-07-07 (Stage 18)
 | 3 — Transactions | 10–12 | ✅ Complete |
 | 4 — Identity & Permissions Redesign | 15 | ✅ Complete |
 | 5 — Catalog Foundations | 16–18 | ✅ Complete |
-| 6 — Catalog Data & Table UX | 19–20 | 🔜 Planned |
+| 6 — Catalog Data & Table UX | 19–20 | 🚧 In Progress (Stage 19 done) |
 | 7 — Invoices & Extended Catalog | 21–22 | 🔜 Planned |
 | 8 — POS Menu Builder | 23 | 🔜 Planned |
 | 9 — Product Model Extensions | 24 | ✅ Complete |
@@ -314,15 +314,55 @@ management-scoped `GET /sites` (or similar) is added for another stage.
 
 ## Phase 6 — Catalog Data & Table UX
 
-### Stage 19 — Bulk Import/Export (XLSX) 🔜
+### Stage 19 — Bulk Import/Export (XLSX) ✅
 
 **Deliverables:**
-- [ ] Surface dormant `products.ref` / `categories.ref` columns (migration `0013`) into ORM model + schema
-- [ ] Shared `export_service.py` / `import_service.py`: template export, filtered full export, validate-then-upsert import
-- [ ] Products/Categories/Reporting Groups import matches existing rows by `ref`; partial-update
-  semantics (only columns present in the uploaded header row are changed)
-- [ ] Template export includes data-validation dropdowns for category/reporting-group columns
-- [ ] Each import writes one `audit_logs` row per changed record, grouped by a batch `import_id`
+- [x] Surfaced the dormant `categories.ref` column (migration `0013`) into the ORM model and
+  `CategoryOut` schema — `products.ref` was already wired in Stage 24, `reporting_groups.ref` in
+  Stage 16, so all three entities now expose their human-readable code.
+- [x] Shared `app/services/export_service.py` (template + full-export workbook building, per-entity
+  query + row-mapping functions, hidden-sheet data-validation dropdowns) and
+  `app/services/import_service.py` (XLSX parsing, value coercion, validate-then-upsert per row) —
+  built once, reused across Products, Categories, and Reporting Groups; the same two modules are
+  designed to be reused again for Variants/Combos in Stage 22.
+- [x] Products/Categories/Reporting Groups import matches existing rows by `ref`; a blank `ref`
+  creates a new record via the same `*Create` schema and service function the direct API uses.
+  Partial-update semantics: only columns present in the uploaded header row are touched — routed
+  through the existing `update_product()`/`update_category()`/`update_reporting_group()` service
+  functions (all their existing validation, 403 system-record protection, and audit logging is
+  reused unchanged, not reimplemented).
+- [x] Row-level validate-then-upsert: each row is validated independently; a bad row (unresolvable
+  category/reporting-group name, unknown `ref`, bad type) is skipped and reported in
+  `ImportSummary.errors` with its row number, rather than failing the whole upload.
+- [x] Template export: header row + one example row + an Excel data-validation dropdown (category
+  names for Products, reporting-group names for Categories) sourced from a hidden helper sheet
+  (a literal inline list is capped at 255 characters, too small for real catalogs). Full export
+  carries the brand's current data with the same dropdowns attached so it stays re-importable.
+- [x] Each import writes one `audit_logs` row per changed record via the entity's existing
+  create/update service (`PRODUCT_CREATED`/`PRODUCT_UPDATED`/`CATEGORY_CREATED`/... — no new audit
+  action constants), all rows from one upload sharing a batch `import_id` (a fresh UUID per call)
+  embedded in `after_state` — no new column/table needed, since `audit_logs.after_state` is already
+  a JSONB free-form field.
+- [x] New `set_product_active_state()` in `product_service.py`: import-only, idempotent
+  activate/deactivate (the existing `deactivate_product()` 409s on a repeat call, which would
+  misreport an unchanged row in a re-uploaded sheet as an error). Added `PRODUCT_REACTIVATED` audit
+  constant for the reactivate-via-import case, since no portal route exposes that today.
+- [x] Routes: `GET /{resource}/export/template`, `GET /{resource}/export`, `POST /{resource}/import`
+  on `products.py`, `categories.py`, `reporting_groups.py` — thin, all logic in the two shared
+  services. `response_model=None` declared explicitly on the two GET routes (binary `.xlsx` download,
+  not a JSON payload a Pydantic model could describe).
+- [x] `openpyxl==3.1.5` added to `requirements.txt`.
+- [x] Unit tests: `test_export_service.py`, `test_import_service.py` (workbook assembly, XLSX
+  parsing, value coercion — no database). Integration tests:
+  `test_product_import_export_routes.py`, `test_category_import_export_routes.py`,
+  `test_reporting_group_import_export_routes.py` (template/export downloads, create-by-import,
+  update-by-import partial semantics, row-level error reporting, system-record protection, audit
+  rows carrying `import_id`, auth failures, invalid-file 422).
+
+**Known limitation:** "respecting whatever filters are active on the page" for the full export is
+deferred to Stage 20 — that stage's filter bars don't exist yet, so `GET /{resource}/export`
+currently exports all of the brand's rows unconditionally (matching what `list_*` already returns
+without filters). Revisit once Stage 20 ships filter query params.
 
 ### Stage 20 — Table UX 🔜
 

@@ -85,6 +85,7 @@ async def create_category(
     brand_id: uuid.UUID,
     payload: CategoryCreate,
     actor: User | SuperAdmin,
+    import_id: uuid.UUID | None = None,
 ) -> Category:
     """
     Create a new product category, auto-assigning the brand's default reporting group if omitted.
@@ -94,6 +95,8 @@ async def create_category(
         brand_id: UUID of the brand to create the category under.
         payload: Category creation data.
         actor: The authenticated user performing the action (for audit logging).
+        import_id: Batch ID shared by every row of a bulk import (Stage 19) so
+            the audit trail can trace a whole upload; None for direct API calls.
 
     Returns:
         Category: The created category.
@@ -118,6 +121,9 @@ async def create_category(
         is_active=True,
     )
     db.add(cat)
+    after_state: dict = {"name": payload.name, "reporting_group_id": str(reporting_group_id)}
+    if import_id is not None:
+        after_state["import_id"] = str(import_id)
     await log_action(
         db=db,
         action=CATEGORY_CREATED,
@@ -126,7 +132,7 @@ async def create_category(
         actor_id=actor.id,
         actor_email=actor.email,
         actor_name=actor.name,
-        after_state={"name": payload.name, "reporting_group_id": str(reporting_group_id)},
+        after_state=after_state,
     )
     await db.commit()
     await db.refresh(cat)
@@ -139,6 +145,7 @@ async def update_category(
     category_id: uuid.UUID,
     payload: CategoryUpdate,
     actor: User | SuperAdmin,
+    import_id: uuid.UUID | None = None,
 ) -> Category:
     """
     Update a category's mutable fields. System categories cannot be renamed or deactivated.
@@ -149,6 +156,8 @@ async def update_category(
         category_id: UUID of the category to update.
         payload: Fields to update.
         actor: The authenticated user performing the action (for audit logging).
+        import_id: Batch ID shared by every row of a bulk import (Stage 19) so
+            the audit trail can trace a whole upload; None for direct API calls.
 
     Returns:
         Category: The updated category.
@@ -188,6 +197,9 @@ async def update_category(
         before["is_active"] = cat.is_active
         cat.is_active = payload.is_active
         after["is_active"] = payload.is_active
+
+    if import_id is not None:
+        after["import_id"] = str(import_id)
 
     await log_action(
         db=db,

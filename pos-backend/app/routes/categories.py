@@ -7,15 +7,20 @@ management or portal JWT. All business logic lives in category_service.py.
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.schemas.category import CategoryCreate, CategoryOut, CategoryUpdate
-from app.services import category_service
+from app.schemas.import_export import ImportSummary
+from app.services import category_service, export_service, import_service
+from app.services.import_service import InvalidWorkbookError
 from app.utils.dependencies import CatalogAccess, resolve_catalog_access
 
 router = APIRouter(prefix="/categories", tags=["categories"])
+
+_XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 @router.get("", response_model=list[CategoryOut], status_code=status.HTTP_200_OK)
@@ -104,3 +109,98 @@ async def update_category(
     effective_brand_id = access.effective_brand_id(brand_id)
     cat = await category_service.update_category(db, effective_brand_id, category_id, payload, access.actor_user)
     return CategoryOut.model_validate(cat)
+
+
+@router.get("/export/template", response_model=None, status_code=status.HTTP_200_OK)
+async def export_categories_template(
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """
+    Download a blank Categories import template (header row + example + reporting group dropdown).
+
+    response_model is intentionally omitted — the body is a binary .xlsx file,
+    not a JSON payload a Pydantic model could describe.
+
+    Args:
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access.
+        db: Active database session.
+
+    Returns:
+        Response: The .xlsx template file.
+    """
+    effective_brand_id = access.effective_brand_id(brand_id)
+    wb = await export_service.build_categories_template(db, effective_brand_id)
+    return Response(
+        content=export_service.workbook_to_bytes(wb),
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": "attachment; filename=categories_template.xlsx"},
+    )
+
+
+@router.get("/export", response_model=None, status_code=status.HTTP_200_OK)
+async def export_categories(
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """
+    Download the brand's current Categories as a re-importable .xlsx file.
+
+    Args:
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access.
+        db: Active database session.
+
+    Returns:
+        Response: The .xlsx export file.
+    """
+    effective_brand_id = access.effective_brand_id(brand_id)
+    wb = await export_service.build_categories_export(db, effective_brand_id)
+    return Response(
+        content=export_service.workbook_to_bytes(wb),
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": "attachment; filename=categories_export.xlsx"},
+    )
+
+
+@router.post("/import", response_model=ImportSummary, status_code=status.HTTP_200_OK)
+async def import_categories(
+    file: UploadFile,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> ImportSummary:
+    """
+    Bulk create/update Categories from an uploaded .xlsx sheet.
+
+    Rows are matched to existing categories by their `ref` column; a blank ref
+    creates a new category. Only columns present in the sheet's header row are
+    written (partial-update semantics) — see import_service.py.
+
+    Args:
+        file: The uploaded .xlsx file.
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access.
+        db: Active database session.
+
+    Returns:
+        ImportSummary: Created/updated counts and any skipped-row errors.
+
+    Raises:
+        HTTPException: 403 if the caller authenticated with a POS terminal JWT.
+        HTTPException: 422 if the uploaded file is not a valid .xlsx workbook.
+    """
+    if access.pos_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Category management requires a management or portal JWT",
+        )
+    effective_brand_id = access.effective_brand_id(brand_id)
+    contents = await file.read()
+    try:
+        return await import_service.import_categories(db, effective_brand_id, contents, access.actor_user)
+    except InvalidWorkbookError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc

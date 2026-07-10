@@ -2,15 +2,20 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.schemas.import_export import ImportSummary
 from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate
-from app.services import product_service
+from app.services import export_service, import_service, product_service
+from app.services.import_service import InvalidWorkbookError
 from app.utils.dependencies import CatalogAccess, resolve_catalog_access
 
 router = APIRouter(prefix="/products", tags=["products"])
+
+_XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 @router.get("", response_model=list[ProductResponse], status_code=status.HTTP_200_OK)
@@ -63,6 +68,97 @@ async def create_product(
     """
     product = await product_service.create_product(db, access.effective_brand_id(brand_id), payload, access.actor_user)
     return ProductResponse.model_validate(product)
+
+
+@router.get("/export/template", response_model=None, status_code=status.HTTP_200_OK)
+async def export_products_template(
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """
+    Download a blank Products import template (header row + example + category dropdown).
+
+    response_model is intentionally omitted — the body is a binary .xlsx file,
+    not a JSON payload a Pydantic model could describe (CLAUDE.md rule 12 is
+    about typed JSON responses; a streamed spreadsheet has no such schema).
+
+    Args:
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access.
+        db: Active database session.
+
+    Returns:
+        Response: The .xlsx template file.
+    """
+    effective_brand_id = access.effective_brand_id(brand_id)
+    wb = await export_service.build_products_template(db, effective_brand_id)
+    return Response(
+        content=export_service.workbook_to_bytes(wb),
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": "attachment; filename=products_template.xlsx"},
+    )
+
+
+@router.get("/export", response_model=None, status_code=status.HTTP_200_OK)
+async def export_products(
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """
+    Download the brand's current Products catalog as a re-importable .xlsx file.
+
+    Args:
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access.
+        db: Active database session.
+
+    Returns:
+        Response: The .xlsx export file.
+    """
+    effective_brand_id = access.effective_brand_id(brand_id)
+    wb = await export_service.build_products_export(db, effective_brand_id)
+    return Response(
+        content=export_service.workbook_to_bytes(wb),
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": "attachment; filename=products_export.xlsx"},
+    )
+
+
+@router.post("/import", response_model=ImportSummary, status_code=status.HTTP_200_OK)
+async def import_products(
+    file: UploadFile,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> ImportSummary:
+    """
+    Bulk create/update Products from an uploaded .xlsx sheet.
+
+    Rows are matched to existing products by their `ref` column; a blank ref
+    creates a new product. Only columns present in the sheet's header row are
+    written (partial-update semantics) — see import_service.py for the full
+    validate-then-upsert contract.
+
+    Args:
+        file: The uploaded .xlsx file.
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access.
+        db: Active database session.
+
+    Returns:
+        ImportSummary: Created/updated counts and any skipped-row errors.
+
+    Raises:
+        HTTPException: 422 if the uploaded file is not a valid .xlsx workbook.
+    """
+    effective_brand_id = access.effective_brand_id(brand_id)
+    contents = await file.read()
+    try:
+        return await import_service.import_products(db, effective_brand_id, contents, access.actor_user)
+    except InvalidWorkbookError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
 @router.get("/{product_id}", response_model=ProductResponse, status_code=status.HTTP_200_OK)
