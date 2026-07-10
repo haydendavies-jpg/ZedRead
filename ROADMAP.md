@@ -44,7 +44,7 @@ gantt
 
     section Phase 7 · Invoices & Extended Catalog
     Stage 21 · Invoice Reporting     :s21, after s20, 14d
-    Stage 22 · Variants & Combos UI  :s22, after s21, 14d
+    Stage 22 · Modifiers Page + Variants :s22, after s21, 14d
 
     section Phase 8 · POS Menu Builder
     Stage 23 · Menu Builder          :s23, after s22, 21d
@@ -175,16 +175,19 @@ the changes reflected immediately in a filterable, inline-editable table.
 
 ## Phase 7 — Invoices & Extended Catalog 🔜
 
-**Goal:** Make invoices fully reportable and bring Variants/Combos into the portal.
+**Goal:** Make invoices fully reportable, give Modifiers their own portal page, and surface product
+variants inline on the Products table. Combos are dropped from this phase — folded into a future
+Modifiers redesign, scoped separately later.
 
 | Stage | Summary | Key outcome |
 |-------|---------|-------------|
 | **21** | **Invoice Reporting** | Filtered list + XLSX export, detail view, PDF export, change log (from existing `audit_logs`) |
-| **22** | **Variants & Combos Portal Pages** | Combined Variants/Combos page with `ref` codes, `display_name`, filters, import/export (Modifiers stay inline on the Product page) |
+| **22** | **Modifiers Portal Page + Inline Product Variants** | Modifiers get their own page (`ref`, `display_name`, filters, inline edit, import/export) and are attached to products via a picker; Variants become nested rows under their parent product in the Products table, no standalone page. Combos dropped (deferred). |
 
 **Exit criteria:** A portal user can filter invoices, export the filtered set to XLSX, open one
-invoice to see its full history of refunds/edits, print a PDF copy, and manage variants and combos
-from their own portal page with the same table UX as Products.
+invoice to see its full history of refunds/edits, print a PDF copy; manage Modifiers from their own
+portal page with the same table UX as Products, and see each product's Variants nested inline in the
+Products table.
 
 **Full detail:** [`STAGE_PLAN_16-24.md`](STAGE_PLAN_16-24.md) §21–§22.
 

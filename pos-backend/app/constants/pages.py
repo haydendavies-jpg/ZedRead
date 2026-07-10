@@ -18,8 +18,7 @@ from app.constants.statuses import PageCategory
 PAGE_CATALOG: list[tuple[str, PageCategory, str]] = [
     # Product & Menus
     ("products", PageCategory.PRODUCT_MENUS, "Products"),
-    ("variants_modifiers", PageCategory.PRODUCT_MENUS, "Variants & Modifiers"),
-    ("combos", PageCategory.PRODUCT_MENUS, "Combos"),
+    ("modifiers", PageCategory.PRODUCT_MENUS, "Modifiers"),
     ("categories", PageCategory.PRODUCT_MENUS, "Categories"),
     ("reporting_groups", PageCategory.PRODUCT_MENUS, "Reporting Groups"),
     # App Configuration

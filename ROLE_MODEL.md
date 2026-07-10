@@ -165,11 +165,11 @@ on the Brand/Site's license plan, regardless of role. This is a second, independ
 
 ## 6. Page catalog (resolved)
 
-18 pages across the 5 categories, defined in `app/constants/pages.py`:
+17 pages across the 5 categories, defined in `app/constants/pages.py`:
 
 | Category | Pages |
 |---|---|
-| Product & Menus | products, variants_modifiers, combos, categories, reporting_groups |
+| Product & Menus | products, modifiers, categories, reporting_groups |
 | App Configuration | site_settings, devices, tax_settings, license_billing |
 | Reports | daily_sales, tax_collected, invoices, audit_log |
 | User Management | users, access_grants, access_profiles |
@@ -179,12 +179,19 @@ on the Brand/Site's license plan, regardless of role. This is a second, independ
 shipped the Reporting Groups portal page, per the Stage 18 standing rule that every new portal page
 adds its `page_key` here.
 
+**Revised catalog (Stage 22 redraft):** `variants_modifiers` and `combos` — placeholder keys seeded
+in Stage 15 for the original Stage 22 plan — are retired. Variants don't get their own page key:
+they're nested rows inside the Products table (governed by the `products` grant), not a standalone
+page. `modifiers` replaces `variants_modifiers` as a real, dedicated page (Modifiers are no longer
+inline-only). Combos have no page key at all — dropped from the portal plan; see `STAGE_PLAN_16-24.md`
+§22 for the rationale.
+
 Default role grants seeded by `seed_system_profiles()`:
 
 | Role | Default pages |
 |---|---|
-| Master User | All 18 |
-| Admin | All 18 |
+| Master User | All 17 |
+| Admin | All 17 |
 | Reporting Only | Reports category only (daily_sales, tax_collected, invoices, audit_log) |
 | Manager | All except users, access_grants, access_profiles, license_billing |
 | Staff | products, categories, reporting_groups, customers |
@@ -195,5 +202,5 @@ business sign-off; flag for review if the user wants different tier boundaries:
 | Plan | Pages unlocked |
 |---|---|
 | starter | products, categories, reporting_groups, site_settings, daily_sales, invoices, users, customers |
-| pro | All starter pages plus variants_modifiers, combos, devices, tax_settings, license_billing, tax_collected, audit_log, access_grants, loyalty_programs |
+| pro | All starter pages plus modifiers, devices, tax_settings, license_billing, tax_collected, audit_log, access_grants, loyalty_programs |
 | enterprise (and any unrecognised plan_name, including null) | Full catalog |

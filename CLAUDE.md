@@ -31,7 +31,7 @@ future-stage features unless explicitly instructed.
 | 4 — Identity & Permissions Redesign | 15 | Rename + 5-role model — see `ROLE_MODEL.md` |
 | 5 — Catalog Foundations | 16–18 | Reporting groups, delegated user creation, permissions UI |
 | 6 — Catalog Data & Table UX | 19–20 | Bulk XLSX import/export, inline edit, filters, columns |
-| 7 — Invoices & Extended Catalog | 21–22 | Invoice detail/PDF/XLSX reporting + change log; Variants/Combos portal pages |
+| 7 — Invoices & Extended Catalog | 21–22 | Invoice detail/PDF/XLSX reporting + change log; Modifiers portal page + inline product variants |
 | 8 — POS Menu Builder | 23 | Graphical menu layout prototype + publish pipeline |
 | 9 — Product Model Extensions | 24 | Product code, print name, open item |
 | 10 — Android App | 25–26 | Kotlin + Jetpack Compose POS application |
@@ -72,10 +72,16 @@ See `STAGE_STATUS.md` for full deliverables. **Stage 21 is next (not yet started
   and a change-log panel sourced from the existing `audit_logs` table filtered by
   `entity_type='invoice'` — no new table, `invoice_service.py` already audits every mutation with
   before/after state.
-- **22 — Variants & Combos Portal Pages:** one combined portal page/sidebar entry for Variants and
-  Combos (not Modifiers — Modifiers stay edited inline within the Product page). New `ref` codes
-  (`VAR-000001`, `CMB-000001`) and a `display_name` field on both Variant and Combo (not on
-  Modifiers). Filters, inline edit, import/export via Stage 19's framework.
+- **22 — Modifiers Portal Page + Inline Product Variants (redrafted):** Combos are dropped from the
+  portal plan — folded into a future Modifiers redesign, scoped separately later; the existing
+  `product_combo_groups/options` tables and backend routes are untouched for now. Variants get **no**
+  standalone page — they're nested rows under their parent product in the Products table (indented,
+  `↳`-style connector), governed by the `products` page grant; they keep `ref` (`VAR-000001`) and
+  `display_name` for import/export and the nested-row label. Modifiers flip the other way: they get
+  their **own** dedicated portal page (`ref` `MOD-000001` + `display_name` on `ModifierGroup`,
+  filters, inline edit, import/export via Stage 19's framework) instead of staying inline on the
+  Product page — configured on their own page, then attached to products via a picker on the product
+  side (existing `product_modifier_group_links` M:N).
 - **23 — POS Menu Builder:** new `menu_layouts` / `menu_tabs` / `menu_buttons` tables. Buttons
   reference products by `ref` code (not FK), so a layout survives product recreation. Prototype
   scope: single-level tabs + buttons only, no nested sub-menus. More than one layout can be

@@ -107,10 +107,11 @@ Codebase facts this plan relies on (verified against the actual code, not assump
   (e.g. "Requires Pro plan"), not silently hidden — so an admin understands why a toggle is greyed
   out rather than assuming a bug.
 - "MD needs to be updated to add any new pages" — this becomes a **standing rule**, not a one-time
-  task: every stage from here on that ships a new portal page (Reporting Groups in Stage 16, Variants
-  & Combos in Stage 22, Invoices already has a key) must add its `page_key` to
+  task: every stage from here on that ships a new portal page (Reporting Groups in Stage 16,
+  Modifiers in Stage 22, Invoices already has a key) must add its `page_key` to
   `app/constants/pages.py` and to `ROLE_MODEL.md` §6's table in the *same commit* that ships the page.
-  Call this out explicitly in each future stage's PR description as a checklist item.
+  Call this out explicitly in each future stage's PR description as a checklist item. (Variants do
+  **not** get a page key — see Stage 22 below, redrafted to nest them inline on the Products page.)
 
 **Depends on:** Stage 15 (already built). Should land before or alongside Stage 16 so the
 `reporting_groups` page key has somewhere to be managed from.
@@ -138,7 +139,7 @@ round-tripping cleanly through Excel for bulk edits. CSV can't do any of that.
   into Stage 24 instead — same underlying change either way; doing it here means Stage 19 isn't
   blocked waiting on Stage 24.)
 - Shared `export_service.py` / `import_service.py`, built once, reused for Products, Categories,
-  Reporting Groups now and Variants/Combos in Stage 22:
+  Reporting Groups now and Variants/Modifiers in Stage 22:
   - **Template export**: header row + one example row + Excel data-validation dropdowns for any
     foreign-key-ish column (category name, reporting group name).
   - **Full export**: current table's data, respecting whatever filters are active on the page (ties
@@ -216,7 +217,7 @@ layout.
 
 ---
 
-## Stage 22 — Variants & Combos Portal Pages
+## Stage 22 — Modifiers Portal Page + Inline Product Variants (redrafted)
 
 **Original ask:**
 > "Variant, Modifiers and Combos need to be added to the Management portal menu and have filters
@@ -228,24 +229,55 @@ layout.
 > "Variants link to products and need to be able to reference that link in both the product and the
 > Variant."
 
-**Resolved decisions (from review):**
-- **One combined portal page** for Variants + Combos (single sidebar entry). **Modifiers are
-  excluded** — they stay edited inline within the Product page, as they already conceptually are
-  today, per the user's read that Modifiers are "more relevant under editing a product."
-  `variants_modifiers` and `combos` page keys already exist in the permission catalog from Stage 15;
-  Modifiers doesn't get its own page key since it doesn't get its own page.
-- **`display_name` applies to Variants and Combos only, not Modifiers** (explicitly confirmed).
+**Original resolved decisions (superseded — kept for history):** one combined Variants+Combos page
+with Modifiers excluded (inline on the Product page). Reopened and reversed in review — see below.
+
+**Revised decisions:**
+- **Combos dropped from the portal plan entirely.** Combos become part of the Modifiers design
+  instead, to be scoped in a later pass. Nothing changes in the backend for now:
+  `product_combo_groups`/`product_combo_options`, `combos.py`, `combo_service.py` all stay as built
+  in Stage 9. No `ref`, no `display_name`, no portal page for Combos in this stage. The `combos` page
+  key is retired from the catalog (`ROLE_MODEL.md` §6).
+- **Variants get no standalone portal page.** They render as nested rows directly under their parent
+  product in the Products table — indented, `↳`-style connector (per the reviewed mock), same table,
+  same filters, same inline-edit pattern the product rows already use (Stage 20). No new page key;
+  visibility is governed by the existing `products` grant. They keep `ref` (`VAR-000001`) and
+  `display_name`, since both are still useful — `ref` for import/export row-matching, `display_name`
+  for the nested-row label shown in place of the internal `name`.
+- **Modifiers get their own dedicated portal page** — the treatment originally reserved for
+  Variants/Combos flips onto Modifiers instead. New page key `modifiers` (replacing the old
+  `variants_modifiers` placeholder). `ref` (`MOD-000001`) and `display_name` apply to `ModifierGroup`
+  (the page-level entity, same level as Product) — not to `ModifierOption`, which stays a plain
+  name + price_delta_cents sub-row, mirroring how Variant attribute values aren't independently
+  ref'd either.
+- Modifiers are **configured on their own page, then attached to products** — not edited inline on
+  the Product page as originally planned. The existing `product_modifier_group_links` M:N join
+  already models this; the new work is a picker UI on the product side (product edit form or a new
+  Product detail surface) to link/unlink `ModifierGroup`s, plus the Modifiers page itself.
 
 **Build plan:**
-- New `ref` sequences: `VAR-000001` (Variant), `CMB-000001` (Combo) — same migration-`0013` mechanism.
-- New `display_name` column on `Variant` and `Combo` (nullable, portal shows it in place of the
-  internal `name` when set).
-- Cross-linking: `Variant.product_id` already exists — surface it as a visible "linked product" on
-  the Variant row/detail, and show the product's variants (with links) on the Product detail/table.
-  Portal-only change, no new schema needed for this part.
-- Combined Variants+Combos portal page: one table (or a two-tab single page — implementation detail,
-  either satisfies "combined"), `ref` + `display_name` columns, filters (by linked product, by active
-  state), inline edit, import/export via Stage 19's framework.
+- New `ref` sequence: `VAR-000001` (Variant) — unchanged from the original plan, same
+  migration-`0013` mechanism. New `display_name` column on `Variant` (nullable).
+- Products table (`ProductsPage.tsx`): expand each product row into its variant rows inline —
+  indented name, `ref`/`display_name`, price override (falls back to product price when NULL),
+  active-state, inline-editable like the existing product cells. No separate sidebar entry.
+- New `ref` sequence: `MOD-000001` (ModifierGroup), same mechanism. New `display_name` column on
+  `ModifierGroup` (nullable).
+- New Modifiers portal page (sidebar entry, `page_key` = `modifiers`): table of `ModifierGroup`s with
+  `ref` + `display_name` columns, filters (active state, text search), inline edit (name,
+  display_name, min/max selections, active), import/export via Stage 19's framework. `ModifierOption`
+  rows nest under their group the same way Variants nest under Products, for visual consistency.
+- Attach-to-product picker: on the product side, a multi-select against existing `ModifierGroup`s
+  that writes/removes rows in `product_modifier_group_links` — no new schema.
+- Cross-linking: `Variant.product_id` already exists — surface it as the nested-row relationship
+  described above; no separate "linked product" detail view needed since Variants have no standalone
+  page to show it on.
+- `app/constants/pages.py`: retire `variants_modifiers` and `combos`, add `modifiers`.
+  `app/constants/license_plans.py`: `PRO_PLAN_PAGES` updated to reference `modifiers` instead of the
+  two retired keys. Both done ahead of the rest of the build (low-risk placeholder correction).
+
+**Deferred:** Combos redesign (folded into Modifiers) — not scoped yet, comes back as its own future
+stage once the user defines it.
 
 **Depends on:** Stage 19 (import/export framework).
 

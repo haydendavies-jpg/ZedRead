@@ -324,7 +324,7 @@ management-scoped `GET /sites` (or similar) is added for another stage.
   query + row-mapping functions, hidden-sheet data-validation dropdowns) and
   `app/services/import_service.py` (XLSX parsing, value coercion, validate-then-upsert per row) —
   built once, reused across Products, Categories, and Reporting Groups; the same two modules are
-  designed to be reused again for Variants/Combos in Stage 22.
+  designed to be reused again for Variants and Modifiers in Stage 22.
 - [x] Products/Categories/Reporting Groups import matches existing rows by `ref`; a blank `ref`
   creates a new record via the same `*Create` schema and service function the direct API uses.
   Partial-update semantics: only columns present in the uploaded header row are touched — routed
@@ -435,15 +435,25 @@ list, matching how every other portal list page filters.
 - [ ] PDF export: standard invoice layout (recommend `weasyprint`, HTML/CSS-authored layout — no
   existing PDF generation to match style against)
 
-### Stage 22 — Variants & Combos Portal Pages 🔜
+### Stage 22 — Modifiers Portal Page + Inline Product Variants 🔜 (redrafted)
+
+**Combos dropped from this stage** — folded into a future Modifiers redesign, to be scoped
+separately later. `product_combo_groups`/`product_combo_options` and `combos.py`/`combo_service.py`
+are untouched; no `ref`, no `display_name`, no portal page for Combos in this stage.
 
 **Deliverables:**
-- [ ] `ref` sequences for Variants (`VAR-000001`) and Combos (`CMB-000001`)
-- [ ] `display_name` field on `Variant` and `Combo` (not Modifiers — Modifiers stay edited inline on
-  the Product page, no separate sidebar entry)
-- [ ] Combined portal page: Variants + Combos in one sidebar entry, filters (by product, active state),
-  inline edit, import/export via Stage 19 framework
-- [ ] Product page/table shows linked variants; Variant page shows its linked product
+- [ ] `ref` sequence for Variants (`VAR-000001`) — unchanged from the original plan
+- [ ] `display_name` field on `Variant` (nullable, shown in place of internal `name` on the nested row)
+- [ ] Products table (`ProductsPage.tsx`, Stage 20) gains nested variant rows: each product's
+  variants render as indented child rows directly beneath it (`↳`-style connector), inline-editable,
+  no separate sidebar entry or page key — governed by the `products` page grant
+- [ ] `ref` sequence for Modifiers (`MOD-000001`) and `display_name` field, both on `ModifierGroup`
+- [ ] New dedicated Modifiers portal page (own sidebar entry, `page_key` = `modifiers`): filters,
+  inline edit, import/export via Stage 19 framework — same table UX as Products/Categories
+- [ ] Attach-to-product UI: picker on the Product side to link/unlink `ModifierGroup`s via the
+  existing `product_modifier_group_links` M:N join (no schema change)
+- [ ] `app/constants/pages.py` / `license_plans.py` updated: `variants_modifiers` + `combos` retired,
+  replaced by a single `modifiers` key (done ahead of build — see `ROLE_MODEL.md` §6)
 
 ---
 
