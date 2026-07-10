@@ -104,10 +104,10 @@ async def test_list_invoice_reports_wrong_site_returns_403(
 
 
 @pytest.mark.asyncio
-async def test_list_invoice_reports_no_auth_returns_401(client: AsyncClient) -> None:
-    """No Authorization header returns 401."""
+async def test_list_invoice_reports_no_auth_returns_403(client: AsyncClient) -> None:
+    """No Authorization header returns 403 (FastAPI's HTTPBearer default for a missing header)."""
     resp = await client.get("/invoice-reports")
-    assert resp.status_code == 401
+    assert resp.status_code == 403
 
 
 # ── Detail view ───────────────────────────────────────────────────────────────
