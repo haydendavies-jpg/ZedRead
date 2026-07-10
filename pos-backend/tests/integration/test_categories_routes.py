@@ -103,6 +103,57 @@ async def test_update_category_reporting_group_writes_audit_log(
     assert row.actor_id == test_user.id
 
 
+# ── Stage 20 — include_inactive ──────────────────────────────────────────────
+
+
+async def test_list_categories_excludes_inactive_by_default(
+    client, db, mgmt_auth_headers, test_brand, test_reporting_group
+):
+    """GET /categories omits deactivated categories unless include_inactive=true."""
+    create_resp = await client.post(
+        "/categories",
+        json={"name": "Seasonal", "brand_id": str(test_brand.id)},
+        headers=mgmt_auth_headers,
+    )
+    category_id = create_resp.json()["id"]
+    await client.patch(
+        f"/categories/{category_id}", json={"is_active": False}, headers=mgmt_auth_headers
+    )
+
+    response = await client.get(
+        "/categories", params={"brand_id": str(test_brand.id)}, headers=mgmt_auth_headers
+    )
+
+    assert response.status_code == 200
+    ids = [c["id"] for c in response.json()]
+    assert category_id not in ids
+
+
+async def test_list_categories_include_inactive_returns_deactivated_row(
+    client, db, mgmt_auth_headers, test_brand, test_reporting_group
+):
+    """GET /categories?include_inactive=true includes deactivated categories."""
+    create_resp = await client.post(
+        "/categories",
+        json={"name": "Seasonal", "brand_id": str(test_brand.id)},
+        headers=mgmt_auth_headers,
+    )
+    category_id = create_resp.json()["id"]
+    await client.patch(
+        f"/categories/{category_id}", json={"is_active": False}, headers=mgmt_auth_headers
+    )
+
+    response = await client.get(
+        "/categories",
+        params={"brand_id": str(test_brand.id), "include_inactive": "true"},
+        headers=mgmt_auth_headers,
+    )
+
+    assert response.status_code == 200
+    row = next(c for c in response.json() if c["id"] == category_id)
+    assert row["is_active"] is False
+
+
 # ── Auth failures ─────────────────────────────────────────────────────────────
 
 

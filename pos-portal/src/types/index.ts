@@ -191,6 +191,7 @@ export interface PaginationParams {
 
 export interface Category {
   id: string
+  ref: string
   brand_id: string
   reporting_group_id: string
   name: string
@@ -253,18 +254,28 @@ export interface TaxRate {
 
 export interface Product {
   id: string
+  ref: string
   brand_id: string
   category_id: string
   tax_category_id: string | null
-  sku: string | null
   name: string
   description: string | null
+  print_name: string | null
+  effective_print_name: string
   base_price_cents: number
   price_ex_cents: number
   is_taxable: boolean
+  is_open_item: boolean
+  photo_url: string | null
   display_order: number
   is_active: boolean
-  created_at: string
+}
+
+/** GET /products row shape — Product plus its joined Category/Reporting Group names (Stage 20). */
+export interface ProductListItem extends Product {
+  category_name: string
+  reporting_group_id: string
+  reporting_group_name: string
 }
 
 // ── Access grant types ────────────────────────────────────────────────────────

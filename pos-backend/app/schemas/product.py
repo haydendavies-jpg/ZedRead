@@ -61,6 +61,18 @@ class ProductResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ProductListItem(ProductResponse):
+    """
+    Response schema for GET /products — ProductResponse plus joined Category and
+    Reporting Group names (Stage 20 table view). Not denormalized onto the
+    Product row itself; resolved via a join in product_service.list_products().
+    """
+
+    category_name: str
+    reporting_group_id: uuid.UUID
+    reporting_group_name: str
+
+
 class SiteProductOverrideSet(BaseModel):
     """Payload for PUT /site-overrides/{site_id}/{product_id}."""
 

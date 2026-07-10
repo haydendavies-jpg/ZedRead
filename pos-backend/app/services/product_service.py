@@ -26,6 +26,7 @@ from app.constants.audit_actions import (
 )
 from app.constants.statuses import ActorType
 from app.models.category import Category
+from app.models.reporting_group import ReportingGroup
 from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.product import Product
@@ -168,9 +169,13 @@ async def list_products(
     category_id: uuid.UUID | None = None,
     skip: int = 0,
     limit: int = 50,
-) -> list[Product]:
+    include_inactive: bool = False,
+) -> list[tuple[Product, str, uuid.UUID, str]]:
     """
-    Return a paginated list of active products for a brand.
+    Return a paginated list of products for a brand, joined to their Category and Reporting Group.
+
+    The join surfaces the Category name and Reporting Group id/name for the Stage 20
+    table view without denormalizing either onto the Product row.
 
     Args:
         db: Active database session.
@@ -178,22 +183,30 @@ async def list_products(
         category_id: Optional filter — only products in this category.
         skip: Pagination offset.
         limit: Maximum rows to return.
+        include_inactive: When True, also return soft-deleted products (Stage 20 table
+            view filters active/inactive client-side rather than via a repeat API call).
 
     Returns:
-        list[Product]: Active products ordered by display_order then name.
+        list[tuple[Product, str, uuid.UUID, str]]: Each tuple is
+            (product, category_name, reporting_group_id, reporting_group_name),
+            ordered by display_order then name.
     """
     query = (
-        select(Product)
-        .where(Product.brand_id == brand_id, Product.is_active == True)  # noqa: E712
+        select(Product, Category.name, Category.reporting_group_id, ReportingGroup.name)
+        .join(Category, Product.category_id == Category.id)
+        .join(ReportingGroup, Category.reporting_group_id == ReportingGroup.id)
+        .where(Product.brand_id == brand_id)
         .order_by(Product.display_order, Product.name)
         .offset(skip)
         .limit(limit)
     )
+    if not include_inactive:
+        query = query.where(Product.is_active == True)  # noqa: E712
     if category_id is not None:
         query = query.where(Product.category_id == category_id)
 
     result = await db.execute(query)
-    return list(result.scalars().all())
+    return [tuple(row) for row in result.all()]
 
 
 async def get_product(
@@ -439,7 +452,8 @@ async def set_product_active_state(
     Unlike deactivate_product(), this is idempotent — setting the flag to its
     current value is a silent no-op rather than a 409 conflict, since bulk
     imports (Stage 19) commonly re-upload a full export where most rows are
-    unchanged. Used only by import_service.py; the dedicated DELETE route
+    unchanged. Used by import_service.py, and by the portal's
+    POST /products/{id}/activate route (Stage 20) — the dedicated DELETE route
     keeps using deactivate_product() for its stricter 409-on-repeat semantics.
 
     Args:

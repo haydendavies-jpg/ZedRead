@@ -1,4 +1,8 @@
-/** Catalog products management page — list, create, edit, deactivate products. */
+/** Catalog products management page — list, create, edit, deactivate products.
+ *
+ * Stage 20: table shows joined Category + Reporting Group columns, supports
+ * inline cell edit (name, category, price, status) and a shared filter bar.
+ */
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -6,7 +10,11 @@ import { api } from '../../api/axios'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { Modal } from '../../components/Modal'
 import { StatusBadge } from '../../components/StatusBadge'
-import type { Product, Category } from '../../types'
+import { EntityIdChip } from '../../components/EntityIdChip'
+import { EditableText, EditableSelect } from '../../components/EditableCell'
+import { FilterBar, type FilterConfig } from '../../components/FilterBar'
+import { apiErrorMessage } from '../../utils/apiError'
+import type { Product, ProductListItem, Category, ReportingGroup } from '../../types'
 
 function centsToDisplay(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
@@ -16,27 +24,92 @@ export function ProductsPage() {
   const qc = useQueryClient()
   const brandId = useMgmtBrandId()
   const [showCreate, setShowCreate] = useState(false)
-  const [editing, setEditing] = useState<Product | null>(null)
+  const [editing, setEditing] = useState<ProductListItem | null>(null)
+
+  const [search, setSearch] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [reportingGroupFilter, setReportingGroupFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
 
   const params = brandId ? { brand_id: brandId } : {}
 
-  const { data: products = [], isLoading } = useQuery<Product[]>({
+  const { data: products = [], isLoading } = useQuery<ProductListItem[]>({
     queryKey: ['products', brandId],
-    queryFn: () => api.get('/products', { params }).then((r) => r.data),
+    queryFn: () => api.get('/products', { params: { ...params, include_inactive: true, limit: 200 } }).then((r) => r.data),
     enabled: brandId !== undefined,
   })
 
   const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ['categories', brandId],
-    queryFn: () => api.get('/categories', { params }).then((r) => r.data),
+    queryFn: () => api.get('/categories', { params: { ...params, limit: 200 } }).then((r) => r.data),
     enabled: !!brandId,
   })
 
-  const deactivate = useMutation({
-    mutationFn: (id: string) =>
-      api.delete(`/products/${id}`, { params }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['products', brandId] }),
+  const { data: reportingGroups = [] } = useQuery<ReportingGroup[]>({
+    queryKey: ['reporting-groups', brandId],
+    queryFn: () => api.get('/reporting-groups', { params: { ...params, limit: 200 } }).then((r) => r.data),
+    enabled: !!brandId,
   })
+
+  const invalidateList = () => qc.invalidateQueries({ queryKey: ['products', brandId] })
+
+  const patch = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
+      api.patch(`/products/${id}`, body, { params }),
+    onSuccess: invalidateList,
+    onError: invalidateList,
+  })
+
+  const deactivate = useMutation({
+    mutationFn: (id: string) => api.delete(`/products/${id}`, { params }),
+    onSuccess: invalidateList,
+    onError: invalidateList,
+  })
+
+  const activate = useMutation({
+    mutationFn: (id: string) => api.post(`/products/${id}/activate`, {}, { params }),
+    onSuccess: invalidateList,
+    onError: invalidateList,
+  })
+
+  const categoryOptions = categories.map((c) => ({ value: c.id, label: c.name }))
+
+  const filtered = products.filter((p) => {
+    if (search && !p.name.toLowerCase().includes(search.toLowerCase()) && !p.ref.toLowerCase().includes(search.toLowerCase())) return false
+    if (categoryFilter && p.category_id !== categoryFilter) return false
+    if (reportingGroupFilter && p.reporting_group_id !== reportingGroupFilter) return false
+    if (statusFilter === 'active' && !p.is_active) return false
+    if (statusFilter === 'inactive' && p.is_active) return false
+    return true
+  })
+
+  const hasFilters = !!(search || categoryFilter || reportingGroupFilter || statusFilter)
+  const clearFilters = () => { setSearch(''); setCategoryFilter(''); setReportingGroupFilter(''); setStatusFilter('') }
+
+  const filters: FilterConfig[] = [
+    {
+      label: 'Category',
+      value: categoryFilter,
+      onChange: setCategoryFilter,
+      options: [{ value: '', label: 'All categories' }, ...categoryOptions],
+    },
+    {
+      label: 'Reporting Group',
+      value: reportingGroupFilter,
+      onChange: setReportingGroupFilter,
+      options: [{ value: '', label: 'All reporting groups' }, ...reportingGroups.map((g) => ({ value: g.id, label: g.name }))],
+    },
+    {
+      label: 'Status',
+      value: statusFilter,
+      onChange: setStatusFilter,
+      options: [
+        { value: '', label: 'All statuses' },
+        { value: 'active', label: 'Active' },
+        { value: 'inactive', label: 'Inactive' },
+      ],
+    },
+  ]
 
   if (!brandId) {
     return (
@@ -61,62 +134,99 @@ export function ProductsPage() {
       {isLoading ? (
         <p className="text-sm text-gray-400">Loading…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
-          <table className="w-full text-sm min-w-[500px]">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Price (inc.)</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Price (ex.)</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Tax</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {products.map((p) => (
-                <tr key={p.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">{p.name}</td>
-                  <td className="px-4 py-3 text-gray-700">{centsToDisplay(p.base_price_cents)}</td>
-                  <td className="px-4 py-3 text-gray-500">{centsToDisplay(p.price_ex_cents)}</td>
-                  <td className="px-4 py-3">
-                    {p.is_taxable ? (
-                      <span className="text-xs text-gray-700">Taxed</span>
-                    ) : (
-                      <span className="text-xs text-gray-500">Tax free</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={p.is_active ? "active" : "disabled"} />
-                  </td>
-                  <td className="px-4 py-3 text-right space-x-2">
-                    <button
-                      onClick={() => setEditing(p)}
-                      className="text-brand-600 hover:text-brand-800 text-xs font-medium"
-                    >
-                      Edit
-                    </button>
-                    {p.is_active && (
-                      <button
-                        onClick={() => deactivate.mutate(p.id)}
-                        className="text-red-500 hover:text-red-700 text-xs font-medium"
-                      >
-                        Deactivate
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {products.length === 0 && (
+        <>
+          <FilterBar
+            search={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search by name or code…"
+            filters={filters}
+            hasFilters={hasFilters}
+            onClear={clearFilters}
+            resultCount={filtered.length}
+            totalCount={products.length}
+          />
+
+          <div className="overflow-x-auto rounded-xl border border-gray-200">
+            <table className="w-full text-sm min-w-[900px]">
+              <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
-                    No products yet.
-                  </td>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">ID</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Category</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Reporting Group</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Price (inc.)</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Price (ex.)</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Tax</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+                  <th className="px-4 py-3" />
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filtered.map((p) => (
+                  <tr key={p.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3"><EntityIdChip id={p.id} ref={p.ref} /></td>
+                    <td className="px-4 py-3 font-medium text-gray-900">
+                      <EditableText
+                        value={p.name}
+                        onSave={async (v) => { await patch.mutateAsync({ id: p.id, body: { name: v } }) }}
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">
+                      <EditableSelect
+                        value={p.category_id}
+                        options={categoryOptions}
+                        onSave={async (v) => { await patch.mutateAsync({ id: p.id, body: { category_id: v } }) }}
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-gray-500">{p.reporting_group_name}</td>
+                    <td className="px-4 py-3 text-gray-700">
+                      <EditableText
+                        value={(p.base_price_cents / 100).toFixed(2)}
+                        type="number"
+                        formatDisplay={() => centsToDisplay(p.base_price_cents)}
+                        onSave={async (v) => {
+                          const cents = Math.round(parseFloat(v) * 100)
+                          if (isNaN(cents) || cents < 0) throw new Error('Price must be a valid positive number.')
+                          await patch.mutateAsync({ id: p.id, body: { base_price_cents: cents } })
+                        }}
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-gray-500">{centsToDisplay(p.price_ex_cents)}</td>
+                    <td className="px-4 py-3">
+                      {p.is_taxable ? (
+                        <span className="text-xs text-gray-700">Taxed</span>
+                      ) : (
+                        <span className="text-xs text-gray-500">Tax free</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge
+                        status={p.is_active ? 'active' : 'disabled'}
+                        title={p.is_active ? 'Click to deactivate' : 'Click to activate'}
+                        onClick={() => (p.is_active ? deactivate.mutate(p.id) : activate.mutate(p.id))}
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => setEditing(p)}
+                        className="text-brand-600 hover:text-brand-800 text-xs font-medium"
+                      >
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
+                      {products.length === 0 ? 'No products yet.' : 'No products match the current filters.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {(showCreate || editing) && (
@@ -126,7 +236,7 @@ export function ProductsPage() {
           categories={categories}
           onClose={() => { setShowCreate(false); setEditing(null) }}
           onSaved={() => {
-            qc.invalidateQueries({ queryKey: ['products', brandId] })
+            invalidateList()
             setShowCreate(false)
             setEditing(null)
           }}
@@ -198,8 +308,7 @@ function ProductFormModal({ product, brandId, categories, onClose, onSaved }: Pr
       }
       onSaved()
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(msg ?? 'Failed to save product.')
+      setError(apiErrorMessage(err, 'Failed to save product.'))
     } finally {
       setSaving(false)
     }

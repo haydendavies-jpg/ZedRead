@@ -57,26 +57,32 @@ async def list_categories(
     brand_id: uuid.UUID,
     skip: int = 0,
     limit: int = 200,
+    include_inactive: bool = False,
 ) -> list[Category]:
     """
-    List active categories for a brand, paginated.
+    List categories for a brand, paginated.
 
     Args:
         db: Active database session.
         brand_id: UUID of the brand to list categories for.
         skip: Pagination offset.
         limit: Maximum number of categories to return.
+        include_inactive: When True, also return soft-deleted categories (Stage 20
+            table view filters active/inactive client-side rather than via a repeat API call).
 
     Returns:
-        list[Category]: Active categories ordered by display_order.
+        list[Category]: Categories ordered by display_order.
     """
-    result = await db.execute(
+    query = (
         select(Category)
-        .where(Category.brand_id == brand_id, Category.is_active == True)  # noqa: E712
+        .where(Category.brand_id == brand_id)
         .order_by(Category.display_order, Category.name)
         .offset(skip)
         .limit(limit)
     )
+    if not include_inactive:
+        query = query.where(Category.is_active == True)  # noqa: E712
+    result = await db.execute(query)
     return list(result.scalars().all())
 
 

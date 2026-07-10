@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.schemas.import_export import ImportSummary
-from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate
+from app.schemas.product import ProductCreate, ProductListItem, ProductResponse, ProductUpdate
 from app.services import export_service, import_service, product_service
 from app.services.import_service import InvalidWorkbookError
 from app.utils.dependencies import CatalogAccess, resolve_catalog_access
@@ -18,34 +18,46 @@ router = APIRouter(prefix="/products", tags=["products"])
 _XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-@router.get("", response_model=list[ProductResponse], status_code=status.HTTP_200_OK)
+@router.get("", response_model=list[ProductListItem], status_code=status.HTTP_200_OK)
 async def list_products(
     category_id: uuid.UUID | None = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
+    include_inactive: bool = Query(False, description="Include soft-deleted products (Stage 20 table view)"),
     brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
-) -> list[ProductResponse]:
+) -> list[ProductListItem]:
     """
-    List active products for the authenticated user's brand.
+    List products for the authenticated user's brand, joined to Category and Reporting Group.
 
-    Optionally filter by category_id.
+    Optionally filter by category_id. Excludes soft-deleted products unless
+    include_inactive is set.
 
     Args:
         category_id: Optional category filter.
         skip: Pagination offset.
         limit: Maximum number of products to return.
+        include_inactive: Include soft-deleted products.
         access: Resolved catalog access (POS, management, or portal).
         db: Active database session.
 
     Returns:
-        list[ProductResponse]: Active products ordered by display_order then name.
+        list[ProductListItem]: Products ordered by display_order then name, each
+            carrying its joined category_name, reporting_group_id, and reporting_group_name.
     """
-    products = await product_service.list_products(
-        db, access.effective_brand_id(brand_id), category_id, skip, limit
+    rows = await product_service.list_products(
+        db, access.effective_brand_id(brand_id), category_id, skip, limit, include_inactive
     )
-    return [ProductResponse.model_validate(p) for p in products]
+    return [
+        ProductListItem(
+            **ProductResponse.model_validate(product).model_dump(),
+            category_name=category_name,
+            reporting_group_id=reporting_group_id,
+            reporting_group_name=reporting_group_name,
+        )
+        for product, category_name, reporting_group_id, reporting_group_name in rows
+    ]
 
 
 @router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
@@ -231,6 +243,32 @@ async def deactivate_product(
     """
     product = await product_service.deactivate_product(
         db, access.effective_brand_id(brand_id), product_id, access.actor_user
+    )
+    return ProductResponse.model_validate(product)
+
+
+@router.post(
+    "/{product_id}/activate", response_model=ProductResponse, status_code=status.HTTP_200_OK
+)
+async def activate_product(
+    product_id: uuid.UUID,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> ProductResponse:
+    """
+    Reactivate a previously deactivated product (idempotent — Stage 20 table view).
+
+    Args:
+        product_id: UUID of the product to reactivate.
+        access: Resolved catalog access (POS, management, or portal).
+        db: Active database session.
+
+    Returns:
+        ProductResponse: The reactivated product.
+    """
+    product = await product_service.set_product_active_state(
+        db, access.effective_brand_id(brand_id), product_id, True, access.actor_user
     )
     return ProductResponse.model_validate(product)
 

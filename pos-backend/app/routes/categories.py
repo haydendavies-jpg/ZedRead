@@ -27,25 +27,27 @@ _XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.
 async def list_categories(
     skip: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=500),
+    include_inactive: bool = Query(False, description="Include soft-deleted categories (Stage 20 table view)"),
     brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> list[CategoryOut]:
     """
-    List active categories for the authenticated user's brand.
+    List categories for the authenticated user's brand.
 
     Args:
         skip: Pagination offset.
         limit: Maximum number of categories to return.
+        include_inactive: Include soft-deleted categories.
         brand_id: Required for portal admin or group-scope access.
         access: Resolved catalog access.
         db: Active database session.
 
     Returns:
-        list[CategoryOut]: Active categories ordered by display_order.
+        list[CategoryOut]: Categories ordered by display_order.
     """
     effective_brand_id = access.effective_brand_id(brand_id)
-    cats = await category_service.list_categories(db, effective_brand_id, skip, limit)
+    cats = await category_service.list_categories(db, effective_brand_id, skip, limit, include_inactive)
     return [CategoryOut.model_validate(c) for c in cats]
 
 

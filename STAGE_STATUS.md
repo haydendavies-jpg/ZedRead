@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-10 (Stage 19)
+Last updated: 2026-07-10 (Stage 20)
 
 ---
 
@@ -13,7 +13,7 @@ Last updated: 2026-07-10 (Stage 19)
 | 3 — Transactions | 10–12 | ✅ Complete |
 | 4 — Identity & Permissions Redesign | 15 | ✅ Complete |
 | 5 — Catalog Foundations | 16–18 | ✅ Complete |
-| 6 — Catalog Data & Table UX | 19–20 | 🚧 In Progress (Stage 19 done) |
+| 6 — Catalog Data & Table UX | 19–20 | ✅ Complete |
 | 7 — Invoices & Extended Catalog | 21–22 | 🔜 Planned |
 | 8 — POS Menu Builder | 23 | 🔜 Planned |
 | 9 — Product Model Extensions | 24 | ✅ Complete |
@@ -364,13 +364,62 @@ deferred to Stage 20 — that stage's filter bars don't exist yet, so `GET /{res
 currently exports all of the brand's rows unconditionally (matching what `list_*` already returns
 without filters). Revisit once Stage 20 ships filter query params.
 
-### Stage 20 — Table UX 🔜
+### Stage 20 — Table UX ✅
 
 **Deliverables:**
-- [ ] Products table: Reporting Group + Category columns (via join, no denormalization)
-- [ ] Inline cell edit on Products/Categories/Reporting-Groups tables
-- [ ] Filter bar (category, reporting group, active/inactive, text search) reused across all three pages
-- [ ] Filter bar `flex-wrap`s at 375px (CLAUDE.md rule 16)
+- [x] Products table: Reporting Group + Category columns, resolved via a join in
+  `product_service.list_products()` (`select(Product, Category.name, Category.reporting_group_id,
+  ReportingGroup.name).join(...)`) — not denormalized onto the `products` row, so a category's
+  reporting-group reassignment is reflected immediately with no sync-drift risk. New
+  `ProductListItem` response schema (`app/schemas/product.py`) extends `ProductResponse` with
+  `category_name` / `reporting_group_id` / `reporting_group_name`, used only by `GET /products`.
+- [x] `GET /products` and `GET /categories` gained `include_inactive` (default `False`, back-compat
+  preserved) so the Stage 20 table views can fetch the full active+inactive set once and filter
+  active/inactive client-side, matching the portal's established client-side-filtering convention
+  (no repeat API calls per filter change).
+- [x] New `POST /products/{id}/activate` route reusing the existing (Stage 19) idempotent
+  `set_product_active_state()` service function — needed once inactive products became visible in
+  the table, so there had to be a way back. Categories already supported reactivation via the
+  existing `PATCH /categories/{id} {is_active: true}` path (`update_category()`), no backend change
+  needed there.
+- [x] Inline cell edit — click-to-edit for text/number cells (`EditableText`), always-inline commit-
+  on-change for dropdowns (`EditableSelect`), both in `pos-portal/src/components/EditableCell.tsx`.
+  Wired up alongside (not replacing) the existing modal-based create flow, per the stage plan:
+  - Products: Name, Category (select), Price (inc.) inline; Reporting Group is read-only in the
+    row (derived through Category, no direct FK to edit); Status is a clickable `StatusBadge` that
+    calls the DELETE (deactivate) or new activate route. The "Edit" modal remains for
+    description/tax-mode/open-item fields that have no table column.
+  - Categories: Name and Reporting Group inline (both disabled for system categories); Status
+    toggle disabled for system categories (matches the existing 403 rule). The old separate
+    rename modal is gone — nothing was left for it to do once both its fields became inline-editable
+    — only the create modal remains.
+  - Reporting Groups: Name inline (disabled for the system default group). Same simplification —
+    the old rename modal is gone, only create + delete remain.
+  - `StatusBadge` (`pos-portal/src/components/StatusBadge.tsx`) gained an optional `onClick`/
+    `disabled` — renders as a button only when a handler is passed, so its many existing read-only
+    usages (Groups/Brands/Sites/Licenses/Users) are unaffected.
+- [x] Shared `FilterBar` component (`pos-portal/src/components/FilterBar.tsx`): free-text search
+  (matches name or `ref` code) + any number of labeled select filters + a "Clear filters" link + an
+  `X of Y` count chip, following the label-above-control convention already established on
+  `SitesPage.tsx`. Reused as-is across Products (category, reporting group, status filters),
+  Categories (reporting group, status filters), and Reporting Groups (type filter). All filtering is
+  client-side against the already-fetched list, consistent with every other portal list page.
+  `flex flex-wrap` on the bar's outer container — verified at 375px (CLAUDE.md rule 16).
+- [x] `pos-portal/src/types/index.ts` — `Category` was missing `ref`; `Product` had drifted from
+  `ProductResponse` (stale `sku`/`created_at` fields that don't exist on the backend schema; missing
+  `ref`/`print_name`/`effective_print_name`/`is_open_item`/`photo_url`). Both fixed, plus the new
+  `ProductListItem` type for the joined list-row shape.
+- [x] Backend integration tests: `test_product_routes.py` (joined columns present on list rows,
+  `include_inactive` default-excludes/includes, `/activate` reactivates + is idempotent + writes
+  `PRODUCT_REACTIVATED`), `test_categories_routes.py` (`include_inactive` default-excludes/includes).
+
+**Known limitation:** the portal has no Import/Export UI yet for the Stage 19 XLSX routes (no
+"Export"/"Import" buttons exist on any of the three pages — Stage 19 only built the backend). The
+stage plan's note that "full export uses active filters" therefore doesn't apply yet: there's no
+export button to wire a filter query string into. Revisit if/when the Stage 19 XLSX routes get a
+portal entry point — until then `GET /{resource}/export` continues to export the brand's full
+unconditional set, and the Stage 20 filter bars remain client-side-only against the already-fetched
+list, matching how every other portal list page filters.
 
 ---
 

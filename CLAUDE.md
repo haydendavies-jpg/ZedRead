@@ -57,26 +57,17 @@ data-validation dropdowns, full export, validate-then-upsert import) for Product
 Reporting Groups, keyed on each entity's `ref` code with partial-update semantics (only columns
 present in the uploaded header row are touched). `categories.ref` is now wired into the ORM/schema,
 joining the already-wired `products.ref` (Stage 24) and `reporting_groups.ref` (Stage 16). See
-`STAGE_STATUS.md` for full deliverables. **Stage 20 is current (not yet started):** see
-`ROADMAP.md` Phase 6 for full detail. Do not begin Stage 21+ work yet.
+`STAGE_STATUS.md` for full deliverables.
 
-**Stages 16–24 scope (planned, not started):** see `ROADMAP.md` Phases 5–9 for full detail. Summary:
-- **16 — Reporting Groups:** brand-scoped, a level above Categories. Default group per brand
-  (system, undeletable); every Category has a required `reporting_group_id`, prompted on creation.
-  New sidebar page. Add `reporting_groups` page key to `app/constants/pages.py` and ROLE_MODEL.md §6.
-- **17 — Delegated User Creation:** a backend user can create Users only at or below their own scope
-  (site/brand/group) and can only grant a role/access level ≤ their own. Master User is never
-  delegable (see ROLE_MODEL.md §2).
-- **18 — Permission Scopes Portal UI:** first-ever portal UI for the Stage 15 page-permission system
-  (backend routes already exist, unused by the frontend). Every subsequent stage that adds a portal
-  page must add its `page_key` to the catalog and ROLE_MODEL.md §6 in the same commit.
-- **19 — Bulk Import/Export (XLSX):** shared import/export service for Products, Categories,
-  Reporting Groups, keyed on each entity's human-readable `ref` code; partial-update semantics
-  (only columns present in the uploaded header row are touched); template export includes
-  data-validation dropdowns for category/reporting-group columns.
-- **20 — Table UX:** Reporting Group + Category columns on the Products table; inline cell edit and
-  filter bars (category, reporting group, active state, text search) on Products/Categories/
-  Reporting-Groups pages.
+**Stage 20 — complete.** Products table gained Reporting Group + Category columns resolved via a
+join (no denormalization); Products/Categories/Reporting Groups all gained a shared `FilterBar`
+(category, reporting group, active state, name/code search) and click-to-edit inline cells (name,
+price, category, reporting group, active-state), alongside the existing modal-based create flow.
+See `STAGE_STATUS.md` for full deliverables. **Stage 21 is next (not yet started):** see
+`ROADMAP.md` Phase 7 for full detail. Do not begin Stage 22+ work yet.
+
+**Stages 21–24 scope (planned, not started):** see `ROADMAP.md` Phases 7–9 for full detail. Summary
+(Stages 16–20 above are complete — see their own paragraphs and `STAGE_STATUS.md`):
 - **21 — Invoice Reporting:** filtered list + XLSX export, detail view, PDF export (standard layout),
   and a change-log panel sourced from the existing `audit_logs` table filtered by
   `entity_type='invoice'` — no new table, `invoice_service.py` already audits every mutation with
