@@ -10,6 +10,7 @@ match exactly (case-insensitive) for that column to be recognised on import.
 """
 
 import uuid
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
 from typing import Any
@@ -22,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.category import Category
 from app.models.product import Product
 from app.models.reporting_group import ReportingGroup
+from app.services.invoice_report_service import fetch_invoice_report_rows_for_export
 
 # Header order is the on-disk column order for both template and full export.
 PRODUCT_COLUMNS: list[str] = [
@@ -38,6 +40,20 @@ PRODUCT_COLUMNS: list[str] = [
 ]
 CATEGORY_COLUMNS: list[str] = ["ref", "name", "reporting_group", "display_order", "is_active"]
 REPORTING_GROUP_COLUMNS: list[str] = ["ref", "name"]
+INVOICE_COLUMNS: list[str] = [
+    "id",
+    "site",
+    "invoice_type",
+    "status",
+    "created_at",
+    "subtotal",
+    "tax",
+    "discount",
+    "total",
+    "is_refunded",
+    "voided_at",
+    "paid_at",
+]
 
 _BOOL_LABELS = {True: "TRUE", False: "FALSE"}
 
@@ -362,3 +378,93 @@ async def build_reporting_groups_export(db: AsyncSession, brand_id: uuid.UUID) -
     """
     rows = await export_reporting_groups(db, brand_id)
     return _rows_to_workbook(REPORTING_GROUP_COLUMNS, rows, "Reporting Groups")
+
+
+# ── Invoices (Stage 21) ───────────────────────────────────────────────────────
+#
+# Read-only export — there is no matching import_invoices(); invoices are
+# created by the sale flow, not bulk-uploaded, so this reuses only the
+# workbook-building half of the Stage 19 framework.
+
+
+async def export_invoices(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    site_id: uuid.UUID | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    invoice_status: str | None = None,
+    min_amount_cents: int | None = None,
+    max_amount_cents: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Fetch filtered invoices for a brand as export-ready rows keyed by INVOICE_COLUMNS.
+
+    Filters mirror the invoice reporting list endpoint so "export the filtered
+    set" produces exactly what's on screen.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand to export invoices for.
+        site_id: Optional site filter.
+        start_date: Optional lower bound on created_at date (inclusive).
+        end_date: Optional upper bound on created_at date (inclusive).
+        invoice_status: Optional invoice status filter.
+        min_amount_cents: Optional lower bound on total_cents.
+        max_amount_cents: Optional upper bound on total_cents.
+
+    Returns:
+        list[dict]: One dict per invoice, ordered most-recent-first.
+    """
+    rows = await fetch_invoice_report_rows_for_export(
+        db, brand_id, site_id, start_date, end_date, invoice_status, min_amount_cents, max_amount_cents
+    )
+    return [
+        {
+            "id": str(row["id"]),
+            "site": row["site_name"],
+            "invoice_type": row["invoice_type"],
+            "status": row["status"],
+            "created_at": row["created_at"].isoformat(),
+            "subtotal": _cents_to_dollars_str(row["subtotal_cents"]),
+            "tax": _cents_to_dollars_str(row["tax_cents"]),
+            "discount": _cents_to_dollars_str(row["discount_cents"]),
+            "total": _cents_to_dollars_str(row["total_cents"]),
+            "is_refunded": _BOOL_LABELS[row["is_refunded"]],
+            "voided_at": row["voided_at"].isoformat() if row["voided_at"] else "",
+            "paid_at": row["paid_at"].isoformat() if row["paid_at"] else "",
+        }
+        for row in rows
+    ]
+
+
+async def build_invoices_export(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    site_id: uuid.UUID | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    invoice_status: str | None = None,
+    min_amount_cents: int | None = None,
+    max_amount_cents: int | None = None,
+) -> Workbook:
+    """
+    Build a filtered Invoices export workbook.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand to export.
+        site_id: Optional site filter.
+        start_date: Optional lower bound on created_at date (inclusive).
+        end_date: Optional upper bound on created_at date (inclusive).
+        invoice_status: Optional invoice status filter.
+        min_amount_cents: Optional lower bound on total_cents.
+        max_amount_cents: Optional upper bound on total_cents.
+
+    Returns:
+        Workbook: Ready to stream as an .xlsx download.
+    """
+    rows = await export_invoices(
+        db, brand_id, site_id, start_date, end_date, invoice_status, min_amount_cents, max_amount_cents
+    )
+    return _rows_to_workbook(INVOICE_COLUMNS, rows, "Invoices")

@@ -756,6 +756,22 @@ async def create_refund(
             "total_cents": refund.total_cents,
         },
     )
+    # Also log against the original invoice's own entity_id — its change-log
+    # panel (Stage 21) reads audit_logs by entity_id, and a refund is only
+    # ever written above against the *new* refund invoice's id, which would
+    # otherwise leave the original invoice's timeline silent about it.
+    await log_action(
+        db=db,
+        action=INVOICE_REFUNDED,
+        entity_type="invoice",
+        entity_id=str(original.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"is_refunded": False},
+        after_state={"is_refunded": True, "refund_invoice_id": str(refund.id)},
+    )
 
     await db.commit()
     await db.refresh(refund)

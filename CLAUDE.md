@@ -63,15 +63,25 @@ joining the already-wired `products.ref` (Stage 24) and `reporting_groups.ref` (
 join (no denormalization); Products/Categories/Reporting Groups all gained a shared `FilterBar`
 (category, reporting group, active state, name/code search) and click-to-edit inline cells (name,
 price, category, reporting group, active-state), alongside the existing modal-based create flow.
-See `STAGE_STATUS.md` for full deliverables. **Stage 21 is next (not yet started):** see
-`ROADMAP.md` Phase 7 for full detail. Do not begin Stage 22+ work yet.
+See `STAGE_STATUS.md` for full deliverables.
 
-**Stages 21–24 scope (planned, not started):** see `ROADMAP.md` Phases 7–9 for full detail. Summary
-(Stages 16–20 above are complete — see their own paragraphs and `STAGE_STATUS.md`):
-- **21 — Invoice Reporting:** filtered list + XLSX export, detail view, PDF export (standard layout),
-  and a change-log panel sourced from the existing `audit_logs` table filtered by
-  `entity_type='invoice'` — no new table, `invoice_service.py` already audits every mutation with
-  before/after state.
+**Stage 21 — complete.** New `invoice_report_service.py` (filtered list — date range, site, status,
+amount range — reading `vw_invoice_detail`; full detail view with line items/modifiers/tax
+breakdown/payments; change-log panel reading `audit_logs` by `entity_type='invoice'`), a read-only
+`export_invoices()`/`build_invoices_export()` pair added to Stage 19's `export_service.py`, and a new
+`invoice_pdf_service.py` rendering a standard single-invoice PDF via `weasyprint`. All exposed on a
+new `/invoice-reports` router (`routes/invoice_reports.py`) — the transactional engine in
+`routes/invoices.py` is untouched. Fixed a gap in `create_refund()`: it previously logged the refund
+only against the *new* refund invoice's `entity_id`, which meant the original invoice's change log
+never showed it was refunded — it now also writes a row against the original invoice's own
+`entity_id`. Portal gained an `InvoicesPage` (filters + XLSX export button) and `InvoiceDetailPage`
+(line items, tax breakdown, payments, change log, PDF download), reachable from the management nav
+and as a new tab on the SuperAdmin's Brand detail page. See `STAGE_STATUS.md` for full deliverables.
+**Stage 22 is next (not yet started):** see `ROADMAP.md` Phase 7 for full detail. Do not begin
+Stage 23+ work yet.
+
+**Stages 22–24 scope (planned, not started):** see `ROADMAP.md` Phases 7–9 for full detail. Summary
+(Stages 16–21 above are complete — see their own paragraphs and `STAGE_STATUS.md`):
 - **22 — Variants & Combos Portal Pages:** one combined portal page/sidebar entry for Variants and
   Combos (not Modifiers — Modifiers stay edited inline within the Product page). New `ref` codes
   (`VAR-000001`, `CMB-000001`) and a `display_name` field on both Variant and Combo (not on

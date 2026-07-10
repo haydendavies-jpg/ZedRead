@@ -45,6 +45,11 @@ jobs:
           cache: pip
           cache-dependency-path: pos-backend/requirements.txt
 
+      - name: Install weasyprint system libraries (Stage 21 PDF export)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf2.0-0 libffi-dev shared-mime-info
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 

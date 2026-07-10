@@ -29,6 +29,8 @@ import { ProductsPage } from './pages/management/ProductsPage'
 import { CategoriesPage } from './pages/management/CategoriesPage'
 import { ReportingGroupsPage } from './pages/management/ReportingGroupsPage'
 import { ReportsPage } from './pages/management/ReportsPage'
+import { InvoicesPage } from './pages/management/InvoicesPage'
+import { InvoiceDetailPage } from './pages/management/InvoiceDetailPage'
 import { UsersPage as MgmtUsersPage } from './pages/management/UsersPage'
 import { AccessProfilesPage } from './pages/management/AccessProfilesPage'
 import { SiteOverridesPage } from './pages/management/SiteOverridesPage'
@@ -162,6 +164,8 @@ export default function App() {
               <Route path="management/categories" element={<CategoriesPage />} />
               <Route path="management/reporting-groups" element={<ReportingGroupsPage />} />
               <Route path="management/reports" element={<ReportsPage />} />
+              <Route path="management/invoices" element={<InvoicesPage />} />
+              <Route path="management/invoices/:invoiceId" element={<InvoiceDetailPage />} />
               <Route path="management/users" element={<MgmtUsersPage />} />
               <Route path="management/access-profiles" element={<AccessProfilesPage />} />
               <Route path="management/overrides" element={<SiteOverridesPage />} />

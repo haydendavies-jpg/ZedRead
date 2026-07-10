@@ -14,7 +14,7 @@ Last updated: 2026-07-10 (Stage 20)
 | 4 — Identity & Permissions Redesign | 15 | ✅ Complete |
 | 5 — Catalog Foundations | 16–18 | ✅ Complete |
 | 6 — Catalog Data & Table UX | 19–20 | ✅ Complete |
-| 7 — Invoices & Extended Catalog | 21–22 | 🔜 Planned |
+| 7 — Invoices & Extended Catalog | 21–22 | 🚧 In Progress (Stage 21 done, Stage 22 planned) |
 | 8 — POS Menu Builder | 23 | 🔜 Planned |
 | 9 — Product Model Extensions | 24 | ✅ Complete |
 | 10 — Android App | 25–26 | 🚧 In Progress (scaffolding only) |
@@ -425,15 +425,52 @@ list, matching how every other portal list page filters.
 
 ## Phase 7 — Invoices & Extended Catalog
 
-### Stage 21 — Invoice Reporting 🔜
+### Stage 21 — Invoice Reporting ✅
 
 **Deliverables:**
-- [ ] Invoice list filters (date range, site, payment status, amount range) + XLSX export via Stage 19 framework
-- [ ] Invoice detail view: line items, modifiers, tax breakdown, payments
-- [ ] Change-log panel sourced from `audit_logs` filtered by `entity_type='invoice'` (already
-  populated by `invoice_service.py` — no new table)
-- [ ] PDF export: standard invoice layout (recommend `weasyprint`, HTML/CSS-authored layout — no
-  existing PDF generation to match style against)
+- [x] `app/services/invoice_report_service.py` (new — split out of the transactional
+  `invoice_service.py`, which stays engine-only): `list_invoice_reports()` reads the Stage 11 view
+  `vw_invoice_detail` with a parameterised filter builder (site, date range on `created_at::date`,
+  status, `total_cents` min/max) — the CLAUDE.md-documented exception to "always use the ORM" since
+  reporting views are raw-SQL by nature; `get_invoice_detail()` assembles the full invoice (line
+  items with nested modifiers, tax breakdown, payments) via the ORM; `get_invoice_change_log()` reads
+  `audit_logs` filtered by `entity_type='invoice', entity_id=<id>`, oldest first.
+- [x] Fixed a gap in `create_refund()` (`invoice_service.py`): it previously wrote its
+  `INVOICE_REFUNDED` audit row only against the *new* refund invoice's `entity_id`, so the original
+  invoice's change log never showed it had been refunded. It now also logs a second row against the
+  original invoice's own `entity_id` (`before_state={is_refunded: false}`,
+  `after_state={is_refunded: true, refund_invoice_id: ...}`), so the Stage 21 plan's claim that
+  "invoice_service.py already writes a row... for pay, void, refund, discount" against `entity_id=<id>`
+  is now actually true for refunds, not just pay/void/discount.
+- [x] Read-only `export_invoices()`/`build_invoices_export()` added to Stage 19's shared
+  `export_service.py` — same filter set as the list route, so "export the filtered set" produces
+  exactly what's on screen. No `import_invoices()` counterpart: invoices are created by the sale
+  flow, not bulk-uploaded, so only the workbook-building half of the Stage 19 framework applies.
+- [x] `app/services/invoice_pdf_service.py` (new): standard single-invoice layout authored as
+  HTML/CSS and rendered via `weasyprint` (no existing PDF style to match, per the stage plan's
+  recommendation over a programmatic library like `reportlab`). All interpolated text is
+  HTML-escaped. Added `weasyprint==63.1` to `requirements.txt`; CI installs the Pango/Cairo/
+  GDK-Pixbuf system libraries weasyprint needs at runtime (`.github/workflows/ci.yml`).
+- [x] New router `app/routes/invoice_reports.py`, prefix `/invoice-reports`, registered in
+  `main.py` alongside (not replacing) the existing `/invoices` transactional routes: `GET` (filtered
+  list), `GET /export` (XLSX), `GET /{id}` (detail), `GET /{id}/change-log`, `GET /{id}/pdf`. Uses
+  `resolve_catalog_access` like `reports.py`, so POS, management, and portal-admin tokens all work;
+  site-pinned callers (POS terminal, site-scope management) are restricted to their own site the same
+  way `reports.py`'s `_check_site_access` works.
+- [x] Portal: new `InvoicesPage.tsx` (`/management/invoices`) — server-side filters (site, status,
+  date range, min/max total) posted as query params so the XLSX export matches what's on screen,
+  plus an Export XLSX button using a new `downloadBlob()` helper (`utils/download.ts`). New
+  `InvoiceDetailPage.tsx` (`/management/invoices/:invoiceId`) — line items with nested modifiers, tax
+  breakdown, payments, a change-log table, and a Download PDF button. Both reachable from `MGMT_NAV`
+  and as a new "Invoices" tab on the SuperAdmin's `BrandDetailPage` (mirroring the existing "Reports"
+  tab) — the brand tab is the SuperAdmin's only entry point since `MGMT_NAV` is management-JWT-only;
+  the "View"/"Back" links append `?brand_id=` when known so navigating out of `BrandContext` into the
+  standalone detail route doesn't lose scope.
+- [x] Integration tests: `test_invoice_reports_routes.py` (list filters incl. status/amount-range/
+  site-scope 403, detail view, XLSX export column shape, PDF export magic-bytes/content-type, change
+  log incl. the refund-on-original-invoice fix, 401/404 paths). Unit tests:
+  `test_invoice_pdf_service.py` (HTML generation, HTML-escaping of product names, discount-reason
+  rendering — no database, no rendering).
 
 ### Stage 22 — Variants & Combos Portal Pages 🔜
 

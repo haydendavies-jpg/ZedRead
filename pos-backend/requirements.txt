@@ -41,6 +41,10 @@ Pillow==11.0.0
 # Bulk import/export (Stage 19)
 openpyxl==3.1.5
 
+# Invoice PDF export (Stage 21) — requires system Pango/Cairo/GDK-Pixbuf libs,
+# see .github/workflows/ci.yml for the apt packages this needs at runtime
+weasyprint==63.1
+
 # CLI
 typer==0.15.1
 
