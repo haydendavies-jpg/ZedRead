@@ -39,8 +39,8 @@ gantt
     Stage 18 · Permission Scopes UI  :s18, after s17, 10d
 
     section Phase 6 · Catalog Data & Table UX
-    Stage 19 · Bulk Import/Export    :s19, after s18, 14d
-    Stage 20 · Table UX              :s20, after s19, 10d
+    Stage 19 · Bulk Import/Export    :done, s19, after s18, 14d
+    Stage 20 · Table UX              :active, s20, after s19, 10d
 
     section Phase 7 · Invoices & Extended Catalog
     Stage 21 · Invoice Reporting     :s21, after s20, 14d
@@ -146,14 +146,19 @@ can see/toggle which pages a role can access from the portal.
 
 ---
 
-## Phase 6 — Catalog Data & Table UX 🔜
+## Phase 6 — Catalog Data & Table UX 🚧
 
 **Goal:** Give Products, Categories, and Reporting Groups proper bulk data tooling and table UX.
 
 | Stage | Summary | Key outcome |
 |-------|---------|-------------|
-| **19** | **Bulk Import/Export (XLSX)** | Shared import/export service; template + full export; keyed on human-readable `ref` codes; partial-update on import |
-| **20** | **Table UX** | Reporting Group + Category columns on Products; inline edit and filters on all three catalog pages |
+| **19** | **Bulk Import/Export (XLSX)** ✅ | Shared import/export service; template + full export; keyed on human-readable `ref` codes; partial-update on import |
+| **20** | **Table UX** 🔜 | Reporting Group + Category columns on Products; inline edit and filters on all three catalog pages |
+
+**Stage 19 status:** complete — see `STAGE_STATUS.md` for full deliverables. `categories.ref` is now
+wired into the ORM/schema alongside the already-wired `products.ref`/`reporting_groups.ref`;
+`export_service.py`/`import_service.py` are shared across all three entities and reused by the
+`/products`, `/categories`, `/reporting-groups` `export/template`, `export`, and `import` routes.
 
 **Exit criteria:** A brand manager can export a template, bulk-edit it in Excel, re-import it, and see
 the changes reflected immediately in a filterable, inline-editable table.

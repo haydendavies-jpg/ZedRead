@@ -3,12 +3,16 @@
 The Stage 3 stub had: id, brand_id, name, is_system, is_active, created_at.
 Stage 8 adds: display_order, description, image_url, tax_category_id.
 No Stage 3 columns were removed or renamed — the extension is additive only.
+
+ref surfaces the CAT-000001-style sequence column added by migration 0013
+(previously dormant — never wired into the ORM until Stage 19, where it
+becomes the human-readable import/export matching key).
 """
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -33,6 +37,13 @@ class Category(Base):
         primary_key=True,
         default=uuid.uuid4,
         comment="Primary key — UUID generated at insert time",
+    )
+    ref: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        unique=True,
+        server_default=text("'CAT-' || LPAD(nextval('categories_ref_seq')::text, 6, '0')"),
+        comment="Human-readable reference ID, e.g. CAT-000001",
     )
     brand_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

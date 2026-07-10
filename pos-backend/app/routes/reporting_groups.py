@@ -7,15 +7,20 @@ require a management or portal JWT, mirroring categories.py.
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.schemas.import_export import ImportSummary
 from app.schemas.reporting_group import ReportingGroupCreate, ReportingGroupOut, ReportingGroupUpdate
-from app.services import reporting_group_service
+from app.services import export_service, import_service, reporting_group_service
+from app.services.import_service import InvalidWorkbookError
 from app.utils.dependencies import CatalogAccess, resolve_catalog_access
 
 router = APIRouter(prefix="/reporting-groups", tags=["reporting-groups"])
+
+_XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def _require_management(access: CatalogAccess) -> None:
@@ -138,3 +143,91 @@ async def delete_reporting_group(
     await reporting_group_service.delete_reporting_group(
         db, effective_brand_id, reporting_group_id, access.actor_user
     )
+
+
+@router.get("/export/template", response_model=None, status_code=status.HTTP_200_OK)
+async def export_reporting_groups_template(
+    access: CatalogAccess = Depends(resolve_catalog_access),
+) -> Response:
+    """
+    Download a blank Reporting Groups import template (header row + example row).
+
+    response_model is intentionally omitted — the body is a binary .xlsx file,
+    not a JSON payload a Pydantic model could describe.
+
+    Args:
+        access: Resolved catalog access (required so the route stays authenticated).
+
+    Returns:
+        Response: The .xlsx template file.
+    """
+    wb = await export_service.build_reporting_groups_template()
+    return Response(
+        content=export_service.workbook_to_bytes(wb),
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": "attachment; filename=reporting_groups_template.xlsx"},
+    )
+
+
+@router.get("/export", response_model=None, status_code=status.HTTP_200_OK)
+async def export_reporting_groups(
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """
+    Download the brand's current Reporting Groups as a re-importable .xlsx file.
+
+    Args:
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access.
+        db: Active database session.
+
+    Returns:
+        Response: The .xlsx export file.
+    """
+    effective_brand_id = access.effective_brand_id(brand_id)
+    wb = await export_service.build_reporting_groups_export(db, effective_brand_id)
+    return Response(
+        content=export_service.workbook_to_bytes(wb),
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": "attachment; filename=reporting_groups_export.xlsx"},
+    )
+
+
+@router.post("/import", response_model=ImportSummary, status_code=status.HTTP_200_OK)
+async def import_reporting_groups(
+    file: UploadFile,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> ImportSummary:
+    """
+    Bulk create/update Reporting Groups from an uploaded .xlsx sheet.
+
+    Rows are matched to existing groups by their `ref` column; a blank ref
+    creates a new group. Only columns present in the sheet's header row are
+    written (partial-update semantics) — see import_service.py.
+
+    Args:
+        file: The uploaded .xlsx file.
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access.
+        db: Active database session.
+
+    Returns:
+        ImportSummary: Created/updated counts and any skipped-row errors.
+
+    Raises:
+        HTTPException: 403 if the caller authenticated with a POS terminal JWT.
+        HTTPException: 422 if the uploaded file is not a valid .xlsx workbook.
+    """
+    _require_management(access)
+    effective_brand_id = access.effective_brand_id(brand_id)
+    contents = await file.read()
+    try:
+        return await import_service.import_reporting_groups(
+            db, effective_brand_id, contents, access.actor_user
+        )
+    except InvalidWorkbookError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
