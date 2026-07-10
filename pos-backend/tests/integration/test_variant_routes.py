@@ -250,3 +250,177 @@ async def test_deactivate_already_inactive_variant_returns_409(
         f"/products/{test_product.id}/variants/{variant_id}", headers=pos_auth_headers
     )
     assert r2.status_code == 409
+
+
+# ── Stage 22 — ref, display_name, brand-wide list/export/import ──────────────
+
+
+@pytest.mark.asyncio
+async def test_create_variant_has_ref_and_display_name(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    attr_type: ProductAttributeType,
+    attr_value: ProductAttributeValue,
+) -> None:
+    """A newly created variant carries a VAR-000001-style ref and honours display_name."""
+    resp = await client.post(
+        f"/products/{test_product.id}/variants",
+        json={
+            "attributes": [
+                {"attribute_type_id": str(attr_type.id), "attribute_value_id": str(attr_value.id)}
+            ],
+            "display_name": "Large Spicy",
+        },
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["ref"].startswith("VAR-")
+    assert data["display_name"] == "Large Spicy"
+
+
+@pytest.mark.asyncio
+async def test_activate_variant_is_idempotent(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    attr_type: ProductAttributeType,
+    attr_value: ProductAttributeValue,
+    db: AsyncSession,
+) -> None:
+    """POST .../activate reactivates a deactivated variant and writes 'variant.reactivated'; a repeat call is a no-op."""
+    create_resp = await client.post(
+        f"/products/{test_product.id}/variants",
+        json={
+            "attributes": [
+                {"attribute_type_id": str(attr_type.id), "attribute_value_id": str(attr_value.id)}
+            ]
+        },
+        headers=pos_auth_headers,
+    )
+    variant_id = create_resp.json()["id"]
+
+    await client.delete(f"/products/{test_product.id}/variants/{variant_id}", headers=pos_auth_headers)
+
+    r1 = await client.post(
+        f"/products/{test_product.id}/variants/{variant_id}/activate", headers=pos_auth_headers
+    )
+    assert r1.status_code == 200
+    assert r1.json()["is_active"] is True
+
+    # Idempotent — second call is a no-op, no error
+    r2 = await client.post(
+        f"/products/{test_product.id}/variants/{variant_id}/activate", headers=pos_auth_headers
+    )
+    assert r2.status_code == 200
+    assert r2.json()["is_active"] is True
+
+    result = await db.execute(select(AuditLog).where(AuditLog.action == "variant.reactivated"))
+    assert result.scalar_one_or_none() is not None
+
+
+@pytest.mark.asyncio
+async def test_list_brand_variants_includes_linked_product(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    attr_type: ProductAttributeType,
+    attr_value: ProductAttributeValue,
+) -> None:
+    """GET /variants lists variants across the brand joined to their parent product."""
+    await client.post(
+        f"/products/{test_product.id}/variants",
+        json={
+            "attributes": [
+                {"attribute_type_id": str(attr_type.id), "attribute_value_id": str(attr_value.id)}
+            ]
+        },
+        headers=pos_auth_headers,
+    )
+
+    resp = await client.get("/variants", headers=pos_auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["product_id"] == str(test_product.id)
+    assert data[0]["product_name"] == test_product.name
+    assert data[0]["product_ref"] == test_product.ref
+
+
+@pytest.mark.asyncio
+async def test_import_variants_requires_ref(
+    client: AsyncClient,
+    mgmt_auth_headers: dict,
+) -> None:
+    """A variant import row with a blank ref is reported as an error, not created."""
+    import io
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["ref", "display_name"])
+    ws.append(["", "Should not be created"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    resp = await client.post(
+        "/variants/import",
+        files={"file": ("variants.xlsx", buf.read(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=mgmt_auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["created"] == 0
+    assert data["updated"] == 0
+    assert len(data["errors"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_import_variants_updates_by_ref(
+    client: AsyncClient,
+    mgmt_auth_headers: dict,
+    test_product,
+    attr_type: ProductAttributeType,
+    attr_value: ProductAttributeValue,
+    db: AsyncSession,
+) -> None:
+    """A variant import row with a known ref updates display_name and writes an audit row with import_id."""
+    import io
+
+    from openpyxl import Workbook
+
+    create_resp = await client.post(
+        f"/products/{test_product.id}/variants",
+        json={
+            "attributes": [
+                {"attribute_type_id": str(attr_type.id), "attribute_value_id": str(attr_value.id)}
+            ]
+        },
+        headers=mgmt_auth_headers,
+    )
+    ref = create_resp.json()["ref"]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["ref", "display_name"])
+    ws.append([ref, "Renamed via import"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    resp = await client.post(
+        "/variants/import",
+        files={"file": ("variants.xlsx", buf.read(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=mgmt_auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["updated"] == 1
+    assert data["errors"] == []
+
+    result = await db.execute(select(AuditLog).where(AuditLog.action == "variant.updated"))
+    log = result.scalar_one()
+    assert log.after_state["import_id"] == data["import_id"]

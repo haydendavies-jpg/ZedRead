@@ -101,6 +101,7 @@ SITE_PRODUCT_OVERRIDE_REMOVED = "site_product_override.removed"
 VARIANT_CREATED = "variant.created"
 VARIANT_UPDATED = "variant.updated"
 VARIANT_DEACTIVATED = "variant.deactivated"
+VARIANT_REACTIVATED = "variant.reactivated"
 
 MODIFIER_GROUP_CREATED = "modifier_group.created"
 MODIFIER_GROUP_UPDATED = "modifier_group.updated"
@@ -110,6 +111,9 @@ PRODUCT_MODIFIER_LINKED = "product.modifier.linked"
 PRODUCT_MODIFIER_UNLINKED = "product.modifier.unlinked"
 
 COMBO_GROUP_CREATED = "combo_group.created"
+COMBO_GROUP_UPDATED = "combo_group.updated"
+COMBO_GROUP_DEACTIVATED = "combo_group.deactivated"
+COMBO_GROUP_REACTIVATED = "combo_group.reactivated"
 COMBO_OPTION_ADDED = "combo_option.added"
 COMBO_OPTION_REMOVED = "combo_option.removed"
 

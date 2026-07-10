@@ -278,6 +278,49 @@ export interface ProductListItem extends Product {
   reporting_group_name: string
 }
 
+// ── Variants & Combos (Stage 22) ────────────────────────────────────────────────
+
+export interface AttributeAssignment {
+  attribute_type_id: string
+  attribute_value_id: string
+}
+
+export interface Variant {
+  id: string
+  ref: string
+  product_id: string
+  sku: string | null
+  price_cents: number | null
+  display_name: string | null
+  is_active: boolean
+  attributes: AttributeAssignment[]
+}
+
+/** GET /variants row shape — Variant plus its joined parent product's name/ref. */
+export interface VariantListItem extends Variant {
+  product_name: string
+  product_ref: string
+}
+
+export interface ComboGroup {
+  id: string
+  ref: string
+  product_id: string
+  name: string
+  display_name: string | null
+  min_selections: number
+  max_selections: number
+  is_required: boolean
+  display_order: number
+  is_active: boolean
+}
+
+/** GET /combos row shape — ComboGroup plus its joined parent product's name/ref. */
+export interface ComboGroupListItem extends ComboGroup {
+  product_name: string
+  product_ref: string
+}
+
 // ── Access grant types ────────────────────────────────────────────────────────
 
 export interface AccessProfile {

@@ -19,6 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
     COMBO_GROUP_CREATED,
+    COMBO_GROUP_DEACTIVATED,
+    COMBO_GROUP_REACTIVATED,
+    COMBO_GROUP_UPDATED,
     COMBO_OPTION_ADDED,
     COMBO_OPTION_REMOVED,
 )
@@ -28,58 +31,16 @@ from app.models.user import User
 from app.models.product import Product
 from app.models.product_combo_group import ProductComboGroup
 from app.models.product_combo_option import ProductComboOption
+from app.schemas.combo import (
+    ComboGroupCreate,
+    ComboGroupResponse,
+    ComboGroupUpdate,
+    ComboOptionCreate,
+    ComboOptionResponse,
+)
 from app.services.audit_service import log_action
 
 log = structlog.get_logger(__name__)
-
-
-# ── Inline schemas ─────────────────────────────────────────────────────────────
-
-from pydantic import BaseModel, Field
-
-
-class ComboGroupCreate(BaseModel):
-    """Payload for creating a combo group."""
-
-    name: str = Field(..., min_length=1, max_length=100)
-    min_selections: int = Field(1, ge=0)
-    max_selections: int = Field(1, ge=1)
-    is_required: bool = True
-    display_order: int = Field(0, ge=0)
-
-
-class ComboGroupResponse(BaseModel):
-    """Response schema for a combo group."""
-
-    id: uuid.UUID
-    product_id: uuid.UUID
-    name: str
-    min_selections: int
-    max_selections: int
-    is_required: bool
-    display_order: int
-
-    model_config = {"from_attributes": True}
-
-
-class ComboOptionCreate(BaseModel):
-    """Payload for adding an option to a combo group."""
-
-    product_id: uuid.UUID
-    price_delta_cents: int = Field(0)
-    display_order: int = Field(0, ge=0)
-
-
-class ComboOptionResponse(BaseModel):
-    """Response schema for a combo option."""
-
-    id: uuid.UUID
-    combo_group_id: uuid.UUID
-    product_id: uuid.UUID
-    price_delta_cents: int
-    display_order: int
-
-    model_config = {"from_attributes": True}
 
 
 # ── Circular reference detection ──────────────────────────────────────────────
@@ -159,6 +120,34 @@ async def _check_circular_reference(
 # ── Public service functions ───────────────────────────────────────────────────
 
 
+async def _get_combo_group_or_404(
+    db: AsyncSession, brand_id: uuid.UUID, group_id: uuid.UUID
+) -> ProductComboGroup:
+    """
+    Fetch a ProductComboGroup scoped to a brand via its parent product, or raise HTTP 404.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+        group_id: UUID of the combo group.
+
+    Returns:
+        ProductComboGroup: The found instance.
+
+    Raises:
+        HTTPException: 404 if not found.
+    """
+    result = await db.execute(
+        select(ProductComboGroup)
+        .join(Product, ProductComboGroup.product_id == Product.id)
+        .where(ProductComboGroup.id == group_id, Product.brand_id == brand_id)
+    )
+    group = result.scalar_one_or_none()
+    if group is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Combo group not found")
+    return group
+
+
 async def list_combo_groups(
     db: AsyncSession,
     brand_id: uuid.UUID,
@@ -167,7 +156,7 @@ async def list_combo_groups(
     limit: int = 50,
 ) -> list[ProductComboGroup]:
     """
-    Return combo groups for a product.
+    Return active combo groups for a product.
 
     Args:
         db: Active database session.
@@ -177,7 +166,7 @@ async def list_combo_groups(
         limit: Maximum rows to return.
 
     Returns:
-        list[ProductComboGroup]: Combo groups ordered by display_order.
+        list[ProductComboGroup]: Active combo groups ordered by display_order.
 
     Raises:
         HTTPException: 404 if the product is not found within the brand.
@@ -190,12 +179,58 @@ async def list_combo_groups(
 
     result = await db.execute(
         select(ProductComboGroup)
-        .where(ProductComboGroup.product_id == product_id)
+        .where(
+            ProductComboGroup.product_id == product_id,
+            ProductComboGroup.is_active == True,  # noqa: E712
+        )
         .order_by(ProductComboGroup.display_order)
         .offset(skip)
         .limit(limit)
     )
     return list(result.scalars().all())
+
+
+async def list_combo_groups_for_brand(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    product_id: uuid.UUID | None = None,
+    include_inactive: bool = False,
+    skip: int = 0,
+    limit: int = 200,
+) -> list[tuple[ProductComboGroup, str, str]]:
+    """
+    Return every combo group across the brand's catalog, joined to its parent product.
+
+    Powers the Stage 22 combined Variants+Combos portal page, which lists
+    combo groups across all products rather than one product at a time.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+        product_id: Optional filter — only combo groups of this product.
+        include_inactive: When True, also return soft-deleted combo groups.
+        skip: Pagination offset.
+        limit: Maximum rows to return.
+
+    Returns:
+        list[tuple[ProductComboGroup, str, str]]: Each tuple is
+            (group, product_name, product_ref), ordered by product name.
+    """
+    query = (
+        select(ProductComboGroup, Product.name, Product.ref)
+        .join(Product, ProductComboGroup.product_id == Product.id)
+        .where(Product.brand_id == brand_id)
+        .order_by(Product.name, ProductComboGroup.display_order)
+        .offset(skip)
+        .limit(limit)
+    )
+    if not include_inactive:
+        query = query.where(ProductComboGroup.is_active == True)  # noqa: E712
+    if product_id is not None:
+        query = query.where(ProductComboGroup.product_id == product_id)
+
+    result = await db.execute(query)
+    return [tuple(row) for row in result.all()]
 
 
 async def create_combo_group(
@@ -204,6 +239,7 @@ async def create_combo_group(
     product_id: uuid.UUID,
     payload: ComboGroupCreate,
     actor: User | SuperAdmin,
+    import_id: uuid.UUID | None = None,
 ) -> ProductComboGroup:
     """
     Create a combo group for a product.
@@ -214,6 +250,7 @@ async def create_combo_group(
         product_id: Product to attach the group to.
         payload: Group creation data.
         actor: The authenticated POS user.
+        import_id: Batch ID shared by every row of a bulk import; None for direct calls.
 
     Returns:
         ProductComboGroup: The newly created group.
@@ -231,12 +268,19 @@ async def create_combo_group(
         id=uuid.uuid4(),
         product_id=product_id,
         name=payload.name,
+        display_name=payload.display_name,
         min_selections=payload.min_selections,
         max_selections=payload.max_selections,
         is_required=payload.is_required,
         display_order=payload.display_order,
+        is_active=True,
     )
     db.add(group)
+    await db.flush()
+
+    after_state: dict = {"product_id": str(product_id), "name": group.name}
+    if import_id is not None:
+        after_state["import_id"] = str(import_id)
 
     await log_action(
         db=db,
@@ -247,12 +291,176 @@ async def create_combo_group(
         actor_id=actor.id,
         actor_email=actor.email,
         actor_name=actor.name,
-        after_state={"product_id": str(product_id), "name": group.name},
+        after_state=after_state,
     )
 
     await db.commit()
     await db.refresh(group)
     log.info("combo_group.created", group_id=str(group.id), product_id=str(product_id))
+    return group
+
+
+async def update_combo_group(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    group_id: uuid.UUID,
+    payload: ComboGroupUpdate,
+    actor: User | SuperAdmin,
+    import_id: uuid.UUID | None = None,
+) -> ProductComboGroup:
+    """
+    Update a combo group's mutable fields.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+        group_id: UUID of the combo group to update.
+        payload: Fields to update.
+        actor: The authenticated user performing the action.
+        import_id: Batch ID shared by every row of a bulk import; None for direct calls.
+
+    Returns:
+        ProductComboGroup: The updated combo group.
+
+    Raises:
+        HTTPException: 404 if not found.
+    """
+    group = await _get_combo_group_or_404(db, brand_id, group_id)
+    before: dict = {}
+
+    for field in ("name", "display_name", "min_selections", "max_selections", "is_required", "display_order"):
+        value = getattr(payload, field)
+        if value is not None:
+            before[field] = getattr(group, field)
+            setattr(group, field, value)
+
+    after_state = payload.model_dump(exclude_none=True)
+    if import_id is not None:
+        after_state["import_id"] = str(import_id)
+
+    await log_action(
+        db=db,
+        action=COMBO_GROUP_UPDATED,
+        entity_type="product_combo_group",
+        entity_id=str(group.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state=before,
+        after_state=after_state,
+    )
+
+    await db.commit()
+    await db.refresh(group)
+    return group
+
+
+async def deactivate_combo_group(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    group_id: uuid.UUID,
+    actor: User | SuperAdmin,
+) -> ProductComboGroup:
+    """
+    Soft-delete a combo group (set is_active=False).
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+        group_id: UUID of the combo group to deactivate.
+        actor: The authenticated user performing the action.
+
+    Returns:
+        ProductComboGroup: The deactivated combo group.
+
+    Raises:
+        HTTPException: 404 if not found.
+        HTTPException: 409 if already inactive.
+    """
+    group = await _get_combo_group_or_404(db, brand_id, group_id)
+
+    if not group.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Combo group is already inactive",
+        )
+
+    group.is_active = False
+
+    await log_action(
+        db=db,
+        action=COMBO_GROUP_DEACTIVATED,
+        entity_type="product_combo_group",
+        entity_id=str(group.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"is_active": True},
+        after_state={"is_active": False},
+    )
+
+    await db.commit()
+    await db.refresh(group)
+    return group
+
+
+async def set_combo_group_active_state(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    group_id: uuid.UUID,
+    is_active: bool,
+    actor: User | SuperAdmin,
+    import_id: uuid.UUID | None = None,
+) -> ProductComboGroup:
+    """
+    Set a combo group's is_active flag directly (activate or soft-delete), idempotently.
+
+    Unlike deactivate_combo_group(), setting the flag to its current value is a
+    silent no-op rather than a 409 — same convention as
+    product_service.set_product_active_state(). Used by import_service.py and
+    the portal's POST /combos/{id}/activate route.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+        group_id: UUID of the combo group to update.
+        is_active: The desired active state.
+        actor: The authenticated user performing the action.
+        import_id: Batch ID shared by every row of a bulk import; None for direct calls.
+
+    Returns:
+        ProductComboGroup: The combo group, with is_active set to the requested value.
+
+    Raises:
+        HTTPException: 404 if not found.
+    """
+    group = await _get_combo_group_or_404(db, brand_id, group_id)
+    if group.is_active == is_active:
+        return group
+
+    group.is_active = is_active
+
+    after_state: dict = {"is_active": is_active}
+    if import_id is not None:
+        after_state["import_id"] = str(import_id)
+
+    await log_action(
+        db=db,
+        action=COMBO_GROUP_REACTIVATED if is_active else COMBO_GROUP_DEACTIVATED,
+        entity_type="product_combo_group",
+        entity_id=str(group.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"is_active": not is_active},
+        after_state=after_state,
+    )
+
+    await db.commit()
+    await db.refresh(group)
     return group
 
 

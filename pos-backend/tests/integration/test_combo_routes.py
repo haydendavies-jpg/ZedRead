@@ -270,3 +270,180 @@ async def test_remove_combo_option(
         headers=pos_auth_headers,
     )
     assert del_resp.status_code == 204
+
+
+# ── Stage 22 — ref, display_name, status toggle, brand-wide list/export/import ─
+
+
+@pytest.mark.asyncio
+async def test_create_combo_group_has_ref_and_display_name(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+) -> None:
+    """A newly created combo group carries a CMB-000001-style ref and honours display_name."""
+    resp = await client.post(
+        f"/products/{test_product.id}/combos/groups",
+        json={"name": "Choose a Side", "display_name": "Pick Your Side", "min_selections": 1, "max_selections": 1},
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["ref"].startswith("CMB-")
+    assert data["display_name"] == "Pick Your Side"
+    assert data["is_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_update_combo_group_writes_audit_log(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    db: AsyncSession,
+) -> None:
+    """PATCH .../groups/{id} updates the display_name and writes a 'combo_group.updated' audit row."""
+    group_resp = await client.post(
+        f"/products/{test_product.id}/combos/groups",
+        json={"name": "Sides", "min_selections": 1, "max_selections": 1},
+        headers=pos_auth_headers,
+    )
+    group_id = group_resp.json()["id"]
+
+    resp = await client.patch(
+        f"/products/{test_product.id}/combos/groups/{group_id}",
+        json={"display_name": "Renamed"},
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["display_name"] == "Renamed"
+
+    result = await db.execute(select(AuditLog).where(AuditLog.action == "combo_group.updated"))
+    assert result.scalar_one_or_none() is not None
+
+
+@pytest.mark.asyncio
+async def test_deactivate_then_activate_combo_group(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    db: AsyncSession,
+) -> None:
+    """DELETE soft-deletes a combo group; a repeat DELETE 409s; POST .../activate reactivates it idempotently."""
+    group_resp = await client.post(
+        f"/products/{test_product.id}/combos/groups",
+        json={"name": "Sides", "min_selections": 1, "max_selections": 1},
+        headers=pos_auth_headers,
+    )
+    group_id = group_resp.json()["id"]
+
+    del_resp = await client.delete(
+        f"/products/{test_product.id}/combos/groups/{group_id}", headers=pos_auth_headers
+    )
+    assert del_resp.status_code == 200
+    assert del_resp.json()["is_active"] is False
+
+    repeat_del = await client.delete(
+        f"/products/{test_product.id}/combos/groups/{group_id}", headers=pos_auth_headers
+    )
+    assert repeat_del.status_code == 409
+
+    activate_resp = await client.post(
+        f"/products/{test_product.id}/combos/groups/{group_id}/activate", headers=pos_auth_headers
+    )
+    assert activate_resp.status_code == 200
+    assert activate_resp.json()["is_active"] is True
+
+    # Idempotent — second activate call is a no-op
+    activate_again = await client.post(
+        f"/products/{test_product.id}/combos/groups/{group_id}/activate", headers=pos_auth_headers
+    )
+    assert activate_again.status_code == 200
+
+    result = await db.execute(select(AuditLog).where(AuditLog.action == "combo_group.reactivated"))
+    assert result.scalar_one_or_none() is not None
+
+
+@pytest.mark.asyncio
+async def test_list_brand_combos_includes_linked_product(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+) -> None:
+    """GET /combos lists combo groups across the brand joined to their parent product."""
+    await client.post(
+        f"/products/{test_product.id}/combos/groups",
+        json={"name": "Sides", "min_selections": 1, "max_selections": 1},
+        headers=pos_auth_headers,
+    )
+
+    resp = await client.get("/combos", headers=pos_auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["product_id"] == str(test_product.id)
+    assert data[0]["product_name"] == test_product.name
+    assert data[0]["product_ref"] == test_product.ref
+
+
+@pytest.mark.asyncio
+async def test_import_combos_creates_new_group_by_product_ref(
+    client: AsyncClient,
+    mgmt_auth_headers: dict,
+    test_product,
+    db: AsyncSession,
+) -> None:
+    """A combo import row with no ref creates a new combo group under the given product_ref."""
+    import io
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["ref", "product_ref", "name", "display_name", "min_selections", "max_selections"])
+    ws.append(["", test_product.ref, "Choose a Drink", "Pick a Drink", "1", "1"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    resp = await client.post(
+        "/combos/import",
+        files={"file": ("combos.xlsx", buf.read(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=mgmt_auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["created"] == 1
+    assert data["errors"] == []
+
+    result = await db.execute(select(AuditLog).where(AuditLog.action == "combo_group.created"))
+    logs = result.scalars().all()
+    assert any(log.after_state.get("import_id") == data["import_id"] for log in logs)
+
+
+@pytest.mark.asyncio
+async def test_import_combos_unknown_product_ref_reports_error(
+    client: AsyncClient,
+    mgmt_auth_headers: dict,
+) -> None:
+    """A combo import row referencing an unknown product_ref is skipped and reported."""
+    import io
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["ref", "product_ref", "name"])
+    ws.append(["", "PRD-999999", "Choose a Drink"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    resp = await client.post(
+        "/combos/import",
+        files={"file": ("combos.xlsx", buf.read(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=mgmt_auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["created"] == 0
+    assert len(data["errors"]) == 1

@@ -77,25 +77,31 @@ never showed it was refunded — it now also writes a row against the original i
 `entity_id`. Portal gained an `InvoicesPage` (filters + XLSX export button) and `InvoiceDetailPage`
 (line items, tax breakdown, payments, change log, PDF download), reachable from the management nav
 and as a new tab on the SuperAdmin's Brand detail page. See `STAGE_STATUS.md` for full deliverables.
-**Stage 22 is next (not yet started):** see `ROADMAP.md` Phase 7 for full detail. Do not begin
-Stage 23+ work yet.
+**Stage 22 — complete.** Variants and Combos each gained a `ref` sequence (`VAR-000001` /
+`CMB-000001`, migration `0039`) and a nullable `display_name` distinct from the internal/POS-facing
+name. There is no separate `Combo` table — a "combo product" is just a `Product` that owns
+`product_combo_groups` rows, so `ProductComboGroup` is the entity Stage 22 surfaces as "Combo";
+it also gained `is_active` (soft-delete) to match `product_variants`' existing flag, plus
+update/deactivate/reactivate service functions and routes it previously lacked. New brand-wide
+`GET /variants` and `GET /combos` (joined to their parent product) power a combined portal page
+(`VariantsCombosPage.tsx`, one sidebar entry, two tabs) with filters, inline edit, and
+import/export via Stage 19's shared `export_service.py`/`import_service.py`. Variant import is
+update-only (matched by `ref`) — creating a variant requires per-brand attribute assignment, which
+doesn't fit a fixed spreadsheet header and has no portal UI of its own yet; Combo import supports
+both create (via a `product_ref` column) and update. Products' edit modal shows its linked variants
+read-only; the combined page's rows already show their linked product inline, covering "Variant
+shows its linked product" without a separate variant detail page. See `STAGE_STATUS.md` for full
+deliverables.
 
-**Stages 22–24 scope (planned, not started):** see `ROADMAP.md` Phases 7–9 for full detail. Summary
-(Stages 16–21 above are complete — see their own paragraphs and `STAGE_STATUS.md`):
-- **22 — Variants & Combos Portal Pages:** one combined portal page/sidebar entry for Variants and
-  Combos (not Modifiers — Modifiers stay edited inline within the Product page). New `ref` codes
-  (`VAR-000001`, `CMB-000001`) and a `display_name` field on both Variant and Combo (not on
-  Modifiers). Filters, inline edit, import/export via Stage 19's framework.
+**Stage 23 is next (not yet started):** see `ROADMAP.md` Phase 8 for full detail. Stage 24 (Product
+Model Extensions) is already complete — it had no blocking dependency on 22/23, so it was built
+ahead of turn — see its own paragraph below. Do not begin Stage 25+ Android work yet.
+
+**Stage 23 scope (planned, not started):** see `ROADMAP.md` Phase 8 for full detail. Summary:
 - **23 — POS Menu Builder:** new `menu_layouts` / `menu_tabs` / `menu_buttons` tables. Buttons
   reference products by `ref` code (not FK), so a layout survives product recreation. Prototype
   scope: single-level tabs + buttons only, no nested sub-menus. More than one layout can be
   published at once (e.g. per-site or day-part menus).
-- **24 — Product Model Extensions:** surface the dormant `products.ref` DB column (added in
-  migration `0013`, never wired into the ORM model/schema) as "product code"; add `print_name`
-  (falls back to `name`); add `is_open_item` with a new `can_use_open_item` capability flag +
-  optional `open_item_max_price_cents` ceiling on `AccessProfile` (a capability flag, not a page
-  grant, since it's an action permission not a page). `description` and `photo_url` already exist
-  on Product — no work needed there.
 
 ## Folder structure (backend)
 ```

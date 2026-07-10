@@ -22,6 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.category import Category
 from app.models.product import Product
+from app.models.product_attribute_type import ProductAttributeType
+from app.models.product_attribute_value import ProductAttributeValue
+from app.models.product_combo_group import ProductComboGroup
+from app.models.product_variant import ProductVariant
+from app.models.product_variant_attribute import ProductVariantAttribute
 from app.models.reporting_group import ReportingGroup
 from app.services.invoice_report_service import fetch_invoice_report_rows_for_export
 
@@ -40,6 +45,20 @@ PRODUCT_COLUMNS: list[str] = [
 ]
 CATEGORY_COLUMNS: list[str] = ["ref", "name", "reporting_group", "display_order", "is_active"]
 REPORTING_GROUP_COLUMNS: list[str] = ["ref", "name"]
+# "product_ref" (not product name) keys the linked product — refs are guaranteed
+# unique per brand, unlike product names, so there's no ambiguity on import.
+VARIANT_COLUMNS: list[str] = ["ref", "product_ref", "display_name", "attributes", "sku", "price", "is_active"]
+COMBO_COLUMNS: list[str] = [
+    "ref",
+    "product_ref",
+    "name",
+    "display_name",
+    "min_selections",
+    "max_selections",
+    "is_required",
+    "display_order",
+    "is_active",
+]
 INVOICE_COLUMNS: list[str] = [
     "id",
     "site",
@@ -162,6 +181,34 @@ async def _reporting_group_names(db: AsyncSession, brand_id: uuid.UUID) -> list[
         select(ReportingGroup.name).where(ReportingGroup.brand_id == brand_id).order_by(ReportingGroup.name)
     )
     return [row[0] for row in result.all()]
+
+
+async def _product_refs(db: AsyncSession, brand_id: uuid.UUID) -> list[str]:
+    """Return active product ref codes for a brand, alphabetically, for dropdown options."""
+    result = await db.execute(
+        select(Product.ref)
+        .where(Product.brand_id == brand_id, Product.is_active == True)  # noqa: E712
+        .order_by(Product.ref)
+    )
+    return [row[0] for row in result.all()]
+
+
+async def _describe_variant_attributes(db: AsyncSession, variant_id: uuid.UUID) -> str:
+    """
+    Build a read-only "Type: Value, Type2: Value2" summary of a variant's attributes.
+
+    Informational only — attribute assignment isn't part of the reimportable
+    column set (VARIANT_COLUMNS), since it varies per brand and doesn't fit a
+    fixed spreadsheet header; import_service.py ignores this column.
+    """
+    result = await db.execute(
+        select(ProductAttributeType.name, ProductAttributeValue.value)
+        .select_from(ProductVariantAttribute)
+        .join(ProductAttributeType, ProductVariantAttribute.attribute_type_id == ProductAttributeType.id)
+        .join(ProductAttributeValue, ProductVariantAttribute.attribute_value_id == ProductAttributeValue.id)
+        .where(ProductVariantAttribute.variant_id == variant_id)
+    )
+    return ", ".join(f"{type_name}: {value}" for type_name, value in result.all())
 
 
 # ── Products ──────────────────────────────────────────────────────────────────
@@ -378,6 +425,186 @@ async def build_reporting_groups_export(db: AsyncSession, brand_id: uuid.UUID) -
     """
     rows = await export_reporting_groups(db, brand_id)
     return _rows_to_workbook(REPORTING_GROUP_COLUMNS, rows, "Reporting Groups")
+
+
+# ── Variants (Stage 22) ───────────────────────────────────────────────────────
+#
+# Update-only: import_variants() only matches existing rows by ref, since
+# creating a variant requires attribute assignment (brand-specific, doesn't
+# fit a fixed spreadsheet header) — see import_service.py.
+
+
+async def export_variants(db: AsyncSession, brand_id: uuid.UUID) -> list[dict[str, Any]]:
+    """
+    Fetch all active variants for a brand as export-ready rows keyed by VARIANT_COLUMNS.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand to export variants for.
+
+    Returns:
+        list[dict]: One dict per variant, ordered by product name.
+    """
+    result = await db.execute(
+        select(ProductVariant, Product.ref)
+        .join(Product, ProductVariant.product_id == Product.id)
+        .where(Product.brand_id == brand_id, ProductVariant.is_active == True)  # noqa: E712
+        .order_by(Product.name, ProductVariant.created_at)
+    )
+    rows: list[dict[str, Any]] = []
+    for variant, product_ref in result.all():
+        rows.append(
+            {
+                "ref": variant.ref,
+                "product_ref": product_ref,
+                "display_name": variant.display_name or "",
+                "attributes": await _describe_variant_attributes(db, variant.id),
+                "sku": variant.sku or "",
+                "price": _cents_to_dollars_str(variant.price_cents) if variant.price_cents is not None else "",
+                "is_active": _BOOL_LABELS[variant.is_active],
+            }
+        )
+    return rows
+
+
+async def build_variants_template(db: AsyncSession, brand_id: uuid.UUID) -> Workbook:
+    """
+    Build a Variants import template: header + one example row + product dropdown.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand the template's dropdown options are scoped to.
+
+    Returns:
+        Workbook: Ready to stream as an .xlsx download.
+    """
+    product_refs = await _product_refs(db, brand_id)
+    example = {
+        "ref": "",
+        "product_ref": product_refs[0] if product_refs else "",
+        "display_name": "Example Variant",
+        "attributes": "",
+        "sku": "",
+        "price": "9.99",
+        "is_active": "TRUE",
+    }
+    wb = _rows_to_workbook(VARIANT_COLUMNS, [example], "Variants")
+    _add_name_dropdown(wb, "Variants", VARIANT_COLUMNS.index("product_ref") + 1, product_refs)
+    return wb
+
+
+async def build_variants_export(db: AsyncSession, brand_id: uuid.UUID) -> Workbook:
+    """
+    Build a full Variants export workbook with the brand's current variants.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand to export.
+
+    Returns:
+        Workbook: Ready to stream as an .xlsx download.
+    """
+    rows = await export_variants(db, brand_id)
+    product_refs = await _product_refs(db, brand_id)
+    wb = _rows_to_workbook(VARIANT_COLUMNS, rows, "Variants")
+    _add_name_dropdown(
+        wb,
+        "Variants",
+        VARIANT_COLUMNS.index("product_ref") + 1,
+        product_refs,
+        max_rows=max(len(rows) + 500, 1000),
+    )
+    return wb
+
+
+# ── Combos (Stage 22) ─────────────────────────────────────────────────────────
+
+
+async def export_combos(db: AsyncSession, brand_id: uuid.UUID) -> list[dict[str, Any]]:
+    """
+    Fetch all active combo groups for a brand as export-ready rows keyed by COMBO_COLUMNS.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand to export combo groups for.
+
+    Returns:
+        list[dict]: One dict per combo group, ordered by product name.
+    """
+    result = await db.execute(
+        select(ProductComboGroup, Product.ref)
+        .join(Product, ProductComboGroup.product_id == Product.id)
+        .where(Product.brand_id == brand_id, ProductComboGroup.is_active == True)  # noqa: E712
+        .order_by(Product.name, ProductComboGroup.display_order)
+    )
+    rows: list[dict[str, Any]] = []
+    for group, product_ref in result.all():
+        rows.append(
+            {
+                "ref": group.ref,
+                "product_ref": product_ref,
+                "name": group.name,
+                "display_name": group.display_name or "",
+                "min_selections": group.min_selections,
+                "max_selections": group.max_selections,
+                "is_required": _BOOL_LABELS[group.is_required],
+                "display_order": group.display_order,
+                "is_active": _BOOL_LABELS[group.is_active],
+            }
+        )
+    return rows
+
+
+async def build_combos_template(db: AsyncSession, brand_id: uuid.UUID) -> Workbook:
+    """
+    Build a Combos import template: header + one example row + product dropdown.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand the template's dropdown options are scoped to.
+
+    Returns:
+        Workbook: Ready to stream as an .xlsx download.
+    """
+    product_refs = await _product_refs(db, brand_id)
+    example = {
+        "ref": "",
+        "product_ref": product_refs[0] if product_refs else "",
+        "name": "Choose a side",
+        "display_name": "Example Combo",
+        "min_selections": "1",
+        "max_selections": "1",
+        "is_required": "TRUE",
+        "display_order": "0",
+        "is_active": "TRUE",
+    }
+    wb = _rows_to_workbook(COMBO_COLUMNS, [example], "Combos")
+    _add_name_dropdown(wb, "Combos", COMBO_COLUMNS.index("product_ref") + 1, product_refs)
+    return wb
+
+
+async def build_combos_export(db: AsyncSession, brand_id: uuid.UUID) -> Workbook:
+    """
+    Build a full Combos export workbook with the brand's current combo groups.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand to export.
+
+    Returns:
+        Workbook: Ready to stream as an .xlsx download.
+    """
+    rows = await export_combos(db, brand_id)
+    product_refs = await _product_refs(db, brand_id)
+    wb = _rows_to_workbook(COMBO_COLUMNS, rows, "Combos")
+    _add_name_dropdown(
+        wb,
+        "Combos",
+        COMBO_COLUMNS.index("product_ref") + 1,
+        product_refs,
+        max_rows=max(len(rows) + 500, 1000),
+    )
+    return wb
 
 
 # ── Invoices (Stage 21) ───────────────────────────────────────────────────────
