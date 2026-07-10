@@ -72,16 +72,20 @@ See `STAGE_STATUS.md` for full deliverables. **Stage 21 is next (not yet started
   and a change-log panel sourced from the existing `audit_logs` table filtered by
   `entity_type='invoice'` — no new table, `invoice_service.py` already audits every mutation with
   before/after state.
-- **22 — Modifiers Portal Page + Inline Product Variants (redrafted):** Combos are dropped from the
-  portal plan — folded into a future Modifiers redesign, scoped separately later; the existing
-  `product_combo_groups/options` tables and backend routes are untouched for now. Variants get **no**
-  standalone page — they're nested rows under their parent product in the Products table (indented,
-  `↳`-style connector), governed by the `products` page grant; they keep `ref` (`VAR-000001`) and
-  `display_name` for import/export and the nested-row label. Modifiers flip the other way: they get
-  their **own** dedicated portal page (`ref` `MOD-000001` + `display_name` on `ModifierGroup`,
-  filters, inline edit, import/export via Stage 19's framework) instead of staying inline on the
-  Product page — configured on their own page, then attached to products via a picker on the product
-  side (existing `product_modifier_group_links` M:N).
+- **22 — Modifiers Portal Page + Inline Product Variants (redrafted):** Variants get **no** standalone
+  page — they're nested rows under their parent product in the Products table (indented, `↳`-style
+  connector), governed by the `products` page grant; they keep `ref` (`VAR-000001`) and `display_name`
+  for import/export and the nested-row label. Modifiers get their **own** dedicated portal page (`ref`
+  `MOD-000001` + `display_name` on `ModifierGroup`, filters, inline edit, import/export via Stage 19's
+  framework), configured there and attached to products via a picker (existing
+  `product_modifier_group_links` M:N). `ModifierGroup` gains `is_required` + validated
+  `max_selections >= min_selections`. `ModifierOption` gains `product_id` (attaching a product makes
+  selecting the option in POS surface that product's own modifier groups — this **is** how Combos now
+  work), `min_quantity`/`max_quantity`, `is_default`, and `photo_url`. `invoice_line_modifiers` gains a
+  snapshotted `product_id`; any row with it set always reports as a *modifier product sale*, never
+  merged into plain product-revenue totals. Combos are migrated into this model and
+  `product_combo_groups/options`/`combos.py`/`combo_service.py` are removed once that migration ships
+  — see `STAGE_PLAN_16-24.md` §22 for full detail.
 - **23 — POS Menu Builder:** new `menu_layouts` / `menu_tabs` / `menu_buttons` tables. Buttons
   reference products by `ref` code (not FK), so a layout survives product recreation. Prototype
   scope: single-level tabs + buttons only, no nested sub-menus. More than one layout can be

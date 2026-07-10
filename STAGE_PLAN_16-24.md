@@ -233,11 +233,10 @@ layout.
 with Modifiers excluded (inline on the Product page). Reopened and reversed in review — see below.
 
 **Revised decisions:**
-- **Combos dropped from the portal plan entirely.** Combos become part of the Modifiers design
-  instead, to be scoped in a later pass. Nothing changes in the backend for now:
-  `product_combo_groups`/`product_combo_options`, `combos.py`, `combo_service.py` all stay as built
-  in Stage 9. No `ref`, no `display_name`, no portal page for Combos in this stage. The `combos` page
-  key is retired from the catalog (`ROLE_MODEL.md` §6).
+- **Combos dropped from the portal plan and absorbed into a redesigned Modifiers model** (scoped
+  below — no longer deferred). `product_combo_groups`/`product_combo_options`, `combos.py`,
+  `combo_service.py` are migrated off and removed as part of this stage. The `combos` page key is
+  retired from the catalog (`ROLE_MODEL.md` §6).
 - **Variants get no standalone portal page.** They render as nested rows directly under their parent
   product in the Products table — indented, `↳`-style connector (per the reviewed mock), same table,
   same filters, same inline-edit pattern the product rows already use (Stage 20). No new page key;
@@ -254,6 +253,76 @@ with Modifiers excluded (inline on the Product page). Reopened and reversed in r
   the Product page as originally planned. The existing `product_modifier_group_links` M:N join
   already models this; the new work is a picker UI on the product side (product edit form or a new
   Product detail surface) to link/unlink `ModifierGroup`s, plus the Modifiers page itself.
+
+**Modifier Group / Option redesign (Combos absorption — resolved):**
+
+> "For modifiers groups I want a couple of options. Required, this means you have to choose the
+> minimum option. Minimum selection for the group. Maximum selection for the group. Maximum cannot
+> be less than minimum, handle this with validation and error on setting."
+>
+> "A modifier option in the group can have a product attached that will count as a product sale but
+> will be indicated in reporting sales as a modifier sale or product sale and if selected in POS
+> will show modifier groups from that product which is how we do combos."
+>
+> "A modifier option in a modifier group have minimum, maximum, default option and a photo following
+> the same requirements as a product."
+
+*ModifierGroup:*
+- New `is_required` column (BOOLEAN, NOT NULL, default False). `DATA_MODEL.md` already documented
+  this column against `modifier_groups` — it was never actually added to the ORM model; this closes
+  that doc/code gap rather than opening a new one.
+- `min_selections`/`max_selections` unchanged in shape, but gain enforced validation:
+  `max_selections >= min_selections`. Pydantic cross-field validator on the create/full-update schema
+  (422, automatic); a service-level check on partial `PATCH` updates that only touch one field, since
+  those can't rely on Pydantic seeing both values together — 400 `'Maximum selections cannot be less
+  than minimum selections'` per the standard business-rule-violation pattern.
+
+*ModifierOption — new columns:*
+- `product_id` (UUID, nullable, FK → `products.id`, `ON DELETE SET NULL`) — the attached product.
+  `SET NULL` rather than `CASCADE`: the option is a first-class row with its own name/price: deleting
+  the linked product should demote the option back to a plain modifier, not delete it.
+- `min_quantity` / `max_quantity` (INTEGER, NOT NULL, default `0`/`1`) — how many units of *this
+  option* can be selected (e.g. "Extra Cheese" 0–3), independent of the group's own min/max
+  selection count. Same `max_quantity >= min_quantity` validation pattern as the group.
+- `is_default` (BOOLEAN, NOT NULL, default False) — pre-selected when the group renders in POS.
+- `photo_url` (VARCHAR(1024), nullable) — same Supabase Storage path and 500 KB service-level limit
+  as `Product.photo_url` (not a DB constraint, matching how the product photo limit is enforced).
+- **Pricing stays as-is**: `price_delta_cents` is always the charged amount, admin-set on the option
+  row, whether or not a product is attached. The attached product's own `base_price_cents` is never
+  read for pricing — only for its own downstream modifier groups (below).
+
+*How this replaces Combos:* when a `ModifierOption` has `product_id` set, selecting it in POS
+surfaces *that product's own* linked modifier groups (via the existing `product_modifier_group_links`
+join — no new schema for this part) for further selection, the same way a combo's "Choose a side"
+step surfaced other products today. No separate combo-group/option schema is needed once options can
+themselves point at a product.
+
+*Reporting classification:* an `invoice_line_modifiers` row whose selected option had `product_id`
+set is **always** reported as a *modifier product sale* — never toggleable, never silently merged
+into plain product-revenue totals as an ordinary product line, and never split between "modifier" and
+"product" by admin choice. `invoice_line_modifiers` gains a new SNAPSHOT column `product_id` (UUID,
+nullable, FK → `products.id`, `ON DELETE SET NULL`) alongside the existing snapshotted
+`modifier_name`/`price_delta_cents`, so the classification and product attribution survive later
+edits/deletes to the option or product. `vw_modifier_popularity` (or a new view alongside it) exposes
+`product_id` so this bucket can be filtered/reported on distinctly.
+
+*Circular references:* a product's modifier group can now contain an option whose attached product
+has its own modifier groups, which can themselves point back at the original product — the same
+cycle risk Combos had. Port `combo_service.py`'s graph-traversal check into `modifier_service.py`,
+run whenever a `ModifierOption.product_id` is set or changed. Service-level check only, no DB
+constraint — matches the existing combo precedent (`DATA_MODEL.md`'s known-limitations table).
+
+*Combo removal (in scope for this stage, not deferred further):*
+- One-time data migration: each `product_combo_group` → a new `ModifierGroup` (name, `is_required`,
+  `min_selections`/`max_selections` carried over, `brand_id` from the combo product's brand), linked
+  to the combo's parent product via `product_modifier_group_links`; each `product_combo_option` → a
+  new `ModifierOption` under that group with `product_id` and `price_delta_cents` carried over.
+- After migration is verified: drop `product_combo_groups`/`product_combo_options` (new Alembic
+  migration), delete `combos.py`, `combo_service.py`, `tests/integration/test_combo_routes.py`, and
+  retire the `COMBO_GROUP_CREATED`/`COMBO_OPTION_ADDED`/`COMBO_OPTION_REMOVED` audit constants.
+- Update `DATA_MODEL.md`/`ARCHITECTURE_MAP.md` to remove Combo as a live concept once the migration
+  ships; Stage 9's history in `STAGE_STATUS.md` stays as written (it was built and worked) with a
+  forward pointer noting it was superseded here.
 
 **Build plan:**
 - New `ref` sequence: `VAR-000001` (Variant) — unchanged from the original plan, same
@@ -275,9 +344,6 @@ with Modifiers excluded (inline on the Product page). Reopened and reversed in r
 - `app/constants/pages.py`: retire `variants_modifiers` and `combos`, add `modifiers`.
   `app/constants/license_plans.py`: `PRO_PLAN_PAGES` updated to reference `modifiers` instead of the
   two retired keys. Both done ahead of the rest of the build (low-risk placeholder correction).
-
-**Deferred:** Combos redesign (folded into Modifiers) — not scoped yet, comes back as its own future
-stage once the user defines it.
 
 **Depends on:** Stage 19 (import/export framework).
 

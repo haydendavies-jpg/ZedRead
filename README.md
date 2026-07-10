@@ -53,7 +53,7 @@ Multi-tenant POS platform. The hierarchy is **Group → Brand → Site**. A Grou
 | 19 | Bulk Import/Export (XLSX) | Template/full export + import for Products, Categories, Reporting Groups |
 | 20 | Table UX | Inline edit, filters, and new columns on the catalog pages |
 | 21 | Invoice Reporting | Filtered list, XLSX export, detail view, PDF export, change log |
-| 22 | Modifiers Portal Page + Inline Product Variants | Dedicated Modifiers page with human-readable codes/display names; Variants nested inline on Products; Combos dropped (deferred into a future Modifiers redesign) |
+| 22 | Modifiers Portal Page + Inline Product Variants | Dedicated Modifiers page with human-readable codes/display names; Variants nested inline on Products; Combos migrated into a redesigned Modifier Group/Option model and removed |
 | 23 | POS Menu Builder | Graphical tab/button menu layout + publish pipeline |
 | 24 | Product Model Extensions | Product code, print name, open item |
 | 25 | Android — Auth & Catalog | Login, PIN, site selector, product grid, cart |

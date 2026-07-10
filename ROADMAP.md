@@ -175,14 +175,14 @@ the changes reflected immediately in a filterable, inline-editable table.
 
 ## Phase 7 — Invoices & Extended Catalog 🔜
 
-**Goal:** Make invoices fully reportable, give Modifiers their own portal page, and surface product
-variants inline on the Products table. Combos are dropped from this phase — folded into a future
-Modifiers redesign, scoped separately later.
+**Goal:** Make invoices fully reportable, give Modifiers their own portal page, surface product
+variants inline on the Products table, and absorb Combos into a redesigned Modifier Group/Option
+model (product-attached options replace combo groups/options; Combo tables are migrated and removed).
 
 | Stage | Summary | Key outcome |
 |-------|---------|-------------|
 | **21** | **Invoice Reporting** | Filtered list + XLSX export, detail view, PDF export, change log (from existing `audit_logs`) |
-| **22** | **Modifiers Portal Page + Inline Product Variants** | Modifiers get their own page (`ref`, `display_name`, filters, inline edit, import/export) and are attached to products via a picker; Variants become nested rows under their parent product in the Products table, no standalone page. Combos dropped (deferred). |
+| **22** | **Modifiers Portal Page + Inline Product Variants** | Modifiers get their own page (`ref`, `display_name`, filters, inline edit, import/export) and are attached to products via a picker; `is_required`/validated min-max on groups; options gain `product_id` (combo replacement), quantity range, default, photo. Variants become nested rows under their parent product in the Products table, no standalone page. Combos migrated off and removed. |
 
 **Exit criteria:** A portal user can filter invoices, export the filtered set to XLSX, open one
 invoice to see its full history of refunds/edits, print a PDF copy; manage Modifiers from their own

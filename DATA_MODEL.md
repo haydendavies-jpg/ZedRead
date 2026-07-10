@@ -267,12 +267,20 @@ Optional or required add-on groups attached to products (e.g. "Extra Toppings", 
 
 | Table | Key columns |
 |-------|------------|
-| `modifier_groups` | `brand_id`, `name`, `is_required`, `min_selections`, `max_selections` |
+| `modifier_groups` | `brand_id`, `name`, `min_selections`, `max_selections` — **`is_required` is documented here but not yet on the ORM model; being added in Stage 22, see `STAGE_PLAN_16-24.md` §22** |
 | `modifier_options` | `modifier_group_id`, `name`, `price_delta_cents` (can be negative) |
 | `product_modifier_group_links` | `product_id`, `modifier_group_id` |
 
-#### `product_combo_groups` / `product_combo_options`
-Combo/meal deal products that bundle other products. The service enforces that circular references (A → B → C → A) are rejected.
+**Planned (Stage 22, not yet built):** `modifier_groups` gains `ref`/`display_name`; `modifier_options`
+gains `product_id` (attaching a product to an option — selecting it in POS then surfaces that
+product's own linked modifier groups, replacing what Combos do below), `min_quantity`/`max_quantity`,
+`is_default`, and `photo_url`. See `STAGE_PLAN_16-24.md` §22 for the full design.
+
+#### `product_combo_groups` / `product_combo_options` — scheduled for removal (Stage 22)
+Combo/meal deal products that bundle other products. The service enforces that circular references
+(A → B → C → A) are rejected. **Superseded by product-attached `modifier_options` in Stage 22** — once
+that migration ships, these two tables and `combo_service.py` are dropped. Documented here only
+because they're still live in the current schema.
 
 #### `site_product_overrides` / `site_variant_overrides`
 Per-site price adjustments or exclusions on top of the brand catalog. The `product_resolver` service merges these at query time.
@@ -386,6 +394,11 @@ Modifier add-ons attached to a line item, also snapshotted.
 | `name` | VARCHAR(255) | **SNAPSHOT** |
 | `price_delta_cents` | BIGINT | **SNAPSHOT** — can be negative (discount modifier) |
 
+**Planned (Stage 22, not yet built):** a SNAPSHOT `product_id` (UUID FK → products, SET NULL) column,
+set when the selected option had a product attached. Any row with `product_id` set always reports as
+a *modifier product sale* — fixed, not admin-configurable, never merged into plain product-revenue
+totals. See `STAGE_PLAN_16-24.md` §22.
+
 #### `invoice_tax_breakdowns`
 Per-rate tax detail per line item — used for tax reporting.
 
@@ -466,5 +479,5 @@ All reporting queries filter by `brand_id` and `site_id` to enforce tenant scope
 | Scope FK consistency | DB `CHECK` constraint on `user_access_grants` |
 | Audit in same transaction | `log_action()` called before `db.commit()` in every service |
 | License required for device registration | `pos_device_service.py` checks license status |
-| Circular combo references rejected | `combo_service.py` graph traversal (no DB constraint) |
+| Circular combo references rejected | `combo_service.py` graph traversal (no DB constraint) — being ported to `modifier_service.py` for product-attached modifier options in Stage 22 |
 | Photo size limit 500 KB | `product_service.py` (not a DB constraint) |

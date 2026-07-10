@@ -120,8 +120,8 @@ Ops: `user_pos_sessions`, `pos_devices`, `audit_logs` (immutable), `user_invites
 | Access Profile | Named permission tier (JSON perms) belonging to a Brand |
 | Management JWT | Issued to a POS user with portal access after they pick a scope/grant |
 | PIN | Secondary credential for fast terminal user-switching (separate from login password) |
-| Combo | Bundled choices baked into one product (`product_combo_groups/options`) |
-| Modifier | Reusable add-on attachable to many products via join table |
+| Combo | Bundled choices baked into one product (`product_combo_groups/options`) — still live today, but scheduled for removal once Stage 22 ships (superseded by product-attached modifier options, see `STAGE_PLAN_16-24.md` §22) |
+| Modifier | Reusable add-on attachable to many products via join table; in Stage 22 an option can attach a product, which reproduces combo behavior — see `STAGE_PLAN_16-24.md` §22 |
 | Site Override | Per-site price/availability exception layered over brand-wide catalog price |
 
 ## Known discrepancies to watch for vs written summaries / design doc

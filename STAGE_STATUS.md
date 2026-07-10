@@ -154,6 +154,11 @@ Stages 16–24, which were planned after Android scaffolding had already begun.
 - [x] Integration tests: `test_variant_routes.py`, `test_modifier_routes.py`, `test_combo_routes.py`
 - [x] Unit tests: `test_variant_service.py`
 
+**Superseded (Stage 22):** Combos (`product_combo_groups/options`, `combos.py`, `combo_service.py`)
+are migrated into a redesigned Modifiers model — a product-attached `modifier_option` now reproduces
+combo behavior — and removed once that migration ships. This entry stays as written since the work
+described here shipped and worked; see `STAGE_PLAN_16-24.md` §22 for the redesign.
+
 ---
 
 ## Phase 3 — Transactions
@@ -437,16 +442,19 @@ list, matching how every other portal list page filters.
 
 ### Stage 22 — Modifiers Portal Page + Inline Product Variants 🔜 (redrafted)
 
-**Combos dropped from this stage** — folded into a future Modifiers redesign, to be scoped
-separately later. `product_combo_groups`/`product_combo_options` and `combos.py`/`combo_service.py`
-are untouched; no `ref`, no `display_name`, no portal page for Combos in this stage.
+**Combos are absorbed into a redesigned Modifiers model, not deferred.** A product-attached
+`ModifierOption` (new) reproduces combo behavior — see the Modifier Group / Option redesign
+deliverables below. `product_combo_groups`/`product_combo_options`, `combos.py`, `combo_service.py`
+are migrated off and removed as part of this stage.
 
-**Deliverables:**
+**Deliverables — Variants (nested on Products):**
 - [ ] `ref` sequence for Variants (`VAR-000001`) — unchanged from the original plan
 - [ ] `display_name` field on `Variant` (nullable, shown in place of internal `name` on the nested row)
 - [ ] Products table (`ProductsPage.tsx`, Stage 20) gains nested variant rows: each product's
   variants render as indented child rows directly beneath it (`↳`-style connector), inline-editable,
   no separate sidebar entry or page key — governed by the `products` page grant
+
+**Deliverables — Modifiers portal page:**
 - [ ] `ref` sequence for Modifiers (`MOD-000001`) and `display_name` field, both on `ModifierGroup`
 - [ ] New dedicated Modifiers portal page (own sidebar entry, `page_key` = `modifiers`): filters,
   inline edit, import/export via Stage 19 framework — same table UX as Products/Categories
@@ -454,6 +462,31 @@ are untouched; no `ref`, no `display_name`, no portal page for Combos in this st
   existing `product_modifier_group_links` M:N join (no schema change)
 - [ ] `app/constants/pages.py` / `license_plans.py` updated: `variants_modifiers` + `combos` retired,
   replaced by a single `modifiers` key (done ahead of build — see `ROLE_MODEL.md` §6)
+
+**Deliverables — Modifier Group / Option redesign (Combos absorption):**
+- [ ] `ModifierGroup.is_required` (BOOLEAN, default False) — new column, closes a pre-existing
+  `DATA_MODEL.md`/ORM mismatch
+- [ ] `max_selections >= min_selections` validation on `ModifierGroup` (422 via Pydantic cross-field
+  validator on create/full-update; 400 business-rule check on partial `PATCH`)
+- [ ] `ModifierOption.product_id` (nullable FK → `products.id`, `ON DELETE SET NULL`) — attached
+  product; selecting the option in POS surfaces that product's own linked modifier groups (reuses
+  `product_modifier_group_links`, no new join table) — this is the combo replacement mechanism
+- [ ] `ModifierOption.min_quantity`/`max_quantity` (default 0/1) — per-option quantity range, same
+  `max >= min` validation pattern as the group
+- [ ] `ModifierOption.is_default` (BOOLEAN, default False) — pre-selected in POS
+- [ ] `ModifierOption.photo_url` — same Supabase Storage + 500 KB service-level limit as Product
+- [ ] `invoice_line_modifiers.product_id` (new SNAPSHOT column, nullable FK → `products.id`, `ON
+  DELETE SET NULL`) — rows with this set always report as a *modifier product sale*, not
+  configurable, never merged into plain product-revenue totals
+- [ ] Circular-reference graph-traversal check ported from `combo_service.py` into
+  `modifier_service.py`, run on `ModifierOption.product_id` assignment (service-level only, no DB
+  constraint — same precedent as combos)
+- [ ] One-time data migration: existing `product_combo_groups`/`product_combo_options` → new
+  `ModifierGroup`/`ModifierOption` rows (with `product_id` set), linked via
+  `product_modifier_group_links`
+- [ ] Remove `product_combo_groups`/`product_combo_options` tables, `combos.py`, `combo_service.py`,
+  `tests/integration/test_combo_routes.py`, and the `COMBO_GROUP_CREATED`/`COMBO_OPTION_ADDED`/
+  `COMBO_OPTION_REMOVED` audit constants, once the migration is verified
 
 ---
 
