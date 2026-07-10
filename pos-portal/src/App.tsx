@@ -3,7 +3,7 @@
  *
  * Routes are split by user type:
  *   SuperAdmin routes  (/groups, /brands, /sites, /licenses, /superadmins, /users)
- *   Management routes  (/management/products, /categories, /tax, /reports, /users)
+ *   Management routes  (/management/products, /categories, /tax, /reports, /users, /access-profiles)
  *
  * The Layout sidebar adapts based on JWT type (portal_access vs mgmt_access).
  * PrivateRoute enforces authentication; requireSuperAdmin guards admin-only routes.
@@ -30,6 +30,7 @@ import { CategoriesPage } from './pages/management/CategoriesPage'
 import { ReportingGroupsPage } from './pages/management/ReportingGroupsPage'
 import { ReportsPage } from './pages/management/ReportsPage'
 import { UsersPage as MgmtUsersPage } from './pages/management/UsersPage'
+import { AccessProfilesPage } from './pages/management/AccessProfilesPage'
 import { SiteOverridesPage } from './pages/management/SiteOverridesPage'
 import { CompanyProfilePage } from './pages/management/CompanyProfilePage'
 import { UsersPage } from './pages/UsersPage'
@@ -162,6 +163,7 @@ export default function App() {
               <Route path="management/reporting-groups" element={<ReportingGroupsPage />} />
               <Route path="management/reports" element={<ReportsPage />} />
               <Route path="management/users" element={<MgmtUsersPage />} />
+              <Route path="management/access-profiles" element={<AccessProfilesPage />} />
               <Route path="management/overrides" element={<SiteOverridesPage />} />
               <Route path="management/company-profile" element={<CompanyProfilePage />} />
             </Route>

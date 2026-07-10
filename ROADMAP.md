@@ -117,13 +117,13 @@ profiles with the 5-role model. See `ROLE_MODEL.md` for the full design.
 |-------|---------|-------------|
 | **15** | **Rename + 5-role model** | SuperAdmin/User rename, per-page permission grants, license gating, cross-identity login |
 
-**Status:** backend implementation in progress (page catalog, access-profile page permissions,
-identity-token login flow are built). Portal frontend still uses the old "Portal Users"/"POS Users"
-naming and has no UI yet for managing page permissions — closed out in Stage 18.
+**Status:** complete. Page catalog, access-profile page permissions, identity-token login flow, and
+the portal frontend rename to SuperAdmins/Users are all built. The page-permission management UI
+itself shipped in Stage 18.
 
 ---
 
-## Phase 5 — Catalog Foundations 🚧
+## Phase 5 — Catalog Foundations ✅
 
 **Goal:** Introduce Reporting Groups above Categories, let backend users delegate account creation
 within their own scope, and give the Stage 15 permission system its first portal UI.
@@ -134,10 +134,9 @@ within their own scope, and give the Stage 15 permission system its first portal
 | **17** | **Delegated User Creation** | Site/Brand/Group-scoped users can create Users at or below their own scope and role |
 | **18** | **Permission Scopes Portal UI** | First portal UI for access-profile page permissions; reconciles page catalog going forward |
 
-**Status:** Stages 16 and 17 are complete. Stage 18 (portal UI for page-level permissions) has not
-started — see `STAGE_STATUS.md` for the detailed Stage 17 deliverables (scope ladder + role ceiling
-in `access_grant_service.py`, Master User made unconditionally ungrantable, and a "Grant Access" form
-added to `management/UsersPage.tsx`).
+**Status:** complete — see `STAGE_STATUS.md` for detailed deliverables (Stage 17's scope ladder +
+role ceiling in `access_grant_service.py` and Master User guard; Stage 18's `AccessProfilesPage.tsx`
+permission-scopes UI with its license-gate preview).
 
 **Exit criteria:** A brand admin can create reporting groups, every category belongs to one, a
 site-level user can create a new Staff user at their own site (and no higher), and any backend user

@@ -33,6 +33,7 @@ const MGMT_NAV = [
 const MGMT_BRAND_NAV = [
   { to: '/management/overrides', label: 'Site Overrides' },
   { to: '/management/users', label: 'Users & Grants' },
+  { to: '/management/access-profiles', label: 'Permission Scopes' },
 ]
 
 export function Layout() {
