@@ -29,6 +29,7 @@ import { ProductsPage } from './pages/management/ProductsPage'
 import { VariantsCombosPage } from './pages/management/VariantsCombosPage'
 import { CategoriesPage } from './pages/management/CategoriesPage'
 import { ReportingGroupsPage } from './pages/management/ReportingGroupsPage'
+import { MenuBuilderPage } from './pages/management/MenuBuilderPage'
 import { ReportsPage } from './pages/management/ReportsPage'
 import { InvoicesPage } from './pages/management/InvoicesPage'
 import { InvoiceDetailPage } from './pages/management/InvoiceDetailPage'
@@ -165,6 +166,7 @@ export default function App() {
               <Route path="management/variants-combos" element={<VariantsCombosPage />} />
               <Route path="management/categories" element={<CategoriesPage />} />
               <Route path="management/reporting-groups" element={<ReportingGroupsPage />} />
+              <Route path="management/menu-builder" element={<MenuBuilderPage />} />
               <Route path="management/reports" element={<ReportsPage />} />
               <Route path="management/invoices" element={<InvoicesPage />} />
               <Route path="management/invoices/:invoiceId" element={<InvoiceDetailPage />} />

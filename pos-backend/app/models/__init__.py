@@ -13,6 +13,9 @@ from app.models.invoice_line_modifier import InvoiceLineModifier
 from app.models.invoice_tax_breakdown import InvoiceTaxBreakdown
 from app.models.license import License
 from app.models.license_invoice import LicenseInvoice
+from app.models.menu_button import MenuButton
+from app.models.menu_layout import MenuLayout
+from app.models.menu_tab import MenuTab
 from app.models.modifier_group import ModifierGroup
 from app.models.modifier_option import ModifierOption
 from app.models.payment import Payment
@@ -54,6 +57,9 @@ __all__ = [
     "InvoiceTaxBreakdown",
     "License",
     "LicenseInvoice",
+    "MenuButton",
+    "MenuLayout",
+    "MenuTab",
     "ModifierGroup",
     "ModifierOption",
     "Payment",

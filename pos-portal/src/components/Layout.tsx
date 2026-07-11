@@ -26,6 +26,7 @@ const MGMT_NAV = [
   { to: '/management/variants-combos', label: 'Variants & Combos' },
   { to: '/management/categories', label: 'Categories' },
   { to: '/management/reporting-groups', label: 'Reporting Groups' },
+  { to: '/management/menu-builder', label: 'Menu Builder' },
   { to: '/management/reports', label: 'Reports' },
   { to: '/management/invoices', label: 'Invoices' },
   { to: '/management/company-profile', label: 'Company Profile' },

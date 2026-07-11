@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-10 (Stage 22)
+Last updated: 2026-07-11 (Stage 23)
 
 ---
 
@@ -15,7 +15,7 @@ Last updated: 2026-07-10 (Stage 22)
 | 5 — Catalog Foundations | 16–18 | ✅ Complete |
 | 6 — Catalog Data & Table UX | 19–20 | ✅ Complete |
 | 7 — Invoices & Extended Catalog | 21–22 | ✅ Complete |
-| 8 — POS Menu Builder | 23 | 🔜 Planned |
+| 8 — POS Menu Builder | 23 | ✅ Complete |
 | 9 — Product Model Extensions | 24 | ✅ Complete |
 | 10 — Android App | 25–26 | 🚧 In Progress (scaffolding only) |
 
@@ -537,17 +537,57 @@ it's a Stage 9 gap this stage didn't introduce.
 
 ## Phase 8 — POS Menu Builder
 
-### Stage 23 — Menu Builder Prototype 🔜
+### Stage 23 — Menu Builder Prototype ✅
 
 **Deliverables:**
-- [ ] Migration: `menu_layouts` (scope, name, `is_published`, version), `menu_tabs` (ordered),
-  `menu_buttons` (tab_id, product `ref` code — not FK, so a button survives product recreation)
-- [ ] Portal builder UI: drag/drop tabs and buttons, live name/price preview from the catalog by code
-- [ ] Publish warns if a button's code no longer resolves to an active product
-- [ ] Multiple layouts may be published at once (e.g. per-site or day-part menus)
-- [ ] `GET /pos/menu-layout?site_id=` contract for Android to consume (Android consumption is out of
-  scope for this stage)
-- [ ] Prototype scope: single-level tabs + buttons only, no nested sub-menus
+- [x] Migration `0040`: `menu_layouts` (`brand_id`, nullable `site_id`, `scope` — 'brand' or 'site'
+  with a check constraint tying the two together, `name`, `is_published`, `version`), `menu_tabs`
+  (`layout_id`, `name`, `display_order`), `menu_buttons` (`tab_id`, `product_ref` — a product's `ref`
+  code, deliberately not a FK, so a button survives the underlying product being deleted and
+  recreated with the same code, per the original ask). New models `MenuLayout`/`MenuTab`/`MenuButton`
+  registered in `app/models/__init__.py`.
+- [x] `app/services/menu_builder_service.py`: CRUD for layouts/tabs/buttons, tab and button reorder
+  (a single `POST .../buttons/reorder` call reassigns `tab_id` and renumbers `display_order` for a
+  full ordered id list, so a cross-tab drag only needs one call against the destination tab),
+  `publish_menu_layout()` (bumps `version`, resolves every button's `product_ref` against the brand's
+  catalog and returns a `PublishWarning` per stale/inactive ref **without** blocking the publish, per
+  the stage plan's "warn (don't silently fail)"), `unpublish_menu_layout()`, and
+  `get_published_menu_layouts_for_site()` — the read model behind the POS contract below. All writes
+  call `log_action()` with new `MENU_LAYOUT_*`/`MENU_TAB_*`/`MENU_BUTTON_*` audit constants.
+- [x] New router `app/routes/menu_layouts.py`: `/menu-layouts` (management/portal JWT only, mirroring
+  `reporting_groups.py`'s `_require_management` guard — POS terminal tokens are read-only via the
+  contract route) covers layout CRUD, publish/unpublish, tab CRUD + reorder, button add/remove +
+  reorder; a second `pos_router` exposes `GET /pos/menu-layout?site_id=` — the Android consumption
+  contract (Android-side consumption itself is explicitly out of scope for this stage) — reusing
+  `report_service._assert_site_scope()` so POS terminal and site-scope management tokens are pinned
+  to their own site the same way `reports.py` already works.
+- [x] `menu_builder` page key added to `PAGE_CATALOG` (Product & Menus category), `ROLE_MODEL.md` §6,
+  and `PRO_PLAN_PAGES` in `license_plans.py` (Manager/Admin/Master get it by default via the existing
+  `PAGE_KEYS`-derived grants; Staff does not), per the Stage 18 standing rule that every new portal
+  page updates all three places in the same commit.
+- [x] Portal: new `MenuBuilderPage.tsx` (`/management/menu-builder`) — a layout list (create, open,
+  publish/unpublish toggle via `StatusBadge`, delete) plus a builder view: a draggable tab sidebar
+  and a draggable button grid, both using native HTML5 drag-and-drop (no new dependency — none was
+  installed in this project) rather than pulling in a dnd library for a single-level reorder/move
+  use case. Buttons show a live name/price preview resolved from the brand's catalog by `product_ref`
+  and flag in red when a code no longer resolves (matching the publish-warning reasons). Reachable
+  from `MGMT_NAV` and as a new tab on the SuperAdmin's Brand detail page.
+- [x] Prototype scope honoured: single-level tabs + buttons only, no nested sub-menus. More than one
+  layout may have `is_published=True` at once (e.g. per-site or day-part menus) — publishing one
+  layout has no effect on any other.
+- [x] Integration tests: `test_menu_layout_routes.py` (29 cases — layout/tab/button CRUD, tab and
+  button reorder including a cross-tab move, publish with/without warnings on a since-deactivated
+  product, unpublish, brand/site scope validation incl. a foreign-brand `site_id` rejection, auth
+  failures, the `/pos/menu-layout` contract incl. published-only filtering and site-scope 403, and
+  audit rows for `MENU_LAYOUT_CREATED`/`MENU_TAB_CREATED`/`MENU_BUTTON_ADDED`/`MENU_LAYOUT_PUBLISHED`).
+
+**Known limitation:** creating a `scope='site'` layout still has no site picker for brand/group-scope
+management users or SuperAdmins outside a Brand-detail-page context — the same gap Stage 17/18 already
+flagged (no management-JWT-scoped `GET /sites` route exists). A site-scope management user's own
+`site_id` is read straight from their JWT and pre-filled automatically; anyone else must paste the
+target site's UUID into a raw text field, mirroring the identical workaround already shipped on
+`management/UsersPage.tsx`'s grant-creation form. Revisit both together if a management-scoped sites
+list is ever added.
 
 ---
 

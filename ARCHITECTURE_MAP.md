@@ -76,6 +76,7 @@ Tokens stored in localStorage (portal; impersonation tokens per-tab in sessionSt
 | reports.py | daily-sales, product-revenue, payment-methods, tax-collected |
 | modifiers.py / combos.py / variants.py | catalog extras management; combos.py/variants.py each also expose a brand-wide `list_router` (`GET /combos`, `GET /variants`, joined to parent product) plus bulk XLSX export/template/import (Stage 22) |
 | reporting_groups.py | Reporting Group CRUD (Stage 16), bulk XLSX export/template/import (Stage 19) |
+| menu_layouts.py | POS Menu Builder (Stage 23): layout/tab/button CRUD, reorder, publish/unpublish (management JWT); `pos_router` exposes `GET /pos/menu-layout?site_id=`, the read contract for Android |
 | site_overrides.py | per-site price/availability overrides |
 | pos_devices.py | terminal device registration |
 | user_invites.py / license_invoices.py | onboarding invites, recurring license billing |
@@ -109,6 +110,12 @@ Transactions: `invoices`, `invoice_line_items` (snapshotted name/price), `invoic
 Billing: `licenses` (site_id, one per site), `license_invoices`.
 Overrides: `site_product_overrides`, `site_variant_overrides`.
 Ops: `user_pos_sessions`, `pos_devices`, `audit_logs` (immutable), `user_invites`.
+Menu Builder (Stage 23): `menu_layouts` (brand_id, nullable site_id, `scope` 'brand'|'site' with a
+check constraint tying the two together, `is_published`, `version`), `menu_tabs` (layout_id, ordered
+via `display_order`), `menu_buttons` (tab_id, `product_ref` — a product's `ref` code, deliberately
+not a FK so a button survives the underlying product being deleted and recreated with the same
+code). More than one layout may be `is_published` at once (per-site/day-part menus); prototype
+scope is single-level tabs + buttons only, no nested sub-menus.
 
 ## Terminology
 

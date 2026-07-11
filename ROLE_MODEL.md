@@ -165,11 +165,11 @@ on the Brand/Site's license plan, regardless of role. This is a second, independ
 
 ## 6. Page catalog (resolved)
 
-18 pages across the 5 categories, defined in `app/constants/pages.py`:
+19 pages across the 5 categories, defined in `app/constants/pages.py`:
 
 | Category | Pages |
 |---|---|
-| Product & Menus | products, variants_modifiers, combos, categories, reporting_groups |
+| Product & Menus | products, variants_modifiers, combos, categories, reporting_groups, menu_builder |
 | App Configuration | site_settings, devices, tax_settings, license_billing |
 | Reports | daily_sales, tax_collected, invoices, audit_log |
 | User Management | users, access_grants, access_profiles |
@@ -177,14 +177,15 @@ on the Brand/Site's license plan, regardless of role. This is a second, independ
 
 `reporting_groups` (Stage 16) was added to the Product & Menus category in the same commit that
 shipped the Reporting Groups portal page, per the Stage 18 standing rule that every new portal page
-adds its `page_key` here.
+adds its `page_key` here. `menu_builder` (Stage 23) was added the same way alongside the Menu
+Builder portal page.
 
 Default role grants seeded by `seed_system_profiles()`:
 
 | Role | Default pages |
 |---|---|
-| Master User | All 18 |
-| Admin | All 18 |
+| Master User | All 19 |
+| Admin | All 19 |
 | Reporting Only | Reports category only (daily_sales, tax_collected, invoices, audit_log) |
 | Manager | All except users, access_grants, access_profiles, license_billing |
 | Staff | products, categories, reporting_groups, customers |
@@ -195,5 +196,5 @@ business sign-off; flag for review if the user wants different tier boundaries:
 | Plan | Pages unlocked |
 |---|---|
 | starter | products, categories, reporting_groups, site_settings, daily_sales, invoices, users, customers |
-| pro | All starter pages plus variants_modifiers, combos, devices, tax_settings, license_billing, tax_collected, audit_log, access_grants, loyalty_programs |
+| pro | All starter pages plus variants_modifiers, combos, menu_builder, devices, tax_settings, license_billing, tax_collected, audit_log, access_grants, loyalty_programs |
 | enterprise (and any unrecognised plan_name, including null) | Full catalog |
