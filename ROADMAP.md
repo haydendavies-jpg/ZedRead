@@ -44,7 +44,7 @@ gantt
 
     section Phase 7 · Invoices & Extended Catalog
     Stage 21 · Invoice Reporting     :done, s21, after s20, 14d
-    Stage 22 · Variants & Combos UI  :s22, after s21, 14d
+    Stage 22 · Variants & Combos UI  :done, s22, after s21, 14d
 
     section Phase 8 · POS Menu Builder
     Stage 23 · Menu Builder          :s23, after s22, 21d
@@ -173,19 +173,26 @@ the changes reflected immediately in a filterable, inline-editable table.
 
 ---
 
-## Phase 7 — Invoices & Extended Catalog 🚧
+## Phase 7 — Invoices & Extended Catalog ✅
 
 **Goal:** Make invoices fully reportable and bring Variants/Combos into the portal.
 
 | Stage | Summary | Key outcome |
 |-------|---------|-------------|
 | **21** | **Invoice Reporting** ✅ | Filtered list + XLSX export, detail view, PDF export, change log (from existing `audit_logs`) |
-| **22** | **Variants & Combos Portal Pages** | Combined Variants/Combos page with `ref` codes, `display_name`, filters, import/export (Modifiers stay inline on the Product page) |
+| **22** | **Variants & Combos Portal Pages** ✅ | Combined Variants/Combos page with `ref` codes, `display_name`, filters, import/export (Modifiers stay inline on the Product page) |
 
 **Stage 21 status:** complete — see `STAGE_STATUS.md` for full deliverables. New `/invoice-reports`
 routes (list with date/site/status/amount filters, XLSX export, detail view, PDF export, change log)
 sit alongside the untouched transactional engine in `routes/invoices.py`. `create_refund()` was
 fixed to also log the refund against the *original* invoice's `entity_id` so the change log shows it.
+
+**Stage 22 status:** complete — see `STAGE_STATUS.md` for full deliverables. `product_variants` and
+`product_combo_groups` (the entity a "combo" resolves to — there is no separate Combo table) each
+gained a `ref` sequence and `display_name`; combo groups also gained `is_active` to match variants'
+existing soft-delete flag. New brand-wide `GET /variants`/`GET /combos` (joined to their parent
+product) back a combined `VariantsCombosPage.tsx` with filters, inline edit, status toggle, and
+import/export via Stage 19's shared services.
 
 **Exit criteria:** A portal user can filter invoices, export the filtered set to XLSX, open one
 invoice to see its full history of refunds/edits, print a PDF copy, and manage variants and combos

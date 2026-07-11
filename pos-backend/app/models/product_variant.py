@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,6 +19,9 @@ class ProductVariant(Base):
 
     The exact attribute value combination must be unique per product (enforced
     by the composite PK on product_variant_attributes: variant_id + attribute_type_id).
+
+    ref/display_name surface the VAR-000001-style sequence and management-facing
+    label added by migration 0039 (Stage 22).
     """
 
     __tablename__ = "product_variants"
@@ -28,6 +31,18 @@ class ProductVariant(Base):
         primary_key=True,
         default=uuid.uuid4,
         comment="Primary key — UUID generated at insert time",
+    )
+    ref: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        unique=True,
+        server_default=text("'VAR-' || LPAD(nextval('product_variants_ref_seq')::text, 6, '0')"),
+        comment="Human-readable reference ID, e.g. VAR-000001",
+    )
+    display_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Management-facing label distinct from the attribute-derived internal name",
     )
     product_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

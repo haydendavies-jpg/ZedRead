@@ -5,6 +5,7 @@
  */
 
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/axios'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
@@ -14,7 +15,7 @@ import { EntityIdChip } from '../../components/EntityIdChip'
 import { EditableText, EditableSelect } from '../../components/EditableCell'
 import { FilterBar, type FilterConfig } from '../../components/FilterBar'
 import { apiErrorMessage } from '../../utils/apiError'
-import type { Product, ProductListItem, Category, ReportingGroup } from '../../types'
+import type { Product, ProductListItem, Category, ReportingGroup, Variant } from '../../types'
 
 function centsToDisplay(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
@@ -385,6 +386,8 @@ function ProductFormModal({ product, brandId, categories, onClose, onSaved }: Pr
           />
         </div>
 
+        {product && <LinkedVariantsSection productId={product.id} brandId={brandId} />}
+
         {error && (
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
             {error}
@@ -405,5 +408,34 @@ function ProductFormModal({ product, brandId, categories, onClose, onSaved }: Pr
         </div>
       </div>
     </Modal>
+  )
+}
+
+/** Read-only list of this product's variants (Stage 22) — creating one requires the
+ * per-brand attribute picker, which lives outside the portal for now; see
+ * VariantsCombosPage.tsx for the combined Variants & Combos page. */
+function LinkedVariantsSection({ productId, brandId }: { productId: string; brandId: string }) {
+  const { data: variants = [] } = useQuery<Variant[]>({
+    queryKey: ['product-variants', productId],
+    queryFn: () => api.get(`/products/${productId}/variants`, { params: { brand_id: brandId } }).then((r) => r.data),
+  })
+
+  if (variants.length === 0) return null
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Variants</label>
+      <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+        {variants.map((v) => (
+          <div key={v.id} className="flex items-center justify-between px-3 py-2 text-sm">
+            <span className="text-gray-700">{v.display_name || v.sku || v.ref}</span>
+            <EntityIdChip id={v.id} ref={v.ref} />
+          </div>
+        ))}
+      </div>
+      <Link to="/management/variants-combos" className="text-xs text-brand-600 hover:underline mt-1 inline-block">
+        Manage variants →
+      </Link>
+    </div>
   )
 }

@@ -74,7 +74,7 @@ Tokens stored in localStorage (portal; impersonation tokens per-tab in sessionSt
 | admin_impersonation.py | SuperAdmin "session into" an entity's master-user grant |
 | email_templates.py / reference_data.py | admin-editable email templates; countries/timezones/tax-id labels |
 | reports.py | daily-sales, product-revenue, payment-methods, tax-collected |
-| modifiers.py / combos.py / variants.py | catalog extras management |
+| modifiers.py / combos.py / variants.py | catalog extras management; combos.py/variants.py each also expose a brand-wide `list_router` (`GET /combos`, `GET /variants`, joined to parent product) plus bulk XLSX export/template/import (Stage 22) |
 | reporting_groups.py | Reporting Group CRUD (Stage 16), bulk XLSX export/template/import (Stage 19) |
 | site_overrides.py | per-site price/availability overrides |
 | pos_devices.py | terminal device registration |
@@ -85,7 +85,10 @@ Tokens stored in localStorage (portal; impersonation tokens per-tab in sessionSt
 Hierarchy: `groups` ← `brands` (group_id) ← `sites` (brand_id).
 Catalog: `categories`, `products` (base_price_cents BIGINT), `product_variants`, `product_combo_groups/options`,
 `modifier_groups/options`, `product_modifier_group_links` (M:N), `reporting_groups` (Stage 16, one
-level above Category). Products carry `base_price_cents`
+level above Category). `product_variants` and `product_combo_groups` each carry a `ref`
+(`VAR-000001` / `CMB-000001`) and nullable `display_name` (Stage 22) — there is no separate `Combo`
+table; a "combo product" is a `Product` that owns `product_combo_groups` rows, so
+`ProductComboGroup` is the entity the Stage 22 portal page surfaces as "Combo". Products carry `base_price_cents`
 (tax-inclusive), `price_ex_cents` (derived), `is_taxable`, `ref` (human-readable PRD-000001 code,
 wired into the ORM/schema in Stage 24 — previously dormant since migration `0013`), `print_name`
 (nullable, falls back to `name`), and `is_open_item` (flexible price/name at sale time, gated by the

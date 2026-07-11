@@ -23,6 +23,7 @@ const SUPER_ADMIN_ONLY_NAV = [
 /** Nav items shown to all management users. Tax is admin-only (see Tax Templates). */
 const MGMT_NAV = [
   { to: '/management/products', label: 'Products' },
+  { to: '/management/variants-combos', label: 'Variants & Combos' },
   { to: '/management/categories', label: 'Categories' },
   { to: '/management/reporting-groups', label: 'Reporting Groups' },
   { to: '/management/reports', label: 'Reports' },

@@ -26,6 +26,7 @@ import { BrandDetailPage } from './pages/brands/BrandDetailPage'
 import { GroupDetailPage } from './pages/groups/GroupDetailPage'
 import { SiteDetailPage } from './pages/sites/SiteDetailPage'
 import { ProductsPage } from './pages/management/ProductsPage'
+import { VariantsCombosPage } from './pages/management/VariantsCombosPage'
 import { CategoriesPage } from './pages/management/CategoriesPage'
 import { ReportingGroupsPage } from './pages/management/ReportingGroupsPage'
 import { ReportsPage } from './pages/management/ReportsPage'
@@ -161,6 +162,7 @@ export default function App() {
               {/* Management routes — available to both SuperAdmin and management users */}
               <Route path="management" element={<Navigate to="/management/products" replace />} />
               <Route path="management/products" element={<ProductsPage />} />
+              <Route path="management/variants-combos" element={<VariantsCombosPage />} />
               <Route path="management/categories" element={<CategoriesPage />} />
               <Route path="management/reporting-groups" element={<ReportingGroupsPage />} />
               <Route path="management/reports" element={<ReportsPage />} />

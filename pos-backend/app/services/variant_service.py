@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants.audit_actions import (
     VARIANT_CREATED,
     VARIANT_DEACTIVATED,
+    VARIANT_REACTIVATED,
     VARIANT_UPDATED,
 )
 from app.constants.statuses import ActorType
@@ -25,50 +26,15 @@ from app.models.product_attribute_type import ProductAttributeType
 from app.models.product_attribute_value import ProductAttributeValue
 from app.models.product_variant import ProductVariant
 from app.models.product_variant_attribute import ProductVariantAttribute
+from app.schemas.variant import (
+    AttributeAssignment,
+    VariantCreate,
+    VariantResponse,
+    VariantUpdate,
+)
 from app.services.audit_service import log_action
 
 log = structlog.get_logger(__name__)
-
-
-# ── Schemas (inline — no separate file for Stage 9 to keep footprint small) ──
-
-
-from pydantic import BaseModel, Field
-
-
-class AttributeAssignment(BaseModel):
-    """One attribute type → value pair for a variant."""
-
-    attribute_type_id: uuid.UUID
-    attribute_value_id: uuid.UUID
-
-
-class VariantCreate(BaseModel):
-    """Payload for creating a product variant."""
-
-    attributes: list[AttributeAssignment] = Field(..., min_length=1)
-    sku: str | None = None
-    price_cents: int | None = Field(None, ge=0)
-
-
-class VariantUpdate(BaseModel):
-    """Payload for updating a variant's price or SKU — attributes are immutable."""
-
-    sku: str | None = None
-    price_cents: int | None = Field(None, ge=0)
-
-
-class VariantResponse(BaseModel):
-    """Response schema for a variant."""
-
-    id: uuid.UUID
-    product_id: uuid.UUID
-    sku: str | None
-    price_cents: int | None
-    is_active: bool
-    attributes: list[AttributeAssignment]
-
-    model_config = {"from_attributes": True}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -202,6 +168,21 @@ async def _check_duplicate_combination(
 # ── Public service functions ───────────────────────────────────────────────────
 
 
+async def variant_to_response(db: AsyncSession, variant: ProductVariant) -> VariantResponse:
+    """Assemble a VariantResponse for a variant, loading its attribute assignments."""
+    attrs = await _load_attributes(db, variant.id)
+    return VariantResponse(
+        id=variant.id,
+        ref=variant.ref,
+        product_id=variant.product_id,
+        sku=variant.sku,
+        price_cents=variant.price_cents,
+        display_name=variant.display_name,
+        is_active=variant.is_active,
+        attributes=attrs,
+    )
+
+
 async def list_variants(
     db: AsyncSession,
     brand_id: uuid.UUID,
@@ -237,21 +218,50 @@ async def list_variants(
         .limit(limit)
     )
     variants = result.scalars().all()
+    return [await variant_to_response(db, v) for v in variants]
 
-    output = []
-    for v in variants:
-        attrs = await _load_attributes(db, v.id)
-        output.append(
-            VariantResponse(
-                id=v.id,
-                product_id=v.product_id,
-                sku=v.sku,
-                price_cents=v.price_cents,
-                is_active=v.is_active,
-                attributes=attrs,
-            )
-        )
-    return output
+
+async def list_variants_for_brand(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    product_id: uuid.UUID | None = None,
+    include_inactive: bool = False,
+    skip: int = 0,
+    limit: int = 200,
+) -> list[tuple[ProductVariant, str, str]]:
+    """
+    Return every variant across the brand's catalog, joined to its parent product.
+
+    Powers the Stage 22 combined Variants+Combos portal page, which lists
+    variants across all products rather than one product at a time.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+        product_id: Optional filter — only variants of this product.
+        include_inactive: When True, also return soft-deleted variants.
+        skip: Pagination offset.
+        limit: Maximum rows to return.
+
+    Returns:
+        list[tuple[ProductVariant, str, str]]: Each tuple is
+            (variant, product_name, product_ref), ordered by product name.
+    """
+    query = (
+        select(ProductVariant, Product.name, Product.ref)
+        .join(Product, ProductVariant.product_id == Product.id)
+        .where(Product.brand_id == brand_id)
+        .order_by(Product.name, ProductVariant.created_at)
+        .offset(skip)
+        .limit(limit)
+    )
+    if not include_inactive:
+        query = query.where(ProductVariant.is_active == True)  # noqa: E712
+    if product_id is not None:
+        query = query.where(ProductVariant.product_id == product_id)
+
+    result = await db.execute(query)
+    return [tuple(row) for row in result.all()]
 
 
 async def create_variant(
@@ -260,6 +270,7 @@ async def create_variant(
     product_id: uuid.UUID,
     payload: VariantCreate,
     actor: User | SuperAdmin,
+    import_id: uuid.UUID | None = None,
 ) -> VariantResponse:
     """
     Create a product variant and its attribute assignments.
@@ -316,6 +327,7 @@ async def create_variant(
         product_id=product_id,
         sku=payload.sku,
         price_cents=payload.price_cents,
+        display_name=payload.display_name,
         is_active=True,
     )
     db.add(variant)
@@ -330,6 +342,14 @@ async def create_variant(
             )
         )
 
+    after_state: dict = {
+        "product_id": str(product_id),
+        "price_cents": payload.price_cents,
+        "attribute_count": len(payload.attributes),
+    }
+    if import_id is not None:
+        after_state["import_id"] = str(import_id)
+
     await log_action(
         db=db,
         action=VARIANT_CREATED,
@@ -339,24 +359,12 @@ async def create_variant(
         actor_id=actor.id,
         actor_email=actor.email,
         actor_name=actor.name,
-        after_state={
-            "product_id": str(product_id),
-            "price_cents": payload.price_cents,
-            "attribute_count": len(payload.attributes),
-        },
+        after_state=after_state,
     )
 
     await db.commit()
-    attrs = await _load_attributes(db, variant.id)
     log.info("variant.created", variant_id=str(variant.id), product_id=str(product_id))
-    return VariantResponse(
-        id=variant.id,
-        product_id=variant.product_id,
-        sku=variant.sku,
-        price_cents=variant.price_cents,
-        is_active=variant.is_active,
-        attributes=attrs,
-    )
+    return await variant_to_response(db, variant)
 
 
 async def update_variant(
@@ -365,9 +373,10 @@ async def update_variant(
     variant_id: uuid.UUID,
     payload: VariantUpdate,
     actor: User | SuperAdmin,
+    import_id: uuid.UUID | None = None,
 ) -> VariantResponse:
     """
-    Update a variant's price or SKU. Attributes are immutable after creation.
+    Update a variant's price, SKU, or display name. Attributes are immutable after creation.
 
     Args:
         db: Active database session.
@@ -375,6 +384,7 @@ async def update_variant(
         variant_id: UUID of the variant to update.
         payload: Fields to update.
         actor: The authenticated POS user.
+        import_id: Batch ID shared by every row of a bulk import; None for direct calls.
 
     Returns:
         VariantResponse: The updated variant.
@@ -383,12 +393,18 @@ async def update_variant(
         HTTPException: 404 if not found.
     """
     variant = await _get_variant_or_404(db, brand_id, variant_id)
-    before = {"price_cents": variant.price_cents, "sku": variant.sku}
+    before = {"price_cents": variant.price_cents, "sku": variant.sku, "display_name": variant.display_name}
 
     if payload.sku is not None:
         variant.sku = payload.sku
     if payload.price_cents is not None:
         variant.price_cents = payload.price_cents
+    if payload.display_name is not None:
+        variant.display_name = payload.display_name
+
+    after_state = {"price_cents": variant.price_cents, "sku": variant.sku, "display_name": variant.display_name}
+    if import_id is not None:
+        after_state["import_id"] = str(import_id)
 
     await log_action(
         db=db,
@@ -400,19 +416,11 @@ async def update_variant(
         actor_email=actor.email,
         actor_name=actor.name,
         before_state=before,
-        after_state={"price_cents": variant.price_cents, "sku": variant.sku},
+        after_state=after_state,
     )
 
     await db.commit()
-    attrs = await _load_attributes(db, variant.id)
-    return VariantResponse(
-        id=variant.id,
-        product_id=variant.product_id,
-        sku=variant.sku,
-        price_cents=variant.price_cents,
-        is_active=variant.is_active,
-        attributes=attrs,
-    )
+    return await variant_to_response(db, variant)
 
 
 async def deactivate_variant(
@@ -461,12 +469,61 @@ async def deactivate_variant(
     )
 
     await db.commit()
-    attrs = await _load_attributes(db, variant.id)
-    return VariantResponse(
-        id=variant.id,
-        product_id=variant.product_id,
-        sku=variant.sku,
-        price_cents=variant.price_cents,
-        is_active=variant.is_active,
-        attributes=attrs,
+    return await variant_to_response(db, variant)
+
+
+async def set_variant_active_state(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    variant_id: uuid.UUID,
+    is_active: bool,
+    actor: User | SuperAdmin,
+    import_id: uuid.UUID | None = None,
+) -> VariantResponse:
+    """
+    Set a variant's is_active flag directly (activate or soft-delete), idempotently.
+
+    Unlike deactivate_variant(), setting the flag to its current value is a
+    silent no-op rather than a 409 — same convention as
+    product_service.set_product_active_state(), used by import_service.py and
+    the portal's POST /products/{id}/variants/{id}/activate route.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+        variant_id: UUID of the variant to update.
+        is_active: The desired active state.
+        actor: The authenticated user performing the action.
+        import_id: Batch ID shared by every row of a bulk import; None for direct calls.
+
+    Returns:
+        VariantResponse: The variant, with is_active set to the requested value.
+
+    Raises:
+        HTTPException: 404 if not found.
+    """
+    variant = await _get_variant_or_404(db, brand_id, variant_id)
+    if variant.is_active == is_active:
+        return await variant_to_response(db, variant)
+
+    variant.is_active = is_active
+
+    after_state: dict = {"is_active": is_active}
+    if import_id is not None:
+        after_state["import_id"] = str(import_id)
+
+    await log_action(
+        db=db,
+        action=VARIANT_REACTIVATED if is_active else VARIANT_DEACTIVATED,
+        entity_type="product_variant",
+        entity_id=str(variant.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"is_active": not is_active},
+        after_state=after_state,
     )
+
+    await db.commit()
+    return await variant_to_response(db, variant)

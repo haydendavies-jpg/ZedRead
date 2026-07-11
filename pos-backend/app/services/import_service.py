@@ -30,14 +30,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.category import Category
 from app.models.product import Product
+from app.models.product_combo_group import ProductComboGroup
+from app.models.product_variant import ProductVariant
 from app.models.reporting_group import ReportingGroup
 from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.schemas.category import CategoryCreate, CategoryUpdate
+from app.schemas.combo import ComboGroupCreate, ComboGroupUpdate
 from app.schemas.import_export import ImportRowError, ImportSummary
 from app.schemas.product import ProductCreate, ProductUpdate
 from app.schemas.reporting_group import ReportingGroupCreate, ReportingGroupUpdate
-from app.services import category_service, product_service, reporting_group_service
+from app.schemas.variant import VariantUpdate
+from app.services import category_service, combo_service, product_service, reporting_group_service, variant_service
 
 
 class InvalidWorkbookError(ValueError):
@@ -174,6 +178,32 @@ async def _reporting_group_id_by_name(db: AsyncSession, brand_id: uuid.UUID) -> 
     """Map lowercased reporting group name -> id for a brand (for the 'reporting_group' column)."""
     result = await db.execute(select(ReportingGroup).where(ReportingGroup.brand_id == brand_id))
     return {g.name.strip().lower(): g.id for g in result.scalars().all()}
+
+
+async def _product_id_by_ref(db: AsyncSession, brand_id: uuid.UUID) -> dict[str, uuid.UUID]:
+    """Map product ref -> id for a brand (for the 'product_ref' column on Variants/Combos)."""
+    result = await db.execute(select(Product).where(Product.brand_id == brand_id))
+    return {p.ref: p.id for p in result.scalars().all()}
+
+
+async def _find_variant_by_ref(db: AsyncSession, brand_id: uuid.UUID, ref: str) -> ProductVariant | None:
+    """Look up a brand-scoped ProductVariant by ref, joining through its parent Product for scoping."""
+    result = await db.execute(
+        select(ProductVariant)
+        .join(Product, ProductVariant.product_id == Product.id)
+        .where(ProductVariant.ref == ref, Product.brand_id == brand_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _find_combo_group_by_ref(db: AsyncSession, brand_id: uuid.UUID, ref: str) -> ProductComboGroup | None:
+    """Look up a brand-scoped ProductComboGroup by ref, joining through its parent Product for scoping."""
+    result = await db.execute(
+        select(ProductComboGroup)
+        .join(Product, ProductComboGroup.product_id == Product.id)
+        .where(ProductComboGroup.ref == ref, Product.brand_id == brand_id)
+    )
+    return result.scalar_one_or_none()
 
 
 # ── Products ──────────────────────────────────────────────────────────────────
@@ -400,6 +430,155 @@ async def import_reporting_groups(
                 payload = ReportingGroupCreate(name=name)
                 await reporting_group_service.create_reporting_group(
                     db, brand_id, payload, actor, import_id=import_id
+                )
+                created += 1
+        except (ValueError, HTTPException) as exc:
+            errors.append(ImportRowError(row_number=row_number, message=_error_message(exc)))
+
+    return ImportSummary(import_id=import_id, created=created, updated=updated, errors=errors)
+
+
+# ── Variants (Stage 22) ───────────────────────────────────────────────────────
+
+
+async def import_variants(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    file_bytes: bytes,
+    actor: User | SuperAdmin,
+) -> ImportSummary:
+    """
+    Bulk update Variants from an uploaded XLSX sheet (see VARIANT_COLUMNS in export_service.py).
+
+    Update-only: every row must carry a `ref` matching an existing variant.
+    Creating a new variant via import is not supported — attribute assignment
+    varies per brand and doesn't fit a fixed spreadsheet header, so new
+    variants must still be created from the Product page.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand to import into.
+        file_bytes: Raw bytes of the uploaded .xlsx file.
+        actor: The authenticated user performing the import (for audit logging).
+
+    Returns:
+        ImportSummary: Updated count and any skipped-row errors (created is always 0).
+    """
+    headers, rows = parse_xlsx(file_bytes)
+    import_id = uuid.uuid4()
+    updated = 0
+    errors: list[ImportRowError] = []
+
+    for row_number, row in enumerate(rows, start=2):
+        try:
+            ref = _clean_str(row.get("ref"))
+            if not ref:
+                raise ValueError("Variant rows require a ref — creating a new variant via import is not supported")
+
+            variant = await _find_variant_by_ref(db, brand_id, ref)
+            if variant is None:
+                raise ValueError(f"No variant found with ref '{ref}'")
+
+            sku = _clean_str(row.get("sku")) if "sku" in headers else None
+            display_name = _clean_str(row.get("display_name")) if "display_name" in headers else None
+            price_cents = _parse_price_cents(row.get("price")) if "price" in headers else None
+            is_active = _parse_bool(row.get("is_active")) if "is_active" in headers else None
+
+            payload = VariantUpdate(sku=sku, price_cents=price_cents, display_name=display_name)
+            await variant_service.update_variant(
+                db, brand_id, variant.id, payload, actor, import_id=import_id
+            )
+            if is_active is not None:
+                await variant_service.set_variant_active_state(
+                    db, brand_id, variant.id, is_active, actor, import_id=import_id
+                )
+            updated += 1
+        except (ValueError, HTTPException) as exc:
+            errors.append(ImportRowError(row_number=row_number, message=_error_message(exc)))
+
+    return ImportSummary(import_id=import_id, created=0, updated=updated, errors=errors)
+
+
+# ── Combos (Stage 22) ─────────────────────────────────────────────────────────
+
+
+async def import_combos(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    file_bytes: bytes,
+    actor: User | SuperAdmin,
+) -> ImportSummary:
+    """
+    Bulk import Combos from an uploaded XLSX sheet (see COMBO_COLUMNS in export_service.py).
+
+    Args:
+        db: Active database session.
+        brand_id: Brand to import into.
+        file_bytes: Raw bytes of the uploaded .xlsx file.
+        actor: The authenticated user performing the import (for audit logging).
+
+    Returns:
+        ImportSummary: Created/updated counts and any skipped-row errors.
+    """
+    headers, rows = parse_xlsx(file_bytes)
+    import_id = uuid.uuid4()
+    created = 0
+    updated = 0
+    errors: list[ImportRowError] = []
+
+    product_map = await _product_id_by_ref(db, brand_id) if "product_ref" in headers else {}
+
+    for row_number, row in enumerate(rows, start=2):
+        try:
+            ref = _clean_str(row.get("ref"))
+
+            name = _clean_str(row.get("name")) if "name" in headers else None
+            display_name = _clean_str(row.get("display_name")) if "display_name" in headers else None
+            min_selections = _parse_int(row.get("min_selections")) if "min_selections" in headers else None
+            max_selections = _parse_int(row.get("max_selections")) if "max_selections" in headers else None
+            is_required = _parse_bool(row.get("is_required")) if "is_required" in headers else None
+            display_order = _parse_int(row.get("display_order")) if "display_order" in headers else None
+            is_active = _parse_bool(row.get("is_active")) if "is_active" in headers else None
+
+            if ref:
+                group = await _find_combo_group_by_ref(db, brand_id, ref)
+                if group is None:
+                    raise ValueError(f"No combo found with ref '{ref}'")
+
+                payload = ComboGroupUpdate(
+                    name=name,
+                    display_name=display_name,
+                    min_selections=min_selections,
+                    max_selections=max_selections,
+                    is_required=is_required,
+                    display_order=display_order,
+                )
+                await combo_service.update_combo_group(
+                    db, brand_id, group.id, payload, actor, import_id=import_id
+                )
+                if is_active is not None:
+                    await combo_service.set_combo_group_active_state(
+                        db, brand_id, group.id, is_active, actor, import_id=import_id
+                    )
+                updated += 1
+            else:
+                product_ref = _clean_str(row.get("product_ref")) if "product_ref" in headers else None
+                product_id = product_map.get(product_ref) if product_ref else None
+                if product_id is None:
+                    raise ValueError(f"Unknown product_ref '{product_ref}'")
+                if not name:
+                    raise ValueError("New combo rows require a name")
+
+                payload = ComboGroupCreate(
+                    name=name,
+                    display_name=display_name,
+                    min_selections=min_selections if min_selections is not None else 1,
+                    max_selections=max_selections if max_selections is not None else 1,
+                    is_required=is_required if is_required is not None else True,
+                    display_order=display_order if display_order is not None else 0,
+                )
+                await combo_service.create_combo_group(
+                    db, brand_id, product_id, payload, actor, import_id=import_id
                 )
                 created += 1
         except (ValueError, HTTPException) as exc:

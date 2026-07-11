@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-10 (Stage 20)
+Last updated: 2026-07-10 (Stage 22)
 
 ---
 
@@ -14,7 +14,7 @@ Last updated: 2026-07-10 (Stage 20)
 | 4 — Identity & Permissions Redesign | 15 | ✅ Complete |
 | 5 — Catalog Foundations | 16–18 | ✅ Complete |
 | 6 — Catalog Data & Table UX | 19–20 | ✅ Complete |
-| 7 — Invoices & Extended Catalog | 21–22 | 🚧 In Progress (Stage 21 done, Stage 22 planned) |
+| 7 — Invoices & Extended Catalog | 21–22 | ✅ Complete |
 | 8 — POS Menu Builder | 23 | 🔜 Planned |
 | 9 — Product Model Extensions | 24 | ✅ Complete |
 | 10 — Android App | 25–26 | 🚧 In Progress (scaffolding only) |
@@ -472,15 +472,66 @@ list, matching how every other portal list page filters.
   `test_invoice_pdf_service.py` (HTML generation, HTML-escaping of product names, discount-reason
   rendering — no database, no rendering).
 
-### Stage 22 — Variants & Combos Portal Pages 🔜
+### Stage 22 — Variants & Combos Portal Pages ✅
 
 **Deliverables:**
-- [ ] `ref` sequences for Variants (`VAR-000001`) and Combos (`CMB-000001`)
-- [ ] `display_name` field on `Variant` and `Combo` (not Modifiers — Modifiers stay edited inline on
-  the Product page, no separate sidebar entry)
-- [ ] Combined portal page: Variants + Combos in one sidebar entry, filters (by product, active state),
-  inline edit, import/export via Stage 19 framework
-- [ ] Product page/table shows linked variants; Variant page shows its linked product
+- [x] `ref` sequences for Variants (`VAR-000001`) and Combos (`CMB-000001`) — migration `0039`, same
+  mechanism as migration `0013`/Stage 16. There is no standalone `Combo` table in the schema; a
+  "combo product" is just a `Product` that owns one or more `product_combo_groups` rows, so
+  `ProductComboGroup` is the entity Stage 22 surfaces as "Combo" in the portal.
+- [x] `display_name` column on `ProductVariant` and `ProductComboGroup` (nullable, falls back to the
+  attribute-derived label / the existing POS-facing `name` respectively when unset) — not on
+  Modifiers, which stay edited inline on the Product page per the resolved decision in
+  `STAGE_PLAN_16-24.md` §22.
+- [x] `ProductComboGroup` also gained `is_active` (migration `0039`) to reach parity with
+  `product_variants.is_active`, plus the update/deactivate/reactivate service functions and routes
+  it previously lacked (`update_combo_group()`, `deactivate_combo_group()` — 409 on repeat, mirrors
+  `deactivate_variant()` — and `set_combo_group_active_state()` — idempotent, mirrors
+  `product_service.set_product_active_state()`). `ProductVariant` gained the matching
+  `set_variant_active_state()` idempotent function and `POST .../variants/{id}/activate` route (it
+  already had `deactivate_variant()` from Stage 9), so both entities get the same status-toggle
+  table UX as Products (Stage 20).
+- [x] Inline schemas that used to live in `variant_service.py`/`combo_service.py` (Stage 9's
+  "keep the footprint small" choice) extracted into `app/schemas/variant.py`/`app/schemas/combo.py`
+  now that both files have grown well past that stage's scope.
+- [x] New brand-wide `GET /variants` / `GET /combos` (on a second `list_router` in each of
+  `routes/variants.py`/`routes/combos.py`, alongside the existing product-nested `router`) — each
+  joins to the parent `Product` for a `product_name`/`product_ref` pair on every row
+  (`list_variants_for_brand()`/`list_combo_groups_for_brand()`), so the combined portal page can
+  browse across the whole catalog rather than one product at a time. Both support `product_id` and
+  `include_inactive` filters.
+- [x] Bulk XLSX export/import extended onto Stage 19's shared `export_service.py`/`import_service.py`:
+  `VARIANT_COLUMNS`/`COMBO_COLUMNS` keyed on `ref` + a `product_ref` column (product refs are
+  guaranteed unique per brand, unlike names, so there's no ambiguity resolving the linked product on
+  import). Variant import is **update-only** — a blank `ref` is reported as a row error rather than
+  creating a variant, since attribute assignment varies per brand and doesn't fit a fixed spreadsheet
+  header (and no portal page manages attribute types to begin with — that gap predates this stage).
+  Combo import supports both create (via `product_ref`) and update (via `ref`), since
+  `ComboGroupCreate`'s fields are all plain scalars.
+- [x] Portal: new `VariantsCombosPage.tsx` (`/management/variants-combos`) — one sidebar entry, two
+  tabs (Variants / Combos), each with the shared `FilterBar` (search, linked-product filter, status
+  filter), inline edit (`EditableText` for display name; SKU/price on Variants; name/display name on
+  Combos), a `StatusBadge` activate/deactivate toggle, and the portal's first Import/Export XLSX UI
+  (download template, export, upload-to-import with an inline created/updated/errors summary) — the
+  Stage 19 routes had no portal entry point anywhere until this stage. Combos also get an "Add combo"
+  modal (product picker + name/display name/selection rules); Variants have no create flow here for
+  the same attribute-assignment reason import can't create them — see the product page instead.
+  Reachable from `MGMT_NAV` and as a new tab on the SuperAdmin's Brand detail page.
+- [x] Product ↔ Variant cross-linking (portal-only, no schema change beyond what's above): the
+  Product edit modal's new read-only "Variants" section lists that product's variants
+  (`GET /products/{id}/variants`) with a link into the combined page; the combined page's Variants
+  tab already shows each row's linked product (name + ref chip), covering "Variant shows its linked
+  product" without a separate variant detail route.
+- [x] Integration tests: 11 new cases across `test_variant_routes.py`/`test_combo_routes.py` — ref/
+  display_name on create, idempotent activate + `variant.reactivated`/`combo_group.reactivated`
+  audit rows, combo group update/deactivate/409-on-repeat, brand-wide list joins, import update/
+  create/error-row paths (blank ref, unknown `product_ref`) with `import_id` asserted on the
+  resulting audit row.
+
+**Known limitation:** there is still no portal page for managing per-brand attribute types/values
+(Stage 9 shipped the backend only). Until one exists, Variants can be created only via the API
+directly, not the portal or an XLSX import — flagged here rather than built speculatively, since
+it's a Stage 9 gap this stage didn't introduce.
 
 ---
 
