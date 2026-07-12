@@ -155,3 +155,17 @@ REPORTING_GROUP_DELETED = "reporting_group.deleted"
 # Reactivation counterpart to PRODUCT_DEACTIVATED — only reachable via bulk
 # import today (no dedicated portal "reactivate" route exists for products).
 PRODUCT_REACTIVATED = "product.reactivated"
+
+# ── Phase 8 / Stage 23 — POS Menu Builder ────────────────────────────────────
+MENU_LAYOUT_CREATED = "menu_layout.created"
+MENU_LAYOUT_UPDATED = "menu_layout.updated"
+MENU_LAYOUT_DELETED = "menu_layout.deleted"
+MENU_LAYOUT_PUBLISHED = "menu_layout.published"
+MENU_LAYOUT_UNPUBLISHED = "menu_layout.unpublished"
+MENU_TAB_CREATED = "menu_tab.created"
+MENU_TAB_UPDATED = "menu_tab.updated"
+MENU_TAB_DELETED = "menu_tab.deleted"
+MENU_TAB_REORDERED = "menu_tab.reordered"
+MENU_BUTTON_ADDED = "menu_button.added"
+MENU_BUTTON_REMOVED = "menu_button.removed"
+MENU_BUTTON_REORDERED = "menu_button.reordered"

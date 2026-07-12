@@ -93,15 +93,18 @@ read-only; the combined page's rows already show their linked product inline, co
 shows its linked product" without a separate variant detail page. See `STAGE_STATUS.md` for full
 deliverables.
 
-**Stage 23 is next (not yet started):** see `ROADMAP.md` Phase 8 for full detail. Stage 24 (Product
-Model Extensions) is already complete — it had no blocking dependency on 22/23, so it was built
-ahead of turn — see its own paragraph below. Do not begin Stage 25+ Android work yet.
-
-**Stage 23 scope (planned, not started):** see `ROADMAP.md` Phase 8 for full detail. Summary:
-- **23 — POS Menu Builder:** new `menu_layouts` / `menu_tabs` / `menu_buttons` tables. Buttons
-  reference products by `ref` code (not FK), so a layout survives product recreation. Prototype
-  scope: single-level tabs + buttons only, no nested sub-menus. More than one layout can be
-  published at once (e.g. per-site or day-part menus).
+**Stage 23 — complete.** New `menu_layouts` / `menu_tabs` / `menu_buttons` tables (migration `0040`)
+back a `menu_builder_service.py` and a new `/menu-layouts` router (management CRUD, tab/button
+reorder, publish/unpublish) plus a `GET /pos/menu-layout?site_id=` read contract for Android to
+eventually consume (Android-side consumption stays out of scope). Buttons reference products by
+`ref` code (not FK), so a button survives product recreation; publishing warns rather than blocks
+when a code no longer resolves to an active product. Prototype scope honoured: single-level tabs +
+buttons only, no nested sub-menus. More than one layout can be published at once (e.g. per-site or
+day-part menus). Portal gained `MenuBuilderPage.tsx` (layout list + a tabs/buttons builder using
+native HTML5 drag-and-drop — no new dependency), reachable from the management nav and as a new tab
+on the SuperAdmin's Brand detail page. Stage 24 (Product Model Extensions) was already complete
+ahead of this stage — it had no blocking dependency on 22/23 — see `STAGE_STATUS.md` for its
+deliverables. Do not begin Stage 25+ Android work yet.
 
 ## Folder structure (backend)
 ```

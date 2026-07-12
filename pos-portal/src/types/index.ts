@@ -321,6 +321,55 @@ export interface ComboGroupListItem extends ComboGroup {
   product_ref: string
 }
 
+// ── POS Menu Builder (Stage 23) ─────────────────────────────────────────────────
+
+export interface MenuButton {
+  id: string
+  tab_id: string
+  product_ref: string
+  display_order: number
+  /** Resolved live from the brand's catalog by product_ref — null if the ref no longer resolves. */
+  product_name: string | null
+  price_cents: number | null
+  is_active: boolean | null
+}
+
+export interface MenuTab {
+  id: string
+  layout_id: string
+  name: string
+  display_order: number
+  buttons: MenuButton[]
+}
+
+export interface MenuLayout {
+  id: string
+  brand_id: string
+  site_id: string | null
+  scope: 'brand' | 'site'
+  name: string
+  is_published: boolean
+  version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface MenuLayoutDetail extends MenuLayout {
+  tabs: MenuTab[]
+}
+
+export interface PublishWarning {
+  button_id: string
+  tab_name: string
+  product_ref: string
+  reason: 'product_not_found' | 'product_inactive'
+}
+
+export interface PublishResult {
+  layout: MenuLayout
+  warnings: PublishWarning[]
+}
+
 // ── Access grant types ────────────────────────────────────────────────────────
 
 export interface AccessProfile {

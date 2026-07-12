@@ -47,7 +47,7 @@ gantt
     Stage 22 · Variants & Combos UI  :done, s22, after s21, 14d
 
     section Phase 8 · POS Menu Builder
-    Stage 23 · Menu Builder          :s23, after s22, 21d
+    Stage 23 · Menu Builder          :done, s23, after s22, 21d
 
     section Phase 9 · Product Model Extensions
     Stage 24 · Product Extensions    :s24, after s23, 10d
@@ -202,13 +202,20 @@ from their own portal page with the same table UX as Products.
 
 ---
 
-## Phase 8 — POS Menu Builder 🔜
+## Phase 8 — POS Menu Builder ✅
 
 **Goal:** A graphical POS menu layout tool (tabs of product buttons) that publishes to the Android app.
 
 | Stage | Summary | Key outcome |
 |-------|---------|-------------|
-| **23** | **Menu Builder Prototype** | `menu_layouts`/`menu_tabs`/`menu_buttons`, buttons reference products by code, publish pipeline |
+| **23** | **Menu Builder Prototype** ✅ | `menu_layouts`/`menu_tabs`/`menu_buttons`, buttons reference products by code, publish pipeline |
+
+**Stage 23 status:** complete — see `STAGE_STATUS.md` for full deliverables. New `menu_layouts`/
+`menu_tabs`/`menu_buttons` tables (migration `0040`) back a `menu_builder_service.py` + a new
+`/menu-layouts` router (management CRUD, reorder, publish/unpublish) and a `/pos/menu-layout?site_id=`
+read contract for Android to eventually consume. Portal gained a `MenuBuilderPage.tsx` (layout list +
+a tabs/buttons builder view using native HTML5 drag-and-drop — no new dependency), reachable from the
+management nav and as a new tab on the SuperAdmin's Brand detail page.
 
 **Exit criteria:** A brand manager can build a single-level tab/button menu layout referencing
 existing products by code and publish it; more than one layout can be published at once (e.g. per
