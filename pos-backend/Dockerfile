@@ -1,5 +1,10 @@
 # ── Build stage ───────────────────────────────────────────────────────────────
-FROM python:3.12-slim AS builder
+# Pinned to the bookworm variant (not the floating "slim" tag) — Docker Hub
+# rolled the untagged python:3.12-slim image forward to Debian trixie, whose
+# apt repo renamed/split libgdk-pixbuf2.0-0 (see runtime stage below) and broke
+# Railway builds with no change on our side. Pin both stages so the base OS
+# only moves when we deliberately bump it.
+FROM python:3.12-slim-bookworm AS builder
 
 WORKDIR /app
 
@@ -13,7 +18,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim-bookworm AS runtime
 
 WORKDIR /app
 
