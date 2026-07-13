@@ -2,11 +2,9 @@
  * Menu Studio — the combined catalog authoring surface.
  *
  * Table view hosts the Products / Modifiers / Categories tabs (each its own
- * existing page component); POS Layout view delegates to the existing
- * MenuBuilderPage (Stage 23) as-is — the grid-editor redesign (drag/resize,
- * multi-select, active-time scheduling) described in
- * design_handoff_menu_studio/README.md is a separate, larger follow-up and
- * out of scope for this pass.
+ * existing page component); POS Layout view delegates to MenuBuilderPage,
+ * the grid editor (drag/resize, multi-select, active-time scheduling) from
+ * design_handoff_menu_studio/README.md's Phase 2.
  */
 
 import { useState } from 'react'

@@ -1,8 +1,9 @@
-"""POS Menu Builder routes (Stage 23).
+"""POS Menu Builder routes (Stage 23; Phase 2 grid editor).
 
 Management CRUD lives under /menu-layouts (portal/management JWT only — POS
 terminal tokens are read-only via the /pos/menu-layout consumption contract
-below). Prototype scope: single-level tabs + buttons only, no nested sub-menus.
+below). Tabs nest arbitrarily deep via parent_tab_id and buttons are either
+kind='product' or kind='folder' (Menu Studio redesign, Phase 2).
 """
 
 import uuid
@@ -16,10 +17,15 @@ from app.models.site import Site
 from app.schemas.menu_layout import (
     MenuButtonCreate,
     MenuButtonOut,
+    MenuButtonsBulkColor,
+    MenuButtonsBulkDelete,
+    MenuButtonsGroupIntoTab,
     MenuButtonsReorder,
+    MenuButtonUpdate,
     MenuLayoutCreate,
     MenuLayoutDetail,
     MenuLayoutOut,
+    MenuLayoutSchedulePublish,
     MenuLayoutUpdate,
     MenuTabCreate,
     MenuTabOut,
@@ -78,11 +84,16 @@ async def list_menu_layouts(
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> list[MenuLayoutOut]:
-    """List menu layouts for the authenticated user's brand."""
+    """List menu layouts for the authenticated user's brand, each with its total button count."""
     _require_management(access)
     effective_brand_id = access.effective_brand_id(brand_id)
-    layouts = await menu_builder_service.list_menu_layouts(db, effective_brand_id, site_id, skip, limit)
-    return [MenuLayoutOut.model_validate(layout) for layout in layouts]
+    rows = await menu_builder_service.list_menu_layouts(db, effective_brand_id, site_id, skip, limit)
+    results = []
+    for layout, count in rows:
+        out = MenuLayoutOut.model_validate(layout)
+        out.button_count = count
+        results.append(out)
+    return results
 
 
 @router.post("", response_model=MenuLayoutOut, status_code=status.HTTP_201_CREATED)
@@ -106,7 +117,7 @@ async def get_menu_layout(
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> MenuLayoutDetail:
-    """Fetch a menu layout with its ordered tabs and resolved buttons."""
+    """Fetch a menu layout with its full flat tab tree and resolved buttons."""
     _require_management(access)
     effective_brand_id = access.effective_brand_id(brand_id)
     data = await menu_builder_service.get_menu_layout_detail(db, effective_brand_id, layout_id)
@@ -121,7 +132,7 @@ async def update_menu_layout(
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> MenuLayoutOut:
-    """Rename a menu layout."""
+    """Update a menu layout's mutable fields, including active-time/day-of-week scheduling."""
     _require_management(access)
     effective_brand_id = access.effective_brand_id(brand_id)
     layout = await menu_builder_service.update_menu_layout(
@@ -141,6 +152,20 @@ async def delete_menu_layout(
     _require_management(access)
     effective_brand_id = access.effective_brand_id(brand_id)
     await menu_builder_service.delete_menu_layout(db, effective_brand_id, layout_id, access.actor_user)
+
+
+@router.post("/{layout_id}/duplicate", response_model=MenuLayoutOut, status_code=status.HTTP_201_CREATED)
+async def duplicate_menu_layout(
+    layout_id: uuid.UUID,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> MenuLayoutOut:
+    """Duplicate a layout and its full tab tree + buttons. The copy starts unpublished, unscheduled."""
+    _require_management(access)
+    effective_brand_id = access.effective_brand_id(brand_id)
+    layout = await menu_builder_service.duplicate_menu_layout(db, effective_brand_id, layout_id, access.actor_user)
+    return MenuLayoutOut.model_validate(layout)
 
 
 @router.post("/{layout_id}/publish", response_model=PublishResult, status_code=status.HTTP_200_OK)
@@ -173,6 +198,39 @@ async def unpublish_menu_layout(
     return MenuLayoutOut.model_validate(layout)
 
 
+@router.post("/{layout_id}/schedule-publish", response_model=MenuLayoutOut, status_code=status.HTTP_200_OK)
+async def schedule_layout_publish(
+    layout_id: uuid.UUID,
+    payload: MenuLayoutSchedulePublish,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> MenuLayoutOut:
+    """Set a layout's future 'Schedule publish' target time (persisted only — see MenuLayout docstring)."""
+    _require_management(access)
+    effective_brand_id = access.effective_brand_id(brand_id)
+    layout = await menu_builder_service.schedule_layout_publish(
+        db, effective_brand_id, layout_id, payload.scheduled_publish_at, access.actor_user
+    )
+    return MenuLayoutOut.model_validate(layout)
+
+
+@router.post("/{layout_id}/cancel-schedule-publish", response_model=MenuLayoutOut, status_code=status.HTTP_200_OK)
+async def cancel_layout_scheduled_publish(
+    layout_id: uuid.UUID,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> MenuLayoutOut:
+    """Cancel a layout's pending 'Schedule publish'."""
+    _require_management(access)
+    effective_brand_id = access.effective_brand_id(brand_id)
+    layout = await menu_builder_service.cancel_layout_scheduled_publish(
+        db, effective_brand_id, layout_id, access.actor_user
+    )
+    return MenuLayoutOut.model_validate(layout)
+
+
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
 
@@ -184,11 +242,19 @@ async def create_menu_tab(
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> MenuTabOut:
-    """Add a tab to a menu layout."""
+    """Add a tab to a menu layout — top-level (rail) tab, or nested when parent_tab_id is given."""
     _require_management(access)
     effective_brand_id = access.effective_brand_id(brand_id)
     tab = await menu_builder_service.create_menu_tab(db, effective_brand_id, layout_id, payload, access.actor_user)
-    return MenuTabOut(id=tab.id, layout_id=tab.layout_id, name=tab.name, display_order=tab.display_order, buttons=[])
+    return MenuTabOut(
+        id=tab.id,
+        layout_id=tab.layout_id,
+        parent_tab_id=tab.parent_tab_id,
+        name=tab.name,
+        color=tab.color,
+        display_order=tab.display_order,
+        buttons=[],
+    )
 
 
 @router.patch("/{layout_id}/tabs/{tab_id}", response_model=MenuTabOut, status_code=status.HTTP_200_OK)
@@ -200,7 +266,7 @@ async def update_menu_tab(
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> MenuTabOut:
-    """Rename a menu tab."""
+    """Update a menu tab's mutable fields (name/color)."""
     _require_management(access)
     effective_brand_id = access.effective_brand_id(brand_id)
     tab = await menu_builder_service.update_menu_tab(
@@ -218,7 +284,7 @@ async def delete_menu_tab(
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Delete a menu tab and its buttons."""
+    """Delete a menu tab, its nested child tabs, and their buttons."""
     _require_management(access)
     effective_brand_id = access.effective_brand_id(brand_id)
     await menu_builder_service.delete_menu_tab(db, effective_brand_id, layout_id, tab_id, access.actor_user)
@@ -232,7 +298,7 @@ async def reorder_menu_tabs(
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> list[MenuTabOut]:
-    """Reorder a layout's tabs — every tab_id gets display_order = its list index."""
+    """Reorder a set of sibling tabs — every tab_id gets display_order = its list index."""
     _require_management(access)
     effective_brand_id = access.effective_brand_id(brand_id)
     await menu_builder_service.reorder_menu_tabs(
@@ -256,11 +322,31 @@ async def create_menu_button(
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> MenuButtonOut:
-    """Add a product button to a tab, resolved live against the brand's catalog by ref code."""
+    """Add a button to a tab — a product tile resolved live by ref code, or a folder that opens a new nested tab."""
     _require_management(access)
     effective_brand_id = access.effective_brand_id(brand_id)
     return await menu_builder_service.create_menu_button(
         db, effective_brand_id, layout_id, tab_id, payload, access.actor_user
+    )
+
+
+@router.patch(
+    "/{layout_id}/tabs/{tab_id}/buttons/{button_id}", response_model=MenuButtonOut, status_code=status.HTTP_200_OK
+)
+async def update_menu_button(
+    layout_id: uuid.UUID,
+    tab_id: uuid.UUID,
+    button_id: uuid.UUID,
+    payload: MenuButtonUpdate,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> MenuButtonOut:
+    """Update a button's mutable fields — resize, recolor, or relink a product (inspector panel)."""
+    _require_management(access)
+    effective_brand_id = access.effective_brand_id(brand_id)
+    return await menu_builder_service.update_menu_button(
+        db, effective_brand_id, layout_id, tab_id, button_id, payload, access.actor_user
     )
 
 
@@ -275,7 +361,7 @@ async def delete_menu_button(
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Remove a button from a tab."""
+    """Remove a button from a tab. A folder button's nested tab (and its buttons) cascade-deletes too."""
     _require_management(access)
     effective_brand_id = access.effective_brand_id(brand_id)
     await menu_builder_service.delete_menu_button(
@@ -308,6 +394,58 @@ async def reorder_menu_buttons(
     )
 
 
+@router.post(
+    "/{layout_id}/buttons/bulk-recolor", response_model=list[uuid.UUID], status_code=status.HTTP_200_OK
+)
+async def bulk_recolor_menu_buttons(
+    layout_id: uuid.UUID,
+    payload: MenuButtonsBulkColor,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> list[uuid.UUID]:
+    """Bulk-recolor a multi-selection of buttons (the grid editor's floating action bar)."""
+    _require_management(access)
+    effective_brand_id = access.effective_brand_id(brand_id)
+    return await menu_builder_service.bulk_recolor_menu_buttons(
+        db, effective_brand_id, layout_id, payload.button_ids, payload.color, access.actor_user
+    )
+
+
+@router.post("/{layout_id}/buttons/bulk-delete", response_model=None, status_code=status.HTTP_204_NO_CONTENT)
+async def bulk_delete_menu_buttons(
+    layout_id: uuid.UUID,
+    payload: MenuButtonsBulkDelete,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Bulk-delete a multi-selection of buttons (folder buttons' nested tabs cascade too)."""
+    _require_management(access)
+    effective_brand_id = access.effective_brand_id(brand_id)
+    await menu_builder_service.bulk_delete_menu_buttons(
+        db, effective_brand_id, layout_id, payload.button_ids, access.actor_user
+    )
+
+
+@router.post(
+    "/{layout_id}/buttons/group-into-tab", response_model=MenuButtonOut, status_code=status.HTTP_201_CREATED
+)
+async def group_menu_buttons_into_tab(
+    layout_id: uuid.UUID,
+    payload: MenuButtonsGroupIntoTab,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> MenuButtonOut:
+    """Bundle a multi-selection of buttons into a newly created nested tab, leaving a folder button behind."""
+    _require_management(access)
+    effective_brand_id = access.effective_brand_id(brand_id)
+    return await menu_builder_service.group_menu_buttons_into_tab(
+        db, effective_brand_id, layout_id, payload.button_ids, payload.name, access.actor_user
+    )
+
+
 # ── POS consumption contract ──────────────────────────────────────────────────
 
 
@@ -318,11 +456,12 @@ async def get_pos_menu_layout(
     db: AsyncSession = Depends(get_db),
 ) -> list[MenuLayoutDetail]:
     """
-    Publish contract for the Android app: every published layout visible to a site.
+    Publish contract for the Android app: every currently-active published layout visible to a site.
 
     Includes brand-wide published layouts and any site-specific published
     layout for site_id — more than one may be returned at once (e.g. per-site
-    or day-part menus). Android-side consumption is out of scope for this
+    or day-part menus), filtered further by each layout's own active-time/
+    day-of-week window. Android-side consumption is out of scope for this
     stage; this route builds the contract only.
     """
     if access.pos_access:

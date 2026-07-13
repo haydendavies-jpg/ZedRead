@@ -106,13 +106,13 @@ on the SuperAdmin's Brand detail page. Stage 24 (Product Model Extensions) was a
 ahead of this stage — it had no blocking dependency on 22/23 — see `STAGE_STATUS.md` for its
 deliverables. Do not begin Stage 25+ Android work yet.
 
-**Menu Studio visual/functional redesign (post-Stage-23, Table view + Menus — partial pass).**
+**Menu Studio visual/functional redesign (post-Stage-23, Table view + Menus + POS Layout — complete).**
 Implemented from a Claude-designed HTML mockup (`design_handoff_menu_studio/` — high-fidelity
-reference, not production code). Scope was explicitly split with the user into phases; this pass
-covers the **Table view** (Products/Modifiers/Categories) and the new **Menus** screen, not the POS
-Layout grid editor redesign (drag/resize/multi-select tile grid, active-time/day scheduling on
-`menu_layouts`) — `MenuBuilderPage.tsx`/`menu_layouts`/`menu_tabs`/`menu_buttons` are untouched and
-still prototype-scope (Stage 23's own text above still applies to POS Layout). Delivered:
+reference, not production code). Scope was explicitly split with the user into phases: Phase 1
+covered the **Table view** (Products/Modifiers/Categories) and the new **Menus** screen; Phase 2
+(below) delivers the previously-deferred **POS Layout grid editor** — Stage 23's "prototype scope,
+single-level tabs + buttons only" text above is superseded by Phase 2 for `menu_layouts`. Phase 1
+delivered:
 - **Category default colour**: `categories.default_color` (migration `0041`, hex `#RRGGBB`, default
   `#5A5550`) — the POS button colour a category's products default to; editable via a swatch+palette
   popover (`ColorSwatchPicker.tsx`) on the redesigned `CategoriesPage.tsx`, which now groups
@@ -148,9 +148,40 @@ still prototype-scope (Stage 23's own text above still applies to POS Layout). D
   are unchanged outside Menu Studio/Menus screens, which apply `IBM Plex Sans` directly instead of a
   global font swap — see `pos-portal/CLAUDE.md`'s "flagged conflict" note for the rationale.
 - Nav: `MGMT_NAV` now has "Menu Studio" (Products/Modifiers/Categories tabs + a `Table`/`POS Layout`
-  segmented control, the latter delegating unchanged to `MenuBuilderPage`) and "Menus"; the old
-  standalone Products/Categories/Menu Builder nav entries are gone but their routes/components still
-  exist (used directly by `BrandDetailPage`'s own tabs, and kept mounted in `App.tsx` for compat).
+  segmented control, the latter delegating to `MenuBuilderPage`, rewritten by Phase 2 below) and
+  "Menus"; the old standalone Products/Categories/Menu Builder nav entries are gone but their
+  routes/components still exist (used directly by `BrandDetailPage`'s own tabs, and kept mounted in
+  `App.tsx` for compat).
+
+**Phase 2 — POS Layout grid editor (complete).** The graphical editor the Stage 23 prototype's
+single-level tab/button list stood in for. Migration `0042` adds: `menu_layouts.color`/
+`published_at`/active-time scheduling (`is_all_day`/`start_time`/`end_time`/`active_days` — when a
+*published* layout is visible on the POS, e.g. Breakfast only 7am–11am, distinct from
+`is_published`)/`scheduled_publish_at` (the "Schedule publish" bulk action — persisted only, same
+no-Celery-job gap as `Menus.scheduled_at`); `menu_tabs.parent_tab_id` (self-referential, unbounded
+nesting) + `color`; `menu_buttons.kind` (`'product'`|`'folder'` — a folder button opens a nested
+`MenuTab` via `child_tab_id` instead of a product; `product_ref` is now nullable) + `width`/`height`
+(1-6 × 1-4 grid-cell span — no x/y, the 6-column CSS grid packs tiles via `grid-auto-flow: dense`) +
+an optional `color` override falling back to the linked product's category default colour.
+`menu_builder_service.py` gained `duplicate_menu_layout()` (two-pass id-remap deep copy of the tab
+tree + buttons), `schedule_layout_publish()`/`cancel_layout_scheduled_publish()`,
+`update_menu_button()` (resize/recolor/relink — `color` uses the `model_fields_set` idiom from
+`access_grant_service.update_grant`'s `backend_role` so an explicit `{"color": null}` clears an
+override back to the category default), and the multi-select bulk actions
+`bulk_recolor_menu_buttons()`/`bulk_delete_menu_buttons()`/`group_menu_buttons_into_tab()` (each
+requires every selected button share one source tab). `routes/menu_layouts.py` gained matching
+routes. Portal: `MenuBuilderPage.tsx` rewritten — a redesigned layouts list (colour dot, button
+count, Published/Unpublished pill, active-time + day chip, last-published/edited, actions incl.
+Duplicate/Hours/Schedule-publish) and the grid editor itself (rail of top-level tabs; breadcrumb;
+6-column dense grid with a trailing "+" tile; pointer-based click/shift-click multi-select and
+drag-move via `elementFromPoint().closest('[data-drop]')` dropping onto a rail tab or folder tile,
+with a cursor-following "Moving N button(s)" ghost label; corner-handle live resize; a multi-select
+floating action bar — recolor, "Move to", "Group into tab", "Delete"; a single-selection inspector —
+live preview, linked-product dropdown or folder rename+"Open tab", colour palette/custom/"Category
+default" reset, width/height steppers, delete). The mockup's `Import`/`Export` layout-list pills are
+intentionally omitted — no export/import backend exists for `menu_layouts` (unlike Products/
+Categories/Reporting Groups' Stage 19 `export_service.py`) and a non-functional button would violate
+the no-half-finished-features rule. See `STAGE_STATUS.md` for full deliverables and test coverage.
 
 ## Folder structure (backend)
 ```
