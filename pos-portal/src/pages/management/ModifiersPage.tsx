@@ -34,27 +34,27 @@ export function ModifiersPage() {
   const showError = (e: unknown, fallback: string) => setFormError(apiErrorMessage(e, fallback))
 
   const createGroup = useMutation({
-    mutationFn: () => api.post('/modifier-groups', { name: 'New option set', min_selections: 0, max_selections: 1 }, { params }),
+    mutationFn: () => api.post('/modifier-groups', { name: 'New modifier', min_selections: 0, max_selections: 1 }, { params }),
     onSuccess: invalidate,
-    onError: (e: unknown) => showError(e, 'Failed to create option set.'),
+    onError: (e: unknown) => showError(e, 'Failed to create modifier.'),
   })
 
   const duplicateGroup = useMutation({
     mutationFn: (groupId: string) => api.post(`/modifier-groups/${groupId}/duplicate`, {}, { params }),
     onSuccess: invalidate,
-    onError: (e: unknown) => showError(e, 'Failed to duplicate option set.'),
+    onError: (e: unknown) => showError(e, 'Failed to duplicate modifier.'),
   })
 
   const deleteGroup = useMutation({
     mutationFn: (groupId: string) => api.delete(`/modifier-groups/${groupId}`, { params }),
     onSuccess: invalidate,
-    onError: (e: unknown) => showError(e, 'Failed to delete option set.'),
+    onError: (e: unknown) => showError(e, 'Failed to delete modifier.'),
   })
 
   const patchGroup = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => api.patch(`/modifier-groups/${id}`, body, { params }),
     onSuccess: invalidate,
-    onError: (e: unknown) => showError(e, 'Failed to update option set.'),
+    onError: (e: unknown) => showError(e, 'Failed to update modifier.'),
   })
 
   const createOption = useMutation({
@@ -79,14 +79,14 @@ export function ModifiersPage() {
     mutationFn: ({ optionId, linkedGroupId }: { optionId: string; linkedGroupId: string }) =>
       api.post(`/modifier-options/${optionId}/links`, { linked_group_id: linkedGroupId }, { params }),
     onSuccess: invalidate,
-    onError: (e: unknown) => showError(e, 'Failed to link option set.'),
+    onError: (e: unknown) => showError(e, 'Failed to link modifier group.'),
   })
 
   const unlinkGroup = useMutation({
     mutationFn: ({ optionId, linkedGroupId }: { optionId: string; linkedGroupId: string }) =>
       api.delete(`/modifier-options/${optionId}/links/${linkedGroupId}`, { params }),
     onSuccess: invalidate,
-    onError: (e: unknown) => showError(e, 'Failed to unlink option set.'),
+    onError: (e: unknown) => showError(e, 'Failed to unlink modifier group.'),
   })
 
   const toggleExpanded = (optionId: string) =>
@@ -137,21 +137,21 @@ export function ModifiersPage() {
                   </label>
                   <label className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
                     Min
-                    <input
+                    <BufferedInput
                       type="number"
                       min={0}
-                      value={g.min_selections}
-                      onChange={(e) => patchGroup.mutate({ id: g.id, body: { min_selections: Number(e.target.value) } })}
+                      value={String(g.min_selections)}
+                      onCommit={(v) => { const n = Number(v); if (!Number.isNaN(n)) patchGroup.mutate({ id: g.id, body: { min_selections: n } }) }}
                       className="w-11 text-center border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded font-mono text-xs py-0.5"
                     />
                   </label>
                   <label className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
                     Max
-                    <input
+                    <BufferedInput
                       type="number"
                       min={1}
-                      value={g.max_selections}
-                      onChange={(e) => patchGroup.mutate({ id: g.id, body: { max_selections: Number(e.target.value) } })}
+                      value={String(g.max_selections)}
+                      onCommit={(v) => { const n = Number(v); if (!Number.isNaN(n)) patchGroup.mutate({ id: g.id, body: { max_selections: n } }) }}
                       className="w-11 text-center border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded font-mono text-xs py-0.5"
                     />
                   </label>
@@ -163,9 +163,9 @@ export function ModifiersPage() {
                   <div key={o.id}>
                     <div className="flex items-center gap-2.5 py-1.5">
                       <span className="text-gray-300 dark:text-gray-600 text-xs tracking-tighter">⠿</span>
-                      <input
+                      <BufferedInput
                         value={o.name}
-                        onChange={(e) => patchOption.mutate({ id: o.id, body: { name: e.target.value } })}
+                        onCommit={(v) => { if (v.trim()) patchOption.mutate({ id: o.id, body: { name: v } }) }}
                         className="flex-1 min-w-0 text-sm text-gray-900 dark:text-gray-100 bg-transparent focus:outline-none focus:bg-gray-50 dark:focus:bg-gray-700 rounded px-1 -mx-1"
                       />
                       {o.linked_groups.length > 0 && (
@@ -177,11 +177,14 @@ export function ModifiersPage() {
                         </button>
                       )}
                       <span className="text-xs font-medium text-gray-400 dark:text-gray-500">+$</span>
-                      <input
+                      <BufferedInput
                         type="number"
                         step="0.01"
                         value={(o.price_delta_cents / 100).toFixed(2)}
-                        onChange={(e) => patchOption.mutate({ id: o.id, body: { price_delta_cents: Math.round(Number(e.target.value) * 100) } })}
+                        onCommit={(v) => {
+                          const cents = Math.round(Number(v) * 100)
+                          if (!Number.isNaN(cents)) patchOption.mutate({ id: o.id, body: { price_delta_cents: cents } })
+                        }}
                         className="w-14 text-right border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded font-mono text-xs py-0.5 px-1"
                       />
                       <button onClick={() => deleteOption.mutate(o.id)} className="text-gray-300 dark:text-gray-600 hover:text-red-500 text-xs">✕</button>
@@ -234,11 +237,64 @@ export function ModifiersPage() {
             onClick={() => createGroup.mutate()}
             className="min-h-[240px] border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex items-center justify-center text-sm font-semibold text-gray-400 dark:text-gray-500 hover:border-brand-400 hover:text-brand-600 transition-colors"
           >
-            + New option set
+            + New modifier
           </button>
         </div>
       )}
     </div>
+  )
+}
+
+interface BufferedInputProps {
+  value: string
+  onCommit: (value: string) => void
+  type?: 'text' | 'number'
+  step?: string
+  min?: number
+  className?: string
+}
+
+/**
+ * A text/number input that edits a local draft while focused and only
+ * fires onCommit on blur or Enter — never per keystroke. Directly binding
+ * these inputs to server-derived values (mutate-on-every-change) caused
+ * a request storm (one PATCH + full list refetch per character) and
+ * visible typing lag/dropped keystrokes, since the displayed value came
+ * from stale query data until each round trip resolved.
+ */
+function BufferedInput({ value, onCommit, type = 'text', step, min, className }: BufferedInputProps) {
+  const [draft, setDraft] = useState(value)
+  const [prevValue, setPrevValue] = useState(value)
+  const [focused, setFocused] = useState(false)
+
+  // Resync the draft when the server value changes externally (e.g. another
+  // tab's edit refetches in) — but only while not focused, so it never
+  // clobbers what the user is actively typing. Computed at render time
+  // rather than in a useEffect (no external system to synchronize with —
+  // same convention as CategoriesPage.tsx's reporting-group default).
+  if (value !== prevValue && !focused) {
+    setPrevValue(value)
+    setDraft(value)
+  }
+
+  return (
+    <input
+      type={type}
+      step={step}
+      min={min}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false)
+        if (draft !== value) onCommit(draft)
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+        if (e.key === 'Escape') { setDraft(value); e.currentTarget.blur() }
+      }}
+      className={className}
+    />
   )
 }
 
