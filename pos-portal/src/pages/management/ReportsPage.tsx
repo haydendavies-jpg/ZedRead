@@ -77,7 +77,7 @@ export function ReportsPage() {
 
   if (!brandId && !fixedSiteId) {
     return (
-      <div className="flex items-center justify-center h-64 text-sm text-gray-400">
+      <div className="flex items-center justify-center h-64 text-sm text-gray-400 dark:text-gray-500">
         No brand or site context available.
       </div>
     )
@@ -87,15 +87,15 @@ export function ReportsPage() {
     <div className="p-4 sm:p-6 space-y-6">
       {/* Controls */}
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <h1 className="text-xl font-semibold text-gray-900">Daily Sales Report</h1>
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Daily Sales Report</h1>
         <div className="flex items-end gap-3 flex-wrap">
           {needsSiteSelector && sites.length > 0 && (
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Site</label>
+              <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Site</label>
               <select
                 value={selectedSiteId ?? ''}
                 onChange={(e) => setSelectedSiteId(e.target.value || null)}
-                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
                 <option value="">Select site…</option>
                 {sites.map((s) => (
@@ -105,74 +105,74 @@ export function ReportsPage() {
             </div>
           )}
           <div>
-            <label className="block text-xs text-gray-500 mb-1">From</label>
+            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">From</label>
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">To</label>
+            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">To</label>
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
         </div>
       </div>
 
       {!siteId ? (
-        <div className="flex items-center justify-center h-40 text-sm text-gray-400">
+        <div className="flex items-center justify-center h-40 text-sm text-gray-400 dark:text-gray-500">
           Select a site to view report data.
         </div>
       ) : (
         <>
           {/* Summary cards */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <p className="text-sm text-gray-500">Total revenue</p>
-              <p className="text-2xl font-semibold text-gray-900 mt-1">{centsToDisplay(totalRevenue)}</p>
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Total revenue</p>
+              <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mt-1">{centsToDisplay(totalRevenue)}</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <p className="text-sm text-gray-500">Total invoices</p>
-              <p className="text-2xl font-semibold text-gray-900 mt-1">{totalInvoices}</p>
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Total invoices</p>
+              <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mt-1">{totalInvoices}</p>
             </div>
           </div>
 
           {/* Table */}
           {isLoading ? (
-            <p className="text-sm text-gray-400">Loading…</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500">Loading…</p>
           ) : error ? (
             <p className="text-sm text-red-500">Failed to load report data.</p>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-gray-200">
+            <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
               <table className="w-full text-sm min-w-[480px]">
-                <thead className="bg-gray-50 border-b border-gray-200">
+                <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
                   <tr>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
-                    <th className="text-right px-4 py-3 font-medium text-gray-600">Invoices</th>
-                    <th className="text-right px-4 py-3 font-medium text-gray-600">Subtotal</th>
-                    <th className="text-right px-4 py-3 font-medium text-gray-600">Tax</th>
-                    <th className="text-right px-4 py-3 font-medium text-gray-600">Total</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Date</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Invoices</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Subtotal</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Tax</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Total</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                   {rows.map((r, i) => (
-                    <tr key={i} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-900">{r.sale_date}</td>
-                      <td className="px-4 py-3 text-right text-gray-700">{r.invoice_count}</td>
-                      <td className="px-4 py-3 text-right text-gray-700">{centsToDisplay(r.subtotal_cents)}</td>
-                      <td className="px-4 py-3 text-right text-gray-700">{centsToDisplay(r.tax_cents)}</td>
-                      <td className="px-4 py-3 text-right font-medium text-gray-900">{centsToDisplay(r.total_cents)}</td>
+                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                      <td className="px-4 py-3 text-gray-900 dark:text-gray-100">{r.sale_date}</td>
+                      <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{r.invoice_count}</td>
+                      <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{centsToDisplay(r.subtotal_cents)}</td>
+                      <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{centsToDisplay(r.tax_cents)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-gray-100">{centsToDisplay(r.total_cents)}</td>
                     </tr>
                   ))}
                   {rows.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                      <td colSpan={5} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
                         No sales data for the selected period.
                       </td>
                     </tr>

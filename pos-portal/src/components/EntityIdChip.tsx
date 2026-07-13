@@ -21,7 +21,7 @@ export function EntityIdChip({ id, ref }: Props) {
     <button
       onClick={handleCopy}
       title={`${ref ? ref + ' · ' : ''}${id}`}
-      className="font-mono text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-0.5 rounded cursor-pointer transition-colors"
+      className="font-mono text-xs bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded cursor-pointer transition-colors"
     >
       {copied ? '✓ copied' : (ref ?? id.slice(0, 8) + '…')}
     </button>

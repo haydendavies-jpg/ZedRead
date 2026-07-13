@@ -23,6 +23,7 @@ PAGE_CATALOG: list[tuple[str, PageCategory, str]] = [
     ("categories", PageCategory.PRODUCT_MENUS, "Categories"),
     ("reporting_groups", PageCategory.PRODUCT_MENUS, "Reporting Groups"),
     ("menu_builder", PageCategory.PRODUCT_MENUS, "Menu Builder"),
+    ("menus", PageCategory.PRODUCT_MENUS, "Menus"),
     # App Configuration
     ("site_settings", PageCategory.APP_CONFIGURATION, "Site Settings"),
     ("devices", PageCategory.APP_CONFIGURATION, "Devices"),

@@ -75,7 +75,7 @@ export function ReportingGroupsPage() {
 
   if (!brandId) {
     return (
-      <div className="flex items-center justify-center h-64 text-sm text-gray-400">
+      <div className="flex items-center justify-center h-64 text-sm text-gray-400 dark:text-gray-500">
         No brand context available.
       </div>
     )
@@ -84,7 +84,7 @@ export function ReportingGroupsPage() {
   return (
     <div className="p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h1 className="text-xl font-semibold text-gray-900">Reporting Groups</h1>
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Reporting Groups</h1>
         <button
           onClick={() => setShowCreate(true)}
           className="px-3 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 transition-colors"
@@ -100,7 +100,7 @@ export function ReportingGroupsPage() {
       )}
 
       {isLoading ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <p className="text-sm text-gray-400 dark:text-gray-500">Loading…</p>
       ) : (
         <>
           <FilterBar
@@ -114,30 +114,30 @@ export function ReportingGroupsPage() {
             totalCount={reportingGroups.length}
           />
 
-          <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
             <table className="w-full text-sm min-w-[500px]">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">ID</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">ID</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Name</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Type</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {filtered.map((g) => (
-                  <tr key={g.id} className="hover:bg-gray-50">
+                  <tr key={g.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
                     <td className="px-4 py-3">
                       <EntityIdChip id={g.id} ref={g.ref} />
                     </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">
+                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
                       <EditableText
                         value={g.name}
                         disabled={g.is_system}
                         onSave={async (v) => { await patch.mutateAsync({ id: g.id, body: { name: v } }) }}
                       />
                     </td>
-                    <td className="px-4 py-3 text-gray-500">{g.is_default ? 'Default' : 'Custom'}</td>
+                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{g.is_default ? 'Default' : 'Custom'}</td>
                     <td className="px-4 py-3 text-right">
                       {!g.is_system && (
                         <button
@@ -152,7 +152,7 @@ export function ReportingGroupsPage() {
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-4 py-8 text-center text-gray-400">
+                    <td colSpan={4} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
                       {reportingGroups.length === 0 ? 'No reporting groups yet.' : 'No reporting groups match the current filters.'}
                     </td>
                   </tr>
@@ -208,12 +208,12 @@ function ReportingGroupCreateModal({ brandId, onClose, onSaved }: ReportingGroup
     <Modal title="Add reporting group" onClose={onClose}>
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoFocus
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
         {error && (
@@ -222,7 +222,7 @@ function ReportingGroupCreateModal({ brandId, onClose, onSaved }: ReportingGroup
           </p>
         )}
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900">
             Cancel
           </button>
           <button

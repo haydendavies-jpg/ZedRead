@@ -67,7 +67,7 @@ function SiteOverridesInner() {
 
   if (!brandId) {
     return (
-      <div className="flex items-center justify-center h-64 text-sm text-gray-400">
+      <div className="flex items-center justify-center h-64 text-sm text-gray-400 dark:text-gray-500">
         No brand context available.
       </div>
     )
@@ -76,13 +76,13 @@ function SiteOverridesInner() {
   return (
     <div className="p-4 sm:p-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-gray-900">Site Overrides</h1>
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Site Overrides</h1>
         <div>
-          <label className="text-xs text-gray-500 mr-2">Site</label>
+          <label className="text-xs text-gray-500 dark:text-gray-400 mr-2">Site</label>
           <select
             value={selectedSiteId ?? ''}
             onChange={(e) => setSelectedSiteId(e.target.value || null)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="">Select site…</option>
             {sites.map((s) => (
@@ -93,31 +93,31 @@ function SiteOverridesInner() {
       </div>
 
       {!selectedSiteId ? (
-        <div className="flex items-center justify-center h-40 text-sm text-gray-400">
+        <div className="flex items-center justify-center h-40 text-sm text-gray-400 dark:text-gray-500">
           Select a site to manage its product overrides.
         </div>
       ) : isLoading ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <p className="text-sm text-gray-400 dark:text-gray-500">Loading…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
           <table className="w-full text-sm min-w-[540px]">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Product</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Base price</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Site price</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Product</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Base price</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Site price</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Status</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {catalog.map((p) => (
-                <tr key={p.product_id} className={p.is_excluded ? 'opacity-50' : 'hover:bg-gray-50'}>
-                  <td className="px-4 py-3 font-medium text-gray-900">{p.name}</td>
-                  <td className="px-4 py-3 text-right text-gray-500">
+                <tr key={p.product_id} className={p.is_excluded ? 'opacity-50' : 'hover:bg-gray-50 dark:hover:bg-gray-800/60'}>
+                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{p.name}</td>
+                  <td className="px-4 py-3 text-right text-gray-500 dark:text-gray-400">
                     {centsToDisplay(p.effective_price_cents)}
                   </td>
-                  <td className="px-4 py-3 text-right text-gray-700">
+                  <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">
                     {p.override_price_cents != null
                       ? <span className="font-medium text-brand-600">{centsToDisplay(p.override_price_cents)}</span>
                       : '—'
@@ -140,7 +140,7 @@ function SiteOverridesInner() {
                     {(p.override_price_cents != null || p.is_excluded) && (
                       <button
                         onClick={() => removeOverride.mutate(p.product_id)}
-                        className="text-gray-400 hover:text-red-600 text-xs font-medium"
+                        className="text-gray-400 dark:text-gray-500 hover:text-red-600 text-xs font-medium"
                       >
                         Reset
                       </button>
@@ -150,7 +150,7 @@ function SiteOverridesInner() {
               ))}
               {catalog.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                  <td colSpan={5} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
                     No products found for this site.
                   </td>
                 </tr>
@@ -218,7 +218,7 @@ function OverrideFormModal({ product, siteId, brandId, onClose, onSaved }: Overr
     <Modal title={`Override — ${product.name}`} onClose={onClose}>
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Override price ($) — leave blank to use brand price
           </label>
           <input
@@ -229,7 +229,7 @@ function OverrideFormModal({ product, siteId, brandId, onClose, onSaved }: Overr
             onChange={(e) => setPriceStr(e.target.value)}
             disabled={excluded}
             placeholder={`Base: ${(product.effective_price_cents / 100).toFixed(2)}`}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-gray-50 disabled:text-gray-400"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-gray-50 disabled:text-gray-400"
           />
         </div>
 
@@ -238,9 +238,9 @@ function OverrideFormModal({ product, siteId, brandId, onClose, onSaved }: Overr
             type="checkbox"
             checked={excluded}
             onChange={(e) => { setExcluded(e.target.checked); if (e.target.checked) setPriceStr('') }}
-            className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+            className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500"
           />
-          <span className="text-sm text-gray-700">Exclude this product from this site</span>
+          <span className="text-sm text-gray-700 dark:text-gray-300">Exclude this product from this site</span>
         </label>
 
         {error && (
@@ -250,7 +250,7 @@ function OverrideFormModal({ product, siteId, brandId, onClose, onSaved }: Overr
         )}
 
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900">
             Cancel
           </button>
           <button

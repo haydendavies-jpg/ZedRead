@@ -129,7 +129,7 @@ function AccessProfilesPageInner() {
 
   if (!brandId) {
     return (
-      <div className="flex items-center justify-center h-64 text-sm text-gray-400">
+      <div className="flex items-center justify-center h-64 text-sm text-gray-400 dark:text-gray-500">
         No brand context available.
       </div>
     )
@@ -138,14 +138,14 @@ function AccessProfilesPageInner() {
   return (
     <div className="p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h1 className="text-xl font-semibold text-gray-900">Permission Scopes</h1>
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Permission Scopes</h1>
         {superAdmin && sites.length > 0 && (
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-gray-500">Preview site (license gate)</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Preview site (license gate)</label>
             <select
               value={resolvedSiteId}
               onChange={(e) => setPreviewSiteId(e.target.value)}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
             >
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
@@ -156,7 +156,7 @@ function AccessProfilesPageInner() {
       </div>
 
       {!resolvedSiteId && (
-        <p className="text-xs text-gray-400 mb-4">
+        <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
           License-plan gating preview isn't available at your scope — grants below still take
           effect, but whether a page is actually visible to a User also depends on their site's
           license plan.
@@ -164,7 +164,7 @@ function AccessProfilesPageInner() {
       )}
 
       {profilesLoading ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <p className="text-sm text-gray-400 dark:text-gray-500">Loading…</p>
       ) : (
         <div className="flex flex-wrap gap-2 mb-6">
           {profiles.map((p) => (
@@ -174,34 +174,34 @@ function AccessProfilesPageInner() {
               className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
                 activeProfileId === p.id
                   ? 'bg-brand-50 border-brand-200 text-brand-800'
-                  : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/60'
               }`}
             >
               {p.name}
             </button>
           ))}
-          {profiles.length === 0 && <p className="text-sm text-gray-400">No access profiles yet.</p>}
+          {profiles.length === 0 && <p className="text-sm text-gray-400 dark:text-gray-500">No access profiles yet.</p>}
         </div>
       )}
 
       {activeProfileId && (
         pagesLoading ? (
-          <p className="text-sm text-gray-400">Loading permissions…</p>
+          <p className="text-sm text-gray-400 dark:text-gray-500">Loading permissions…</p>
         ) : (
           <div className="space-y-6">
             {CATEGORIES.map((category) => (
               <div key={category}>
-                <h2 className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
+                <h2 className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">
                   {PAGE_CATEGORY_LABELS[category]}
                 </h2>
-                <div className="overflow-x-auto rounded-xl border border-gray-200">
+                <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
                   <table className="w-full text-sm min-w-[400px]">
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                       {PAGE_CATALOG.filter((p) => p.category === category).map((p) => {
                         const isGranted = granted.includes(p.key)
                         const isLicenseBlocked = licenseBlocked.has(p.key)
                         return (
-                          <tr key={p.key} className="hover:bg-gray-50">
+                          <tr key={p.key} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
                             <td className="px-4 py-3">
                               <label className="flex items-center gap-2 cursor-pointer">
                                 <input
@@ -209,16 +209,16 @@ function AccessProfilesPageInner() {
                                   checked={isGranted}
                                   disabled={grant.isPending || revoke.isPending}
                                   onChange={() => toggle(p.key, isGranted)}
-                                  className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                                  className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500"
                                 />
-                                <span className="text-gray-900">{p.label}</span>
+                                <span className="text-gray-900 dark:text-gray-100">{p.label}</span>
                               </label>
                             </td>
                             <td className="px-4 py-3 text-right">
                               {isLicenseBlocked && (
                                 <span
                                   title="Granted by role, but this site's license plan doesn't include this page"
-                                  className="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-500"
+                                  className="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
                                 >
                                   License-gated
                                 </span>

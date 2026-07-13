@@ -58,6 +58,56 @@ async def test_create_category_with_explicit_reporting_group(
     assert response.json()["reporting_group_id"] == group_id
 
 
+async def test_create_category_defaults_to_neutral_color(client, mgmt_auth_headers, test_brand, test_reporting_group):
+    """POST /categories without default_color falls back to the neutral design-system swatch."""
+    response = await client.post(
+        "/categories",
+        json={"name": "Snacks", "brand_id": str(test_brand.id)},
+        headers=mgmt_auth_headers,
+    )
+    assert response.status_code == 201
+    assert response.json()["default_color"] == "#5A5550"
+
+
+async def test_create_category_with_explicit_color(client, mgmt_auth_headers, test_brand, test_reporting_group):
+    """POST /categories accepts an explicit default_color."""
+    response = await client.post(
+        "/categories",
+        json={"name": "Coffee", "brand_id": str(test_brand.id), "default_color": "#7A5C3E"},
+        headers=mgmt_auth_headers,
+    )
+    assert response.status_code == 201
+    assert response.json()["default_color"] == "#7A5C3E"
+
+
+async def test_create_category_with_invalid_color_returns_422(client, mgmt_auth_headers, test_brand):
+    """POST /categories rejects a non-hex default_color."""
+    response = await client.post(
+        "/categories",
+        json={"name": "Bad Color", "brand_id": str(test_brand.id), "default_color": "red"},
+        headers=mgmt_auth_headers,
+    )
+    assert response.status_code == 422
+
+
+async def test_update_category_color_writes_audit_log(client, db, mgmt_auth_headers, test_user, test_brand, test_reporting_group):
+    """PATCH /categories/{id} with default_color updates it and writes a CATEGORY_UPDATED audit row."""
+    create_resp = await client.post(
+        "/categories", json={"name": "Bakery", "brand_id": str(test_brand.id)}, headers=mgmt_auth_headers
+    )
+    category_id = create_resp.json()["id"]
+
+    response = await client.patch(
+        f"/categories/{category_id}", json={"default_color": "#C56A1A"}, headers=mgmt_auth_headers
+    )
+    assert response.status_code == 200
+    assert response.json()["default_color"] == "#C56A1A"
+
+    result = await db.execute(select(AuditLog).where(AuditLog.action == CATEGORY_UPDATED, AuditLog.entity_id == category_id))
+    rows = result.scalars().all()
+    assert any(r.actor_id == test_user.id for r in rows)
+
+
 async def test_create_category_writes_audit_log(client, db, mgmt_auth_headers, test_user, test_brand, test_reporting_group):
     """Creating a category writes a CATEGORY_CREATED audit row."""
     await client.post(

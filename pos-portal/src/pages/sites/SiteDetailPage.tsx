@@ -75,13 +75,13 @@ export function SiteDetailPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-4 sm:px-6 py-4 bg-white border-b border-gray-200">
-        <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+      <div className="px-4 sm:px-6 py-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-2">
           <Link to="/sites" className="hover:text-brand-600 transition-colors">
             Sites
           </Link>
           <span>/</span>
-          <span className="text-gray-900 font-medium">
+          <span className="text-gray-900 dark:text-gray-100 font-medium">
             {isLoading ? '…' : site?.name}
           </span>
         </div>
@@ -89,8 +89,8 @@ export function SiteDetailPage() {
         {site && (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-4">
-              <h1 className="text-xl font-semibold text-gray-900">{site.name}</h1>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${site.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+              <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{site.name}</h1>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${site.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`}>
                 {site.is_active ? 'active' : 'suspended'}
               </span>
             </div>
@@ -106,7 +106,7 @@ export function SiteDetailPage() {
         {sessionError && <p className="text-xs text-red-600 mt-1">{sessionError}</p>}
       </div>
 
-      <div className="flex-1 overflow-auto bg-gray-50 p-4 sm:p-6">
+      <div className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900 p-4 sm:p-6">
         {site && (
           <CompanyProfileForm
             entityType="site"

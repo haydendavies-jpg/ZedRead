@@ -43,7 +43,7 @@ export function VariantsCombosPage() {
 
   if (!brandId) {
     return (
-      <div className="flex items-center justify-center h-64 text-sm text-gray-400">
+      <div className="flex items-center justify-center h-64 text-sm text-gray-400 dark:text-gray-500">
         No brand context available.
       </div>
     )
@@ -52,16 +52,16 @@ export function VariantsCombosPage() {
   return (
     <div className="p-4 sm:p-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-gray-900">Variants &amp; Combos</h1>
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Variants &amp; Combos</h1>
       </div>
 
-      <div className="flex gap-1 border-b border-gray-200">
+      <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
         {(['variants', 'combos'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium capitalize border-b-2 -mb-px transition-colors ${
-              tab === t ? 'border-brand-600 text-brand-800' : 'border-transparent text-gray-500 hover:text-gray-700'
+              tab === t ? 'border-brand-600 text-brand-800' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700'
             }`}
           >
             {t}
@@ -127,14 +127,14 @@ function ImportExportBar({ resource, brandId, onImported }: ImportExportBarProps
       <button
         onClick={() => download(`/${resource}/export/template`, `${resource}_template.xlsx`)}
         disabled={busy}
-        className="text-xs px-3 py-1.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+        className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/60 disabled:opacity-50 transition-colors"
       >
         Download template
       </button>
       <button
         onClick={() => download(`/${resource}/export`, `${resource}_export.xlsx`)}
         disabled={busy}
-        className="text-xs px-3 py-1.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+        className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/60 disabled:opacity-50 transition-colors"
       >
         Export XLSX
       </button>
@@ -148,7 +148,7 @@ function ImportExportBar({ resource, brandId, onImported }: ImportExportBarProps
       <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleFileChange} />
       {error && <p className="text-xs text-red-600">{error}</p>}
       {summary && (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-gray-500 dark:text-gray-400">
           {summary.created} created, {summary.updated} updated
           {summary.errors.length > 0 && `, ${summary.errors.length} row(s) skipped: ${summary.errors.map((e) => `#${e.row_number} ${e.message}`).join('; ')}`}
         </p>
@@ -236,7 +236,7 @@ function VariantsTab({ brandId }: { brandId: string }) {
       <ImportExportBar resource="variants" brandId={brandId} onImported={invalidateList} />
 
       {isLoading ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <p className="text-sm text-gray-400 dark:text-gray-500">Loading…</p>
       ) : (
         <>
           <FilterBar
@@ -250,40 +250,40 @@ function VariantsTab({ brandId }: { brandId: string }) {
             totalCount={variants.length}
           />
 
-          <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
             <table className="w-full text-sm min-w-[800px]">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">ID</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Display Name</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Linked Product</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">SKU</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Price</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">ID</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Display Name</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Linked Product</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">SKU</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Price</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {filtered.map((v) => (
-                  <tr key={v.id} className="hover:bg-gray-50">
+                  <tr key={v.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
                     <td className="px-4 py-3"><EntityIdChip id={v.id} ref={v.ref} /></td>
-                    <td className="px-4 py-3 font-medium text-gray-900">
+                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
                       <EditableText
                         value={v.display_name ?? ''}
                         emptyLabel="Set a name…"
                         onSave={async (val) => { await patch.mutateAsync({ variant: v, body: { display_name: val || null } }) }}
                       />
                     </td>
-                    <td className="px-4 py-3 text-gray-700">
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                       <EntityIdChip id={v.product_id} ref={v.product_ref} /> <span className="ml-1">{v.product_name}</span>
                     </td>
-                    <td className="px-4 py-3 text-gray-700">
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                       <EditableText
                         value={v.sku ?? ''}
                         emptyLabel="—"
                         onSave={async (val) => { await patch.mutateAsync({ variant: v, body: { sku: val || null } }) }}
                       />
                     </td>
-                    <td className="px-4 py-3 text-gray-700">
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                       <EditableText
                         value={v.price_cents !== null ? (v.price_cents / 100).toFixed(2) : ''}
                         type="number"
@@ -311,7 +311,7 @@ function VariantsTab({ brandId }: { brandId: string }) {
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
                       {variants.length === 0 ? 'No variants yet.' : 'No variants match the current filters.'}
                     </td>
                   </tr>
@@ -413,7 +413,7 @@ function CombosTab({ brandId }: { brandId: string }) {
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <p className="text-sm text-gray-400 dark:text-gray-500">Loading…</p>
       ) : (
         <>
           <FilterBar
@@ -427,39 +427,39 @@ function CombosTab({ brandId }: { brandId: string }) {
             totalCount={combos.length}
           />
 
-          <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
             <table className="w-full text-sm min-w-[800px]">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">ID</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Display Name</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Internal Name</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Linked Product</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Selections</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">ID</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Display Name</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Internal Name</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Linked Product</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Selections</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {filtered.map((c) => (
-                  <tr key={c.id} className="hover:bg-gray-50">
+                  <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
                     <td className="px-4 py-3"><EntityIdChip id={c.id} ref={c.ref} /></td>
-                    <td className="px-4 py-3 font-medium text-gray-900">
+                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
                       <EditableText
                         value={c.display_name ?? ''}
                         emptyLabel="Set a name…"
                         onSave={async (val) => { await patch.mutateAsync({ combo: c, body: { display_name: val || null } }) }}
                       />
                     </td>
-                    <td className="px-4 py-3 text-gray-700">
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                       <EditableText
                         value={c.name}
                         onSave={async (val) => { await patch.mutateAsync({ combo: c, body: { name: val } }) }}
                       />
                     </td>
-                    <td className="px-4 py-3 text-gray-700">
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                       <EntityIdChip id={c.product_id} ref={c.product_ref} /> <span className="ml-1">{c.product_name}</span>
                     </td>
-                    <td className="px-4 py-3 text-gray-500">
+                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
                       {c.min_selections}–{c.max_selections} {c.is_required ? '(required)' : '(optional)'}
                     </td>
                     <td className="px-4 py-3">
@@ -473,7 +473,7 @@ function CombosTab({ brandId }: { brandId: string }) {
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
                       {combos.length === 0 ? 'No combos yet.' : 'No combos match the current filters.'}
                     </td>
                   </tr>
@@ -540,11 +540,11 @@ function ComboCreateModal({ brandId, products, onClose, onSaved }: ComboCreateMo
     <Modal title="Add combo" onClose={onClose}>
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Product</label>
           <select
             value={productId}
             onChange={(e) => setProductId(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="" disabled>Select a product…</option>
             {products.map((p) => (
@@ -553,46 +553,46 @@ function ComboCreateModal({ brandId, products, onClose, onSaved }: ComboCreateMo
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Internal name (POS-facing)</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Internal name (POS-facing)</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Choose a side"
             autoFocus
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Display name (management-facing, optional)</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Display name (management-facing, optional)</label>
           <input
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
         <div className="flex gap-3">
           <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Min selections</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Min selections</label>
             <input
               type="number"
               min={0}
               value={minSelections}
               onChange={(e) => setMinSelections(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
           <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Max selections</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max selections</label>
             <input
               type="number"
               min={1}
               value={maxSelections}
               onChange={(e) => setMaxSelections(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
         </div>
-        <label className="flex items-center gap-2 text-sm text-gray-700">
+        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
           <input type="checkbox" checked={isRequired} onChange={(e) => setIsRequired(e.target.checked)} />
           Required — the cashier must select at least one option
         </label>
@@ -602,7 +602,7 @@ function ComboCreateModal({ brandId, products, onClose, onSaved }: ComboCreateMo
           </p>
         )}
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900">
             Cancel
           </button>
           <button

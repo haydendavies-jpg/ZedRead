@@ -105,10 +105,23 @@ VARIANT_REACTIVATED = "variant.reactivated"
 
 MODIFIER_GROUP_CREATED = "modifier_group.created"
 MODIFIER_GROUP_UPDATED = "modifier_group.updated"
+MODIFIER_GROUP_DEACTIVATED = "modifier_group.deactivated"
+MODIFIER_GROUP_DUPLICATED = "modifier_group.duplicated"
 MODIFIER_OPTION_CREATED = "modifier_option.created"
 MODIFIER_OPTION_UPDATED = "modifier_option.updated"
+MODIFIER_OPTION_DEACTIVATED = "modifier_option.deactivated"
+MODIFIER_OPTION_GROUP_LINKED = "modifier_option.group_linked"
+MODIFIER_OPTION_GROUP_UNLINKED = "modifier_option.group_unlinked"
 PRODUCT_MODIFIER_LINKED = "product.modifier.linked"
 PRODUCT_MODIFIER_UNLINKED = "product.modifier.unlinked"
+
+# ── Menu Studio redesign — Menus entity (distinct from a MenuLayout) ────────
+MENU_CREATED = "menu.created"
+MENU_UPDATED = "menu.updated"
+MENU_DUPLICATED = "menu.duplicated"
+MENU_SCHEDULED = "menu.scheduled"
+MENU_SCHEDULE_CANCELLED = "menu.schedule_cancelled"
+MENU_PUBLISHED = "menu.published"
 
 COMBO_GROUP_CREATED = "combo_group.created"
 COMBO_GROUP_UPDATED = "combo_group.updated"

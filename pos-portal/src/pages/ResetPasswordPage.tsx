@@ -33,13 +33,13 @@ export function ResetPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 sm:p-6">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 sm:p-6">
       <div className="w-full max-w-sm">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
           <div className="mb-6 text-center">
             <h1 className="text-brand-800 mb-0.5" style={{ fontFamily: "'Lora', serif", fontSize: '2rem', fontWeight: 700 }}>ZedRead</h1>
-            <p className="text-gray-400 tracking-widest uppercase" style={{ fontSize: '0.6rem' }}>POS You Can Count On</p>
-            <p className="text-sm text-gray-500 mt-4">Choose a new password</p>
+            <p className="text-gray-400 dark:text-gray-500 tracking-widest uppercase" style={{ fontSize: '0.6rem' }}>POS You Can Count On</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">Choose a new password</p>
           </div>
 
           {!token ? (
@@ -48,7 +48,7 @@ export function ResetPasswordPage() {
             </p>
           ) : done ? (
             <div className="space-y-4 text-center">
-              <p className="text-sm text-gray-600">Your password has been updated.</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Your password has been updated.</p>
               <button
                 onClick={() => navigate('/login')}
                 className="w-full bg-brand-600 hover:bg-brand-700 text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors"
@@ -59,7 +59,7 @@ export function ResetPasswordPage() {
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">New Password</label>
                 <input
                   type="password"
                   value={password}
@@ -67,20 +67,20 @@ export function ResetPasswordPage() {
                   required
                   autoFocus
                   minLength={8}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                   placeholder="Min 8 characters"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Confirm New Password</label>
                 <input
                   type="password"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
                   required
                   className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 ${
-                    mismatch ? 'border-red-400' : 'border-gray-300'
+                    mismatch ? 'border-red-400' : 'border-gray-300 dark:border-gray-600'
                   }`}
                 />
                 {mismatch && <p className="text-xs text-red-600 mt-1">Passwords do not match.</p>}

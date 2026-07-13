@@ -67,13 +67,13 @@ export function BrandDetailPage() {
     <BrandContext.Provider value={brandId}>
       <div className="flex flex-col h-full">
         {/* Header */}
-        <div className="px-4 sm:px-6 py-4 bg-white border-b border-gray-200">
-          <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+        <div className="px-4 sm:px-6 py-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-2">
             <Link to="/brands" className="hover:text-brand-600 transition-colors">
               Brands
             </Link>
             <span>/</span>
-            <span className="text-gray-900 font-medium">
+            <span className="text-gray-900 dark:text-gray-100 font-medium">
               {isLoading ? '…' : brand?.name}
             </span>
           </div>
@@ -81,8 +81,8 @@ export function BrandDetailPage() {
           {brand && (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-4">
-                <h1 className="text-xl font-semibold text-gray-900">{brand.name}</h1>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${brand.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{brand.name}</h1>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${brand.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`}>
                   {brand.is_active ? 'active' : 'suspended'}
                 </span>
               </div>
@@ -99,7 +99,7 @@ export function BrandDetailPage() {
         </div>
 
         {/* Tab bar */}
-        <div className="flex gap-0 px-4 sm:px-6 bg-white border-b border-gray-200 overflow-x-auto">
+        <div className="flex gap-0 px-4 sm:px-6 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
           {TABS.map((tab) => (
             <button
               key={tab.id}
@@ -107,7 +107,7 @@ export function BrandDetailPage() {
               className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 activeTab === tab.id
                   ? 'border-brand-600 text-brand-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-900'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900'
               }`}
             >
               {tab.label}
@@ -116,7 +116,7 @@ export function BrandDetailPage() {
         </div>
 
         {/* Tab content */}
-        <div className="flex-1 overflow-auto bg-gray-50">
+        <div className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900">
           {activeTab === 'overview' && brand && <BrandOverview brand={brand} />}
           {activeTab === 'products' && <ProductsPage />}
           {activeTab === 'variants_combos' && <VariantsCombosPage />}
@@ -153,7 +153,7 @@ function BrandOverview({ brand }: { brand: Brand }) {
         invalidateKeys={[['brand', brand.id], ['brands']]}
       />
 
-      <p className="mt-4 text-sm text-gray-400 max-w-2xl">
+      <p className="mt-4 text-sm text-gray-400 dark:text-gray-500 max-w-2xl">
         Use the tabs above to manage this brand's catalog, tax settings, reports, and user access.
       </p>
     </div>

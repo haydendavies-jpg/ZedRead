@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth, isSuperAdmin, isMgmtUser } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
 import { ChangePasswordModal } from '../pages/ChangePasswordPage'
 import { ImpersonationBanner } from './ImpersonationBanner'
 
@@ -22,11 +23,10 @@ const SUPER_ADMIN_ONLY_NAV = [
 
 /** Nav items shown to all management users. Tax is admin-only (see Tax Templates). */
 const MGMT_NAV = [
-  { to: '/management/products', label: 'Products' },
+  { to: '/management/menu-studio', label: 'Menu Studio' },
+  { to: '/management/menus', label: 'Menus' },
   { to: '/management/variants-combos', label: 'Variants & Combos' },
-  { to: '/management/categories', label: 'Categories' },
   { to: '/management/reporting-groups', label: 'Reporting Groups' },
-  { to: '/management/menu-builder', label: 'Menu Builder' },
   { to: '/management/reports', label: 'Reports' },
   { to: '/management/invoices', label: 'Invoices' },
   { to: '/management/company-profile', label: 'Company Profile' },
@@ -41,12 +41,13 @@ const MGMT_BRAND_NAV = [
 
 export function Layout() {
   const { user, logout } = useAuth()
+  const { theme, toggleTheme } = useTheme()
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
       isActive
-        ? 'bg-brand-50 text-brand-800'
-        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+        ? 'bg-brand-50 dark:bg-brand-950/40 text-brand-800 dark:text-brand-300'
+        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100'
     }`
 
   const [showChangePassword, setShowChangePassword] = useState(false)
@@ -64,9 +65,9 @@ export function Layout() {
 
   const sidebarContent = (
     <>
-      <div className="px-4 py-5 border-b border-gray-100">
-        <span className="font-semibold text-gray-900">ZedRead</span>
-        <p className="text-xs text-gray-400 mt-0.5">
+      <div className="px-4 py-5 border-b border-gray-100 dark:border-gray-800">
+        <span className="font-semibold text-gray-900 dark:text-gray-100">ZedRead</span>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
           {mgmtUser ? 'Management Portal' : 'Admin Portal'}
         </p>
       </div>
@@ -81,7 +82,7 @@ export function Layout() {
             ))}
             {superAdmin.role === 'admin' && (
               <>
-                <div className="pt-3 pb-1 px-3 text-xs font-medium text-gray-400 uppercase tracking-wide">
+                <div className="pt-3 pb-1 px-3 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide">
                   Admin
                 </div>
                 {SUPER_ADMIN_ONLY_NAV.map(({ to, label }) => (
@@ -103,7 +104,7 @@ export function Layout() {
             ))}
             {isBrandOrGroupScope && (
               <>
-                <div className="pt-3 pb-1 px-3 text-xs font-medium text-gray-400 uppercase tracking-wide">
+                <div className="pt-3 pb-1 px-3 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide">
                   Users
                 </div>
                 {MGMT_BRAND_NAV.map(({ to, label }) => (
@@ -117,13 +118,13 @@ export function Layout() {
         )}
       </nav>
 
-      <div className="px-4 py-4 border-t border-gray-100">
-        <p className="text-xs text-gray-500 truncate">{user?.email}</p>
-        <p className="text-xs text-gray-400 capitalize">{scopeLabel}</p>
-        <div className="mt-2 flex gap-3">
+      <div className="px-4 py-4 border-t border-gray-100 dark:border-gray-800">
+        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user?.email}</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 capitalize">{scopeLabel}</p>
+        <div className="mt-2 flex items-center gap-3">
           <button
             onClick={() => { setShowChangePassword(true); closeSidebar() }}
-            className="text-xs text-brand-600 hover:text-brand-800 transition-colors"
+            className="text-xs text-brand-600 hover:text-brand-800 dark:hover:text-brand-400 transition-colors"
           >
             Change password
           </button>
@@ -132,6 +133,14 @@ export function Layout() {
             className="text-xs text-red-500 hover:text-red-700 transition-colors"
           >
             Sign out
+          </button>
+          <button
+            onClick={toggleTheme}
+            title="Toggle theme"
+            aria-label="Toggle theme"
+            className="ml-auto w-7 h-7 flex items-center justify-center rounded-md border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-100 text-sm"
+          >
+            {theme === 'dark' ? '☀' : '☾'}
           </button>
         </div>
       </div>
@@ -143,9 +152,9 @@ export function Layout() {
   )
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-gray-50 dark:bg-gray-950">
       {/* Desktop sidebar — always visible at sm+ */}
-      <aside className="hidden sm:flex w-56 bg-white border-r border-gray-200 flex-col">
+      <aside className="hidden sm:flex w-56 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex-col">
         {sidebarContent}
       </aside>
 
@@ -157,7 +166,7 @@ export function Layout() {
         />
       )}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-56 bg-white border-r border-gray-200 flex flex-col transform transition-transform duration-200 sm:hidden ${
+        className={`fixed inset-y-0 left-0 z-50 w-56 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col transform transition-transform duration-200 sm:hidden ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -165,19 +174,19 @@ export function Layout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto bg-gray-50 min-w-0">
+      <main className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-950 min-w-0">
         {/* Mobile header bar with hamburger */}
-        <div className="flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-200 sm:hidden">
+        <div className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 sm:hidden">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-1 text-gray-600 hover:text-gray-900"
+            className="p-1 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
             aria-label="Open menu"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <span className="font-semibold text-gray-900 text-sm">ZedRead</span>
+          <span className="font-semibold text-gray-900 dark:text-gray-100 text-sm">ZedRead</span>
         </div>
         <ImpersonationBanner />
         <Outlet />

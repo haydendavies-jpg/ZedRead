@@ -127,7 +127,7 @@ export function BrandsPage() {
   return (
     <div className="p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h1 className="text-xl font-semibold text-gray-900">Brands</h1>
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Brands</h1>
         <button
           onClick={openCreate}
           className="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
@@ -142,12 +142,12 @@ export function BrandsPage() {
           placeholder="Search by name…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-56"
+          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-56"
         />
         <select
           value={groupFilter}
           onChange={(e) => setGroupFilter(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
         >
           <option value="">All groups</option>
           {groups.map((g) => (
@@ -157,7 +157,7 @@ export function BrandsPage() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
         >
           <option value="">All statuses</option>
           <option value="active">Active</option>
@@ -166,23 +166,23 @@ export function BrandsPage() {
         {hasFilters && (
           <button
             onClick={() => { setSearch(''); setGroupFilter(''); setStatusFilter('') }}
-            className="text-xs text-gray-400 hover:text-gray-600"
+            className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600"
           >
             Clear filters
           </button>
         )}
-        <span className="text-xs text-gray-400 ml-auto">
+        <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto">
           {filtered.length} of {brands.length}
         </span>
       </div>
 
       {isLoading ? (
-        <div className="text-gray-400 text-sm">Loading…</div>
+        <div className="text-gray-400 dark:text-gray-500 text-sm">Loading…</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
           <table className="w-full text-sm min-w-[600px]">
             <thead>
-              <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
+              <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                 <th className="px-4 py-3">ID</th>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Group ID</th>
@@ -193,15 +193,15 @@ export function BrandsPage() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filtered.map((b) => (
-                <tr key={b.id} className="hover:bg-gray-50">
+                <tr key={b.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
                   <td className="px-4 py-3"><EntityIdChip id={b.id} ref={b.ref} /></td>
-                  <td className="px-4 py-3 font-medium text-gray-900">
+                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
                     <Link to={`/brands/${b.id}`} className="hover:text-brand-600 transition-colors">
                       {b.name}
                     </Link>
                   </td>
                   <td className="px-4 py-3"><EntityIdChip id={b.group_id} ref={groups.find((g) => g.id === b.group_id)?.ref} /></td>
-                  <td className="px-4 py-3 text-gray-500">{groupName(b.group_id)}</td>
+                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{groupName(b.group_id)}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={b.is_active ? 'active' : 'suspended'} />
                   </td>
@@ -223,7 +223,7 @@ export function BrandsPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
                   {brands.length === 0 ? 'No brands yet.' : 'No brands match the current filters.'}
                 </td></tr>
               )}
@@ -240,12 +240,12 @@ export function BrandsPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {!editing && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Group</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Group</label>
                 <select
                   value={groupId}
                   onChange={(e) => setGroupId(e.target.value)}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
                   {groups.map((g) => (
                     <option key={g.id} value={g.id}>{g.name}</option>
@@ -254,38 +254,38 @@ export function BrandsPage() {
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
                 autoFocus
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="Burger Chain"
               />
             </div>
             {!editing && (
               <>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Brand email</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Brand email</label>
                   <input
                     type="email"
                     value={masterEmail}
                     onChange={(e) => setMasterEmail(e.target.value)}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                     placeholder="owner@example.com"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Password (min 8 chars)</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password (min 8 chars)</label>
                   <input
                     type="password"
                     value={masterPassword}
                     onChange={(e) => setMasterPassword(e.target.value)}
                     required
                     minLength={8}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                   />
                 </div>
               </>
@@ -293,7 +293,7 @@ export function BrandsPage() {
             <CompanyProfileFields values={profile} onChange={setProfile} />
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => { setShowCreate(false); setEditing(null) }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+              <button type="button" onClick={() => { setShowCreate(false); setEditing(null) }} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800">Cancel</button>
               <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
                 {editing ? 'Save' : 'Create'}
               </button>

@@ -95,7 +95,7 @@ export function TaxTemplatesPage() {
   return (
     <div className="p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-        <h1 className="text-xl font-semibold text-gray-900">Tax Templates</h1>
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Tax Templates</h1>
         <button
           onClick={openCreate}
           className="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
@@ -103,26 +103,26 @@ export function TaxTemplatesPage() {
           + New Template
         </button>
       </div>
-      <p className="text-sm text-gray-500 mb-4 max-w-2xl">
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 max-w-2xl">
         Rates apply to a site when every set field matches its location. Leave state/county/city blank
         to apply at a wider level (e.g. country only for Australia). Sites resolve and combine all
         matching templates automatically at sale time.
       </p>
 
       {isLoading ? (
-        <div className="text-gray-400 text-sm">Loading…</div>
+        <div className="text-gray-400 dark:text-gray-500 text-sm">Loading…</div>
       ) : templates.length === 0 ? (
-        <div className="text-gray-400 text-sm rounded-xl border border-gray-200 px-4 py-8 text-center">
+        <div className="text-gray-400 dark:text-gray-500 text-sm rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-8 text-center">
           No tax templates yet.
         </div>
       ) : (
         <div className="space-y-4">
           {templates.map((t) => (
-            <div key={t.id} className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6">
+            <div key={t.id} className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                 <div>
-                  <p className="font-medium text-gray-900">{t.name}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{jurisdiction(t)}</p>
+                  <p className="font-medium text-gray-900 dark:text-gray-100">{t.name}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{jurisdiction(t)}</p>
                 </div>
                 <div className="flex flex-wrap gap-3 text-xs">
                   <button onClick={() => setAddingRateFor(t)} className="text-brand-600 hover:underline">Add rate</button>
@@ -136,10 +136,10 @@ export function TaxTemplatesPage() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto rounded-lg border border-gray-100">
+              <div className="overflow-x-auto rounded-lg border border-gray-100 dark:border-gray-800">
                 <table className="w-full text-sm min-w-[420px]">
                   <thead>
-                    <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
+                    <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                       <th className="px-3 py-2">Rate</th>
                       <th className="px-3 py-2">Percent</th>
                       <th className="px-3 py-2">Model</th>
@@ -149,9 +149,9 @@ export function TaxTemplatesPage() {
                   <tbody className="divide-y divide-gray-50">
                     {t.rates.map((r) => (
                       <tr key={r.id}>
-                        <td className="px-3 py-2 text-gray-900">{r.name}</td>
-                        <td className="px-3 py-2 text-gray-700">{Number(r.rate_percent)}%</td>
-                        <td className="px-3 py-2 text-gray-500 capitalize">{r.tax_model}</td>
+                        <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{r.name}</td>
+                        <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{Number(r.rate_percent)}%</td>
+                        <td className="px-3 py-2 text-gray-500 dark:text-gray-400 capitalize">{r.tax_model}</td>
                         <td className="px-3 py-2 text-right">
                           <button
                             onClick={() => deleteRateMutation.mutate(r.id)}
@@ -163,7 +163,7 @@ export function TaxTemplatesPage() {
                       </tr>
                     ))}
                     {t.rates.length === 0 && (
-                      <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400 text-xs">No rates — add one.</td></tr>
+                      <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400 dark:text-gray-500 text-xs">No rates — add one.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -177,18 +177,18 @@ export function TaxTemplatesPage() {
         <Modal title={editing ? 'Edit Tax Template' : 'New Tax Template'} onClose={() => { setShowCreate(false); setEditing(null) }}>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
               <input
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 required
                 autoFocus
                 placeholder="Australia GST"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Country (ISO 2-letter)</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country (ISO 2-letter)</label>
               <input
                 value={form.country}
                 onChange={(e) => setForm({ ...form, country: e.target.value })}
@@ -196,26 +196,26 @@ export function TaxTemplatesPage() {
                 minLength={2}
                 maxLength={2}
                 placeholder="AU"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm uppercase focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm uppercase focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
-                <input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} placeholder="Optional" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">State</label>
+                <input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} placeholder="Optional" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">County</label>
-                <input value={form.county} onChange={(e) => setForm({ ...form, county: e.target.value })} placeholder="Optional" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">County</label>
+                <input value={form.county} onChange={(e) => setForm({ ...form, county: e.target.value })} placeholder="Optional" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
-                <input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="Optional" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">City</label>
+                <input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="Optional" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
               </div>
             </div>
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => { setShowCreate(false); setEditing(null) }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+              <button type="button" onClick={() => { setShowCreate(false); setEditing(null) }} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800">Cancel</button>
               <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
                 {editing ? 'Save' : 'Create'}
               </button>
@@ -258,16 +258,16 @@ function AddRateModal({ template, onClose, onSaved }: { template: TaxTemplate; o
     <Modal title={`Add rate — ${template.name}`} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Rate name</label>
-          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required autoFocus placeholder="GST" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Rate name</label>
+          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required autoFocus placeholder="GST" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Percent</label>
-          <input type="number" step="0.0001" min="0" max="100" value={form.rate_percent} onChange={(e) => setForm({ ...form, rate_percent: e.target.value })} required placeholder="10" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Percent</label>
+          <input type="number" step="0.0001" min="0" max="100" value={form.rate_percent} onChange={(e) => setForm({ ...form, rate_percent: e.target.value })} required placeholder="10" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Tax model</label>
-          <select value={form.tax_model} onChange={(e) => setForm({ ...form, tax_model: e.target.value as TaxTemplateRate['tax_model'] })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tax model</label>
+          <select value={form.tax_model} onChange={(e) => setForm({ ...form, tax_model: e.target.value as TaxTemplateRate['tax_model'] })} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
             <option value="inclusive">Inclusive (embedded in price)</option>
             <option value="exclusive">Exclusive (added on top)</option>
             <option value="compound">Compound (parallel to base)</option>
@@ -275,7 +275,7 @@ function AddRateModal({ template, onClose, onSaved }: { template: TaxTemplate; o
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800">Cancel</button>
           <button type="submit" disabled={mutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">Add</button>
         </div>
       </form>

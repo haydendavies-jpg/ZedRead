@@ -78,7 +78,7 @@ export function EmailTemplatesPage() {
   return (
     <div className="p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h1 className="text-xl font-semibold text-gray-900">Email Templates</h1>
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Email Templates</h1>
         <button
           onClick={openCreate}
           className="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
@@ -88,12 +88,12 @@ export function EmailTemplatesPage() {
       </div>
 
       {isLoading ? (
-        <div className="text-gray-400 text-sm">Loading…</div>
+        <div className="text-gray-400 dark:text-gray-500 text-sm">Loading…</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
           <table className="w-full text-sm min-w-[640px]">
             <thead>
-              <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
+              <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                 <th className="px-4 py-3">ID</th>
                 <th className="px-4 py-3">Key</th>
                 <th className="px-4 py-3">Name</th>
@@ -104,16 +104,16 @@ export function EmailTemplatesPage() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {templates.map((t) => (
-                <tr key={t.id} className="hover:bg-gray-50">
+                <tr key={t.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
                   <td className="px-4 py-3"><EntityIdChip id={t.id} /></td>
-                  <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                  <td className="px-4 py-3 font-mono text-xs text-gray-600 dark:text-gray-400">
                     {t.template_key}
                     {t.is_system && <span className="ml-1 text-xs text-brand-500">(system)</span>}
                   </td>
-                  <td className="px-4 py-3 font-medium text-gray-900">{t.name}</td>
-                  <td className="px-4 py-3 text-gray-500">{t.subject}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{t.name}</td>
+                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{t.subject}</td>
                   <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${t.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${t.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`}>
                       {t.is_active ? 'active' : 'inactive'}
                     </span>
                   </td>
@@ -126,7 +126,7 @@ export function EmailTemplatesPage() {
                 </tr>
               ))}
               {templates.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No email templates yet.</td></tr>
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">No email templates yet.</td></tr>
               )}
             </tbody>
           </table>
@@ -141,50 +141,50 @@ export function EmailTemplatesPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {!editing && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Template key</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Template key</label>
                 <input
                   value={form.template_key}
                   onChange={(e) => setForm({ ...form, template_key: e.target.value })}
                   required
                   autoFocus
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                   placeholder="billing_info_request"
                 />
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
               <input
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
               <input
                 value={form.subject}
                 onChange={(e) => setForm({ ...form, subject: e.target.value })}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Body</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Body</label>
               <textarea
                 value={form.body}
                 onChange={(e) => setForm({ ...form, body: e.target.value })}
                 required
                 rows={6}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="Hi, please send billing info for $entity_name ($entity_type)…"
               />
-              <p className="text-xs text-gray-400 mt-1">Use $entity_name and $entity_type as placeholders.</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Use $entity_name and $entity_type as placeholders.</p>
             </div>
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => { setShowCreate(false); setEditing(null) }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+              <button type="button" onClick={() => { setShowCreate(false); setEditing(null) }} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800">Cancel</button>
               <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
                 {editing ? 'Save' : 'Create'}
               </button>

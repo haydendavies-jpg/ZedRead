@@ -97,7 +97,7 @@ export function InvoicesPage() {
 
   if (!brandId && !fixedSiteId) {
     return (
-      <div className="flex items-center justify-center h-64 text-sm text-gray-400">
+      <div className="flex items-center justify-center h-64 text-sm text-gray-400 dark:text-gray-500">
         No brand or site context available.
       </div>
     )
@@ -106,7 +106,7 @@ export function InvoicesPage() {
   return (
     <div className="p-4 sm:p-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-gray-900">Invoices</h1>
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Invoices</h1>
         <button
           onClick={handleExport}
           disabled={isExporting}
@@ -120,11 +120,11 @@ export function InvoicesPage() {
       <div className="flex flex-wrap items-end gap-3">
         {needsSiteSelector && (
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-gray-500">Site</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Site</label>
             <select
               value={selectedSiteId}
               onChange={(e) => setSelectedSiteId(e.target.value)}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             >
               <option value="">All sites</option>
               {sites.map((s) => (
@@ -134,11 +134,11 @@ export function InvoicesPage() {
           </div>
         )}
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500">Status</label>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Status</label>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="">Any</option>
             <option value="draft">Draft</option>
@@ -148,83 +148,83 @@ export function InvoicesPage() {
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500">From</label>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">From</label>
           <input
             type="date"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500">To</label>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">To</label>
           <input
             type="date"
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500">Min total</label>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Min total</label>
           <input
             type="number"
             step="0.01"
             placeholder="0.00"
             value={minAmount}
             onChange={(e) => setMinAmount(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm w-24 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm w-24 focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500">Max total</label>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Max total</label>
           <input
             type="number"
             step="0.01"
             placeholder="0.00"
             value={maxAmount}
             onChange={(e) => setMaxAmount(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm w-24 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm w-24 focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
         {hasFilters && (
-          <button onClick={clearFilters} className="text-xs text-gray-400 hover:text-gray-600 pb-2">
+          <button onClick={clearFilters} className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 pb-2">
             Clear filters
           </button>
         )}
-        <span className="text-xs text-gray-400 ml-auto pb-2">{invoices.length} invoices</span>
+        <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto pb-2">{invoices.length} invoices</span>
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <p className="text-sm text-gray-400 dark:text-gray-500">Loading…</p>
       ) : error ? (
         <p className="text-sm text-red-500">Failed to load invoices.</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
           <table className="w-full text-sm min-w-[720px]">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Invoice</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Site</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Total</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Invoice</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Date</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Site</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Type</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Status</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Total</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {invoices.map((inv) => (
-                <tr key={inv.id} className="hover:bg-gray-50">
+                <tr key={inv.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
                   <td className="px-4 py-3"><EntityIdChip id={inv.id} /></td>
-                  <td className="px-4 py-3 text-gray-700">{new Date(inv.created_at).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-gray-700">{inv.site_name}</td>
-                  <td className="px-4 py-3 text-gray-700 capitalize">
+                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{new Date(inv.created_at).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{inv.site_name}</td>
+                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300 capitalize">
                     {inv.invoice_type}
                     {inv.is_refunded && <span className="ml-1 text-xs text-amber-600">(refunded)</span>}
                   </td>
                   <td className="px-4 py-3"><StatusBadge status={inv.status} /></td>
-                  <td className="px-4 py-3 text-right font-medium text-gray-900">{centsToDisplay(inv.total_cents)}</td>
+                  <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-gray-100">{centsToDisplay(inv.total_cents)}</td>
                   <td className="px-4 py-3 text-right">
                     <Link
                       to={`/management/invoices/${inv.id}${brandId ? `?brand_id=${brandId}` : ''}`}
@@ -237,7 +237,7 @@ export function InvoicesPage() {
               ))}
               {invoices.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                  <td colSpan={7} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
                     No invoices yet.
                   </td>
                 </tr>

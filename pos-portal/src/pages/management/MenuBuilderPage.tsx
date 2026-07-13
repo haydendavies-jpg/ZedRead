@@ -32,7 +32,7 @@ export function MenuBuilderPage() {
 
   if (!brandId) {
     return (
-      <div className="flex items-center justify-center h-64 text-sm text-gray-400">
+      <div className="flex items-center justify-center h-64 text-sm text-gray-400 dark:text-gray-500">
         No brand context available.
       </div>
     )
@@ -41,7 +41,7 @@ export function MenuBuilderPage() {
   return (
     <div className="p-4 sm:p-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-gray-900">Menu Builder</h1>
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Menu Builder</h1>
       </div>
 
       {selectedLayoutId ? (
@@ -95,31 +95,31 @@ function LayoutsList({ brandId, onOpen }: { brandId: string; onOpen: (id: string
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <p className="text-sm text-gray-400 dark:text-gray-500">Loading…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
           <table className="w-full text-sm min-w-[700px]">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Scope</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Version</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Actions</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Name</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Scope</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Version</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Status</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {layouts.map((layout) => (
-                <tr key={layout.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">
+                <tr key={layout.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
                     <button onClick={() => onOpen(layout.id)} className="text-brand-600 hover:underline">
                       {layout.name}
                     </button>
                   </td>
-                  <td className="px-4 py-3 text-gray-700">
+                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                     {layout.scope === 'brand' ? 'All sites' : <EntityIdChip id={layout.site_id ?? ''} />}
                   </td>
-                  <td className="px-4 py-3 text-gray-500">v{layout.version}</td>
+                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">v{layout.version}</td>
                   <td className="px-4 py-3">
                     <StatusBadge
                       status={layout.is_published ? 'active' : 'disabled'}
@@ -142,7 +142,7 @@ function LayoutsList({ brandId, onOpen }: { brandId: string; onOpen: (id: string
               ))}
               {layouts.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                  <td colSpan={5} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
                     No menu layouts yet.
                   </td>
                 </tr>
@@ -202,21 +202,21 @@ function CreateLayoutModal({
     <Modal title="Add menu layout" onClose={onClose}>
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Main Menu, Breakfast Menu"
             autoFocus
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Scope</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Scope</label>
           <select
             value={scope}
             onChange={(e) => setScope(e.target.value as 'brand' | 'site')}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="brand">All sites in this brand</option>
             <option value="site">A single site</option>
@@ -224,18 +224,18 @@ function CreateLayoutModal({
         </div>
         {scope === 'site' && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Site ID</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Site ID</label>
             {mgmtSiteId ? (
-              <input value={siteId} disabled className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-lg text-sm text-gray-500" />
+              <input value={siteId} disabled className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 rounded-lg text-sm text-gray-500 dark:text-gray-400" />
             ) : (
               <>
                 <input
                   value={siteId}
                   onChange={(e) => setSiteId(e.target.value)}
                   placeholder="Paste the site's UUID"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                   No site picker is available at your access level yet — copy the site's ID from its detail page.
                 </p>
               </>
@@ -246,7 +246,7 @@ function CreateLayoutModal({
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
         )}
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900">
             Cancel
           </button>
           <button
@@ -334,7 +334,7 @@ function LayoutBuilder({ brandId, layoutId, onBack }: { brandId: string; layoutI
   })
 
   if (isLoading || !layout) {
-    return <p className="text-sm text-gray-400">Loading…</p>
+    return <p className="text-sm text-gray-400 dark:text-gray-500">Loading…</p>
   }
 
   const tabs = layout.tabs
@@ -366,13 +366,13 @@ function LayoutBuilder({ brandId, layoutId, onBack }: { brandId: string; layoutI
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <button onClick={onBack} className="text-sm text-gray-500 hover:text-gray-900">
+        <button onClick={onBack} className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900">
           ← Back to layouts
         </button>
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-base font-semibold text-gray-900">{layout.name}</h2>
+          <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">{layout.name}</h2>
           <StatusBadge status={layout.is_published ? 'active' : 'disabled'} title={layout.is_published ? 'Published' : 'Draft'} />
-          <span className="text-xs text-gray-400">v{layout.version}</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">v{layout.version}</span>
           <button
             onClick={() => (layout.is_published ? unpublish.mutate() : publish.mutate())}
             className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
@@ -413,25 +413,25 @@ function LayoutBuilder({ brandId, layoutId, onBack }: { brandId: string; layoutI
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={() => handleTabDrop(tab.id)}
                 className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm cursor-move border ${
-                  activeTab?.id === tab.id ? 'bg-brand-50 border-brand-200 text-brand-800' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                  activeTab?.id === tab.id ? 'bg-brand-50 border-brand-200 text-brand-800' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/60'
                 }`}
               >
                 <button onClick={() => setActiveTabId(tab.id)} className="flex-1 text-left truncate">
-                  {tab.name} <span className="text-gray-400">({tab.buttons.length})</span>
+                  {tab.name} <span className="text-gray-400 dark:text-gray-500">({tab.buttons.length})</span>
                 </button>
                 <button
                   onClick={() => {
                     const name = prompt('Rename tab', tab.name)
                     if (name) renameTab.mutate({ tabId: tab.id, name })
                   }}
-                  className="text-gray-400 hover:text-gray-600 text-xs"
+                  className="text-gray-400 dark:text-gray-500 hover:text-gray-600 text-xs"
                   title="Rename"
                 >
                   ✎
                 </button>
                 <button
                   onClick={() => { if (confirm(`Delete tab "${tab.name}"?`)) deleteTab.mutate(tab.id) }}
-                  className="text-gray-400 hover:text-red-600 text-xs"
+                  className="text-gray-400 dark:text-gray-500 hover:text-red-600 text-xs"
                   title="Delete"
                 >
                   ×
@@ -444,7 +444,7 @@ function LayoutBuilder({ brandId, layoutId, onBack }: { brandId: string; layoutI
               const name = prompt('New tab name')
               if (name) addTab.mutate(name)
             }}
-            className="w-full text-xs px-3 py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 hover:bg-gray-50 transition-colors"
+            className="w-full text-xs px-3 py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/60 transition-colors"
           >
             + Add tab
           </button>
@@ -453,7 +453,7 @@ function LayoutBuilder({ brandId, layoutId, onBack }: { brandId: string; layoutI
         {/* Button grid */}
         <div className="flex-1 min-w-0">
           {!activeTab ? (
-            <p className="text-sm text-gray-400">Add a tab to start placing product buttons.</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500">Add a tab to start placing product buttons.</p>
           ) : (
             <ButtonGrid
               tab={activeTab}
@@ -512,8 +512,8 @@ function ButtonGrid({
           onDragStart={() => onDragStartButton(button.id)}
           onDragOver={(e) => { e.preventDefault(); e.stopPropagation() }}
           onDrop={(e) => { e.stopPropagation(); onDropButton(button.id) }}
-          className={`relative border rounded-lg p-3 text-sm cursor-move bg-white ${
-            button.is_active === false ? 'border-red-200' : button.product_name === null ? 'border-amber-200' : 'border-gray-200'
+          className={`relative border rounded-lg p-3 text-sm cursor-move bg-white dark:bg-gray-800 ${
+            button.is_active === false ? 'border-red-200' : button.product_name === null ? 'border-amber-200' : 'border-gray-200 dark:border-gray-700'
           }`}
         >
           <button
@@ -523,15 +523,15 @@ function ButtonGrid({
           >
             ×
           </button>
-          <p className="font-medium text-gray-900 truncate pr-4">{button.product_name ?? 'Unknown product'}</p>
-          <p className="text-xs text-gray-500">{centsToDisplay(button.price_cents)}</p>
-          <p className="text-xs text-gray-400 font-mono">{button.product_ref}</p>
+          <p className="font-medium text-gray-900 dark:text-gray-100 truncate pr-4">{button.product_name ?? 'Unknown product'}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">{centsToDisplay(button.price_cents)}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 font-mono">{button.product_ref}</p>
           {button.product_name === null && <p className="text-xs text-red-600 mt-1">Code no longer resolves</p>}
           {button.is_active === false && <p className="text-xs text-amber-600 mt-1">Product inactive</p>}
         </div>
       ))}
 
-      <div className="border border-dashed border-gray-300 rounded-lg p-3 flex items-center justify-center">
+      <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-3 flex items-center justify-center">
         {showPicker ? (
           <div className="w-full space-y-2">
             <input
@@ -539,26 +539,26 @@ function ButtonGrid({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search products…"
-              className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-xs focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
             <div className="max-h-40 overflow-y-auto space-y-1">
               {matches.slice(0, 20).map((p) => (
                 <button
                   key={p.id}
                   onClick={() => { onAddButton(p.ref); setShowPicker(false); setSearch('') }}
-                  className="w-full text-left text-xs px-2 py-1 rounded hover:bg-gray-100 truncate"
+                  className="w-full text-left text-xs px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 truncate"
                 >
-                  {p.name} <span className="text-gray-400">({p.ref})</span>
+                  {p.name} <span className="text-gray-400 dark:text-gray-500">({p.ref})</span>
                 </button>
               ))}
-              {matches.length === 0 && <p className="text-xs text-gray-400 px-2">No matching products.</p>}
+              {matches.length === 0 && <p className="text-xs text-gray-400 dark:text-gray-500 px-2">No matching products.</p>}
             </div>
-            <button onClick={() => setShowPicker(false)} className="text-xs text-gray-400 hover:text-gray-600">
+            <button onClick={() => setShowPicker(false)} className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600">
               Cancel
             </button>
           </div>
         ) : (
-          <button onClick={() => setShowPicker(true)} className="text-xs text-gray-500 hover:text-brand-600">
+          <button onClick={() => setShowPicker(true)} className="text-xs text-gray-500 dark:text-gray-400 hover:text-brand-600">
             + Add button
           </button>
         )}

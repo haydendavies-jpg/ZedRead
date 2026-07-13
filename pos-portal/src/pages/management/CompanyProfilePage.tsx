@@ -17,7 +17,7 @@ export function CompanyProfilePage() {
 
   if (!mgmtUser) {
     return (
-      <div className="flex items-center justify-center h-64 text-sm text-gray-400">
+      <div className="flex items-center justify-center h-64 text-sm text-gray-400 dark:text-gray-500">
         Company profile is only available to management users.
       </div>
     )
@@ -34,7 +34,7 @@ export function CompanyProfilePage() {
   }
 
   return (
-    <div className="flex items-center justify-center h-64 text-sm text-gray-400">
+    <div className="flex items-center justify-center h-64 text-sm text-gray-400 dark:text-gray-500">
       No company profile available at your access level.
     </div>
   )
@@ -144,12 +144,12 @@ function resolveSiteInherited(brand: Brand | undefined, group: Group | undefined
 function Page({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="p-4 sm:p-6">
-      <h1 className="text-xl font-semibold text-gray-900 mb-4">{title}</h1>
+      <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">{title}</h1>
       {children}
     </div>
   )
 }
 
 function Loading() {
-  return <div className="p-4 sm:p-6 text-gray-400 text-sm">Loading…</div>
+  return <div className="p-4 sm:p-6 text-gray-400 dark:text-gray-500 text-sm">Loading…</div>
 }

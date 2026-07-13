@@ -121,9 +121,9 @@ export function ProductsPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6">
+    <div className="p-4 sm:p-6" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h1 className="text-xl font-semibold text-gray-900">Products</h1>
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Products</h1>
         <button
           onClick={() => setShowCreate(true)}
           className="px-3 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 transition-colors"
@@ -147,40 +147,44 @@ export function ProductsPage() {
             totalCount={products.length}
           />
 
-          <div className="overflow-x-auto rounded-xl border border-gray-200">
-            <table className="w-full text-sm min-w-[900px]">
-              <thead className="bg-gray-50 border-b border-gray-200">
+          <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+            <table className="w-full text-sm min-w-[1000px]">
+              <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">ID</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Category</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Reporting Group</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Price (inc.)</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Price (ex.)</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Tax</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">ID</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Name</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Category</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Reporting Group</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Price (inc.)</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Price (ex.)</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Tax</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Modifiers</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Status</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {filtered.map((p) => (
-                  <tr key={p.id} className="hover:bg-gray-50">
+                  <tr key={p.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
                     <td className="px-4 py-3"><EntityIdChip id={p.id} ref={p.ref} /></td>
-                    <td className="px-4 py-3 font-medium text-gray-900">
+                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
                       <EditableText
                         value={p.name}
                         onSave={async (v) => { await patch.mutateAsync({ id: p.id, body: { name: v } }) }}
                       />
                     </td>
-                    <td className="px-4 py-3 text-gray-700">
-                      <EditableSelect
-                        value={p.category_id}
-                        options={categoryOptions}
-                        onSave={async (v) => { await patch.mutateAsync({ id: p.id, body: { category_id: v } }) }}
-                      />
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: p.category_color }} />
+                        <EditableSelect
+                          value={p.category_id}
+                          options={categoryOptions}
+                          onSave={async (v) => { await patch.mutateAsync({ id: p.id, body: { category_id: v } }) }}
+                        />
+                      </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-500">{p.reporting_group_name}</td>
-                    <td className="px-4 py-3 text-gray-700">
+                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{p.reporting_group_name}</td>
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                       <EditableText
                         value={(p.base_price_cents / 100).toFixed(2)}
                         type="number"
@@ -192,12 +196,21 @@ export function ProductsPage() {
                         }}
                       />
                     </td>
-                    <td className="px-4 py-3 text-gray-500">{centsToDisplay(p.price_ex_cents)}</td>
+                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{centsToDisplay(p.price_ex_cents)}</td>
                     <td className="px-4 py-3">
                       {p.is_taxable ? (
-                        <span className="text-xs text-gray-700">Taxed</span>
+                        <span className="text-xs text-gray-700 dark:text-gray-300">Taxed</span>
                       ) : (
-                        <span className="text-xs text-gray-500">Tax free</span>
+                        <span className="text-xs text-emerald-700 dark:text-emerald-400">Tax free</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {p.modifier_names ? (
+                        <span className="inline-block max-w-[160px] truncate border border-brand-300 dark:border-brand-700 rounded-md px-2 py-1 text-xs text-gray-700 dark:text-gray-300" title={p.modifier_names}>
+                          {p.modifier_names}
+                        </span>
+                      ) : (
+                        <span className="inline-block border border-dashed border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-xs text-gray-400 dark:text-gray-500">None</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -219,7 +232,7 @@ export function ProductsPage() {
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
+                    <td colSpan={10} className="px-4 py-8 text-center text-gray-400">
                       {products.length === 0 ? 'No products yet.' : 'No products match the current filters.'}
                     </td>
                   </tr>
