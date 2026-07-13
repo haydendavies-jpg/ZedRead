@@ -1,6 +1,7 @@
 """Business logic for modifier groups, modifier options, and product-modifier links."""
 
 import uuid
+from collections import defaultdict
 
 import structlog
 from fastapi import HTTPException, status
@@ -695,36 +696,21 @@ async def unlink_option_group(
 # ── Detailed (nested) listing for the Modifiers tab ───────────────────────────
 
 
-async def _build_linked_groups(db: AsyncSession, option_id: uuid.UUID) -> list[LinkedGroupOut]:
-    """Resolve an option's linked groups, each with its own active options (one level deep)."""
+async def _active_options_by_group(
+    db: AsyncSession, group_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[ModifierOption]]:
+    """Fetch active options for a set of groups in one query, keyed by modifier_group_id."""
+    if not group_ids:
+        return {}
     result = await db.execute(
-        select(ModifierGroup, ModifierOptionGroupLink.display_order)
-        .join(ModifierOptionGroupLink, ModifierOptionGroupLink.linked_group_id == ModifierGroup.id)
-        .where(ModifierOptionGroupLink.modifier_option_id == option_id)
-        .order_by(ModifierOptionGroupLink.display_order)
+        select(ModifierOption)
+        .where(ModifierOption.modifier_group_id.in_(group_ids), ModifierOption.is_active == True)  # noqa: E712
+        .order_by(ModifierOption.display_order, ModifierOption.name)
     )
-    rows = result.all()
-
-    linked_groups: list[LinkedGroupOut] = []
-    for group, _order in rows:
-        options_result = await db.execute(
-            select(ModifierOption)
-            .where(ModifierOption.modifier_group_id == group.id, ModifierOption.is_active == True)  # noqa: E712
-            .order_by(ModifierOption.display_order, ModifierOption.name)
-        )
-        linked_groups.append(
-            LinkedGroupOut(
-                id=group.id,
-                name=group.name,
-                min_selections=group.min_selections,
-                max_selections=group.max_selections,
-                options=[
-                    LinkedGroupOptionOut(id=o.id, name=o.name, price_delta_cents=o.price_delta_cents)
-                    for o in options_result.scalars().all()
-                ],
-            )
-        )
-    return linked_groups
+    by_group: dict[uuid.UUID, list[ModifierOption]] = defaultdict(list)
+    for option in result.scalars().all():
+        by_group[option.modifier_group_id].append(option)
+    return by_group
 
 
 async def list_modifier_groups_detailed(
@@ -737,8 +723,27 @@ async def list_modifier_groups_detailed(
     Return active modifier groups for a brand with their options (and each
     option's comboing links) and used-by-product count, nested — one call for
     the portal's Modifiers tab instead of one round trip per group.
+
+    Batches every level (groups, their options, comboing links, and linked
+    groups' own options) into a fixed number of queries regardless of catalog
+    size — a per-group/per-option loop of individual queries here previously
+    made this endpoint's cost scale with the number of options, which made
+    every edit (each of which re-fetches this list) visibly slow on a
+    non-trivial catalog.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+        skip: Pagination offset.
+        limit: Maximum groups to return.
+
+    Returns:
+        list[ModifierGroupDetail]: Active modifier groups, fully nested.
     """
     groups = await list_modifier_groups(db, brand_id, skip, limit)
+    if not groups:
+        return []
+    group_ids = [g.id for g in groups]
 
     usage_result = await db.execute(
         select(ProductModifierGroupLink.modifier_group_id, func.count(func.distinct(ProductModifierGroupLink.product_id)))
@@ -748,16 +753,40 @@ async def list_modifier_groups_detailed(
     )
     usage_by_group = dict(usage_result.all())
 
+    options_by_group = await _active_options_by_group(db, group_ids)
+    option_ids = [o.id for options in options_by_group.values() for o in options]
+
+    links_by_option: dict[uuid.UUID, list[ModifierGroup]] = defaultdict(list)
+    if option_ids:
+        links_result = await db.execute(
+            select(ModifierOptionGroupLink.modifier_option_id, ModifierGroup)
+            .join(ModifierGroup, ModifierOptionGroupLink.linked_group_id == ModifierGroup.id)
+            .where(ModifierOptionGroupLink.modifier_option_id.in_(option_ids))
+            .order_by(ModifierOptionGroupLink.display_order)
+        )
+        for option_id, linked_group in links_result.all():
+            links_by_option[option_id].append(linked_group)
+
+    linked_group_ids = list({lg.id for groups_ in links_by_option.values() for lg in groups_})
+    linked_group_options = await _active_options_by_group(db, linked_group_ids)
+
     detailed: list[ModifierGroupDetail] = []
     for group in groups:
-        options_result = await db.execute(
-            select(ModifierOption)
-            .where(ModifierOption.modifier_group_id == group.id, ModifierOption.is_active == True)  # noqa: E712
-            .order_by(ModifierOption.display_order, ModifierOption.name)
-        )
         option_details = []
-        for option in options_result.scalars().all():
-            linked_groups = await _build_linked_groups(db, option.id)
+        for option in options_by_group.get(group.id, []):
+            linked_groups = [
+                LinkedGroupOut(
+                    id=lg.id,
+                    name=lg.name,
+                    min_selections=lg.min_selections,
+                    max_selections=lg.max_selections,
+                    options=[
+                        LinkedGroupOptionOut(id=o.id, name=o.name, price_delta_cents=o.price_delta_cents)
+                        for o in linked_group_options.get(lg.id, [])
+                    ],
+                )
+                for lg in links_by_option.get(option.id, [])
+            ]
             option_details.append(
                 ModifierOptionDetail(
                     id=option.id,

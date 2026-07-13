@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Lora:wght@600;700&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+/* Fonts (Lora, Source Serif 4, IBM Plex Sans, IBM Plex Mono) are loaded via
+   non-blocking <link> tags in index.html — see that file's comment for why
+   this isn't a CSS @import. */
 @import "tailwindcss";
 
 /* Class-based dark mode — toggled on <html> by ThemeContext (src/context/ThemeContext.tsx) */
@@ -34,4 +36,16 @@ body {
 .dark body {
   background: #111827;
   color: #f3f4f6;
+}
+
+/* Hide native number-input spin buttons — used on Menu Studio's small numeric
+   chip fields (Modifiers min/max/price), where the browser's default arrows
+   eat most of the field's width and clip the value. */
+.no-spinner {
+  -moz-appearance: textfield;
+}
+.no-spinner::-webkit-outer-spin-button,
+.no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
