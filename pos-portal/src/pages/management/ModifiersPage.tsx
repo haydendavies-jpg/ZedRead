@@ -142,7 +142,7 @@ export function ModifiersPage() {
                       min={0}
                       value={String(g.min_selections)}
                       onCommit={(v) => { const n = Number(v); if (!Number.isNaN(n)) patchGroup.mutate({ id: g.id, body: { min_selections: n } }) }}
-                      className="w-11 text-center border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded font-mono text-xs py-0.5"
+                      className="no-spinner w-11 text-center border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded font-mono text-xs py-0.5"
                     />
                   </label>
                   <label className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
@@ -152,7 +152,7 @@ export function ModifiersPage() {
                       min={1}
                       value={String(g.max_selections)}
                       onCommit={(v) => { const n = Number(v); if (!Number.isNaN(n)) patchGroup.mutate({ id: g.id, body: { max_selections: n } }) }}
-                      className="w-11 text-center border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded font-mono text-xs py-0.5"
+                      className="no-spinner w-11 text-center border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded font-mono text-xs py-0.5"
                     />
                   </label>
                 </div>
@@ -185,7 +185,7 @@ export function ModifiersPage() {
                           const cents = Math.round(Number(v) * 100)
                           if (!Number.isNaN(cents)) patchOption.mutate({ id: o.id, body: { price_delta_cents: cents } })
                         }}
-                        className="w-14 text-right border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded font-mono text-xs py-0.5 px-1"
+                        className="no-spinner w-16 text-right border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded font-mono text-xs py-0.5 px-1.5"
                       />
                       <button onClick={() => deleteOption.mutate(o.id)} className="text-gray-300 dark:text-gray-600 hover:text-red-500 text-xs">✕</button>
                     </div>

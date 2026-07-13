@@ -17,7 +17,7 @@ import { ProductsPage } from './ProductsPage'
 import { ModifiersPage } from './ModifiersPage'
 import { CategoriesPage } from './CategoriesPage'
 import { MenuBuilderPage } from './MenuBuilderPage'
-import type { Category, ModifierGroupDetail, ProductListItem } from '../../types'
+import type { Category, ModifierGroup, ProductListItem } from '../../types'
 
 type Layout = 'table' | 'pos'
 type Tab = 'products' | 'modifiers' | 'categories'
@@ -34,9 +34,13 @@ export function MenuStudioPage() {
     queryFn: () => api.get('/products', { params: { ...params, limit: 200 } }).then((r) => r.data),
     enabled: !!brandId,
   })
-  const { data: modifierGroups = [] } = useQuery<ModifierGroupDetail[]>({
-    queryKey: ['modifier-groups-detailed', brandId],
-    queryFn: () => api.get('/modifier-groups/detailed', { params: { ...params, limit: 200 } }).then((r) => r.data),
+  // Plain (non-nested) list — just for the tab count badge. The Modifiers tab
+  // fetches the fully-nested /modifier-groups/detailed itself when it mounts;
+  // fetching that heavier shape here too would pay its cost on every Menu
+  // Studio visit regardless of which tab is open.
+  const { data: modifierGroups = [] } = useQuery<ModifierGroup[]>({
+    queryKey: ['modifier-groups', brandId],
+    queryFn: () => api.get('/modifier-groups', { params: { ...params, limit: 200 } }).then((r) => r.data),
     enabled: !!brandId,
   })
   const { data: categories = [] } = useQuery<Category[]>({
