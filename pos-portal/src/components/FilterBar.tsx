@@ -31,22 +31,22 @@ export function FilterBar({
   return (
     <div className="flex flex-wrap items-end gap-3 mb-4">
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-gray-500">Search</label>
+        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Search</label>
         <input
           type="text"
           placeholder={searchPlaceholder}
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm w-56 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg text-sm w-56 focus:outline-none focus:ring-2 focus:ring-brand-500"
         />
       </div>
       {filters.map((f) => (
         <div key={f.label} className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500">{f.label}</label>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{f.label}</label>
           <select
             value={f.value}
             onChange={(e) => f.onChange(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             {f.options.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -55,11 +55,11 @@ export function FilterBar({
         </div>
       ))}
       {hasFilters && (
-        <button onClick={onClear} className="text-xs text-gray-400 hover:text-gray-600 pb-2">
+        <button onClick={onClear} className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 pb-2">
           Clear filters
         </button>
       )}
-      <span className="text-xs text-gray-400 ml-auto pb-2">{resultCount} of {totalCount}</span>
+      <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto pb-2">{resultCount} of {totalCount}</span>
     </div>
   )
 }

@@ -4,13 +4,18 @@ import uuid
 
 import structlog
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
     MODIFIER_GROUP_CREATED,
+    MODIFIER_GROUP_DEACTIVATED,
+    MODIFIER_GROUP_DUPLICATED,
     MODIFIER_GROUP_UPDATED,
     MODIFIER_OPTION_CREATED,
+    MODIFIER_OPTION_DEACTIVATED,
+    MODIFIER_OPTION_GROUP_LINKED,
+    MODIFIER_OPTION_GROUP_UNLINKED,
     MODIFIER_OPTION_UPDATED,
     PRODUCT_MODIFIER_LINKED,
     PRODUCT_MODIFIER_UNLINKED,
@@ -18,6 +23,7 @@ from app.constants.audit_actions import (
 from app.constants.statuses import ActorType
 from app.models.modifier_group import ModifierGroup
 from app.models.modifier_option import ModifierOption
+from app.models.modifier_option_group_link import ModifierOptionGroupLink
 from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.product import Product
@@ -88,6 +94,44 @@ class ModifierOptionResponse(BaseModel):
     is_active: bool
 
     model_config = {"from_attributes": True}
+
+
+class ModifierOptionLinkCreate(BaseModel):
+    """Payload for linking an option to another modifier group it expands into ("comboing")."""
+
+    linked_group_id: uuid.UUID
+    display_order: int = Field(0, ge=0)
+
+
+class LinkedGroupOptionOut(BaseModel):
+    """One option belonging to a linked (combo) group — flat, no further nesting."""
+
+    id: uuid.UUID
+    name: str
+    price_delta_cents: int
+
+
+class LinkedGroupOut(BaseModel):
+    """A modifier group linked from an option, with its own active options."""
+
+    id: uuid.UUID
+    name: str
+    min_selections: int
+    max_selections: int
+    options: list[LinkedGroupOptionOut]
+
+
+class ModifierOptionDetail(ModifierOptionResponse):
+    """An option plus the groups it links to ("comboing") — used by the detailed group view."""
+
+    linked_groups: list[LinkedGroupOut] = []
+
+
+class ModifierGroupDetail(ModifierGroupResponse):
+    """A modifier group with its active options (each carrying its own links) and usage count."""
+
+    options: list[ModifierOptionDetail]
+    used_by_count: int
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -431,3 +475,311 @@ async def unlink_modifier_group(
 
     await db.delete(link)
     await db.commit()
+
+
+# ── Deactivation / duplication ────────────────────────────────────────────────
+
+
+async def deactivate_modifier_group(
+    db: AsyncSession, brand_id: uuid.UUID, group_id: uuid.UUID, actor: User | SuperAdmin
+) -> ModifierGroup:
+    """Soft-delete a modifier group (excluded from the POS and the Modifiers tab)."""
+    group = await _get_group_or_404(db, brand_id, group_id)
+    group.is_active = False
+
+    await log_action(
+        db=db,
+        action=MODIFIER_GROUP_DEACTIVATED,
+        entity_type="modifier_group",
+        entity_id=str(group.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"is_active": True},
+        after_state={"is_active": False},
+    )
+
+    await db.commit()
+    await db.refresh(group)
+    return group
+
+
+async def deactivate_modifier_option(
+    db: AsyncSession, brand_id: uuid.UUID, option_id: uuid.UUID, actor: User | SuperAdmin
+) -> ModifierOption:
+    """Soft-delete a modifier option."""
+    option = await _get_option_or_404(db, brand_id, option_id)
+    option.is_active = False
+
+    await log_action(
+        db=db,
+        action=MODIFIER_OPTION_DEACTIVATED,
+        entity_type="modifier_option",
+        entity_id=str(option.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"is_active": True},
+        after_state={"is_active": False},
+    )
+
+    await db.commit()
+    await db.refresh(option)
+    return option
+
+
+async def duplicate_modifier_group(
+    db: AsyncSession, brand_id: uuid.UUID, group_id: uuid.UUID, actor: User | SuperAdmin
+) -> ModifierGroup:
+    """
+    Duplicate a modifier group and its active options (name suffixed "(copy)").
+
+    Comboing links on the source options are not copied — a duplicated option
+    starts with no linked groups so the operator chooses fresh links.
+    """
+    source = await _get_group_or_404(db, brand_id, group_id)
+    options_result = await db.execute(
+        select(ModifierOption)
+        .where(ModifierOption.modifier_group_id == group_id, ModifierOption.is_active == True)  # noqa: E712
+        .order_by(ModifierOption.display_order, ModifierOption.name)
+    )
+
+    new_group = ModifierGroup(
+        id=uuid.uuid4(),
+        brand_id=brand_id,
+        name=f"{source.name} (copy)",
+        min_selections=source.min_selections,
+        max_selections=source.max_selections,
+        is_active=True,
+    )
+    db.add(new_group)
+
+    for option in options_result.scalars().all():
+        db.add(
+            ModifierOption(
+                id=uuid.uuid4(),
+                modifier_group_id=new_group.id,
+                name=option.name,
+                price_delta_cents=option.price_delta_cents,
+                display_order=option.display_order,
+                is_active=True,
+            )
+        )
+
+    await log_action(
+        db=db,
+        action=MODIFIER_GROUP_DUPLICATED,
+        entity_type="modifier_group",
+        entity_id=str(new_group.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        after_state={"name": new_group.name, "duplicated_from": str(source.id)},
+    )
+
+    await db.commit()
+    await db.refresh(new_group)
+    return new_group
+
+
+# ── Comboing — option → linked group ──────────────────────────────────────────
+
+
+async def link_option_group(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    option_id: uuid.UUID,
+    payload: ModifierOptionLinkCreate,
+    actor: User | SuperAdmin,
+) -> ModifierOptionGroupLink:
+    """
+    Link a modifier option to another modifier group it expands into ("comboing").
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+        option_id: The option that will surface the linked group.
+        payload: Which group to link and its display order.
+        actor: The authenticated user performing the action.
+
+    Returns:
+        ModifierOptionGroupLink: The created link row.
+
+    Raises:
+        HTTPException: 404 if the option or linked group is not found for this brand.
+        HTTPException: 400 if an option is linked to its own parent group.
+        HTTPException: 409 if the link already exists.
+    """
+    option = await _get_option_or_404(db, brand_id, option_id)
+    linked_group = await _get_group_or_404(db, brand_id, payload.linked_group_id)
+
+    if linked_group.id == option.modifier_group_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An option cannot link to the group it belongs to",
+        )
+
+    existing_result = await db.execute(
+        select(ModifierOptionGroupLink).where(
+            ModifierOptionGroupLink.modifier_option_id == option_id,
+            ModifierOptionGroupLink.linked_group_id == payload.linked_group_id,
+        )
+    )
+    if existing_result.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This group is already linked")
+
+    link = ModifierOptionGroupLink(
+        id=uuid.uuid4(),
+        modifier_option_id=option_id,
+        linked_group_id=payload.linked_group_id,
+        display_order=payload.display_order,
+    )
+    db.add(link)
+
+    await log_action(
+        db=db,
+        action=MODIFIER_OPTION_GROUP_LINKED,
+        entity_type="modifier_option_group_link",
+        entity_id=str(link.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        after_state={"modifier_option_id": str(option_id), "linked_group_id": str(payload.linked_group_id)},
+    )
+
+    await db.commit()
+    await db.refresh(link)
+    return link
+
+
+async def unlink_option_group(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    option_id: uuid.UUID,
+    linked_group_id: uuid.UUID,
+    actor: User | SuperAdmin,
+) -> None:
+    """Remove a comboing link between an option and a linked group."""
+    await _get_option_or_404(db, brand_id, option_id)
+
+    result = await db.execute(
+        select(ModifierOptionGroupLink).where(
+            ModifierOptionGroupLink.modifier_option_id == option_id,
+            ModifierOptionGroupLink.linked_group_id == linked_group_id,
+        )
+    )
+    link = result.scalar_one_or_none()
+    if link is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
+
+    await log_action(
+        db=db,
+        action=MODIFIER_OPTION_GROUP_UNLINKED,
+        entity_type="modifier_option_group_link",
+        entity_id=str(link.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"modifier_option_id": str(option_id), "linked_group_id": str(linked_group_id)},
+    )
+
+    await db.delete(link)
+    await db.commit()
+
+
+# ── Detailed (nested) listing for the Modifiers tab ───────────────────────────
+
+
+async def _build_linked_groups(db: AsyncSession, option_id: uuid.UUID) -> list[LinkedGroupOut]:
+    """Resolve an option's linked groups, each with its own active options (one level deep)."""
+    result = await db.execute(
+        select(ModifierGroup, ModifierOptionGroupLink.display_order)
+        .join(ModifierOptionGroupLink, ModifierOptionGroupLink.linked_group_id == ModifierGroup.id)
+        .where(ModifierOptionGroupLink.modifier_option_id == option_id)
+        .order_by(ModifierOptionGroupLink.display_order)
+    )
+    rows = result.all()
+
+    linked_groups: list[LinkedGroupOut] = []
+    for group, _order in rows:
+        options_result = await db.execute(
+            select(ModifierOption)
+            .where(ModifierOption.modifier_group_id == group.id, ModifierOption.is_active == True)  # noqa: E712
+            .order_by(ModifierOption.display_order, ModifierOption.name)
+        )
+        linked_groups.append(
+            LinkedGroupOut(
+                id=group.id,
+                name=group.name,
+                min_selections=group.min_selections,
+                max_selections=group.max_selections,
+                options=[
+                    LinkedGroupOptionOut(id=o.id, name=o.name, price_delta_cents=o.price_delta_cents)
+                    for o in options_result.scalars().all()
+                ],
+            )
+        )
+    return linked_groups
+
+
+async def list_modifier_groups_detailed(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    skip: int = 0,
+    limit: int = 50,
+) -> list[ModifierGroupDetail]:
+    """
+    Return active modifier groups for a brand with their options (and each
+    option's comboing links) and used-by-product count, nested — one call for
+    the portal's Modifiers tab instead of one round trip per group.
+    """
+    groups = await list_modifier_groups(db, brand_id, skip, limit)
+
+    usage_result = await db.execute(
+        select(ProductModifierGroupLink.modifier_group_id, func.count(func.distinct(ProductModifierGroupLink.product_id)))
+        .join(ModifierGroup, ProductModifierGroupLink.modifier_group_id == ModifierGroup.id)
+        .where(ModifierGroup.brand_id == brand_id)
+        .group_by(ProductModifierGroupLink.modifier_group_id)
+    )
+    usage_by_group = dict(usage_result.all())
+
+    detailed: list[ModifierGroupDetail] = []
+    for group in groups:
+        options_result = await db.execute(
+            select(ModifierOption)
+            .where(ModifierOption.modifier_group_id == group.id, ModifierOption.is_active == True)  # noqa: E712
+            .order_by(ModifierOption.display_order, ModifierOption.name)
+        )
+        option_details = []
+        for option in options_result.scalars().all():
+            linked_groups = await _build_linked_groups(db, option.id)
+            option_details.append(
+                ModifierOptionDetail(
+                    id=option.id,
+                    modifier_group_id=option.modifier_group_id,
+                    name=option.name,
+                    price_delta_cents=option.price_delta_cents,
+                    display_order=option.display_order,
+                    is_active=option.is_active,
+                    linked_groups=linked_groups,
+                )
+            )
+
+        detailed.append(
+            ModifierGroupDetail(
+                id=group.id,
+                brand_id=group.brand_id,
+                name=group.name,
+                min_selections=group.min_selections,
+                max_selections=group.max_selections,
+                is_active=group.is_active,
+                options=option_details,
+                used_by_count=usage_by_group.get(group.id, 0),
+            )
+        )
+    return detailed

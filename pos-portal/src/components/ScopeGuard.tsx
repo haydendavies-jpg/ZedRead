@@ -26,7 +26,7 @@ export function ScopeGuard({ minScope, children }: Props) {
       return <>{children}</>
     }
     return (
-      <div className="flex items-center justify-center h-64 text-sm text-gray-400">
+      <div className="flex items-center justify-center h-64 text-sm text-gray-400 dark:text-gray-500">
         Not available at your access level ({user.scope} scope).
       </div>
     )

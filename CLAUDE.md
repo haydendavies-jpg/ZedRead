@@ -106,6 +106,52 @@ on the SuperAdmin's Brand detail page. Stage 24 (Product Model Extensions) was a
 ahead of this stage — it had no blocking dependency on 22/23 — see `STAGE_STATUS.md` for its
 deliverables. Do not begin Stage 25+ Android work yet.
 
+**Menu Studio visual/functional redesign (post-Stage-23, Table view + Menus — partial pass).**
+Implemented from a Claude-designed HTML mockup (`design_handoff_menu_studio/` — high-fidelity
+reference, not production code). Scope was explicitly split with the user into phases; this pass
+covers the **Table view** (Products/Modifiers/Categories) and the new **Menus** screen, not the POS
+Layout grid editor redesign (drag/resize/multi-select tile grid, active-time/day scheduling on
+`menu_layouts`) — `MenuBuilderPage.tsx`/`menu_layouts`/`menu_tabs`/`menu_buttons` are untouched and
+still prototype-scope (Stage 23's own text above still applies to POS Layout). Delivered:
+- **Category default colour**: `categories.default_color` (migration `0041`, hex `#RRGGBB`, default
+  `#5A5550`) — the POS button colour a category's products default to; editable via a swatch+palette
+  popover (`ColorSwatchPicker.tsx`) on the redesigned `CategoriesPage.tsx`, which now groups
+  categories into cards by reporting group with row/group checkboxes and a floating bulk
+  "assign to reporting group" bar, plus inline add-forms for new categories/reporting groups.
+- **Modifier "comboing"**: a new `modifier_option_group_links` table (self-referential through
+  `modifier_groups` via a `ModifierOption`) lets an option expand into another modifier group on the
+  POS — the inline-nested-cascade pattern from `Modifier Comboing Options.dc.html` ("option 1", the
+  one the design doc says was chosen). `GET /modifier-groups/detailed` nests groups → options → each
+  option's linked groups (one level deep; the schema supports deeper nesting later without a
+  migration, the API doesn't yet). New `ModifiersPage.tsx` (net-new — no prior portal page existed
+  for modifier management) renders this as cards with an expand/collapse chip per linked option.
+  Groups/options also gained soft-delete (`DELETE /modifier-groups/{id}`,
+  `DELETE /modifier-options/{id}`) and group duplication (`POST /modifier-groups/{id}/duplicate`),
+  none of which existed before.
+- **Products tab**: `GET /products` now also joins each row's category colour and a comma-joined
+  list of active linked modifier group names (`ProductListItem.category_color`/`modifier_names`,
+  resolved via a correlated subquery — no denormalization), surfaced as a colour dot and a
+  Modifiers column on `ProductsPage.tsx`. Existing inline-edit/filter machinery is unchanged.
+- **Menus** (new entity, distinct from a `MenuLayout`): `menus` table (migration `0041`, `MNU-000001`
+  ref sequence) with `draft`/`scheduled`/`published` status, `scheduled_at`/`published_at`,
+  optional `menu_layout_id` (which POS button layout it activates), and the same brand-vs-site
+  `scope`/`site_id` assignment pattern `menu_layouts` already uses (sites stand in for
+  "registers/channels" — no dedicated register entity exists). `menu_service.py` +
+  `routes/menus.py` (`/menus`, management/portal JWT only) support create/update/duplicate/
+  schedule/cancel-schedule/publish. New top-level `MenusPage.tsx` + nav entry.
+- **Theming**: portal-wide light/dark mode — `ThemeContext.tsx` toggles a `dark` class on `<html>`
+  (Tailwind `@custom-variant dark`), persisted to `localStorage`, toggle in the sidebar footer. New
+  Menu Studio screens are fully dark-mode-styled by hand; the ~25 pre-existing pages got a mechanical
+  sweep pairing common light-mode Tailwind classes with `dark:` companions (not a pixel-perfect
+  per-component pass — see `pos-portal/CLAUDE.md`). `Source Serif 4`/`IBM Plex Mono` are wired as
+  Tailwind's `font-serif`/`font-mono` tokens; `Lora` (wordmark) and the portal's `system-ui` body font
+  are unchanged outside Menu Studio/Menus screens, which apply `IBM Plex Sans` directly instead of a
+  global font swap — see `pos-portal/CLAUDE.md`'s "flagged conflict" note for the rationale.
+- Nav: `MGMT_NAV` now has "Menu Studio" (Products/Modifiers/Categories tabs + a `Table`/`POS Layout`
+  segmented control, the latter delegating unchanged to `MenuBuilderPage`) and "Menus"; the old
+  standalone Products/Categories/Menu Builder nav entries are gone but their routes/components still
+  exist (used directly by `BrandDetailPage`'s own tabs, and kept mounted in `App.tsx` for compat).
+
 ## Folder structure (backend)
 ```
 pos-backend/

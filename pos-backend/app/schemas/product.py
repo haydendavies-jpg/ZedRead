@@ -69,8 +69,10 @@ class ProductListItem(ProductResponse):
     """
 
     category_name: str
+    category_color: str
     reporting_group_id: uuid.UUID
     reporting_group_name: str
+    modifier_names: str | None = None
 
 
 class SiteProductOverrideSet(BaseModel):

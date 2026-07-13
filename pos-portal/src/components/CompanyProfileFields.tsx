@@ -24,14 +24,14 @@ export function CompanyProfileFields({ values, onChange }: Props) {
   const set = <K extends keyof CompanyProfileValues>(key: K, value: CompanyProfileValues[K]) =>
     onChange({ ...values, [key]: value })
 
-  const selectClass = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500'
+  const selectClass = 'w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500'
   const inputClass = selectClass
 
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Timezone</label>
           <select value={values.timezone} onChange={(e) => set('timezone', e.target.value)} required className={selectClass}>
             {timezones.map((tz) => (
               <option key={tz} value={tz}>{tz}</option>
@@ -39,7 +39,7 @@ export function CompanyProfileFields({ values, onChange }: Props) {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Currency</label>
           <select value={values.currency} onChange={(e) => set('currency', e.target.value)} required className={selectClass}>
             {currencies.map((c) => (
               <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
@@ -49,7 +49,7 @@ export function CompanyProfileFields({ values, onChange }: Props) {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
           <select value={values.country} onChange={(e) => set('country', e.target.value)} required className={selectClass}>
             {countries.map((c) => (
               <option key={c.code} value={c.code}>{c.name}</option>
@@ -57,12 +57,12 @@ export function CompanyProfileFields({ values, onChange }: Props) {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">{taxIdLabel ?? 'Tax ID'} (optional)</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{taxIdLabel ?? 'Tax ID'} (optional)</label>
           <input value={values.tax_id_value} onChange={(e) => set('tax_id_value', e.target.value)} className={inputClass} />
         </div>
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Billing email (optional)</label>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Billing email (optional)</label>
         <input
           type="email"
           value={values.billing_email}

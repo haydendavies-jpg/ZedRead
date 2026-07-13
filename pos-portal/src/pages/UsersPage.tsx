@@ -329,7 +329,7 @@ export function UsersPage() {
     <div className="p-4 sm:p-6">
       {/* ── Page header ─────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h1 className="text-xl font-semibold text-gray-900">Users</h1>
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Users</h1>
         <button
           onClick={openCreate}
           disabled={!selectedBrandId}
@@ -343,11 +343,11 @@ export function UsersPage() {
       {/* ── Page-level filters (labels above controls) ───────────────────── */}
       <div className="flex flex-wrap items-end gap-3 mb-4">
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500">Brand</label>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Brand</label>
           <select
             value={selectedBrandId}
             onChange={(e) => { setSelectedBrandId(e.target.value); setSearch(''); setStatusFilter(''); setSiteFilter(''); setPortalFilter('') }}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="">Any</option>
             {brands.map((b) => (
@@ -357,22 +357,22 @@ export function UsersPage() {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500">Search</label>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Search</label>
           <input
             type="text"
             placeholder="Name or email…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-40"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-40"
           />
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500">Status</label>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Status</label>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="">Any</option>
             <option value="active">Active</option>
@@ -381,11 +381,11 @@ export function UsersPage() {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500">Site</label>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Site</label>
           <select
             value={siteFilter}
             onChange={(e) => setSiteFilter(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="">Any</option>
             {brandSites.map((s) => (
@@ -395,11 +395,11 @@ export function UsersPage() {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500">Portal</label>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Portal</label>
           <select
             value={portalFilter}
             onChange={(e) => setPortalFilter(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="">Any</option>
             <option value="yes">Has access</option>
@@ -410,24 +410,24 @@ export function UsersPage() {
         {hasFilters && (
           <button
             onClick={() => { setSearch(''); setStatusFilter(''); setSiteFilter(''); setPortalFilter('') }}
-            className="text-xs text-gray-400 hover:text-gray-600 self-end pb-1.5"
+            className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 self-end pb-1.5"
           >
             Clear filters
           </button>
         )}
-        <span className="text-xs text-gray-400 ml-auto self-end pb-1.5">
+        <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto self-end pb-1.5">
           {filtered.length} of {users.length}
         </span>
       </div>
 
       {/* ── Users table ──────────────────────────────────────────────────────── */}
       {isLoading ? (
-        <div className="text-gray-400 text-sm">Loading…</div>
+        <div className="text-gray-400 dark:text-gray-500 text-sm">Loading…</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
           <table className="w-full text-sm min-w-[900px]">
             <thead>
-              <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
+              <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                 <th className="px-4 py-3">ID</th>
                 <th className="px-4 py-3">Group</th>
                 <th className="px-4 py-3">Brand</th>
@@ -441,21 +441,21 @@ export function UsersPage() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filtered.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50">
+                <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
                   <td className="px-4 py-3"><EntityIdChip id={u.id} ref={u.ref} /></td>
-                  <td className="px-4 py-3 text-gray-500">{u.group_name || <span className="text-gray-300">—</span>}</td>
-                  <td className="px-4 py-3 text-gray-700">{u.brand_name || <span className="text-gray-300">—</span>}</td>
-                  <td className="px-4 py-3 font-medium text-gray-900">{u.name}</td>
-                  <td className="px-4 py-3 text-gray-500">{u.email}</td>
+                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{u.group_name || <span className="text-gray-300">—</span>}</td>
+                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{u.brand_name || <span className="text-gray-300">—</span>}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{u.name}</td>
+                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{u.email}</td>
                   <td className="px-4 py-3">
                     {u.site_grants.length === 0 ? (
-                      <span className="text-xs text-gray-400">None</span>
+                      <span className="text-xs text-gray-400 dark:text-gray-500">None</span>
                     ) : (
                       <div className="flex flex-wrap gap-1">
                         {u.site_grants.map((g) => (
                           <span
                             key={g.grant_id}
-                            className={`inline-block px-2 py-0.5 rounded text-xs ${g.is_default ? 'bg-brand-50 text-brand-700 font-medium' : 'bg-gray-100 text-gray-600'}`}
+                            className={`inline-block px-2 py-0.5 rounded text-xs ${g.is_default ? 'bg-brand-50 text-brand-700 font-medium' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`}
                           >
                             {g.is_default ? '★ ' : ''}{g.site_name}
                           </span>
@@ -465,11 +465,11 @@ export function UsersPage() {
                   </td>
                   <td className="px-4 py-3">
                     {u.backend_role ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 capitalize">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 capitalize">
                         {u.backend_role}
                       </span>
                     ) : (
-                      <span className="text-xs text-gray-400">—</span>
+                      <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -487,7 +487,7 @@ export function UsersPage() {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
+                  <td colSpan={9} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
                     {users.length === 0 ? 'No users yet. Create one above.' : 'No users match the current filters.'}
                   </td>
                 </tr>
@@ -502,26 +502,26 @@ export function UsersPage() {
         <Modal title="New User" onClose={() => setShowCreate(false)}>
           <form onSubmit={handleCreate} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
               <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="Jane Smith" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="jane@example.com" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="Min 8 characters" />
             </div>
             {createError && <p className="text-sm text-red-600">{createError}</p>}
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+              <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800">Cancel</button>
               <button type="submit" disabled={createMutation.isPending}
                 className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
                 {createMutation.isPending ? 'Creating…' : 'Create'}
@@ -538,18 +538,18 @@ export function UsersPage() {
 
             {/* ── Section 1: User details ────────────────────────────────── */}
             <section>
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">User Details</h3>
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">User Details</h3>
               <form onSubmit={handleEditSave} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
                     <input value={editName} onChange={(e) => setEditName(e.target.value)} required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
                     <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
                   </div>
                 </div>
                 {editError && <p className="text-sm text-red-600">{editError}</p>}
@@ -562,19 +562,19 @@ export function UsersPage() {
               </form>
             </section>
 
-            <hr className="border-gray-100" />
+            <hr className="border-gray-100 dark:border-gray-800" />
 
             {/* ── Section 2: POS PIN ─────────────────────────────────────── */}
             <section>
-              <h3 className="text-sm font-semibold text-gray-700 mb-1">POS PIN</h3>
-              <p className="text-xs text-gray-400 mb-3">Set a PIN so the user can quickly switch sessions on the Android terminal without a full re-login.</p>
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">POS PIN</h3>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mb-3">Set a PIN so the user can quickly switch sessions on the Android terminal without a full re-login.</p>
               <form onSubmit={handleSetPin} className="flex items-end gap-3">
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-gray-500">PIN (4–6 digits)</label>
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">PIN (4–6 digits)</label>
                   <input type="password" inputMode="numeric" pattern="\d{4,6}" value={pinValue}
                     onChange={(e) => { setPinValue(e.target.value); setPinError(null); setPinSuccess(false) }}
                     placeholder="••••" maxLength={6}
-                    className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                    className="w-32 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
                 </div>
                 <button type="submit" disabled={setPinMutation.isPending || !pinValue}
                   className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
@@ -585,33 +585,33 @@ export function UsersPage() {
               {pinError && <p className="text-sm text-red-600 mt-2">{pinError}</p>}
             </section>
 
-            <hr className="border-gray-100" />
+            <hr className="border-gray-100 dark:border-gray-800" />
 
             {/* ── Section 3: Site & Scope Access ────────────────────────── */}
             <section>
               <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-700">Site &amp; Scope Access</h3>
+                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Site &amp; Scope Access</h3>
                   {groupAccess && (
-                    <p className="text-xs text-gray-400 mt-0.5">Group: <span className="font-medium text-gray-600">{groupAccess.group_name}</span></p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Group: <span className="font-medium text-gray-600 dark:text-gray-400">{groupAccess.group_name}</span></p>
                   )}
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-gray-500">Search</label>
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Search</label>
                   <input
                     type="text"
                     placeholder="Brand or site…"
                     value={accessSearch}
                     onChange={(e) => setAccessSearch(e.target.value)}
-                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-44"
+                    className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-44"
                   />
                 </div>
               </div>
 
-              <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
                 <table className="w-full text-sm min-w-[680px]">
                   <thead>
-                    <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
+                    <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                       <th className="px-3 py-2">Brand</th>
                       <th className="px-3 py-2">Site</th>
                       <th className="px-3 py-2">POS Access</th>
@@ -621,9 +621,9 @@ export function UsersPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {accessLoading ? (
-                      <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400 text-xs">Loading…</td></tr>
+                      <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400 dark:text-gray-500 text-xs">Loading…</td></tr>
                     ) : filteredEntries.length === 0 ? (
-                      <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400 text-xs">
+                      <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400 dark:text-gray-500 text-xs">
                         {(groupAccess?.entries ?? []).length === 0 ? 'No brands or sites found in this group.' : 'No results match the search.'}
                       </td></tr>
                     ) : filteredEntries.map((entry) => {
@@ -633,17 +633,17 @@ export function UsersPage() {
 
                       if (entry.scope === 'group') {
                         return (
-                          <tr key={rowKey} className="bg-brand-50/40 border-b border-gray-200">
+                          <tr key={rowKey} className="bg-brand-50/40 border-b border-gray-200 dark:border-gray-700">
                             <td className="px-3 py-2 text-xs font-semibold text-brand-800" colSpan={2}>
-                              {groupAccess?.group_name ?? 'Group'} <span className="font-normal text-gray-400">(group-level)</span>
+                              {groupAccess?.group_name ?? 'Group'} <span className="font-normal text-gray-400 dark:text-gray-500">(group-level)</span>
                             </td>
-                            <td className="px-3 py-2 text-xs text-gray-400">—</td>
+                            <td className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">—</td>
                             <td className="px-3 py-2">
                               {entry.grant_id ? (
                                 <select
                                   value={entry.backend_role ?? ''}
                                   onChange={(e) => handleBackendRoleChange(entry, e.target.value)}
-                                  className={`px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 ${entry.backend_role ? 'border-gray-200 text-gray-700' : 'border-gray-200 text-gray-400'}`}
+                                  className={`px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 ${entry.backend_role ? 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300' : 'border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500'}`}
                                 >
                                   <option value="">No access</option>
                                   {BACKEND_ROLES.map((r) => (
@@ -651,7 +651,7 @@ export function UsersPage() {
                                   ))}
                                 </select>
                               ) : (
-                                <span className="text-xs text-gray-400">Assign a site first</span>
+                                <span className="text-xs text-gray-400 dark:text-gray-500">Assign a site first</span>
                               )}
                             </td>
                             <td className="px-3 py-2" />
@@ -661,23 +661,23 @@ export function UsersPage() {
 
                       return (
                         <tr key={rowKey}
-                          className={`hover:bg-gray-50 ${entry.scope === 'site' ? 'bg-white' : 'bg-gray-50/60'}`}>
-                          <td className="px-3 py-2 text-xs text-gray-700">
+                          className={`hover:bg-gray-50 dark:hover:bg-gray-800/60 ${entry.scope === 'site' ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-900/60'}`}>
+                          <td className="px-3 py-2 text-xs text-gray-700 dark:text-gray-300">
                             {entry.scope === 'brand' ? (
                               <span className="font-medium">{entry.brand_name}</span>
                             ) : (
-                              <span className="text-gray-400 pl-3">↳ {entry.brand_name}</span>
+                              <span className="text-gray-400 dark:text-gray-500 pl-3">↳ {entry.brand_name}</span>
                             )}
                           </td>
-                          <td className="px-3 py-2 text-xs text-gray-700">
-                            {entry.site_name ?? <span className="text-gray-400 italic">All sites</span>}
+                          <td className="px-3 py-2 text-xs text-gray-700 dark:text-gray-300">
+                            {entry.site_name ?? <span className="text-gray-400 dark:text-gray-500 italic">All sites</span>}
                           </td>
                           <td className="px-3 py-2">
                             <select
                               value={entry.access_profile_id ?? ''}
                               onChange={(e) => handleAccessChange(entry, e.target.value)}
                               className={`px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 ${
-                                entry.access_profile_id ? 'border-gray-200 text-gray-700' : 'border-gray-200 text-gray-400'
+                                entry.access_profile_id ? 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300' : 'border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500'
                               }`}
                             >
                               <option value="">No access</option>
@@ -691,7 +691,7 @@ export function UsersPage() {
                               <select
                                 value={entry.backend_role ?? ''}
                                 onChange={(e) => handleBackendRoleChange(entry, e.target.value)}
-                                className={`px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 ${entry.backend_role ? 'border-gray-200 text-gray-700' : 'border-gray-200 text-gray-400'}`}
+                                className={`px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 ${entry.backend_role ? 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300' : 'border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500'}`}
                               >
                                 <option value="">No access</option>
                                 {BACKEND_ROLES.map((r) => (
@@ -699,7 +699,7 @@ export function UsersPage() {
                                 ))}
                               </select>
                             ) : (
-                              <span className="text-xs text-gray-400">—</span>
+                              <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
                             )}
                           </td>
                           <td className="px-3 py-2">
@@ -709,7 +709,7 @@ export function UsersPage() {
                               ) : (
                                 <button
                                   onClick={() => setDefaultMutation.mutate(entry.grant_id!)}
-                                  className="text-xs text-gray-400 hover:text-brand-600"
+                                  className="text-xs text-gray-400 dark:text-gray-500 hover:text-brand-600"
                                 >
                                   Set primary
                                 </button>
@@ -725,7 +725,7 @@ export function UsersPage() {
             </section>
 
             <div className="flex justify-end pt-2">
-              <button type="button" onClick={() => setEditUser(null)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
+              <button type="button" onClick={() => setEditUser(null)} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800">
                 Close
               </button>
             </div>

@@ -123,6 +123,7 @@ async def create_category(
         reporting_group_id=reporting_group_id,
         name=payload.name,
         display_order=payload.display_order,
+        default_color=payload.default_color,
         is_system=False,
         is_active=True,
     )
@@ -203,6 +204,10 @@ async def update_category(
         before["is_active"] = cat.is_active
         cat.is_active = payload.is_active
         after["is_active"] = payload.is_active
+    if payload.default_color is not None:
+        before["default_color"] = cat.default_color
+        cat.default_color = payload.default_color
+        after["default_color"] = payload.default_color
 
     if import_id is not None:
         after["import_id"] = str(import_id)

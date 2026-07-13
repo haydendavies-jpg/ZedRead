@@ -100,6 +100,12 @@ class Category(Base):
         default=True,
         comment="False when the category is soft-deleted",
     )
+    default_color: Mapped[str] = mapped_column(
+        String(7),
+        nullable=False,
+        default="#5A5550",
+        comment="Hex colour (#RRGGBB) POS layout buttons default to for this category's products",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

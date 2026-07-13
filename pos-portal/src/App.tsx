@@ -3,7 +3,7 @@
  *
  * Routes are split by user type:
  *   SuperAdmin routes  (/groups, /brands, /sites, /licenses, /superadmins, /users)
- *   Management routes  (/management/products, /categories, /tax, /reports, /users, /access-profiles)
+ *   Management routes  (/management/menu-studio, /menus, /tax, /reports, /users, /access-profiles)
  *
  * The Layout sidebar adapts based on JWT type (portal_access vs mgmt_access).
  * PrivateRoute enforces authentication; requireSuperAdmin guards admin-only routes.
@@ -12,6 +12,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth, isMgmtUser } from './context/AuthContext'
+import { ThemeProvider } from './context/ThemeContext'
 import { PrivateRoute } from './components/PrivateRoute'
 import { Layout } from './components/Layout'
 import { LoginPage } from './pages/LoginPage'
@@ -26,10 +27,13 @@ import { BrandDetailPage } from './pages/brands/BrandDetailPage'
 import { GroupDetailPage } from './pages/groups/GroupDetailPage'
 import { SiteDetailPage } from './pages/sites/SiteDetailPage'
 import { ProductsPage } from './pages/management/ProductsPage'
+import { ModifiersPage } from './pages/management/ModifiersPage'
 import { VariantsCombosPage } from './pages/management/VariantsCombosPage'
 import { CategoriesPage } from './pages/management/CategoriesPage'
 import { ReportingGroupsPage } from './pages/management/ReportingGroupsPage'
 import { MenuBuilderPage } from './pages/management/MenuBuilderPage'
+import { MenuStudioPage } from './pages/management/MenuStudioPage'
+import { MenusPage } from './pages/management/MenusPage'
 import { ReportsPage } from './pages/management/ReportsPage'
 import { InvoicesPage } from './pages/management/InvoicesPage'
 import { InvoiceDetailPage } from './pages/management/InvoiceDetailPage'
@@ -53,6 +57,7 @@ const queryClient = new QueryClient({
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
       <AuthProvider>
         <BrowserRouter>
           <Routes>
@@ -67,7 +72,7 @@ export default function App() {
                 </PrivateRoute>
               }
             >
-              {/* Default redirect — SuperAdmins → /groups, mgmt users → /management/products */}
+              {/* Default redirect — SuperAdmins → /groups, mgmt users → /management/menu-studio */}
               <Route index element={<SmartRedirect />} />
 
               {/* SuperAdmin routes */}
@@ -161,8 +166,11 @@ export default function App() {
               />
 
               {/* Management routes — available to both SuperAdmin and management users */}
-              <Route path="management" element={<Navigate to="/management/products" replace />} />
+              <Route path="management" element={<Navigate to="/management/menu-studio" replace />} />
+              <Route path="management/menu-studio" element={<MenuStudioPage />} />
+              <Route path="management/menus" element={<MenusPage />} />
               <Route path="management/products" element={<ProductsPage />} />
+              <Route path="management/modifiers" element={<ModifiersPage />} />
               <Route path="management/variants-combos" element={<VariantsCombosPage />} />
               <Route path="management/categories" element={<CategoriesPage />} />
               <Route path="management/reporting-groups" element={<ReportingGroupsPage />} />
@@ -181,6 +189,7 @@ export default function App() {
           </Routes>
         </BrowserRouter>
       </AuthProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   )
 }
@@ -188,6 +197,6 @@ export default function App() {
 /** Redirect to the appropriate landing page based on user type. */
 function SmartRedirect() {
   const { user } = useAuth()
-  if (isMgmtUser(user)) return <Navigate to="/management/products" replace />
+  if (isMgmtUser(user)) return <Navigate to="/management/menu-studio" replace />
   return <Navigate to="/groups" replace />
 }

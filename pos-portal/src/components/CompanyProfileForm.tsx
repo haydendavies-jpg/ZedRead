@@ -104,10 +104,10 @@ export function CompanyProfileForm({ entityType, entity, inherited, invalidateKe
   const billingEmailIsInherited = !profile.billing_email && !!inherited.billingEmail
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6 max-w-2xl">
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6 max-w-2xl">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
+          <div className="w-16 h-16 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex items-center justify-center overflow-hidden shrink-0">
             {displayedLogo ? (
               <img src={displayedLogo} alt="Logo" className="w-full h-full object-cover" />
             ) : (
@@ -130,27 +130,27 @@ export function CompanyProfileForm({ entityType, entity, inherited, invalidateKe
               className="hidden"
               onChange={handleLogoChange}
             />
-            <p className="text-xs text-gray-400 mt-1">Recommended: 500×500px or larger, under 1MB. Optional.</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Recommended: 500×500px or larger, under 1MB. Optional.</p>
             {logoIsInherited && (
-              <p className="text-xs text-gray-400">Inherited from {inherited.logoSource}.</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">Inherited from {inherited.logoSource}.</p>
             )}
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
             minLength={1}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
 
         <CompanyProfileFields values={profile} onChange={setProfile} />
         {billingEmailIsInherited && (
-          <p className="text-xs text-gray-400 -mt-2">
+          <p className="text-xs text-gray-400 dark:text-gray-500 -mt-2">
             Inherited from {inherited.billingEmailSource}: {inherited.billingEmail}
           </p>
         )}
@@ -158,7 +158,7 @@ export function CompanyProfileForm({ entityType, entity, inherited, invalidateKe
         {isSite && (
           <>
             <div className="relative">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Street address</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Street address</label>
               <input
                 value={address.address_street}
                 onChange={(e) => {
@@ -168,11 +168,11 @@ export function CompanyProfileForm({ entityType, entity, inherited, invalidateKe
                 onFocus={() => setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
                 onKeyDown={(e) => { if (e.key === 'Escape') setShowSuggestions(false) }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 autoComplete="off"
               />
               {showSuggestions && suggestions.length > 0 && (
-                <ul className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg text-sm divide-y divide-gray-100 max-h-48 overflow-y-auto">
+                <ul className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg text-sm divide-y divide-gray-100 dark:divide-gray-800 max-h-48 overflow-y-auto">
                   {suggestions.map((s, i) => (
                     <li
                       key={i}
@@ -180,7 +180,7 @@ export function CompanyProfileForm({ entityType, entity, inherited, invalidateKe
                         setAddress({ address_street: s.road, address_city: s.city, address_state: s.state, address_postcode: s.postcode })
                         setShowSuggestions(false)
                       }}
-                      className="px-3 py-2 hover:bg-brand-50 cursor-pointer text-gray-700 truncate"
+                      className="px-3 py-2 hover:bg-brand-50 cursor-pointer text-gray-700 dark:text-gray-300 truncate"
                       title={s.display_name}
                     >
                       {s.display_name}
@@ -190,28 +190,28 @@ export function CompanyProfileForm({ entityType, entity, inherited, invalidateKe
               )}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Suburb / City</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Suburb / City</label>
               <input
                 value={address.address_city}
                 onChange={(e) => setAddress({ ...address, address_city: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">State</label>
                 <input
                   value={address.address_state}
                   onChange={(e) => setAddress({ ...address, address_state: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Postcode</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Postcode</label>
                 <input
                   value={address.address_postcode}
                   onChange={(e) => setAddress({ ...address, address_postcode: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
             </div>
@@ -237,7 +237,7 @@ export function CompanyProfileForm({ entityType, entity, inherited, invalidateKe
             Save changes
           </button>
         </div>
-        {billingInfoMessage && <p className="text-xs text-gray-500">{billingInfoMessage}</p>}
+        {billingInfoMessage && <p className="text-xs text-gray-500 dark:text-gray-400">{billingInfoMessage}</p>}
       </form>
     </div>
   )

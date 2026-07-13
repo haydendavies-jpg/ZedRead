@@ -198,6 +198,7 @@ export interface Category {
   is_system: boolean
   is_active: boolean
   display_order: number
+  default_color: string
 }
 
 export interface ReportingGroup {
@@ -274,8 +275,72 @@ export interface Product {
 /** GET /products row shape — Product plus its joined Category/Reporting Group names (Stage 20). */
 export interface ProductListItem extends Product {
   category_name: string
+  category_color: string
   reporting_group_id: string
   reporting_group_name: string
+  /** Comma-joined names of this product's active linked modifier groups, or null if none. */
+  modifier_names: string | null
+}
+
+// ── Modifiers & comboing (Menu Studio redesign) ─────────────────────────────────
+
+export interface ModifierGroup {
+  id: string
+  brand_id: string
+  name: string
+  min_selections: number
+  max_selections: number
+  is_active: boolean
+}
+
+export interface ModifierOption {
+  id: string
+  modifier_group_id: string
+  name: string
+  price_delta_cents: number
+  display_order: number
+  is_active: boolean
+}
+
+export interface LinkedGroupOption {
+  id: string
+  name: string
+  price_delta_cents: number
+}
+
+export interface LinkedGroup {
+  id: string
+  name: string
+  min_selections: number
+  max_selections: number
+  options: LinkedGroupOption[]
+}
+
+export interface ModifierOptionDetail extends ModifierOption {
+  linked_groups: LinkedGroup[]
+}
+
+export interface ModifierGroupDetail extends ModifierGroup {
+  options: ModifierOptionDetail[]
+  used_by_count: number
+}
+
+// ── Menus (distinct from a POS MenuLayout) ──────────────────────────────────────
+
+export interface Menu {
+  id: string
+  ref: string
+  brand_id: string
+  site_id: string | null
+  scope: 'brand' | 'site'
+  menu_layout_id: string | null
+  name: string
+  note: string | null
+  status: 'draft' | 'scheduled' | 'published'
+  scheduled_at: string | null
+  published_at: string | null
+  created_at: string
+  updated_at: string
 }
 
 // ── Variants & Combos (Stage 22) ────────────────────────────────────────────────

@@ -20,7 +20,7 @@ export function EditableText({ value, onSave, type = 'text', disabled, emptyLabe
   const [error, setError] = useState<string | null>(null)
   const cancelingRef = useRef(false)
 
-  const display = formatDisplay ? formatDisplay(value) : (value || <span className="text-gray-300 italic">{emptyLabel}</span>)
+  const display = formatDisplay ? formatDisplay(value) : (value || <span className="text-gray-300 dark:text-gray-600 italic">{emptyLabel}</span>)
 
   if (disabled) {
     return <span>{display}</span>
@@ -49,7 +49,7 @@ export function EditableText({ value, onSave, type = 'text', disabled, emptyLabe
         type="button"
         onClick={() => { setDraft(value); setEditing(true) }}
         title="Click to edit"
-        className="text-left w-full hover:bg-gray-100 rounded px-1.5 py-0.5 -mx-1.5 transition-colors"
+        className="text-left w-full hover:bg-gray-100 dark:hover:bg-gray-700 rounded px-1.5 py-0.5 -mx-1.5 transition-colors"
       >
         {display}
       </button>
@@ -81,7 +81,7 @@ export function EditableText({ value, onSave, type = 'text', disabled, emptyLabe
             setError(null)
           }
         }}
-        className="w-full px-2 py-1 border border-brand-400 rounded text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        className="w-full px-2 py-1 border border-brand-400 rounded text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
       />
       {error && <p className="text-xs text-red-600 mt-1 whitespace-nowrap">{error}</p>}
     </div>
@@ -122,7 +122,7 @@ export function EditableSelect({ value, options, onSave, disabled }: EditableSel
             setSaving(false)
           }
         }}
-        className="w-full px-2 py-1 border border-gray-200 hover:border-gray-300 rounded text-sm bg-transparent focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
+        className="w-full px-2 py-1 border border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 rounded text-sm bg-transparent text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>

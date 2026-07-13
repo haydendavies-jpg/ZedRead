@@ -22,12 +22,32 @@ The ZedRead brand color is a deep crimson. The full scale is defined in `src/ind
 
 **Never use `indigo-*` classes.** All interactive elements use `brand-*`.
 
+### Dark mode (Menu Studio redesign)
+
+`ThemeContext` (`src/context/ThemeContext.tsx`) toggles a `dark` class on `<html>`, persisted to
+`localStorage`, applied portal-wide. `src/index.css` registers `@custom-variant dark (&:where(.dark,
+.dark *));` so Tailwind's `dark:` variant works. Toggle lives in `Layout.tsx`'s sidebar footer
+(moon/sun icon). New/edited components must carry `dark:` companions for `bg-white`, `bg-gray-50`,
+`border-gray-200/300`, `divide-gray-100/200`, and `text-gray-400/500/600/700/900` — see any Menu
+Studio page for the established pairing (e.g. `bg-white dark:bg-gray-800`, `text-gray-900
+dark:text-gray-100`). Older pages were swept mechanically to the same pairs; a perfect per-component
+pass wasn't done everywhere — flag anything that reads wrong in dark mode rather than assuming it's
+covered.
+
 ### Typography
 
 - **Wordmark** — `Lora` serif, weight 700, loaded from Google Fonts via `src/index.css`.
   Apply with `style={{ fontFamily: "'Lora', serif", fontWeight: 700 }}`.
 - **Tagline** — "POS You Can Count On" in `tracking-widest uppercase` at `0.6rem`.
 - **Body** — `system-ui, 'Segoe UI', Roboto, sans-serif` (set globally on `body`).
+- **Menu Studio pages** (Products/Modifiers/Categories/Menus/Menu Builder) — the design handoff
+  specifies `Source Serif 4` for card/section titles and `IBM Plex Sans`/`IBM Plex Mono` for body/
+  numeric text, distinct from the portal's `Lora` wordmark. Both font families are loaded in
+  `src/index.css`. **Flagged conflict**: rather than replacing the established `Lora` wordmark and
+  `system-ui` body font portal-wide, `Source Serif 4` is used only for card/page titles *within*
+  Menu Studio/Menus screens (e.g. `font-serif font-bold` — see `MenuStudioPage.tsx`, `MenusPage.tsx`,
+  `ModifiersPage.tsx`'s card titles); the sidebar wordmark and everything outside those screens keep
+  `Lora`/`system-ui`. Revisit if a full brand-font migration is ever wanted.
 
 ### Logo usage
 

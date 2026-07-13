@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-11 (Stage 23)
+Last updated: 2026-07-13 (Menu Studio redesign — Table view + Menus)
 
 ---
 
@@ -588,6 +588,57 @@ flagged (no management-JWT-scoped `GET /sites` route exists). A site-scope manag
 target site's UUID into a raw text field, mirroring the identical workaround already shipped on
 `management/UsersPage.tsx`'s grant-creation form. Revisit both together if a management-scoped sites
 list is ever added.
+
+### Menu Studio visual/functional redesign — Table view + Menus (partial pass) 🚧
+
+Implemented from a Claude-designed HTML mockup (`design_handoff_menu_studio/`). Explicitly scoped
+with the user to the **Table view** (Products/Modifiers/Categories) and the new **Menus** screen —
+the POS Layout grid editor redesign (drag/resize/multi-select tiles, active-time/day scheduling) is
+a separate, larger follow-up and was not attempted here; `MenuBuilderPage.tsx`/`menu_layouts` are
+unchanged from Stage 23.
+
+**Deliverables:**
+- [x] Migration `0041`: `categories.default_color` (hex, POS button colour default); new
+  `modifier_option_group_links` table (self-referential through `modifier_groups` via a
+  `ModifierOption` — "comboing"); new `menus` table + `menus_ref_seq` (`MNU-000001`).
+- [x] `modifier_service.py`: `list_modifier_groups_detailed()` (nested groups→options→linked
+  groups, one level deep, plus a used-by-product count), `link_option_group()`/`unlink_option_group()`,
+  `deactivate_modifier_group()`/`deactivate_modifier_option()` (soft-delete — didn't exist before),
+  `duplicate_modifier_group()`. New routes on `modifiers.py`: `GET /modifier-groups/detailed`,
+  `POST /modifier-groups/{id}/duplicate`, `DELETE /modifier-groups/{id}`,
+  `DELETE /modifier-options/{id}`, `POST /modifier-options/{id}/links`,
+  `DELETE /modifier-options/{id}/links/{group_id}`.
+- [x] `menu_service.py` + new router `menus.py` (`/menus`, management/portal JWT only): CRUD,
+  duplicate, schedule/cancel-schedule/publish. Reuses `menu_layouts`' brand-vs-site `scope`
+  assignment pattern; `menu_layout_id` optionally links a Menu to the POS button layout it activates.
+- [x] `product_service.list_products()` now also resolves each row's category colour and a
+  comma-joined list of active linked modifier group names via a correlated subquery (no
+  denormalization) — `ProductListItem.category_color`/`modifier_names`.
+- [x] `menus` page key added to `PAGE_CATALOG`/`ROLE_MODEL.md` §6/`license_plans.py` (pro tier),
+  per the Stage 18 standing rule; the new Modifiers portal page reuses the existing
+  `variants_modifiers` key rather than adding a new one.
+- [x] Portal: `ThemeContext.tsx` (portal-wide light/dark mode, `dark` class on `<html>`, toggle in
+  the sidebar footer); redesigned `CategoriesPage.tsx` (reporting-group-grouped cards, colour
+  swatch popover via new `ColorSwatchPicker.tsx`, floating bulk-assign bar, inline add-forms); new
+  `ModifiersPage.tsx` (cards, inline nested-cascade comboing UI — no modifier management page
+  existed before this); `ProductsPage.tsx` gained a category-colour dot and a Modifiers column;
+  new `MenuStudioPage.tsx` (Table/POS Layout segmented control wrapping
+  Products/Modifiers/Categories, POS Layout delegating unchanged to `MenuBuilderPage`); new
+  top-level `MenusPage.tsx`. `MGMT_NAV` updated accordingly (old standalone Products/Categories/
+  Menu Builder nav entries replaced by Menu Studio + Menus; their routes/components still exist,
+  used directly by `BrandDetailPage`'s own tabs). `Source Serif 4`/`IBM Plex Mono` wired as
+  Tailwind's `font-serif`/`font-mono`; pre-existing pages got a mechanical `dark:` companion-class
+  sweep rather than a hand-tuned pass — see `pos-portal/CLAUDE.md`.
+- [x] Integration tests: `test_menu_routes.py`, `test_modifier_comboing_routes.py`, plus additions
+  to `test_categories_routes.py` for `default_color` — happy path, auth failure, invalid input,
+  business rules (foreign-brand site, self-link rejection, duplicate link 409, scheduling a
+  published/past-dated menu, cancelling a non-scheduled menu), and audit log assertions for every
+  new write action.
+
+**Deferred to a follow-up pass:** the POS Layout grid editor (pointer-based drag, corner-handle
+resize, multi-select bulk action bar, nested tabs-as-folders, active-time/day-of-week scheduling on
+`menu_layouts`) and the `Menus` screen's literal register/channel assignment (currently reuses
+`menu_layouts`' site-scope pattern, since no register/channel entity exists).
 
 ---
 

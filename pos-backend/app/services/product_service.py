@@ -14,7 +14,7 @@ import uuid
 import structlog
 from fastapi import HTTPException, UploadFile, status
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
@@ -26,6 +26,8 @@ from app.constants.audit_actions import (
 )
 from app.constants.statuses import ActorType
 from app.models.category import Category
+from app.models.modifier_group import ModifierGroup
+from app.models.product_modifier_group_link import ProductModifierGroupLink
 from app.models.reporting_group import ReportingGroup
 from app.models.superadmin import SuperAdmin
 from app.models.user import User
@@ -170,12 +172,16 @@ async def list_products(
     skip: int = 0,
     limit: int = 50,
     include_inactive: bool = False,
-) -> list[tuple[Product, str, uuid.UUID, str]]:
+) -> list[tuple[Product, str, str, uuid.UUID, str, str | None]]:
     """
     Return a paginated list of products for a brand, joined to their Category and Reporting Group.
 
-    The join surfaces the Category name and Reporting Group id/name for the Stage 20
-    table view without denormalizing either onto the Product row.
+    The join surfaces the Category name/colour and Reporting Group id/name for the
+    Stage 20 table view without denormalizing any of it onto the Product row.
+    modifier_names is a comma-joined list of this product's active linked
+    modifier group names (Menu Studio redesign), resolved via a correlated
+    scalar subquery rather than a GROUP BY so the base product/category/
+    reporting-group join stays row-per-product.
 
     Args:
         db: Active database session.
@@ -187,12 +193,30 @@ async def list_products(
             view filters active/inactive client-side rather than via a repeat API call).
 
     Returns:
-        list[tuple[Product, str, uuid.UUID, str]]: Each tuple is
-            (product, category_name, reporting_group_id, reporting_group_name),
-            ordered by display_order then name.
+        list[tuple[Product, str, str, uuid.UUID, str, str | None]]: Each tuple is
+            (product, category_name, category_color, reporting_group_id,
+            reporting_group_name, modifier_names), ordered by display_order then name.
     """
+    modifier_names_subq = (
+        select(func.string_agg(ModifierGroup.name, ", "))
+        .select_from(ProductModifierGroupLink)
+        .join(ModifierGroup, ProductModifierGroupLink.modifier_group_id == ModifierGroup.id)
+        .where(
+            ProductModifierGroupLink.product_id == Product.id,
+            ModifierGroup.is_active == True,  # noqa: E712
+        )
+        .correlate(Product)
+        .scalar_subquery()
+    )
     query = (
-        select(Product, Category.name, Category.reporting_group_id, ReportingGroup.name)
+        select(
+            Product,
+            Category.name,
+            Category.default_color,
+            Category.reporting_group_id,
+            ReportingGroup.name,
+            modifier_names_subq,
+        )
         .join(Category, Product.category_id == Category.id)
         .join(ReportingGroup, Category.reporting_group_id == ReportingGroup.id)
         .where(Product.brand_id == brand_id)

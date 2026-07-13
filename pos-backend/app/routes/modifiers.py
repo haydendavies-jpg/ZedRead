@@ -8,17 +8,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.services.modifier_service import (
     ModifierGroupCreate,
+    ModifierGroupDetail,
     ModifierGroupResponse,
     ModifierGroupUpdate,
     ModifierOptionCreate,
+    ModifierOptionLinkCreate,
     ModifierOptionResponse,
     ModifierOptionUpdate,
     create_modifier_group,
     create_modifier_option,
+    deactivate_modifier_group,
+    deactivate_modifier_option,
+    duplicate_modifier_group,
     link_modifier_group,
+    link_option_group,
     list_modifier_groups,
+    list_modifier_groups_detailed,
     list_modifier_options,
     unlink_modifier_group,
+    unlink_option_group,
     update_modifier_group,
     update_modifier_option,
 )
@@ -112,6 +120,86 @@ async def update_brand_modifier_group(
     return ModifierGroupResponse.model_validate(group)
 
 
+@router.get(
+    "/modifier-groups/detailed",
+    response_model=list[ModifierGroupDetail],
+    status_code=status.HTTP_200_OK,
+)
+async def list_brand_modifier_groups_detailed(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> list[ModifierGroupDetail]:
+    """
+    List active modifier groups for a brand, nested with options, each
+    option's comboing links, and a used-by-product count — powers the
+    portal's Modifiers tab in one call.
+
+    Args:
+        skip: Pagination offset.
+        limit: Maximum rows to return.
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access (POS, management, or portal).
+        db: Active database session.
+
+    Returns:
+        list[ModifierGroupDetail]: Active modifier groups, fully nested.
+    """
+    return await list_modifier_groups_detailed(db, access.effective_brand_id(brand_id), skip, limit)
+
+
+@router.post(
+    "/modifier-groups/{group_id}/duplicate",
+    response_model=ModifierGroupResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def duplicate_brand_modifier_group(
+    group_id: uuid.UUID,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> ModifierGroupResponse:
+    """
+    Duplicate a modifier group and its active options.
+
+    Args:
+        group_id: UUID of the modifier group to duplicate.
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access (POS, management, or portal).
+        db: Active database session.
+
+    Returns:
+        ModifierGroupResponse: The newly created copy.
+    """
+    group = await duplicate_modifier_group(db, access.effective_brand_id(brand_id), group_id, access.actor_user)
+    return ModifierGroupResponse.model_validate(group)
+
+
+@router.delete(
+    "/modifier-groups/{group_id}",
+    response_model=None,
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def deactivate_brand_modifier_group(
+    group_id: uuid.UUID,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Soft-delete a modifier group.
+
+    Args:
+        group_id: UUID of the modifier group to deactivate.
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access (POS, management, or portal).
+        db: Active database session.
+    """
+    await deactivate_modifier_group(db, access.effective_brand_id(brand_id), group_id, access.actor_user)
+
+
 # ── Modifier option routes ────────────────────────────────────────────────────
 
 
@@ -199,6 +287,82 @@ async def update_group_option(
     """
     option = await update_modifier_option(db, access.effective_brand_id(brand_id), option_id, payload, access.actor_user)
     return ModifierOptionResponse.model_validate(option)
+
+
+@router.delete(
+    "/modifier-options/{option_id}",
+    response_model=None,
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def deactivate_group_option(
+    option_id: uuid.UUID,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Soft-delete a modifier option.
+
+    Args:
+        option_id: UUID of the modifier option to deactivate.
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access (POS, management, or portal).
+        db: Active database session.
+    """
+    await deactivate_modifier_option(db, access.effective_brand_id(brand_id), option_id, access.actor_user)
+
+
+# ── Comboing — option → linked group routes ───────────────────────────────────
+
+
+@router.post(
+    "/modifier-options/{option_id}/links",
+    response_model=None,
+    status_code=status.HTTP_201_CREATED,
+)
+async def link_option_to_group(
+    option_id: uuid.UUID,
+    payload: ModifierOptionLinkCreate,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Link a modifier option to another modifier group it expands into ("comboing").
+
+    Args:
+        option_id: UUID of the option that will surface the linked group.
+        payload: Which group to link and its display order.
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access (POS, management, or portal).
+        db: Active database session.
+    """
+    await link_option_group(db, access.effective_brand_id(brand_id), option_id, payload, access.actor_user)
+
+
+@router.delete(
+    "/modifier-options/{option_id}/links/{linked_group_id}",
+    response_model=None,
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def unlink_option_from_group(
+    option_id: uuid.UUID,
+    linked_group_id: uuid.UUID,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Remove a comboing link between an option and a linked group.
+
+    Args:
+        option_id: UUID of the option.
+        linked_group_id: UUID of the linked modifier group to unlink.
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access (POS, management, or portal).
+        db: Active database session.
+    """
+    await unlink_option_group(db, access.effective_brand_id(brand_id), option_id, linked_group_id, access.actor_user)
 
 
 # ── Product–modifier link routes ──────────────────────────────────────────────

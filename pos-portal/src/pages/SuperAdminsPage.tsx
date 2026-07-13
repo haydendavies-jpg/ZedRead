@@ -109,8 +109,8 @@ export function SuperAdminsPage() {
     <div className="p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">SuperAdmins</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Super admin access only</p>
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">SuperAdmins</h1>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Super admin access only</p>
         </div>
         <button
           onClick={() => { setForm({ email: '', name: '', password: '', role: 'admin' }); setFormError(null); setShowCreate(true) }}
@@ -126,12 +126,12 @@ export function SuperAdminsPage() {
           placeholder="Search name or email…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-56"
+          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-56"
         />
         <select
           value={roleFilter}
           onChange={(e) => setRoleFilter(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
         >
           <option value="">All roles</option>
           {ROLES.map((r) => (
@@ -141,7 +141,7 @@ export function SuperAdminsPage() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
         >
           <option value="">All statuses</option>
           <option value="active">Active</option>
@@ -150,23 +150,23 @@ export function SuperAdminsPage() {
         {hasFilters && (
           <button
             onClick={() => { setSearch(''); setRoleFilter(''); setStatusFilter('') }}
-            className="text-xs text-gray-400 hover:text-gray-600"
+            className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600"
           >
             Clear filters
           </button>
         )}
-        <span className="text-xs text-gray-400 ml-auto">
+        <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto">
           {filtered.length} of {users.length}
         </span>
       </div>
 
       {isLoading ? (
-        <div className="text-gray-400 text-sm">Loading…</div>
+        <div className="text-gray-400 dark:text-gray-500 text-sm">Loading…</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
           <table className="w-full text-sm min-w-[600px]">
             <thead>
-              <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
+              <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                 <th className="px-4 py-3">ID</th>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Email</th>
@@ -177,15 +177,15 @@ export function SuperAdminsPage() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filtered.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50">
+                <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
                   <td className="px-4 py-3"><EntityIdChip id={u.id} ref={u.ref} /></td>
-                  <td className="px-4 py-3 font-medium text-gray-900">
+                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
                     {u.name}
                     {u.id === me?.id && <span className="ml-1 text-xs text-brand-400">(you)</span>}
                   </td>
-                  <td className="px-4 py-3 text-gray-500">{u.email}</td>
+                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{u.email}</td>
                   <td className="px-4 py-3">
-                    <span className="text-xs font-medium text-gray-600">
+                    <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
                       {ROLES.find((r) => r.value === u.role)?.label ?? u.role}
                     </span>
                   </td>
@@ -205,7 +205,7 @@ export function SuperAdminsPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
                   {users.length === 0 ? 'No users yet.' : 'No users match the current filters.'}
                 </td></tr>
               )}
@@ -224,21 +224,21 @@ export function SuperAdminsPage() {
             className="space-y-4"
           >
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
               <input
                 value={editForm.name}
                 onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                 required
                 autoFocus
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
               <select
                 value={editForm.role}
                 onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
                 {ROLES.map((r) => (
                   <option key={r.value} value={r.value}>{r.label}</option>
@@ -247,7 +247,7 @@ export function SuperAdminsPage() {
             </div>
             {editError && <p className="text-sm text-red-600">{editError}</p>}
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setEditUser(null)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+              <button type="button" onClick={() => setEditUser(null)} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800">Cancel</button>
               <button type="submit" disabled={editMutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">Save</button>
             </div>
           </form>
@@ -258,44 +258,44 @@ export function SuperAdminsPage() {
         <Modal title="New SuperAdmin" onClose={() => setShowCreate(false)}>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
               <input
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 required
                 autoFocus
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="Jane Smith"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
               <input
                 type="email"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="jane@example.com"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password (min 12 chars)</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password (min 12 chars)</label>
               <input
                 type="password"
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 required
                 minLength={12}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
               <select
                 value={form.role}
                 onChange={(e) => setForm({ ...form, role: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
                 {ROLES.map((r) => (
                   <option key={r.value} value={r.value}>{r.label}</option>
@@ -304,7 +304,7 @@ export function SuperAdminsPage() {
             </div>
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+              <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800">Cancel</button>
               <button type="submit" disabled={createMutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">Create</button>
             </div>
           </form>

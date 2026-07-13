@@ -97,7 +97,7 @@ export function LicensesPage() {
   return (
     <div className="p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h1 className="text-xl font-semibold text-gray-900">Licenses</h1>
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Licenses</h1>
         <button
           onClick={openCreate}
           className="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
@@ -110,7 +110,7 @@ export function LicensesPage() {
         <select
           value={siteFilter}
           onChange={(e) => setSiteFilter(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
         >
           <option value="">All sites</option>
           {sites.map((s) => (
@@ -120,7 +120,7 @@ export function LicensesPage() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
         >
           <option value="">All statuses</option>
           <option value="active">Active</option>
@@ -130,7 +130,7 @@ export function LicensesPage() {
         <select
           value={trialFilter}
           onChange={(e) => setTrialFilter(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
         >
           <option value="">Trial &amp; paid</option>
           <option value="trial">Trial only</option>
@@ -139,23 +139,23 @@ export function LicensesPage() {
         {hasFilters && (
           <button
             onClick={() => { setSiteFilter(''); setStatusFilter(''); setTrialFilter('') }}
-            className="text-xs text-gray-400 hover:text-gray-600"
+            className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600"
           >
             Clear filters
           </button>
         )}
-        <span className="text-xs text-gray-400 ml-auto">
+        <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto">
           {filtered.length} of {licenses.length}
         </span>
       </div>
 
       {isLoading ? (
-        <div className="text-gray-400 text-sm">Loading…</div>
+        <div className="text-gray-400 dark:text-gray-500 text-sm">Loading…</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
           <table className="w-full text-sm min-w-[640px]">
             <thead>
-              <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
+              <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                 <th className="px-4 py-3">ID</th>
                 <th className="px-4 py-3">Site</th>
                 <th className="px-4 py-3">Plan</th>
@@ -167,15 +167,15 @@ export function LicensesPage() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filtered.map((l) => (
-                <tr key={l.id} className="hover:bg-gray-50">
+                <tr key={l.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
                   <td className="px-4 py-3"><EntityIdChip id={l.id} /></td>
-                  <td className="px-4 py-3 text-gray-700">{siteName(l.site_id)}</td>
-                  <td className="px-4 py-3 font-medium text-gray-900">
+                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{siteName(l.site_id)}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
                     {l.plan_name}
                     {l.is_trial && <span className="ml-1 text-xs text-brand-500">(trial)</span>}
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{formatCents(l.monthly_fee_cents)}</td>
-                  <td className="px-4 py-3 text-gray-500">{new Date(l.expires_at).toLocaleDateString()}</td>
+                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{formatCents(l.monthly_fee_cents)}</td>
+                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{new Date(l.expires_at).toLocaleDateString()}</td>
                   <td className="px-4 py-3"><StatusBadge status={l.status} /></td>
                   <td className="px-4 py-3 flex gap-2">
                     {l.status === 'active' && (
@@ -185,13 +185,13 @@ export function LicensesPage() {
                       <button onClick={() => enableMutation.mutate(l.id)} className="text-green-600 hover:underline text-xs">Enable</button>
                     )}
                     {l.status === 'expired' && (
-                      <span className="text-xs text-gray-400">Expired</span>
+                      <span className="text-xs text-gray-400 dark:text-gray-500">Expired</span>
                     )}
                   </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
                   {licenses.length === 0 ? 'No licenses yet.' : 'No licenses match the current filters.'}
                 </td></tr>
               )}
@@ -204,60 +204,60 @@ export function LicensesPage() {
         <Modal title="New License" onClose={() => setShowCreate(false)}>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Site</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Site</label>
               <select
                 value={form.site_id}
                 onChange={(e) => setForm({ ...form, site_id: e.target.value })}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
                 {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Plan Name</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Plan Name</label>
               <input
                 value={form.plan_name}
                 onChange={(e) => setForm({ ...form, plan_name: e.target.value })}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="starter"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Fee (cents)</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Monthly Fee (cents)</label>
               <input
                 type="number"
                 min={0}
                 value={form.monthly_fee_cents}
                 onChange={(e) => setForm({ ...form, monthly_fee_cents: e.target.value })}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Starts At</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Starts At</label>
                 <input
                   type="datetime-local"
                   value={form.starts_at}
                   onChange={(e) => setForm({ ...form, starts_at: e.target.value })}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Expires At</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Expires At</label>
                 <input
                   type="datetime-local"
                   value={form.expires_at}
                   onChange={(e) => setForm({ ...form, expires_at: e.target.value })}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
             </div>
-            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
               <input
                 type="checkbox"
                 checked={form.is_trial}
@@ -268,7 +268,7 @@ export function LicensesPage() {
             </label>
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+              <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800">Cancel</button>
               <button type="submit" disabled={createMutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">Create</button>
             </div>
           </form>

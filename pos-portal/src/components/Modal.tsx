@@ -24,12 +24,12 @@ export function Modal({ title, onClose, children, wide = false }: Props) {
       onClick={onClose}
     >
       <div
-        className={`bg-white rounded-xl shadow-xl w-full mx-4 p-6 ${wide ? 'max-w-4xl' : 'max-w-md'}`}
+        className={`bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full mx-4 p-6 ${wide ? 'max-w-4xl' : 'max-w-md'}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">
+          <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">{title}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xl leading-none">
             ×
           </button>
         </div>
