@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-13 (Menu Studio redesign — Table view + Menus)
+Last updated: 2026-07-13 (Menu Studio redesign — POS Layout grid editor, Phase 2)
 
 ---
 
@@ -635,10 +635,68 @@ unchanged from Stage 23.
   published/past-dated menu, cancelling a non-scheduled menu), and audit log assertions for every
   new write action.
 
-**Deferred to a follow-up pass:** the POS Layout grid editor (pointer-based drag, corner-handle
-resize, multi-select bulk action bar, nested tabs-as-folders, active-time/day-of-week scheduling on
-`menu_layouts`) and the `Menus` screen's literal register/channel assignment (currently reuses
-`menu_layouts`' site-scope pattern, since no register/channel entity exists).
+**Deferred to a follow-up pass (now delivered — see below):** the POS Layout grid editor. The
+`Menus` screen's literal register/channel assignment remains deferred — it still reuses
+`menu_layouts`' site-scope pattern, since no register/channel entity exists.
+
+### Menu Studio visual/functional redesign — POS Layout grid editor (Phase 2) ✅
+
+Implemented from the same design mockup's POS Layout screens, previously deferred. Delivers the
+graphical grid editor the Stage 23 prototype's single-level tab/button list stood in for.
+
+**Deliverables:**
+- [x] Migration `0042`: `menu_layouts` gains `color` (hex, list/rail dot), `published_at`,
+  active-time/day-of-week scheduling (`is_all_day`/`start_time`/`end_time`/`active_days`, distinct
+  from `is_published` — controls when a *published* layout is visible on the POS, e.g. a Breakfast
+  layout only 7am–11am) and `scheduled_publish_at` (the "Schedule publish" bulk action — persisted
+  only, same known no-Celery-job limitation as the `Menus` entity's own schedule field). `menu_tabs`
+  gains a self-referential `parent_tab_id` (unbounded nesting — tabs can drill into tabs) and its
+  own `color`. `menu_buttons` gains `kind` (`'product'` | `'folder'` — a folder button opens a
+  nested `MenuTab` instead of a product; `product_ref` becomes nullable to make room),
+  `child_tab_id`, `width`/`height` (1-6 × 1-4 grid-cell span; no x/y — the 6-column CSS grid packs
+  tiles via `grid-auto-flow: dense`), and an optional `color` override falling back to the linked
+  product's category default colour. Check constraints enforce kind/field consistency and the
+  width/height ranges.
+- [x] `menu_builder_service.py` rewritten: tab loading is now flat across all nesting depths (the
+  portal builds the rail/breadcrumb from `parent_tab_id`); `list_menu_layouts()` returns each
+  layout's total button count via a correlated subquery; `duplicate_menu_layout()` deep-copies the
+  full tab tree + buttons via a two-pass id-remap (tabs first, then buttons, so folder
+  `child_tab_id`s point at the copies); `schedule_layout_publish()`/`cancel_layout_scheduled_publish()`
+  (400 on a past target time); `update_menu_button()` (resize/recolor/relink — `color` is checked via
+  `model_fields_set` rather than `is not None` so an explicit `{"color": null}` clears an override
+  back to the category default, the same idiom `access_grant_service.update_grant` already uses for
+  `backend_role`); `bulk_recolor_menu_buttons()`/`bulk_delete_menu_buttons()`/
+  `group_menu_buttons_into_tab()` (the multi-select floating action bar's recolor/delete/"Group into
+  tab" — all three require every selected button share one source tab, 400 otherwise);
+  `_layout_active_now()` (best-effort UTC check — `Site.timezone` isn't validated zoneinfo, flagged
+  in the docstring) now gates `get_published_menu_layouts_for_site()` alongside `is_published`.
+- [x] `routes/menu_layouts.py` rewritten to match: `POST .../duplicate`, `POST
+  .../schedule-publish`, `POST .../cancel-schedule-publish`, `PATCH .../buttons/{id}`, `POST
+  .../buttons/bulk-recolor`, `POST .../buttons/bulk-delete`, `POST .../buttons/group-into-tab`; list
+  route unpacks the new `(MenuLayout, button_count)` tuple shape.
+- [x] Portal: `MenuBuilderPage.tsx` rewritten — layouts list (colour dot, button count, Published/
+  Unpublished pill, active-time + day-of-week chip, last-published/last-edited timestamps,
+  Edit/Duplicate/Delete/Publish-Unpublish/Hours/Schedule-publish actions) and a grid editor (rail of
+  top-level tabs with a "+ Add tab"; breadcrumb; 6-column dense CSS grid with a trailing dashed "+"
+  tile; pointer-based click/shift-click multi-select and drag-move dropping onto a rail tab or
+  folder tile — `elementFromPoint().closest('[data-drop]')`, mirroring the mockup's technique — with
+  a "Moving N button(s)" cursor-following ghost label; corner-handle live resize (1-6 × 1-4);
+  multi-select floating action bar — palette + custom colour recolor, "Move to" dropdown, "Group
+  into tab", "Delete", "Clear"; single-selection inspector — live preview, linked-product dropdown or
+  rename+"Open tab" for a folder, colour palette + custom + "Category default" reset, width/height
+  steppers, "Delete button"). Reuses `ColorSwatchPicker`'s `MENU_STUDIO_PALETTE`/`textColorOn` rather
+  than duplicating them. `Import`/`Export` pills shown in the original mockup are intentionally
+  omitted — no export/import backend exists for `menu_layouts` (unlike Products/Categories/Reporting
+  Groups' Stage 19 `export_service.py`), and a non-functional button would violate the
+  no-half-finished-features rule; revisit if layout import/export is ever scoped.
+- [x] Integration tests: `test_menu_layout_editor_routes.py` — folder buttons creating/cascading a
+  nested tab, button resize/recolor/relink incl. the explicit-null colour-reset case, bulk
+  recolor/delete/group-into-tab incl. the mixed-source-tab 400, duplicate deep-copying tabs+buttons,
+  schedule/cancel-schedule-publish incl. the past-time 400, the active-time window update incl. its
+  `is_all_day=False`-without-times 400, and the `/pos/menu-layout` contract now also excluding/
+  including a layout by its active-time window (previously only tested `is_published`). The existing
+  `test_menu_layout_routes.py` (Stage 23) suite needed no changes — the new columns/fields all carry
+  defaults, so the prototype-era assertions still hold.
 
 ---
 

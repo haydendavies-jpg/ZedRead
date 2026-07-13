@@ -386,23 +386,37 @@ export interface ComboGroupListItem extends ComboGroup {
   product_ref: string
 }
 
-// ── POS Menu Builder (Stage 23) ─────────────────────────────────────────────────
+// ── POS Menu Builder (Stage 23; Phase 2 grid editor) ────────────────────────────
+
+export type MenuButtonKind = 'product' | 'folder'
 
 export interface MenuButton {
   id: string
   tab_id: string
-  product_ref: string
+  kind: MenuButtonKind
+  product_ref: string | null
+  child_tab_id: string | null
+  width: number
+  height: number
+  color: string | null
   display_order: number
-  /** Resolved live from the brand's catalog by product_ref — null if the ref no longer resolves. */
+  /** Resolved live from the brand's catalog by product_ref — null if the ref no longer resolves, or kind='folder'. */
   product_name: string | null
   price_cents: number | null
   is_active: boolean | null
+  /** The linked product's category default colour — powers the inspector's "Category default" reset. */
+  category_color: string | null
+  /** Set only when kind='folder' — the nested tab this button opens. */
+  child_tab_name: string | null
+  child_tab_button_count: number | null
 }
 
 export interface MenuTab {
   id: string
   layout_id: string
+  parent_tab_id: string | null
   name: string
+  color: string | null
   display_order: number
   buttons: MenuButton[]
 }
@@ -413,8 +427,17 @@ export interface MenuLayout {
   site_id: string | null
   scope: 'brand' | 'site'
   name: string
+  color: string
   is_published: boolean
+  published_at: string | null
   version: number
+  is_all_day: boolean
+  start_time: string | null
+  end_time: string | null
+  /** 0=Monday .. 6=Sunday. */
+  active_days: number[]
+  scheduled_publish_at: string | null
+  button_count: number
   created_at: string
   updated_at: string
 }

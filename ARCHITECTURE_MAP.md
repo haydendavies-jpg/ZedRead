@@ -76,7 +76,7 @@ Tokens stored in localStorage (portal; impersonation tokens per-tab in sessionSt
 | reports.py | daily-sales, product-revenue, payment-methods, tax-collected |
 | modifiers.py / combos.py / variants.py | catalog extras management; combos.py/variants.py each also expose a brand-wide `list_router` (`GET /combos`, `GET /variants`, joined to parent product) plus bulk XLSX export/template/import (Stage 22). modifiers.py also covers Menu Studio "comboing": `GET /modifier-groups/detailed` (nested groups→options→linked groups), `POST/DELETE /modifier-options/{id}/links[/{group_id}]`, group/option soft-delete, group duplicate |
 | reporting_groups.py | Reporting Group CRUD (Stage 16), bulk XLSX export/template/import (Stage 19) |
-| menu_layouts.py | POS Menu Builder (Stage 23): layout/tab/button CRUD, reorder, publish/unpublish (management JWT); `pos_router` exposes `GET /pos/menu-layout?site_id=`, the read contract for Android |
+| menu_layouts.py | POS Menu Builder (Stage 23; grid editor Phase 2): layout/tab/button CRUD, reorder, publish/unpublish, duplicate, schedule/cancel-schedule-publish, button bulk-recolor/bulk-delete/group-into-tab (management JWT); `pos_router` exposes `GET /pos/menu-layout?site_id=`, the read contract for Android |
 | menus.py | Menus (Menu Studio redesign) — distinct from a `menu_layouts` layout: CRUD, duplicate, schedule/cancel-schedule/publish (management/portal JWT only) |
 | site_overrides.py | per-site price/availability overrides |
 | pos_devices.py | terminal device registration |
@@ -115,12 +115,18 @@ Transactions: `invoices`, `invoice_line_items` (snapshotted name/price), `invoic
 Billing: `licenses` (site_id, one per site), `license_invoices`.
 Overrides: `site_product_overrides`, `site_variant_overrides`.
 Ops: `user_pos_sessions`, `pos_devices`, `audit_logs` (immutable), `user_invites`.
-Menu Builder (Stage 23): `menu_layouts` (brand_id, nullable site_id, `scope` 'brand'|'site' with a
-check constraint tying the two together, `is_published`, `version`), `menu_tabs` (layout_id, ordered
-via `display_order`), `menu_buttons` (tab_id, `product_ref` — a product's `ref` code, deliberately
-not a FK so a button survives the underlying product being deleted and recreated with the same
-code). More than one layout may be `is_published` at once (per-site/day-part menus); prototype
-scope is single-level tabs + buttons only, no nested sub-menus.
+Menu Builder (Stage 23; grid editor Phase 2): `menu_layouts` (brand_id, nullable site_id, `scope`
+'brand'|'site' with a check constraint tying the two together, `is_published`, `version`, `color`,
+`published_at`, active-time/day-of-week scheduling `is_all_day`/`start_time`/`end_time`/
+`active_days` — when a *published* layout is visible on the POS, distinct from `is_published` —
+and `scheduled_publish_at`, the "Schedule publish" bulk action), `menu_tabs` (layout_id, ordered via
+`display_order`, self-referential `parent_tab_id` for unbounded nesting, own `color`), `menu_buttons`
+(tab_id, `kind` 'product'|'folder', `product_ref` — a product's `ref` code, deliberately not a FK so
+a button survives the underlying product being deleted and recreated with the same code, nullable
+since a folder button has none — `child_tab_id` instead, `width`/`height` 1-6×1-4 grid-cell span, no
+x/y coordinates since the portal's 6-column CSS grid packs tiles via `grid-auto-flow: dense`,
+optional `color` override falling back to the linked product's category default colour). More than
+one layout may be `is_published` at once (per-site/day-part menus).
 
 ## Terminology
 
