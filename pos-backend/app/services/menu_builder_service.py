@@ -835,6 +835,7 @@ async def create_menu_button(
         product = None
         category_color = None
     else:
+        child_tab = None
         if not payload.product_ref:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="product_ref is required when kind='product'")
         product_result = await db.execute(select(Product).where(Product.brand_id == brand_id, Product.ref == payload.product_ref))
@@ -861,8 +862,8 @@ async def create_menu_button(
     return _build_button_out(
         button,
         {payload.product_ref: (product, category_color)} if product else {},
-        {},
-        {},
+        {child_tab.id: child_tab} if child_tab else {},
+        {child_tab.id: 0} if child_tab else {},
     )
 
 
