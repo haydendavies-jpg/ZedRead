@@ -17,7 +17,10 @@ from sqlalchemy import select
 # Master-user credentials required on POST /sites/ since Change 1
 _MASTER_CREDS = {"master_email": "owner@userstest.example", "master_password": "TestPass123!"}
 
+from app.constants.audit_actions import USER_CREATED
+from app.models.audit_log import AuditLog
 from app.models.user import User
+from app.utils.security import verify_password
 
 pytestmark = pytest.mark.asyncio
 
@@ -125,3 +128,123 @@ async def test_create_site_creates_site_master_user_visible_in_list(
         f"Site master user for site {site_id} not found in GET /users response. "
         f"Users returned: {[u.get('email') for u in users]}"
     )
+
+
+# ── Create user: email/password coupling (ROLE_MODEL.md §3 shared-email flow) ──
+
+
+async def test_create_user_new_email_requires_password(client, portal_auth_headers, test_brand):
+    """A brand-new email with no password is rejected — the login would be unusable."""
+    response = await client.post(
+        "/users",
+        json={
+            "brand_id": str(test_brand.id),
+            "first_name": "Fresh",
+            "last_name": "Person",
+            "email": "fresh-unique@userstest.example",
+        },
+        headers=portal_auth_headers,
+    )
+    assert response.status_code == 422
+
+
+async def test_create_user_new_email_with_password_writes_audit(
+    client, db, portal_auth_headers, test_brand
+):
+    """A new email + password creates the user and writes the USER_CREATED audit row."""
+    response = await client.post(
+        "/users",
+        json={
+            "brand_id": str(test_brand.id),
+            "first_name": "Brand",
+            "last_name": "New",
+            "email": "brandnew-unique@userstest.example",
+            "password": "SecretPass123!",
+        },
+        headers=portal_auth_headers,
+    )
+    assert response.status_code == 201
+    user_id = response.json()["id"]
+
+    audit = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == user_id,
+            AuditLog.action == USER_CREATED,
+        )
+    )
+    assert audit.scalar_one() is not None  # raises if 0 or 2+ rows
+
+
+async def test_create_user_shared_email_links_existing_password(
+    client, db, portal_auth_headers, test_brand, test_superadmin
+):
+    """A new user on an already-registered email reuses that identity's password, no new one given."""
+    response = await client.post(
+        "/users",
+        json={
+            "brand_id": str(test_brand.id),
+            "first_name": "Shared",
+            "last_name": "Owner",
+            "email": test_superadmin.email,  # already a SuperAdmin's email
+        },
+        headers=portal_auth_headers,
+    )
+    assert response.status_code == 201
+    user_id = response.json()["id"]
+
+    row = (await db.execute(select(User).where(User.id == user_id))).scalar_one()
+    # The new user carries the SuperAdmin's exact hash — same credential, no new password.
+    assert row.password_hash == test_superadmin.password_hash
+    assert verify_password("TestPassword123!", row.password_hash)
+
+
+async def test_create_user_shared_email_rejects_new_password(
+    client, portal_auth_headers, test_brand, test_superadmin
+):
+    """Supplying a fresh password for an already-registered email is rejected (409)."""
+    response = await client.post(
+        "/users",
+        json={
+            "brand_id": str(test_brand.id),
+            "first_name": "Shared",
+            "last_name": "Owner",
+            "email": test_superadmin.email,
+            "password": "DifferentPass123!",
+        },
+        headers=portal_auth_headers,
+    )
+    assert response.status_code == 409
+
+
+# ── Email-check lookup (drives the create form's skip-password behaviour) ──
+
+
+async def test_email_check_existing_superadmin_email(client, portal_auth_headers, test_superadmin):
+    """GET /users/email-check reports an existing SuperAdmin email as taken, with a password."""
+    response = await client.get(
+        "/users/email-check",
+        params={"email": test_superadmin.email},
+        headers=portal_auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["exists"] is True
+    assert data["identity_type"] == "superadmin"
+    assert data["has_password"] is True
+
+
+async def test_email_check_unknown_email(client, portal_auth_headers):
+    """GET /users/email-check reports an unregistered email as available."""
+    response = await client.get(
+        "/users/email-check",
+        params={"email": "nobody-unique@userstest.example"},
+        headers=portal_auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["exists"] is False
+
+
+async def test_email_check_no_token_returns_403(client):
+    """GET /users/email-check without a token returns 403."""
+    response = await client.get("/users/email-check", params={"email": "x@y.example"})
+    assert response.status_code == 403

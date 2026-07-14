@@ -13,7 +13,6 @@ import { api } from '../../api/axios'
 import { BrandContext } from '../../context/BrandContext'
 import { CompanyProfileForm } from '../../components/CompanyProfileForm'
 import { ProductsPage } from '../management/ProductsPage'
-import { VariantsCombosPage } from '../management/VariantsCombosPage'
 import { CategoriesPage } from '../management/CategoriesPage'
 import { ReportsPage } from '../management/ReportsPage'
 import { InvoicesPage } from '../management/InvoicesPage'
@@ -23,12 +22,11 @@ import { MenuBuilderPage } from '../management/MenuBuilderPage'
 import { sessionInto } from '../../utils/impersonation'
 import type { Brand, Group } from '../../types'
 
-type Tab = 'overview' | 'products' | 'variants_combos' | 'categories' | 'menu_builder' | 'overrides' | 'reports' | 'invoices' | 'users'
+type Tab = 'overview' | 'products' | 'categories' | 'menu_builder' | 'overrides' | 'reports' | 'invoices' | 'users'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'products', label: 'Products' },
-  { id: 'variants_combos', label: 'Variants & Combos' },
   { id: 'categories', label: 'Categories' },
   { id: 'menu_builder', label: 'Menu Builder' },
   { id: 'overrides', label: 'Site Overrides' },
@@ -119,7 +117,6 @@ export function BrandDetailPage() {
         <div className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900">
           {activeTab === 'overview' && brand && <BrandOverview brand={brand} />}
           {activeTab === 'products' && <ProductsPage />}
-          {activeTab === 'variants_combos' && <VariantsCombosPage />}
           {activeTab === 'categories' && <CategoriesPage />}
           {activeTab === 'menu_builder' && <MenuBuilderPage />}
           {activeTab === 'overrides' && <SiteOverridesPage />}

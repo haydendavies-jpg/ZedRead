@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/axios'
-import { useAuth, isMgmtUser } from '../../context/AuthContext'
+import { useAuth, isMgmtUser, isSuperAdmin } from '../../context/AuthContext'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { EntityIdChip } from '../../components/EntityIdChip'
 import { ScopeGuard } from '../../components/ScopeGuard'
@@ -51,6 +51,12 @@ function UsersPageInner() {
   const brandId = useMgmtBrandId()
   const { user } = useAuth()
   const mgmtUser = isMgmtUser(user) ? user : null
+  // SuperAdmins reach this page via the Brand detail "Users & Grants" tab. The
+  // backend gives them full grant authority (access_grant_service bypasses the
+  // scope and role-ceiling checks for portal admins), so the ceiling/scope
+  // machinery below — which is derived from a management user's own grant —
+  // does not apply to them.
+  const superadmin = isSuperAdmin(user)
 
   const params = brandId ? { brand_id: brandId } : {}
 
@@ -66,20 +72,29 @@ function UsersPageInner() {
     enabled: !!brandId,
   })
 
-  // The caller's own profile — used to cap which profiles they may grant.
-  // Their own grant is always among the fetched grants (it's within their scope).
+  // The caller's own profile — used to cap which profiles a management user may
+  // grant. Their own grant is always among the fetched grants (it's within their
+  // scope). SuperAdmins have no such grant here, so the ceiling does not apply.
   const ownProfileId = grants.find((g) => g.id === mgmtUser?.grant_id)?.access_profile_id
   const ownRank = ownProfileId
     ? roleRank(profiles.find((p) => p.id === ownProfileId)?.name ?? '')
     : 0
-  const grantableProfiles = profiles.filter((p) => roleRank(p.name) <= ownRank)
+  // SuperAdmins may grant any profile except Master User (which the backend
+  // never delegates); management users are capped at their own rank.
+  const grantableProfiles = superadmin
+    ? profiles.filter((p) => p.name !== 'Master User')
+    : profiles.filter((p) => roleRank(p.name) <= ownRank)
 
-  // Group-scope callers may grant brand or site scope; brand-scope callers may
-  // only grant site scope (matches access_grant_service._assert_create_authority).
+  // Whether the caller may create grants at all. SuperAdmins always may; a
+  // management user needs their own profile resolved first (to enforce the ceiling).
+  const canGrant = superadmin || !!ownProfileId
+
+  // SuperAdmins and group-scope callers may grant brand or site scope; brand-scope
+  // callers may only grant site scope (matches access_grant_service._assert_create_authority).
   const scopeOptions = useMemo<Array<'brand' | 'site'>>(() => {
-    if (mgmtUser?.scope === 'group') return ['brand', 'site']
+    if (superadmin || mgmtUser?.scope === 'group') return ['brand', 'site']
     return ['site']
-  }, [mgmtUser?.scope])
+  }, [superadmin, mgmtUser?.scope])
 
   const revoke = useMutation({
     mutationFn: (id: string) => api.delete(`/access-grants/${id}`),
@@ -145,8 +160,8 @@ function UsersPageInner() {
         <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Users &amp; Grants</h1>
         <button
           onClick={openGrant}
-          disabled={!ownProfileId}
-          title={!ownProfileId ? 'Your own access profile could not be determined' : undefined}
+          disabled={!canGrant}
+          title={!canGrant ? 'Your own access profile could not be determined' : undefined}
           className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
         >
           + Grant Access

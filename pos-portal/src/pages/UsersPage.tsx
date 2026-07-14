@@ -1,6 +1,6 @@
 /** Admin page for managing Users — list, create, edit (with grants, PIN, backend role). */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/axios'
 import type { Brand, Site } from '../types'
@@ -41,6 +41,14 @@ interface AccessProfile {
   id: string
   name: string
   can_access_portal: boolean
+}
+
+/** Result of GET /users/email-check — whether the typed email already exists. */
+interface EmailCheckResult {
+  exists: boolean
+  identity_type?: 'superadmin' | 'user'
+  display_name?: string
+  has_password?: boolean
 }
 
 interface GroupScopeEntry {
@@ -132,6 +140,25 @@ export function UsersPage() {
   const [password, setPassword] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
 
+  // Detect an already-registered email while the admin types, so the form can
+  // skip the password step: a shared email links the new user to the existing
+  // identity's sign-in password, and they pick the platform at login.
+  const [debouncedEmail, setDebouncedEmail] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedEmail(email), 350)
+    return () => clearTimeout(t)
+  }, [email])
+  const emailLooksValid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(debouncedEmail)
+  const { data: emailCheck } = useQuery<EmailCheckResult>({
+    queryKey: ['email-check', debouncedEmail],
+    queryFn: () => api.get('/users/email-check', { params: { email: debouncedEmail } }).then((r) => r.data),
+    enabled: showCreate && emailLooksValid,
+    staleTime: 30_000,
+  })
+  // "Linked" = reuse the existing password (only possible when that account
+  // actually has one); otherwise the password field stays required.
+  const linkedEmail = !!(emailCheck?.exists && emailCheck.has_password)
+
   // ── Edit user state ───────────────────────────────────────────────────────
   const [editUser, setEditUser] = useState<AppUser | null>(null)
   const [editFirstName, setEditFirstName] = useState('')
@@ -166,7 +193,7 @@ export function UsersPage() {
 
   // ── Mutations ─────────────────────────────────────────────────────────────
   const createMutation = useMutation({
-    mutationFn: (body: { brand_id: string; first_name: string; last_name: string; email: string; password: string }) =>
+    mutationFn: (body: { brand_id: string; first_name: string; last_name: string; email: string; password?: string }) =>
       api.post('/users', body),
     onSuccess: () => {
       invalidateUsers()
@@ -272,7 +299,10 @@ export function UsersPage() {
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault()
     setCreateError(null)
-    createMutation.mutate({ brand_id: selectedBrandId, first_name: firstName, last_name: lastName, email, password })
+    // Omit the password for a linked email — the backend reuses the existing
+    // identity's sign-in password and rejects a competing one.
+    const body = { brand_id: selectedBrandId, first_name: firstName, last_name: lastName, email }
+    createMutation.mutate(linkedEmail ? body : { ...body, password })
   }
 
   const handleEditSave = (e: React.FormEvent) => {
@@ -532,12 +562,24 @@ export function UsersPage() {
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="jane@example.com" />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                placeholder="Min 8 characters" />
-            </div>
+            {linkedEmail ? (
+              <div className="rounded-lg border border-brand-200 bg-brand-50 dark:bg-brand-950/30 dark:border-brand-900 px-3 py-2.5">
+                <p className="text-sm text-brand-800 dark:text-brand-300">
+                  This email already has an account{emailCheck?.display_name ? ` (${emailCheck.display_name})` : ''}.
+                </p>
+                <p className="text-xs text-brand-700 dark:text-brand-400 mt-1">
+                  No new password needed — the user signs in with the existing password and chooses
+                  {emailCheck?.identity_type === 'superadmin' ? ' the Admin Portal or this account' : ' which account to open'} at login.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  placeholder="Min 8 characters" />
+              </div>
+            )}
             {createError && <p className="text-sm text-red-600">{createError}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800">Cancel</button>

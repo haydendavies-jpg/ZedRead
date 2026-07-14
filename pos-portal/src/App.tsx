@@ -28,9 +28,7 @@ import { GroupDetailPage } from './pages/groups/GroupDetailPage'
 import { SiteDetailPage } from './pages/sites/SiteDetailPage'
 import { ProductsPage } from './pages/management/ProductsPage'
 import { ModifiersPage } from './pages/management/ModifiersPage'
-import { VariantsCombosPage } from './pages/management/VariantsCombosPage'
 import { CategoriesPage } from './pages/management/CategoriesPage'
-import { ReportingGroupsPage } from './pages/management/ReportingGroupsPage'
 import { MenuBuilderPage } from './pages/management/MenuBuilderPage'
 import { MenuStudioPage } from './pages/management/MenuStudioPage'
 import { MenusPage } from './pages/management/MenusPage'
@@ -171,9 +169,7 @@ export default function App() {
               <Route path="management/menus" element={<MenusPage />} />
               <Route path="management/products" element={<ProductsPage />} />
               <Route path="management/modifiers" element={<ModifiersPage />} />
-              <Route path="management/variants-combos" element={<VariantsCombosPage />} />
               <Route path="management/categories" element={<CategoriesPage />} />
-              <Route path="management/reporting-groups" element={<ReportingGroupsPage />} />
               <Route path="management/menu-builder" element={<MenuBuilderPage />} />
               <Route path="management/reports" element={<ReportsPage />} />
               <Route path="management/invoices" element={<InvoicesPage />} />

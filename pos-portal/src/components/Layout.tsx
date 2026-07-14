@@ -25,8 +25,6 @@ const SUPER_ADMIN_ONLY_NAV = [
 const MGMT_NAV = [
   { to: '/management/menu-studio', label: 'Menu Studio' },
   { to: '/management/menus', label: 'Menus' },
-  { to: '/management/variants-combos', label: 'Variants & Combos' },
-  { to: '/management/reporting-groups', label: 'Reporting Groups' },
   { to: '/management/reports', label: 'Reports' },
   { to: '/management/invoices', label: 'Invoices' },
   { to: '/management/company-profile', label: 'Company Profile' },

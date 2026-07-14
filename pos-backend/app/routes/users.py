@@ -20,6 +20,7 @@ from app.database import get_db
 from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.group import Group
+from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
@@ -76,8 +77,16 @@ class UserCreate(BaseModel):
     Request body for creating a POS user.
 
     email/password are optional at creation (ROLE_MODEL.md §2 — only
-    required once the user is granted backend access). If one is supplied,
-    both must be, since a password is meaningless without a login email.
+    required once the user is granted backend access). A password is
+    meaningless without an email, so it may never be supplied alone.
+
+    Email-without-password is permitted specifically to support the
+    cross-identity flow (ROLE_MODEL.md §3): when the email already belongs
+    to another identity (a SuperAdmin or another User), the new User is
+    linked to that existing sign-in password rather than being given a new
+    one — the person then picks which platform to open at login. The route
+    (create_user) enforces the DB-dependent side of this: a brand-new email
+    still requires a password, and a matching email must NOT carry one.
     """
 
     brand_id: str
@@ -87,11 +96,28 @@ class UserCreate(BaseModel):
     password: str | None = None
 
     @model_validator(mode="after")
-    def _email_and_password_together(self) -> "UserCreate":
-        """Reject a half-supplied email/password pair."""
-        if (self.email is None) != (self.password is None):
-            raise ValueError("email and password must be supplied together, or not at all")
+    def _password_requires_email(self) -> "UserCreate":
+        """A password is meaningless without a login email to attach it to."""
+        if self.password is not None and self.email is None:
+            raise ValueError("password requires an email")
         return self
+
+
+class EmailCheckOut(BaseModel):
+    """
+    Whether an email is already registered, for the create-user form.
+
+    Lets the portal detect an existing identity as the admin types and skip
+    the password field (the new User will share the existing password).
+    """
+
+    exists: bool
+    # 'superadmin' or 'user' — which kind of identity already holds the email.
+    identity_type: str | None = None
+    display_name: str | None = None
+    # False when the matching identity has no password set (a passwordless POS
+    # user) — the form must then still collect one.
+    has_password: bool = False
 
 
 class UserUpdate(BaseModel):
@@ -290,17 +316,99 @@ async def list_users(
     return await _attach_sites(db, users)
 
 
+async def _find_email_owner(db: AsyncSession, email: str) -> SuperAdmin | User | None:
+    """
+    Return an existing identity that already holds this email, if any.
+
+    Checks SuperAdmins first, then Users, so a shared email resolves to a
+    single existing sign-in credential to link a new User against. Returns
+    None when the email is not yet registered anywhere.
+
+    Args:
+        db: Active session.
+        email: The email to look up.
+
+    Returns:
+        SuperAdmin | User | None: The first identity owning the email, or None.
+    """
+    sa_r = await db.execute(select(SuperAdmin).where(SuperAdmin.email == email))
+    superadmin = sa_r.scalar_one_or_none()
+    if superadmin is not None:
+        return superadmin
+    user_r = await db.execute(select(User).where(User.email == email))
+    return user_r.scalar_one_or_none()
+
+
+@router.get("/email-check", response_model=EmailCheckOut)
+async def check_email(
+    email: EmailStr,
+    db: AsyncSession = Depends(get_db),
+    actor=Depends(get_current_superadmin),
+) -> EmailCheckOut:
+    """
+    Report whether an email is already registered, for the create-user form.
+
+    Lets the portal skip the password field when the email already belongs to
+    a SuperAdmin or another User — the new User then shares that identity's
+    sign-in password (ROLE_MODEL.md §3). Requires portal JWT.
+
+    Args:
+        email: The email being typed into the create-user form.
+
+    Returns:
+        EmailCheckOut: Existence flag plus the matching identity's type/name
+        and whether it has a usable password.
+    """
+    owner = await _find_email_owner(db, email)
+    if owner is None:
+        return EmailCheckOut(exists=False)
+    identity_type = "superadmin" if isinstance(owner, SuperAdmin) else "user"
+    return EmailCheckOut(
+        exists=True,
+        identity_type=identity_type,
+        display_name=owner.name,
+        has_password=owner.password_hash is not None,
+    )
+
+
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def create_user(
     body: UserCreate,
     db: AsyncSession = Depends(get_db),
     actor=Depends(get_current_superadmin),
 ):
-    """Create a new POS user. Requires portal JWT."""
+    """
+    Create a new POS user. Requires portal JWT.
+
+    Email handling (ROLE_MODEL.md §3): a brand-new email requires a password.
+    An email that already belongs to another identity (a SuperAdmin or another
+    User) does NOT create a competing password — the new User is linked to the
+    existing sign-in password, so the person picks which platform to open at
+    login. Supplying a fresh password for an already-registered email is
+    rejected, to avoid two different passwords for the same login email.
+    """
+    # Resolve the sign-in password for the new row from the email's current state.
+    password_hash: str | None = None
     if body.email is not None:
-        existing = await db.execute(select(User).where(User.email == body.email))
-        if existing.scalar_one_or_none():
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
+        existing_source = await _find_email_owner(db, body.email)
+        if existing_source is not None and existing_source.password_hash is not None:
+            # Linked identity — reuse the existing password; reject a new one so
+            # the shared email never ends up with two different passwords.
+            if body.password is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This email already has an account — leave the password blank; the new user shares the existing sign-in password.",
+                )
+            password_hash = existing_source.password_hash
+        else:
+            # Brand-new email (or an existing one whose owner has no password
+            # yet) — a password is required to make this login usable.
+            if body.password is None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="A password is required for a new email.",
+                )
+            password_hash = hash_password(body.password)
 
     brand_r = await db.execute(select(Brand).where(Brand.id == body.brand_id))
     brand = brand_r.scalar_one_or_none()
@@ -314,7 +422,7 @@ async def create_user(
         last_name=body.last_name,
         name=f"{body.first_name} {body.last_name}",
         email=body.email,
-        password_hash=hash_password(body.password) if body.password is not None else None,
+        password_hash=password_hash,
     )
     db.add(user)
     await db.flush()
