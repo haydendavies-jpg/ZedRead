@@ -11,7 +11,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { api, clearTokens, getAccessToken, getTokenType, setImpersonationSession, setTokens } from '../api/axios'
-import type { GrantSummary, MgmtTokenPayload, MgmtUser, SuperAdmin, TokenType, UnifiedLoginResponse } from '../types'
+import type { GrantSummary, IdentitySummary, MgmtTokenPayload, MgmtUser, SuperAdmin, TokenType, UnifiedLoginResponse } from '../types'
 
 export type AuthUser = SuperAdmin | MgmtUser
 
@@ -27,15 +27,28 @@ interface AuthContextValue {
   pendingGrants: GrantSummary[] | null
   pendingUserId: string | null
   /**
+   * Non-null when the email matched both a SuperAdmin and a portal-capable User
+   * (ROLE_MODEL.md §3); cleared after selectIdentity().
+   */
+  pendingIdentities: IdentitySummary[] | null
+  /**
    * Attempt login. Returns 'direct' when tokens were issued immediately (portal
    * user or single-grant POS user) so the caller can navigate away. Returns
    * 'grant_selection' when the POS user has multiple grants and must pick one
-   * via selectGrant() — the caller should NOT navigate; LoginPage re-renders
-   * with the GrantSelectorView automatically.
+   * via selectGrant(). Returns 'identity_selection' when the email matches both
+   * a SuperAdmin and a portal-capable User and the caller must pick one via
+   * selectIdentity(). In the two selection cases the caller should NOT navigate —
+   * LoginPage re-renders with the appropriate selector automatically.
    */
-  login: (email: string, password: string) => Promise<'direct' | 'grant_selection'>
+  login: (email: string, password: string) => Promise<'direct' | 'grant_selection' | 'identity_selection'>
   /** Call after the user picks a grant from pendingGrants. Completes the login. */
   selectGrant: (grantId: string, password: string) => Promise<void>
+  /**
+   * Call after the user picks an identity from pendingIdentities. Re-verifies
+   * credentials for the chosen identity and issues tokens directly, or surfaces
+   * a follow-up grant selection when the chosen User has multiple grants.
+   */
+  selectIdentity: (identityType: 'superadmin' | 'user', email: string, password: string) => Promise<'direct' | 'grant_selection'>
   logout: () => Promise<void>
 }
 
@@ -75,6 +88,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const [pendingGrants, setPendingGrants] = useState<GrantSummary[] | null>(null)
   const [pendingUserId, setPendingUserId] = useState<string | null>(null)
+  const [pendingIdentities, setPendingIdentities] = useState<IdentitySummary[] | null>(null)
+
+  /**
+   * Apply an issued token pair to the session, resolving the user from the
+   * token type. Shared by the direct-login and identity-selection paths.
+   */
+  const applyTokens = useCallback(async (accessToken: string, refreshToken: string) => {
+    const payload = decodePayload(accessToken)
+    const type = (payload['type'] as TokenType) ?? 'portal_access'
+    setTokens(accessToken, refreshToken, type)
+
+    if (type === 'mgmt_access') {
+      setUser(mgmtUserFromPayload(payload))
+      setTokenType('mgmt_access')
+    } else {
+      const id = payload['sub'] as string
+      const { data: superAdmin } = await api.get<SuperAdmin>(`/portal-users/${id}`)
+      setUser(superAdmin)
+      setTokenType('portal_access')
+    }
+  }, [])
 
   /** Restore session from a stored access token, or from an impersonation token in sessionStorage. */
   const restoreSession = useCallback(async () => {
@@ -129,25 +163,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     restoreSession()
   }, [restoreSession])
 
-  const login = useCallback(async (email: string, password: string): Promise<'direct' | 'grant_selection'> => {
+  const login = useCallback(async (email: string, password: string): Promise<'direct' | 'grant_selection' | 'identity_selection'> => {
     const { data } = await api.post<UnifiedLoginResponse>('/auth/portal/login', { email, password })
 
     if (data.access_token && data.refresh_token) {
       // Direct login — either portal user or single-grant POS user
-      const payload = decodePayload(data.access_token)
-      const type = (payload['type'] as TokenType) ?? 'portal_access'
-      setTokens(data.access_token, data.refresh_token, type)
-
-      if (type === 'mgmt_access') {
-        setUser(mgmtUserFromPayload(payload))
-        setTokenType('mgmt_access')
-      } else {
-        const id = payload['sub'] as string
-        const { data: superAdmin } = await api.get<SuperAdmin>(`/portal-users/${id}`)
-        setUser(superAdmin)
-        setTokenType('portal_access')
-      }
+      await applyTokens(data.access_token, data.refresh_token)
       return 'direct'
+    } else if (data.available_identities && data.available_identities.length > 0) {
+      // Email matched both a SuperAdmin and a portal-capable User — pick which
+      // to enter before any token is issued (ROLE_MODEL.md §3).
+      setPendingIdentities(data.available_identities)
+      return 'identity_selection'
     } else if (data.available_grants && data.user_id) {
       // Multi-grant POS user — need scope selection before completing login
       setPendingGrants(data.available_grants)
@@ -156,7 +183,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     // Fallback — should not be reached with a well-formed API response
     return 'grant_selection'
-  }, [])
+  }, [applyTokens])
+
+  /**
+   * Complete login after the user picks an identity from pendingIdentities.
+   * Re-verifies credentials for the chosen identity_type via /identity-token.
+   */
+  const selectIdentity = useCallback(
+    async (identityType: 'superadmin' | 'user', email: string, password: string): Promise<'direct' | 'grant_selection'> => {
+      const { data } = await api.post<UnifiedLoginResponse>(
+        '/auth/portal/identity-token',
+        { email, password, identity_type: identityType },
+      )
+
+      if (data.access_token && data.refresh_token) {
+        // Identity resolved to a single token (superadmin, or single-grant user)
+        await applyTokens(data.access_token, data.refresh_token)
+        setPendingIdentities(null)
+        return 'direct'
+      }
+      if (data.available_grants && data.user_id) {
+        // Chosen User identity has multiple grants — fall through to scope selection
+        setPendingGrants(data.available_grants)
+        setPendingUserId(data.user_id)
+        setPendingIdentities(null)
+        return 'grant_selection'
+      }
+      // Fallback — should not be reached with a well-formed API response
+      return 'grant_selection'
+    },
+    [applyTokens],
+  )
 
   /** Complete login after the user selects a grant from the scope selector. */
   const selectGrant = useCallback(async (grantId: string, password: string) => {
@@ -184,6 +241,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setTokenType(null)
       setPendingGrants(null)
       setPendingUserId(null)
+      setPendingIdentities(null)
     }
   }, [])
 
@@ -192,7 +250,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const impersonatorName = mgmtUser?.imp_name ?? null
 
   return (
-    <AuthContext.Provider value={{ user, tokenType, isLoading, isImpersonated, impersonatorName, pendingGrants, pendingUserId, login, selectGrant, logout }}>
+    <AuthContext.Provider value={{ user, tokenType, isLoading, isImpersonated, impersonatorName, pendingGrants, pendingUserId, pendingIdentities, login, selectGrant, selectIdentity, logout }}>
       {children}
     </AuthContext.Provider>
   )

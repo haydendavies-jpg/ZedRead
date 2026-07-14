@@ -12,6 +12,15 @@ export interface GrantSummary {
   access_profile_name: string
 }
 
+/**
+ * One selectable identity when an email is shared by a SuperAdmin and a
+ * portal-capable User (ROLE_MODEL.md §3 cross-identity disambiguation).
+ */
+export interface IdentitySummary {
+  identity_type: 'superadmin' | 'user'
+  display_name: string
+}
+
 /** Response from POST /auth/portal/login — superset of the old TokenResponse. */
 export interface UnifiedLoginResponse {
   token_type: string
@@ -22,6 +31,11 @@ export interface UnifiedLoginResponse {
   user_name?: string
   /** Set instead of access_token when POS user has multiple portal-capable grants. */
   available_grants?: GrantSummary[]
+  /**
+   * Set instead of a token when the same email matches both a SuperAdmin and a
+   * portal-capable User — the caller picks one and calls /auth/portal/identity-token.
+   */
+  available_identities?: IdentitySummary[]
 }
 
 export interface ManagementTokenRequest {
