@@ -71,20 +71,21 @@ dark:text-gray-100`). Older pages were swept mechanically to the same pairs; a p
 pass wasn't done everywhere — flag anything that reads wrong in dark mode rather than assuming it's
 covered.
 
-### Typography
+### Typography (Portal Design Guide §02)
 
-- **Wordmark** — `Lora` serif, weight 700, loaded from Google Fonts via `src/index.css`.
-  Apply with `style={{ fontFamily: "'Lora', serif", fontWeight: 700 }}`.
+The design guide's font system is now applied **portal-wide** (previously this was a flagged
+conflict where only Menu Studio adopted it; that has been resolved in favour of the guide):
+
+- **Interface / body** — `IBM Plex Sans` (400–700), set globally on `body` in `src/index.css`.
+  Every control, label, and body of text inherits it. The `.zr-table` skin also sets it explicitly.
+- **Titles** — `Source Serif 4` (600/700) via the Tailwind `font-serif` token, for page titles,
+  card/section titles, and the sidebar **wordmark** (`font-serif font-bold` — see `Layout.tsx`,
+  `MenuStudioPage.tsx`). `Lora` remains loaded and is still used on the standalone login page.
+- **Numeric / tabular** — `IBM Plex Mono` via the `font-mono` token, for IDs, prices, time ranges;
+  pair with `.zr-num` in tables.
 - **Tagline** — "POS You Can Count On" in `tracking-widest uppercase` at `0.6rem`.
-- **Body** — `system-ui, 'Segoe UI', Roboto, sans-serif` (set globally on `body`).
-- **Menu Studio pages** (Products/Modifiers/Categories/Menus/Menu Builder) — the design handoff
-  specifies `Source Serif 4` for card/section titles and `IBM Plex Sans`/`IBM Plex Mono` for body/
-  numeric text, distinct from the portal's `Lora` wordmark. Both font families are loaded in
-  `src/index.css`. **Flagged conflict**: rather than replacing the established `Lora` wordmark and
-  `system-ui` body font portal-wide, `Source Serif 4` is used only for card/page titles *within*
-  Menu Studio/Menus screens (e.g. `font-serif font-bold` — see `MenuStudioPage.tsx`, `MenusPage.tsx`,
-  `ModifiersPage.tsx`'s card titles); the sidebar wordmark and everything outside those screens keep
-  `Lora`/`system-ui`. Revisit if a full brand-font migration is ever wanted.
+
+All three families are loaded via non-blocking `<link>` tags in `index.html`.
 
 ### Logo usage
 

@@ -48,6 +48,7 @@
   --zr-accent-soft2: rgba(168, 32, 64, 0.16);
   --zr-border: rgba(36, 31, 26, 0.08);        /* card / table outer border */
   --zr-header-border: rgba(36, 31, 26, 0.10); /* under the table header row */
+  --zr-thead: #faf9f5;          /* table header-row fill (slightly lighter than --bg) */
   --zr-divider: rgba(36, 31, 26, 0.06);       /* row + column dividers */
   --zr-chk: #cfc7bb;             /* unchecked selection checkbox border */
   --zr-row-hover: rgba(36, 31, 26, 0.02);     /* whole-row hover tint */
@@ -79,6 +80,7 @@
   --zr-accent-soft2: rgba(168, 32, 64, 0.30);
   --zr-border: rgba(255, 255, 255, 0.08);
   --zr-header-border: rgba(255, 255, 255, 0.10);
+  --zr-thead: #2f2820;          /* table header-row fill (slightly lighter than --surface) */
   --zr-divider: rgba(255, 255, 255, 0.06);
   --zr-chk: #5a5148;
   --zr-row-hover: rgba(255, 255, 255, 0.03);
@@ -96,7 +98,10 @@
 
 body {
   margin: 0;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  /* Interface font per the Portal Design Guide (§02): IBM Plex Sans for every
+     control, label, and body of text. Source Serif 4 is applied to titles via
+     the `font-serif` token; IBM Plex Mono to numerics via `font-mono`. */
+  font-family: 'IBM Plex Sans', system-ui, 'Segoe UI', Roboto, sans-serif;
   background: var(--zr-bg);
   color: var(--zr-text);
 }
@@ -145,7 +150,7 @@ body {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--zr-faint);
-  background: var(--zr-bg);
+  background: var(--zr-thead);
   border-bottom: 1px solid var(--zr-header-border);
   border-right: 1px solid var(--zr-divider);
 }

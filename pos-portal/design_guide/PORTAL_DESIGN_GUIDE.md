@@ -35,6 +35,7 @@ token.**
 | `--zr-accent-soft2` | 16% accent | 30% accent | Stronger accent tint |
 | `--zr-border` | `rgba(36,31,26,.08)` | `rgba(255,255,255,.08)` | Card / table outer border |
 | `--zr-header-border` | `rgba(36,31,26,.10)` | `rgba(255,255,255,.10)` | Under the table header row |
+| `--zr-thead` | `#faf9f5` | `#2f2820` | Table header-row fill |
 | `--zr-divider` | `rgba(36,31,26,.06)` | `rgba(255,255,255,.06)` | Row + column dividers |
 | `--zr-chk` | `#cfc7bb` | `#5a5148` | Unchecked selection checkbox border |
 | `--zr-row-hover` | `rgba(36,31,26,.02)` | `rgba(255,255,255,.03)` | Whole-row hover tint |
@@ -70,9 +71,9 @@ portal onto one of these families — use it rather than a bespoke coloured span
 - **IBM Plex Mono** (400/500) — IDs, prices, time ranges — anything tabular
   (`font-mono` Tailwind token). Pair with `.zr-num` for right-aligned tabular numerics.
 
-> The global body font stays `system-ui` and the `Lora` wordmark is unchanged (see the
-> flagged-conflict note in `pos-portal/CLAUDE.md`); Plex Sans is scoped to tables and
-> Menu Studio screens rather than swapped globally.
+> IBM Plex Sans is the global interface font (`body` in `src/index.css`); Source Serif 4
+> is applied to titles and the sidebar wordmark via `font-serif`. `Lora` remains only on
+> the standalone login page.
 
 ---
 
