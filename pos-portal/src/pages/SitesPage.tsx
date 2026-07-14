@@ -209,51 +209,53 @@ export function SitesPage() {
       {isLoading ? (
         <div className="text-gray-400 dark:text-gray-500 text-sm">Loading…</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm min-w-[700px]">
+        <div className="zr-table-wrap">
+          <table className="zr-table min-w-[700px]">
             <thead>
-              <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                <th className="px-4 py-3">ID</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Brand ID</th>
-                <th className="px-4 py-3">Brand</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Actions</th>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Brand ID</th>
+                <th>Brand</th>
+                <th>Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody>
               {filtered.map((s) => (
-                <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
-                  <td className="px-4 py-3"><EntityIdChip id={s.id} ref={s.ref} /></td>
-                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
+                <tr key={s.id}>
+                  <td><EntityIdChip id={s.id} ref={s.ref} /></td>
+                  <td className="font-medium">
                     <Link to={`/sites/${s.id}`} className="hover:text-brand-600 transition-colors">
                       {s.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3"><EntityIdChip id={s.brand_id} ref={brands.find((b) => b.id === s.brand_id)?.ref} /></td>
-                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{brandName(s.brand_id)}</td>
-                  <td className="px-4 py-3">
+                  <td><EntityIdChip id={s.brand_id} ref={brands.find((b) => b.id === s.brand_id)?.ref} /></td>
+                  <td className="text-[var(--zr-muted)]">{brandName(s.brand_id)}</td>
+                  <td>
                     <StatusBadge status={s.is_active ? 'active' : 'suspended'} />
                   </td>
-                  <td className="px-4 py-3 flex gap-2">
-                    <button onClick={() => openEdit(s)} className="text-brand-600 hover:underline text-xs">Edit</button>
-                    <button
-                      onClick={() => handleSessionInto(s.id)}
-                      disabled={sessioningId === s.id}
-                      className="text-brand-600 hover:underline text-xs disabled:opacity-50"
-                    >
-                      {sessioningId === s.id ? '…' : 'Session into'}
-                    </button>
-                    {s.is_active ? (
-                      <button onClick={() => suspendMutation.mutate(s.id)} className="text-amber-600 hover:underline text-xs">Suspend</button>
-                    ) : (
-                      <button onClick={() => activateMutation.mutate(s.id)} className="text-green-600 hover:underline text-xs">Activate</button>
-                    )}
+                  <td className="zr-cell-pad">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button onClick={() => openEdit(s)} className="text-brand-600 hover:underline text-xs">Edit</button>
+                      <button
+                        onClick={() => handleSessionInto(s.id)}
+                        disabled={sessioningId === s.id}
+                        className="text-brand-600 hover:underline text-xs disabled:opacity-50"
+                      >
+                        {sessioningId === s.id ? '…' : 'Session into'}
+                      </button>
+                      {s.is_active ? (
+                        <button onClick={() => suspendMutation.mutate(s.id)} className="text-amber-600 hover:underline text-xs">Suspend</button>
+                      ) : (
+                        <button onClick={() => activateMutation.mutate(s.id)} className="text-green-600 hover:underline text-xs">Activate</button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
+                <tr><td colSpan={6} className="text-center text-[var(--zr-faint)] py-8">
                   {sites.length === 0 ? 'No sites yet.' : 'No sites match the current filters.'}
                 </td></tr>
               )}

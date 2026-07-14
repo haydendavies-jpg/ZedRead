@@ -163,49 +163,51 @@ export function SuperAdminsPage() {
       {isLoading ? (
         <div className="text-gray-400 dark:text-gray-500 text-sm">Loading…</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm min-w-[600px]">
+        <div className="zr-table-wrap">
+          <table className="zr-table min-w-[600px]">
             <thead>
-              <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                <th className="px-4 py-3">ID</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Role</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Actions</th>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody>
               {filtered.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
-                  <td className="px-4 py-3"><EntityIdChip id={u.id} ref={u.ref} /></td>
-                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
+                <tr key={u.id}>
+                  <td><EntityIdChip id={u.id} ref={u.ref} /></td>
+                  <td className="font-medium">
                     {u.name}
                     {u.id === me?.id && <span className="ml-1 text-xs text-brand-400">(you)</span>}
                   </td>
-                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{u.email}</td>
-                  <td className="px-4 py-3">
-                    <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                  <td className="text-[var(--zr-muted)]">{u.email}</td>
+                  <td>
+                    <span className="text-xs font-medium text-[var(--zr-muted)]">
                       {ROLES.find((r) => r.value === u.role)?.label ?? u.role}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td>
                     <StatusBadge status={u.is_active ? 'active' : 'suspended'} />
                   </td>
-                  <td className="px-4 py-3 flex gap-2">
-                    <button onClick={() => openEdit(u)} className="text-brand-600 hover:underline text-xs">Edit</button>
-                    {u.id !== me?.id && (
-                      u.is_active ? (
-                        <button onClick={() => suspendMutation.mutate(u.id)} className="text-amber-600 hover:underline text-xs">Suspend</button>
-                      ) : (
-                        <button onClick={() => activateMutation.mutate(u.id)} className="text-green-600 hover:underline text-xs">Activate</button>
-                      )
-                    )}
+                  <td className="zr-cell-pad">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button onClick={() => openEdit(u)} className="text-brand-600 hover:underline text-xs">Edit</button>
+                      {u.id !== me?.id && (
+                        u.is_active ? (
+                          <button onClick={() => suspendMutation.mutate(u.id)} className="text-amber-600 hover:underline text-xs">Suspend</button>
+                        ) : (
+                          <button onClick={() => activateMutation.mutate(u.id)} className="text-green-600 hover:underline text-xs">Activate</button>
+                        )
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
+                <tr><td colSpan={6} className="text-center text-[var(--zr-faint)] py-8">
                   {users.length === 0 ? 'No users yet.' : 'No users match the current filters.'}
                 </td></tr>
               )}

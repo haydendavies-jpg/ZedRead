@@ -95,20 +95,20 @@ export function InvoiceDetailPage() {
       {downloadError && <p className="text-sm text-red-500">{downloadError}</p>}
 
       {/* Line items */}
-      <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-        <table className="w-full text-sm min-w-[560px]">
-          <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+      <div className="zr-table-wrap">
+        <table className="zr-table min-w-[560px]">
+          <thead>
             <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Item</th>
-              <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Qty</th>
-              <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Price</th>
-              <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Total</th>
+              <th>Item</th>
+              <th className="zr-num">Qty</th>
+              <th className="zr-num">Price</th>
+              <th className="zr-num">Total</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+          <tbody>
             {invoice.line_items.map((item) => (
               <Fragment key={item.id}>
-                <tr className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                <tr>
                   <td className="px-4 py-3 text-gray-900 dark:text-gray-100">{item.product_name}</td>
                   <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{item.quantity}</td>
                   <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{centsToDisplay(item.unit_price_cents)}</td>
@@ -137,9 +137,9 @@ export function InvoiceDetailPage() {
         {/* Tax breakdown */}
         <div>
           <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Tax breakdown</h2>
-          <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-            <table className="w-full text-sm min-w-[300px]">
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+          <div className="zr-table-wrap">
+            <table className="zr-table min-w-[300px]">
+              <tbody>
                 {invoice.tax_breakdown.map((t) => (
                   <tr key={t.id}>
                     <td className="px-4 py-2 text-gray-700 dark:text-gray-300">{t.tax_rate_name} ({t.rate_percent}%)</td>
@@ -157,9 +157,9 @@ export function InvoiceDetailPage() {
         {/* Payments */}
         <div>
           <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Payments</h2>
-          <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-            <table className="w-full text-sm min-w-[300px]">
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+          <div className="zr-table-wrap">
+            <table className="zr-table min-w-[300px]">
+              <tbody>
                 {invoice.payments.map((p) => (
                   <tr key={p.id}>
                     <td className="px-4 py-2 text-gray-700 dark:text-gray-300 capitalize">{p.method}</td>
@@ -192,16 +192,16 @@ export function InvoiceDetailPage() {
       {/* Change log */}
       <div>
         <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Change log</h2>
-        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm min-w-[560px]">
-            <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+        <div className="zr-table-wrap">
+          <table className="zr-table min-w-[560px]">
+            <thead>
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">When</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Action</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">By</th>
+                <th>When</th>
+                <th>Action</th>
+                <th>By</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+            <tbody>
               {changeLog.map((entry) => (
                 <tr key={entry.id}>
                   <td className="px-4 py-3 text-gray-700 dark:text-gray-300 whitespace-nowrap">{new Date(entry.created_at).toLocaleString()}</td>

@@ -171,22 +171,22 @@ function UsersPageInner() {
       {isLoading ? (
         <p className="text-sm text-gray-400 dark:text-gray-500">Loading…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm min-w-[500px]">
-            <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+        <div className="zr-table-wrap">
+          <table className="zr-table min-w-[500px]">
+            <thead>
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">User ID</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Scope</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Entity ID</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Profile</th>
+                <th>User ID</th>
+                <th>Scope</th>
+                <th>Entity ID</th>
+                <th>Profile</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+            <tbody>
               {grants.map((g) => {
                 const entityId = g.site_id ?? g.brand_id ?? g.group_id ?? ''
                 return (
-                  <tr key={g.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                  <tr key={g.id}>
                     <td className="px-4 py-3">
                       <EntityIdChip id={g.user_id} />
                     </td>

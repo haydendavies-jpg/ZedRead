@@ -179,51 +179,53 @@ export function BrandsPage() {
       {isLoading ? (
         <div className="text-gray-400 dark:text-gray-500 text-sm">Loading…</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm min-w-[600px]">
+        <div className="zr-table-wrap">
+          <table className="zr-table min-w-[600px]">
             <thead>
-              <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                <th className="px-4 py-3">ID</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Group ID</th>
-                <th className="px-4 py-3">Group</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Actions</th>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Group ID</th>
+                <th>Group</th>
+                <th>Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody>
               {filtered.map((b) => (
-                <tr key={b.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
-                  <td className="px-4 py-3"><EntityIdChip id={b.id} ref={b.ref} /></td>
-                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
+                <tr key={b.id}>
+                  <td><EntityIdChip id={b.id} ref={b.ref} /></td>
+                  <td className="font-medium">
                     <Link to={`/brands/${b.id}`} className="hover:text-brand-600 transition-colors">
                       {b.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3"><EntityIdChip id={b.group_id} ref={groups.find((g) => g.id === b.group_id)?.ref} /></td>
-                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{groupName(b.group_id)}</td>
-                  <td className="px-4 py-3">
+                  <td><EntityIdChip id={b.group_id} ref={groups.find((g) => g.id === b.group_id)?.ref} /></td>
+                  <td className="text-[var(--zr-muted)]">{groupName(b.group_id)}</td>
+                  <td>
                     <StatusBadge status={b.is_active ? 'active' : 'suspended'} />
                   </td>
-                  <td className="px-4 py-3 flex gap-2">
-                    <button onClick={() => openEdit(b)} className="text-brand-600 hover:underline text-xs">Edit</button>
-                    {b.is_active ? (
-                      <button onClick={() => suspendMutation.mutate(b.id)} className="text-amber-600 hover:underline text-xs">Suspend</button>
-                    ) : (
-                      <button onClick={() => activateMutation.mutate(b.id)} className="text-green-600 hover:underline text-xs">Activate</button>
-                    )}
-                    <button
-                      onClick={() => handleSessionInto(b.id)}
-                      disabled={sessioningId === b.id}
-                      className="text-brand-600 hover:underline text-xs disabled:opacity-50"
-                    >
-                      {sessioningId === b.id ? '…' : 'Session into'}
-                    </button>
+                  <td className="zr-cell-pad">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button onClick={() => openEdit(b)} className="text-brand-600 hover:underline text-xs">Edit</button>
+                      {b.is_active ? (
+                        <button onClick={() => suspendMutation.mutate(b.id)} className="text-amber-600 hover:underline text-xs">Suspend</button>
+                      ) : (
+                        <button onClick={() => activateMutation.mutate(b.id)} className="text-green-600 hover:underline text-xs">Activate</button>
+                      )}
+                      <button
+                        onClick={() => handleSessionInto(b.id)}
+                        disabled={sessioningId === b.id}
+                        className="text-brand-600 hover:underline text-xs disabled:opacity-50"
+                      >
+                        {sessioningId === b.id ? '…' : 'Session into'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
+                <tr><td colSpan={6} className="text-center text-[var(--zr-faint)] py-8">
                   {brands.length === 0 ? 'No brands yet.' : 'No brands match the current filters.'}
                 </td></tr>
               )}

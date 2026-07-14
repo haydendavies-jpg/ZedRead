@@ -200,22 +200,22 @@ export function InvoicesPage() {
       ) : error ? (
         <p className="text-sm text-red-500">Failed to load invoices.</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm min-w-[720px]">
-            <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+        <div className="zr-table-wrap">
+          <table className="zr-table min-w-[720px]">
+            <thead>
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Invoice</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Date</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Site</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Type</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Status</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Total</th>
+                <th>Invoice</th>
+                <th>Date</th>
+                <th>Site</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th className="zr-num">Total</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+            <tbody>
               {invoices.map((inv) => (
-                <tr key={inv.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                <tr key={inv.id}>
                   <td className="px-4 py-3"><EntityIdChip id={inv.id} /></td>
                   <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{new Date(inv.created_at).toLocaleString()}</td>
                   <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{inv.site_name}</td>

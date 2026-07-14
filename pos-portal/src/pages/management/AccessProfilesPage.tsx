@@ -194,14 +194,14 @@ function AccessProfilesPageInner() {
                 <h2 className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">
                   {PAGE_CATEGORY_LABELS[category]}
                 </h2>
-                <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-                  <table className="w-full text-sm min-w-[400px]">
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                <div className="zr-table-wrap">
+                  <table className="zr-table min-w-[400px]">
+                    <tbody>
                       {PAGE_CATALOG.filter((p) => p.category === category).map((p) => {
                         const isGranted = granted.includes(p.key)
                         const isLicenseBlocked = licenseBlocked.has(p.key)
                         return (
-                          <tr key={p.key} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                          <tr key={p.key}>
                             <td className="px-4 py-3">
                               <label className="flex items-center gap-2 cursor-pointer">
                                 <input

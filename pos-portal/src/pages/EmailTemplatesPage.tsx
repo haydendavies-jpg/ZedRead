@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/axios'
 import type { EmailTemplate } from '../types'
 import { EntityIdChip } from '../components/EntityIdChip'
+import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
 
 async function fetchEmailTemplates(): Promise<EmailTemplate[]> {
@@ -90,43 +91,43 @@ export function EmailTemplatesPage() {
       {isLoading ? (
         <div className="text-gray-400 dark:text-gray-500 text-sm">Loading…</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm min-w-[640px]">
+        <div className="zr-table-wrap">
+          <table className="zr-table min-w-[640px]">
             <thead>
-              <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                <th className="px-4 py-3">ID</th>
-                <th className="px-4 py-3">Key</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Subject</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Actions</th>
+              <tr>
+                <th>ID</th>
+                <th>Key</th>
+                <th>Name</th>
+                <th>Subject</th>
+                <th>Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody>
               {templates.map((t) => (
-                <tr key={t.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
-                  <td className="px-4 py-3"><EntityIdChip id={t.id} /></td>
-                  <td className="px-4 py-3 font-mono text-xs text-gray-600 dark:text-gray-400">
+                <tr key={t.id}>
+                  <td><EntityIdChip id={t.id} /></td>
+                  <td className="font-mono text-xs text-[var(--zr-muted)]">
                     {t.template_key}
                     {t.is_system && <span className="ml-1 text-xs text-brand-500">(system)</span>}
                   </td>
-                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{t.name}</td>
-                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{t.subject}</td>
-                  <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${t.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`}>
-                      {t.is_active ? 'active' : 'inactive'}
-                    </span>
+                  <td className="font-medium">{t.name}</td>
+                  <td className="text-[var(--zr-muted)]">{t.subject}</td>
+                  <td>
+                    <StatusBadge status={t.is_active ? 'active' : 'inactive'} />
                   </td>
-                  <td className="px-4 py-3 flex gap-2">
-                    <button onClick={() => openEdit(t)} className="text-brand-600 hover:underline text-xs">Edit</button>
-                    <button onClick={() => toggleActive(t)} className="text-amber-600 hover:underline text-xs">
-                      {t.is_active ? 'Deactivate' : 'Activate'}
-                    </button>
+                  <td className="zr-cell-pad">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button onClick={() => openEdit(t)} className="text-brand-600 hover:underline text-xs">Edit</button>
+                      <button onClick={() => toggleActive(t)} className="text-amber-600 hover:underline text-xs">
+                        {t.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
               {templates.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">No email templates yet.</td></tr>
+                <tr><td colSpan={6} className="text-center text-[var(--zr-faint)] py-8">No email templates yet.</td></tr>
               )}
             </tbody>
           </table>
