@@ -45,6 +45,7 @@ class ModifierGroupCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     min_selections: int = Field(0, ge=0)
     max_selections: int = Field(1, ge=1)
+    has_quantity: bool = Field(False, description="Allow selecting the same option more than once")
 
 
 class ModifierGroupUpdate(BaseModel):
@@ -53,6 +54,7 @@ class ModifierGroupUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=100)
     min_selections: int | None = Field(None, ge=0)
     max_selections: int | None = Field(None, ge=1)
+    has_quantity: bool | None = None
 
 
 class ModifierGroupResponse(BaseModel):
@@ -63,6 +65,7 @@ class ModifierGroupResponse(BaseModel):
     name: str
     min_selections: int
     max_selections: int
+    has_quantity: bool
     is_active: bool
 
     model_config = {"from_attributes": True}
@@ -202,6 +205,7 @@ async def create_modifier_group(
         name=payload.name,
         min_selections=payload.min_selections,
         max_selections=payload.max_selections,
+        has_quantity=payload.has_quantity,
         is_active=True,
     )
     db.add(group)
@@ -232,7 +236,12 @@ async def update_modifier_group(
 ) -> ModifierGroup:
     """Update a modifier group's mutable fields."""
     group = await _get_group_or_404(db, brand_id, group_id)
-    before = {"name": group.name, "min_selections": group.min_selections, "max_selections": group.max_selections}
+    before = {
+        "name": group.name,
+        "min_selections": group.min_selections,
+        "max_selections": group.max_selections,
+        "has_quantity": group.has_quantity,
+    }
 
     if payload.name is not None:
         group.name = payload.name
@@ -240,6 +249,8 @@ async def update_modifier_group(
         group.min_selections = payload.min_selections
     if payload.max_selections is not None:
         group.max_selections = payload.max_selections
+    if payload.has_quantity is not None:
+        group.has_quantity = payload.has_quantity
 
     await log_action(
         db=db,
@@ -251,7 +262,12 @@ async def update_modifier_group(
         actor_email=actor.email,
         actor_name=actor.name,
         before_state=before,
-        after_state={"name": group.name, "min_selections": group.min_selections, "max_selections": group.max_selections},
+        after_state={
+            "name": group.name,
+            "min_selections": group.min_selections,
+            "max_selections": group.max_selections,
+            "has_quantity": group.has_quantity,
+        },
     )
 
     await db.commit()
@@ -553,6 +569,7 @@ async def duplicate_modifier_group(
         name=f"{source.name} (copy)",
         min_selections=source.min_selections,
         max_selections=source.max_selections,
+        has_quantity=source.has_quantity,
         is_active=True,
     )
     db.add(new_group)
@@ -806,6 +823,7 @@ async def list_modifier_groups_detailed(
                 name=group.name,
                 min_selections=group.min_selections,
                 max_selections=group.max_selections,
+                has_quantity=group.has_quantity,
                 is_active=group.is_active,
                 options=option_details,
                 used_by_count=usage_by_group.get(group.id, 0),

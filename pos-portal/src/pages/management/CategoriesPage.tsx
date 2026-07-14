@@ -57,14 +57,24 @@ export function CategoriesPage() {
 
   const createCategory = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post('/categories', body, { params }),
-    onSuccess: () => { invalidateList(); resetAdd() },
-    onError: (e: unknown) => setFormError(apiErrorMessage(e, 'Failed to create category.')),
+    // Append the created row to the cache straight from the POST response so
+    // it appears immediately; the background invalidate then reconciles.
+    onSuccess: (resp) => {
+      qc.setQueryData<Category[]>(['categories', brandId], (old) => (old ? [...old, resp.data] : old))
+      invalidateList()
+      resetAdd()
+    },
+    onError: (e: unknown) => { invalidateList(); setFormError(apiErrorMessage(e, 'Failed to create category.')) },
   })
 
   const createGroup = useMutation({
     mutationFn: (name: string) => api.post('/reporting-groups', { name }, { params }),
-    onSuccess: () => { invalidateGroups(); resetAdd() },
-    onError: (e: unknown) => setFormError(apiErrorMessage(e, 'Failed to create reporting group.')),
+    onSuccess: (resp) => {
+      qc.setQueryData<ReportingGroup[]>(['reporting-groups', brandId], (old) => (old ? [...old, resp.data] : old))
+      invalidateGroups()
+      resetAdd()
+    },
+    onError: (e: unknown) => { invalidateGroups(); setFormError(apiErrorMessage(e, 'Failed to create reporting group.')) },
   })
 
   const resetAdd = () => { setAdding(null); setDraftName(''); setDraftGroupId(''); setFormError(null) }
@@ -179,7 +189,9 @@ export function CategoriesPage() {
                   disabled={createCategory.isPending || createGroup.isPending}
                   className="px-3.5 py-2 bg-brand-600 text-white text-xs font-semibold rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors whitespace-nowrap"
                 >
-                  {adding === 'category' ? 'Add category' : 'Add group'}
+                  {createCategory.isPending || createGroup.isPending
+                    ? 'Adding…'
+                    : adding === 'category' ? 'Add category' : 'Add group'}
                 </button>
               </div>
             )}

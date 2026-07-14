@@ -7,6 +7,7 @@ import type { Brand, Site } from '../types'
 import { EntityIdChip } from '../components/EntityIdChip'
 import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
+import { apiErrorMessage } from '../utils/apiError'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,9 @@ interface AppUser {
   brand_name: string
   group_name: string
   name: string
+  /** Null for Master Users, whose `name` is the site's name rather than a person's. */
+  first_name: string | null
+  last_name: string | null
   email: string
   backend_role: string | null
   is_active: boolean
@@ -122,14 +126,16 @@ export function UsersPage() {
 
   // ── Create user state ─────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false)
-  const [name, setName] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
 
   // ── Edit user state ───────────────────────────────────────────────────────
   const [editUser, setEditUser] = useState<AppUser | null>(null)
-  const [editName, setEditName] = useState('')
+  const [editFirstName, setEditFirstName] = useState('')
+  const [editLastName, setEditLastName] = useState('')
   const [editEmail, setEditEmail] = useState('')
   const [editError, setEditError] = useState<string | null>(null)
 
@@ -160,30 +166,30 @@ export function UsersPage() {
 
   // ── Mutations ─────────────────────────────────────────────────────────────
   const createMutation = useMutation({
-    mutationFn: (body: { brand_id: string; name: string; email: string; password: string }) =>
+    mutationFn: (body: { brand_id: string; first_name: string; last_name: string; email: string; password: string }) =>
       api.post('/users', body),
     onSuccess: () => {
       invalidateUsers()
       setShowCreate(false)
-      setName(''); setEmail(''); setPassword('')
+      setFirstName(''); setLastName(''); setEmail(''); setPassword('')
       setCreateError(null)
     },
-    onError: (e: any) => {
+    onError: (e: unknown) => {
       invalidateUsers()
-      setCreateError(e?.response?.data?.detail ?? 'Failed to create user.')
+      setCreateError(apiErrorMessage(e, 'Failed to create user.'))
     },
   })
 
   const editMutation = useMutation({
-    mutationFn: ({ id, name, email }: { id: string; name: string; email: string }) =>
-      api.patch(`/users/${id}`, { name, email }),
+    mutationFn: ({ id, firstName, lastName, email }: { id: string; firstName: string; lastName: string; email: string }) =>
+      api.patch(`/users/${id}`, { first_name: firstName, last_name: lastName, email }),
     onSuccess: () => {
       invalidateUsers()
       setEditError(null)
     },
-    onError: (e: any) => {
+    onError: (e: unknown) => {
       invalidateUsers()
-      setEditError(e?.response?.data?.detail ?? 'Failed to update user.')
+      setEditError(apiErrorMessage(e, 'Failed to update user.'))
     },
   })
 
@@ -196,8 +202,8 @@ export function UsersPage() {
       setPinValue('')
       setTimeout(() => setPinSuccess(false), 3000)
     },
-    onError: (e: any) => {
-      setPinError(e?.response?.data?.detail ?? 'Failed to set PIN.')
+    onError: (e: unknown) => {
+      setPinError(apiErrorMessage(e, 'Failed to set PIN.'))
     },
   })
 
@@ -205,11 +211,11 @@ export function UsersPage() {
     mutationFn: (body: { user_id: string; scope: string; site_id?: string; brand_id?: string; access_profile_id: string }) =>
       api.post('/access-grants', body),
     onSuccess: () => { invalidateUsers(); invalidateAccess() },
-    onError: (e: any) => {
+    onError: (e: unknown) => {
       invalidateUsers(); invalidateAccess()
       // 409 = grant already exists and was auto-created; just refetch, no alert needed
-      if (e?.response?.status !== 409) {
-        alert(e?.response?.data?.detail ?? 'Failed to assign access.')
+      if ((e as { response?: { status?: number } })?.response?.status !== 409) {
+        alert(apiErrorMessage(e, 'Failed to assign access.'))
       }
     },
   })
@@ -217,27 +223,27 @@ export function UsersPage() {
   const revokeGrantMutation = useMutation({
     mutationFn: (grantId: string) => api.delete(`/access-grants/${grantId}`),
     onSuccess: () => { invalidateUsers(); invalidateAccess() },
-    onError: (e: any) => { invalidateUsers(); invalidateAccess(); alert(e?.response?.data?.detail ?? 'Failed to remove access.') },
+    onError: (e: unknown) => { invalidateUsers(); invalidateAccess(); alert(apiErrorMessage(e, 'Failed to remove access.')) },
   })
 
   const updateGrantProfileMutation = useMutation({
     mutationFn: ({ grantId, profileId }: { grantId: string; profileId: string }) =>
       api.patch(`/access-grants/${grantId}`, { access_profile_id: profileId }),
     onSuccess: () => { invalidateUsers(); invalidateAccess() },
-    onError: (e: any) => { invalidateUsers(); invalidateAccess(); alert(e?.response?.data?.detail ?? 'Failed to update access.') },
+    onError: (e: unknown) => { invalidateUsers(); invalidateAccess(); alert(apiErrorMessage(e, 'Failed to update access.')) },
   })
 
   const updateGrantBackendRoleMutation = useMutation({
     mutationFn: ({ grantId, backendRole }: { grantId: string; backendRole: string | null }) =>
       api.patch(`/access-grants/${grantId}`, { backend_role: backendRole }),
     onSuccess: () => { invalidateUsers(); invalidateAccess() },
-    onError: (e: any) => { invalidateUsers(); invalidateAccess(); alert(e?.response?.data?.detail ?? 'Failed to update backend access.') },
+    onError: (e: unknown) => { invalidateUsers(); invalidateAccess(); alert(apiErrorMessage(e, 'Failed to update backend access.')) },
   })
 
   const setDefaultMutation = useMutation({
     mutationFn: (grantId: string) => api.post(`/access-grants/${grantId}/set-default`),
     onSuccess: () => { invalidateUsers(); invalidateAccess() },
-    onError: (e: any) => alert(e?.response?.data?.detail ?? 'Failed to set primary site.'),
+    onError: (e: unknown) => alert(apiErrorMessage(e, 'Failed to set primary site.')),
   })
 
   const deactivateMutation = useMutation({
@@ -247,12 +253,15 @@ export function UsersPage() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const openCreate = () => {
-    setName(''); setEmail(''); setPassword(''); setCreateError(null)
+    setFirstName(''); setLastName(''); setEmail(''); setPassword(''); setCreateError(null)
     setShowCreate(true)
   }
 
   const openEdit = (user: AppUser) => {
-    setEditName(user.name)
+    // Older rows created before the Stage 15 first/last split carry only a
+    // composed `name` — fall back to splitting it on the first space.
+    setEditFirstName(user.first_name ?? user.name.split(' ')[0] ?? '')
+    setEditLastName(user.last_name ?? user.name.split(' ').slice(1).join(' '))
     setEditEmail(user.email)
     setEditError(null)
     setPinValue(''); setPinError(null); setPinSuccess(false)
@@ -263,14 +272,14 @@ export function UsersPage() {
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault()
     setCreateError(null)
-    createMutation.mutate({ brand_id: selectedBrandId, name, email, password })
+    createMutation.mutate({ brand_id: selectedBrandId, first_name: firstName, last_name: lastName, email, password })
   }
 
   const handleEditSave = (e: React.FormEvent) => {
     e.preventDefault()
     if (!editUser) return
     setEditError(null)
-    editMutation.mutate({ id: editUser.id, name: editName, email: editEmail })
+    editMutation.mutate({ id: editUser.id, firstName: editFirstName, lastName: editLastName, email: editEmail })
   }
 
   const handleSetPin = (e: React.FormEvent) => {
@@ -287,9 +296,11 @@ export function UsersPage() {
     if (!newProfileId && entry.grant_id) {
       revokeGrantMutation.mutate(entry.grant_id)
     } else if (newProfileId && !entry.grant_id) {
-      const body: any = { user_id: editUser.id, scope: entry.scope, access_profile_id: newProfileId }
-      if (entry.scope === 'site') body.site_id = entry.site_id
-      else body.brand_id = entry.brand_id
+      const body: { user_id: string; scope: string; site_id?: string; brand_id?: string; access_profile_id: string } = {
+        user_id: editUser.id, scope: entry.scope, access_profile_id: newProfileId,
+      }
+      if (entry.scope === 'site') body.site_id = entry.site_id ?? undefined
+      else body.brand_id = entry.brand_id ?? undefined
       addGrantMutation.mutate(body)
     } else if (newProfileId && entry.grant_id && newProfileId !== entry.access_profile_id) {
       updateGrantProfileMutation.mutate({ grantId: entry.grant_id, profileId: newProfileId })
@@ -501,11 +512,19 @@ export function UsersPage() {
       {showCreate && (
         <Modal title="New User" onClose={() => setShowCreate(false)}>
           <form onSubmit={handleCreate} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                placeholder="Jane Smith" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">First name</label>
+                <input value={firstName} onChange={(e) => setFirstName(e.target.value)} required autoFocus
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  placeholder="Jane" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Last name</label>
+                <input value={lastName} onChange={(e) => setLastName(e.target.value)} required
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  placeholder="Smith" />
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
@@ -540,10 +559,15 @@ export function UsersPage() {
             <section>
               <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">User Details</h3>
               <form onSubmit={handleEditSave} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
-                    <input value={editName} onChange={(e) => setEditName(e.target.value)} required
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">First name</label>
+                    <input value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} required
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Last name</label>
+                    <input value={editLastName} onChange={(e) => setEditLastName(e.target.value)} required
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
                   </div>
                   <div>

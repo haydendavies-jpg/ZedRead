@@ -183,6 +183,19 @@ intentionally omitted — no export/import backend exists for `menu_layouts` (un
 Categories/Reporting Groups' Stage 19 `export_service.py`) and a non-functional button would violate
 the no-half-finished-features rule. See `STAGE_STATUS.md` for full deliverables and test coverage.
 
+**Feedback round 2 (post-Phase-2, complete).** Nine user-testing fixes — see `STAGE_STATUS.md`
+"user-testing feedback round 2" for details. Notables: `modifier_groups.has_quantity` (migration
+`0043` — POS may select the same option more than once, capped by `max_selections`; POS-side
+enforcement is Android-stage work); modifier group rename + optimistic/instant-feedback mutations on
+`ModifiersPage`/`CategoriesPage` (cache-append from the POST response, optimistic patches with
+rollback); the grid editor's padded empty-slot rows + "+ Row" (visual only, empty slots aren't
+persisted) and edge-zone insertion bars for drag-repositioning (folder tiles' middle 50% still
+drops *into* the folder); and the SuperAdmin add-user fix — `POST /users` requires
+`first_name`/`last_name` since Stage 15 but the form still sent `name` (every create 422'd), and
+the raw array-shaped 422 `detail` rendered as a React child crashed the app to a blank page — all
+raw `detail` reads now go through `apiErrorMessage()`, and `UserOut` exposes
+`first_name`/`last_name`.
+
 ## Folder structure (backend)
 ```
 pos-backend/

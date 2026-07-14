@@ -290,6 +290,8 @@ export interface ModifierGroup {
   name: string
   min_selections: number
   max_selections: number
+  /** True — the same option may be selected multiple times on the POS (up to max_selections total). */
+  has_quantity: boolean
   is_active: boolean
 }
 

@@ -57,6 +57,9 @@ class UserOut(BaseModel):
     brand_name: str = ""
     group_name: str = ""
     name: str
+    # None for Master Users, whose `name` is the site's name rather than a person's
+    first_name: str | None = None
+    last_name: str | None = None
     email: str | None = None
     backend_role: str | None = None
     is_active: bool
@@ -244,6 +247,8 @@ async def _attach_sites(
             brand_name=brand_info.get(u.brand_id, ("", ""))[0],
             group_name=brand_info.get(u.brand_id, ("", ""))[1],
             name=u.name,
+            first_name=u.first_name,
+            last_name=u.last_name,
             email=u.email,
             backend_role=u.backend_role,
             is_active=u.is_active,
@@ -332,6 +337,8 @@ async def create_user(
         ref=user.ref,
         brand_id=user.brand_id,
         name=user.name,
+        first_name=user.first_name,
+        last_name=user.last_name,
         email=user.email,
         backend_role=user.backend_role,
         is_active=user.is_active,

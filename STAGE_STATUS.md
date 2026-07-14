@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-13 (Menu Studio redesign — POS Layout grid editor, Phase 2)
+Last updated: 2026-07-14 (Menu Studio — user-testing feedback round 2)
 
 ---
 
@@ -697,6 +697,48 @@ graphical grid editor the Stage 23 prototype's single-level tab/button list stoo
   including a layout by its active-time window (previously only tested `is_published`). The existing
   `test_menu_layout_routes.py` (Stage 23) suite needed no changes — the new columns/fields all carry
   defaults, so the prototype-era assertions still hold.
+
+### Menu Studio — user-testing feedback round 2 ✅
+
+Nine reported issues fixed in one pass:
+
+- [x] **Blank page after adding a user (SuperAdmin portal)** — two stacked bugs. The create form
+  still sent the legacy `name` field, but `POST /users` has required `first_name`/`last_name` since
+  Stage 15's model split, so every create 422'd; and the 422's array-of-objects `detail` was stored
+  in state and rendered raw, crashing React ("Objects are not valid as a React child") and
+  unmounting the whole app — the "blank page". `UsersPage.tsx`'s create/edit forms now use
+  First/Last name fields (`UserOut` gained `first_name`/`last_name` so the edit modal pre-fills
+  accurately; edit previously sent `name` too, which the backend silently ignored — renames never
+  applied), and every raw `e?.response?.data?.detail` in `UsersPage.tsx`/`management/UsersPage.tsx`/
+  `LoginPage.tsx` was swept to the existing 422-safe `apiErrorMessage()` helper.
+- [x] **"New modifier" slow to respond** — the card only appeared after the full
+  `/modifier-groups/detailed` refetch. `createGroup`/`createOption` now append the POST response to
+  the query cache immediately (background invalidate still reconciles), the button shows
+  "Creating…", and `patchGroup`/`patchOption` apply optimistic cache updates with rollback-on-error,
+  so checkbox/min-max/name/price edits reflect instantly rather than after a round trip.
+- [x] **Modifier groups couldn't be renamed** — the card title is now a commit-on-blur
+  `BufferedInput` wired to the existing `PATCH /modifier-groups/{id}` (backend already supported it).
+- [x] **Quantity option on modifiers** — new `modifier_groups.has_quantity` flag (migration `0043`,
+  default false = old once-per-option behaviour): when true the POS may select the same option more
+  than once (per-option quantity), still capped by the group's `max_selections` in total. Exposed
+  through create/update/response schemas, the detailed listing, and duplication (copies the flag);
+  portal shows a "Quantity" checkbox beside "Required". POS-side enforcement is Android-stage work —
+  this ships the data model + management UI.
+- [x] **Category/reporting-group add delay** — same cache-append-from-response pattern as the
+  modifier fixes, plus an "Adding…" pending label.
+- [x] **POS Layout: empty slots + "+ Row"** — the grid now pads with dashed "+" slots to full rows
+  of 6 (an empty tab shows one full row of 6, matching the mockup's default), each opening the
+  product picker; a "+ Row" toolbar button adds another row of 6 (per-tab, visual only — empty
+  slots are not persisted). Max 6 per row was already enforced by the 6-column grid.
+- [x] **POS Layout: insertion bar between buttons** — while dragging, hovering a tile's outer 25%
+  edges (or anywhere over a product tile) shows a brand-coloured insertion bar and dropping
+  repositions the dragged button(s) at that boundary via the existing reorder route; only a folder
+  tile's middle 50% still means "drop into the folder" — fixing the reported "trying to swap a
+  product and a group just drops the product into the group".
+- [x] Tests: `has_quantity` create-default/update+audit/duplicate-copies cases added to
+  `test_modifier_routes.py`; every flow above manually verified end-to-end with Playwright against
+  real dev servers (user create/rename, modifier create timing ~125ms to visible, rename+quantity
+  persistence across reload, 6/12 slot counts, edge-drop reorder vs centre-drop into folder).
 
 ---
 

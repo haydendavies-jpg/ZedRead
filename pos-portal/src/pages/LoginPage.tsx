@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { apiErrorMessage } from '../utils/apiError'
 import type { GrantSummary } from '../types'
 
 /**
@@ -14,18 +15,18 @@ import type { GrantSummary } from '../types'
  * error, proxy timeout) gets the same treatment since it's usually the same
  * root cause manifesting before the API can even respond.
  */
-function loginErrorMessage(err: any): string {
-  const status = err?.response?.status
+function loginErrorMessage(err: unknown): string {
+  const status = (err as { response?: { status?: number } })?.response?.status
   if (status === 503) {
-    return (
-      err?.response?.data?.detail ??
+    return apiErrorMessage(
+      err,
       'The database is temporarily unavailable. If this persists, the Supabase project may be paused.'
     )
   }
-  if (!err?.response) {
+  if (!(err as { response?: unknown })?.response) {
     return 'Could not reach the server. Please check your connection and try again.'
   }
-  return err?.response?.data?.detail ?? 'Invalid email or password.'
+  return apiErrorMessage(err, 'Invalid email or password.')
 }
 
 export function LoginPage() {
@@ -46,7 +47,7 @@ export function LoginPage() {
       // 'direct' → tokens issued; navigate to dashboard
       // 'grant_selection' → pendingGrants set; LoginPage re-renders with GrantSelectorView
       if (result === 'direct') navigate('/')
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(loginErrorMessage(err))
     } finally {
       setLoading(false)

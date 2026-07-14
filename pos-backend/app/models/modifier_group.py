@@ -17,7 +17,9 @@ class ModifierGroup(Base):
     Examples: "Extra Toppings" (optional, max 3), "Choose a sauce" (required, exactly 1).
 
     min_selections / max_selections control how many options the cashier must
-    choose from this group when adding a product to an order.
+    choose from this group when adding a product to an order. has_quantity
+    lets the same option be selected more than once (per-option quantity),
+    still capped by max_selections in total.
     """
 
     __tablename__ = "modifier_groups"
@@ -51,6 +53,12 @@ class ModifierGroup(Base):
         nullable=False,
         default=1,
         comment="Maximum number of options the cashier may choose",
+    )
+    has_quantity: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="True — the same option may be selected multiple times (per-option quantity), up to max_selections total",
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean,
