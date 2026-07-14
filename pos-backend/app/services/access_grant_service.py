@@ -38,11 +38,17 @@ from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
-from app.schemas.access_grant import AccessGrantCreate, AccessGrantUpdate
+from app.schemas.access_grant import AccessGrantBulkUpdate, AccessGrantCreate, AccessGrantUpdate
 from app.services.audit_service import log_action
 from app.utils.dependencies import ManagementAccess
 
 log = structlog.get_logger(__name__)
+
+# Valid backend_role values a grant may carry — mirrors routes/users.py so the
+# grant update path validates the same set. Defined here (rather than only in
+# the route) because update_grant() references it; without it, updating a grant's
+# backend_role raised NameError at runtime.
+_BACKEND_ROLES = {"admin", "users", "reporting"}
 
 
 async def _load_grant_with_authority(
@@ -672,6 +678,43 @@ async def update_grant(
     actor = management_access.user if management_access else superadmin
     assert actor is not None
 
+    await _apply_grant_update(db, grant, payload, actor, management_access)
+
+    await db.commit()
+    await db.refresh(grant)
+
+    log.info("access_grant.updated", grant_id=str(grant.id))
+    return grant
+
+
+async def _apply_grant_update(
+    db: AsyncSession,
+    grant: UserAccessGrant,
+    payload: AccessGrantUpdate,
+    actor: User | SuperAdmin,
+    management_access: ManagementAccess | None,
+) -> None:
+    """
+    Mutate a grant's profile and/or backend role and write the audit rows.
+
+    Does NOT load/authorise the grant or commit — the caller owns those, so
+    this can serve both a single update_grant() and a bulk operation that
+    commits many grants in one transaction. Only fields present in
+    payload.model_fields_set are touched (None on backend_role clears it).
+
+    Args:
+        db: Active session (no commit here).
+        grant: The already-loaded, already-authorised grant to mutate.
+        payload: Fields to update (access_profile_id and/or backend_role).
+        actor: The caller, for audit attribution.
+        management_access: Set for management callers (drives the role ceiling);
+            None for portal admins, who bypass the ceiling.
+
+    Raises:
+        HTTPException: 404 unknown profile, 403 profile above the caller's
+            ceiling or Master User, 422 bad backend_role, 409 backend access
+            without email+password.
+    """
     # Update POS access profile when explicitly supplied
     if "access_profile_id" in payload.model_fields_set and payload.access_profile_id is not None:
         profile_r = await db.execute(
@@ -736,12 +779,6 @@ async def update_grant(
             before_state={"backend_role": old_role},
             after_state={"backend_role": payload.backend_role},
         )
-
-    await db.commit()
-    await db.refresh(grant)
-
-    log.info("access_grant.updated", grant_id=str(grant.id))
-    return grant
 
 
 async def revoke_grant(
@@ -858,3 +895,126 @@ async def set_default_grant(
 
     log.info("access_grant.default_set", grant_id=str(grant.id), user_id=str(grant.user_id))
     return grant
+
+
+async def bulk_update_grants(
+    db: AsyncSession,
+    payload: AccessGrantBulkUpdate,
+    management_access: ManagementAccess | None,
+    superadmin: SuperAdmin | None,
+) -> tuple[list[uuid.UUID], list[tuple[uuid.UUID, str]]]:
+    """
+    Apply one profile and/or backend-role change to many grants at once.
+
+    Each grant is validated and mutated inside its own SAVEPOINT, so a grant
+    that fails its scope, role-ceiling, Master-User, or backend-access check is
+    rolled back and reported without aborting the grants that succeed. The whole
+    batch commits once at the end (partial success).
+
+    Args:
+        db: Active session.
+        payload: grant_ids plus the fields to apply (same presence semantics as
+            AccessGrantUpdate — only keys present are written).
+        management_access: Set for management callers (drives the role ceiling).
+        superadmin: Set for portal admin callers.
+
+    Returns:
+        tuple: (succeeded grant ids, [(failed grant id, reason), ...]).
+
+    Raises:
+        HTTPException: 422 if neither updatable field was supplied.
+    """
+    # Reconstruct a per-grant update payload preserving which fields were set,
+    # so _apply_grant_update touches exactly the same fields update_grant would.
+    fields: dict[str, object] = {}
+    if "access_profile_id" in payload.model_fields_set:
+        fields["access_profile_id"] = payload.access_profile_id
+    if "backend_role" in payload.model_fields_set:
+        fields["backend_role"] = payload.backend_role
+    if not fields:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Nothing to update — supply access_profile_id and/or backend_role",
+        )
+    sub_payload = AccessGrantUpdate(**fields)
+
+    actor = management_access.user if management_access else superadmin
+    assert actor is not None
+
+    succeeded: list[uuid.UUID] = []
+    errors: list[tuple[uuid.UUID, str]] = []
+    for grant_id in payload.grant_ids:
+        try:
+            # SAVEPOINT per grant → all-or-nothing for that grant even though a
+            # single update mutates profile then backend_role in sequence.
+            async with db.begin_nested():
+                grant = await _load_grant_with_authority(db, grant_id, management_access, superadmin)
+                await _assert_not_master_user_grant(db, grant)
+                await _apply_grant_update(db, grant, sub_payload, actor, management_access)
+            succeeded.append(grant_id)
+        except HTTPException as exc:
+            errors.append((grant_id, str(exc.detail)))
+
+    if succeeded:
+        await db.commit()
+
+    log.info("access_grant.bulk_update", succeeded=len(succeeded), failed=len(errors))
+    return succeeded, errors
+
+
+async def bulk_revoke_grants(
+    db: AsyncSession,
+    grant_ids: list[uuid.UUID],
+    management_access: ManagementAccess | None,
+    superadmin: SuperAdmin | None,
+) -> tuple[list[uuid.UUID], list[tuple[uuid.UUID, str]]]:
+    """
+    Revoke (soft-delete) many grants at once, skipping any the caller can't.
+
+    Each grant is checked and revoked inside its own SAVEPOINT; a grant outside
+    the caller's scope, already revoked, or belonging to a Master User is
+    reported in errors rather than failing the whole batch.
+
+    Args:
+        db: Active session.
+        grant_ids: The grants to revoke.
+        management_access: Set for management callers.
+        superadmin: Set for portal admin callers.
+
+    Returns:
+        tuple: (revoked grant ids, [(failed grant id, reason), ...]).
+    """
+    actor = management_access.user if management_access else superadmin
+    assert actor is not None
+
+    succeeded: list[uuid.UUID] = []
+    errors: list[tuple[uuid.UUID, str]] = []
+    for grant_id in grant_ids:
+        try:
+            async with db.begin_nested():
+                grant = await _load_grant_with_authority(db, grant_id, management_access, superadmin)
+                await _assert_not_master_user_grant(db, grant)
+                if not grant.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT, detail="Grant is already revoked"
+                    )
+                grant.is_active = False
+                await log_action(
+                    db=db,
+                    action=ACCESS_GRANT_REVOKED,
+                    entity_type="user_access_grant",
+                    entity_id=str(grant.id),
+                    actor_type=ActorType.USER,
+                    actor_id=actor.id,
+                    actor_email=actor.email,
+                    actor_name=actor.name,
+                )
+            succeeded.append(grant_id)
+        except HTTPException as exc:
+            errors.append((grant_id, str(exc.detail)))
+
+    if succeeded:
+        await db.commit()
+
+    log.info("access_grant.bulk_revoke", succeeded=len(succeeded), failed=len(errors))
+    return succeeded, errors

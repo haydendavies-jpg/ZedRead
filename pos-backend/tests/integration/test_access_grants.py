@@ -19,7 +19,12 @@ import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.audit_actions import ACCESS_GRANT_CREATED, ACCESS_GRANT_REVOKED
+from app.constants.audit_actions import (
+    ACCESS_GRANT_BACKEND_ROLE_UPDATED,
+    ACCESS_GRANT_CREATED,
+    ACCESS_GRANT_REVOKED,
+    ACCESS_PROFILE_PORTAL_UPDATED,
+)
 from app.constants.statuses import SystemAccessProfile
 from app.models.access_profile import AccessProfile
 from app.models.audit_log import AuditLog
@@ -660,3 +665,192 @@ async def test_list_access_profiles_portal_admin_any_brand(client, db, test_supe
     headers = _portal_headers(test_superadmin)
     response = await client.get("/access-profiles", headers=headers, params={"brand_id": str(foreign_brand.id)})
     assert response.status_code == 200
+
+
+# ── List enrichment: user name / username / ref ──────────────────────────────
+
+
+async def test_list_grants_includes_user_details(
+    client, db, test_superadmin, test_user, test_brand, test_portal_grant
+):
+    """Each listed grant carries the user's name, login email, and ref code."""
+    headers = _portal_headers(test_superadmin)
+    response = await client.get(
+        "/access-grants", headers=headers, params={"brand_id": str(test_brand.id)}
+    )
+    assert response.status_code == 200
+    row = next((g for g in response.json() if g["id"] == str(test_portal_grant.id)), None)
+    assert row is not None
+    assert row["user_name"] == test_user.name
+    assert row["user_email"] == test_user.email
+    assert row["user_ref"] == test_user.ref
+
+
+# ── Regression: updating backend_role must not NameError on _BACKEND_ROLES ────
+
+
+async def test_update_grant_backend_role_succeeds(
+    client, db, test_superadmin, test_user, test_portal_grant
+):
+    """PATCH backend_role works (regression: _BACKEND_ROLES was undefined in the service)."""
+    headers = _portal_headers(test_superadmin)
+    response = await client.patch(
+        f"/access-grants/{test_portal_grant.id}",
+        headers=headers,
+        json={"backend_role": "admin"},
+    )
+    assert response.status_code == 200
+    assert response.json()["backend_role"] == "admin"
+
+    audit_r = await db.execute(
+        select(AuditLog).where(
+            AuditLog.action == ACCESS_GRANT_BACKEND_ROLE_UPDATED,
+            AuditLog.entity_id == str(test_portal_grant.id),
+        )
+    )
+    assert audit_r.scalar_one_or_none() is not None
+
+
+# ── Bulk update / revoke ─────────────────────────────────────────────────────
+
+
+async def _create_site_grant(client, headers, target_user, test_site, profile) -> str:
+    """Create a site-scope grant via the API and return its id."""
+    r = await client.post(
+        "/access-grants",
+        headers=headers,
+        json={
+            "user_id": str(target_user.id),
+            "scope": "site",
+            "site_id": str(test_site.id),
+            "access_profile_id": str(profile.id),
+        },
+    )
+    assert r.status_code == 201
+    return r.json()["id"]
+
+
+async def test_bulk_update_sets_profile(
+    client, db, test_superadmin, test_user, test_site, test_manager_profile,
+    test_access_profile, test_portal_grant, target_user,
+):
+    """Bulk update applies a new access profile to every listed grant + audits each."""
+    headers = _portal_headers(test_superadmin)
+    gid = await _create_site_grant(client, headers, target_user, test_site, test_manager_profile)
+
+    response = await client.post(
+        "/access-grants/bulk-update",
+        headers=headers,
+        json={
+            "grant_ids": [gid, str(test_portal_grant.id)],
+            "access_profile_id": str(test_access_profile.id),
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body["succeeded"]) == {gid, str(test_portal_grant.id)}
+    assert body["errors"] == []
+
+    db.expunge_all()
+    for grant_id in (gid, str(test_portal_grant.id)):
+        grant = (await db.execute(select(UserAccessGrant).where(UserAccessGrant.id == grant_id))).scalar_one()
+        assert grant.access_profile_id == test_access_profile.id
+        audit = await db.execute(
+            select(AuditLog).where(
+                AuditLog.action == ACCESS_PROFILE_PORTAL_UPDATED,
+                AuditLog.entity_id == grant_id,
+            )
+        )
+        assert audit.scalar_one_or_none() is not None
+
+
+async def test_bulk_update_sets_backend_role(
+    client, db, test_superadmin, test_user, test_portal_grant
+):
+    """Bulk update can set the backend role (user has email+password)."""
+    headers = _portal_headers(test_superadmin)
+    response = await client.post(
+        "/access-grants/bulk-update",
+        headers=headers,
+        json={"grant_ids": [str(test_portal_grant.id)], "backend_role": "reporting"},
+    )
+    assert response.status_code == 200
+    assert response.json()["succeeded"] == [str(test_portal_grant.id)]
+
+    db.expunge_all()
+    grant = (await db.execute(select(UserAccessGrant).where(UserAccessGrant.id == test_portal_grant.id))).scalar_one()
+    assert grant.backend_role == "reporting"
+
+
+async def test_bulk_update_no_fields_returns_422(
+    client, db, test_superadmin, test_portal_grant
+):
+    """Bulk update with neither profile nor backend_role is rejected."""
+    headers = _portal_headers(test_superadmin)
+    response = await client.post(
+        "/access-grants/bulk-update",
+        headers=headers,
+        json={"grant_ids": [str(test_portal_grant.id)]},
+    )
+    assert response.status_code == 422
+
+
+async def test_bulk_revoke_grants(
+    client, db, test_superadmin, test_site, test_manager_profile, target_user
+):
+    """Bulk revoke soft-deletes each grant and writes a revoke audit row."""
+    headers = _portal_headers(test_superadmin)
+    gid = await _create_site_grant(client, headers, target_user, test_site, test_manager_profile)
+
+    response = await client.post(
+        "/access-grants/bulk-revoke", headers=headers, json={"grant_ids": [gid]}
+    )
+    assert response.status_code == 200
+    assert response.json()["succeeded"] == [gid]
+
+    db.expunge_all()
+    grant = (await db.execute(select(UserAccessGrant).where(UserAccessGrant.id == gid))).scalar_one()
+    assert grant.is_active is False
+    audit = await db.execute(
+        select(AuditLog).where(
+            AuditLog.action == ACCESS_GRANT_REVOKED,
+            AuditLog.entity_id == gid,
+        )
+    )
+    assert audit.scalar_one_or_none() is not None
+
+
+async def test_bulk_revoke_partial_reports_missing(
+    client, db, test_superadmin, test_site, test_manager_profile, target_user
+):
+    """A missing grant id is reported in errors while valid ones still revoke."""
+    headers = _portal_headers(test_superadmin)
+    gid = await _create_site_grant(client, headers, target_user, test_site, test_manager_profile)
+    missing = str(uuid.uuid4())
+
+    response = await client.post(
+        "/access-grants/bulk-revoke", headers=headers, json={"grant_ids": [gid, missing]}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["succeeded"] == [gid]
+    assert [e["grant_id"] for e in body["errors"]] == [missing]
+
+
+async def test_bulk_update_no_token_returns_403(client, test_portal_grant):
+    """Bulk update without a token is rejected."""
+    response = await client.post(
+        "/access-grants/bulk-update",
+        json={"grant_ids": [str(test_portal_grant.id)], "backend_role": "admin"},
+    )
+    assert response.status_code == 403
+
+
+async def test_bulk_update_pos_jwt_forbidden(client, pos_auth_headers):
+    """A POS terminal JWT cannot bulk-update grants (rejected before grant lookup)."""
+    response = await client.post(
+        "/access-grants/bulk-update",
+        headers=pos_auth_headers,
+        json={"grant_ids": [str(uuid.uuid4())], "backend_role": "admin"},
+    )
+    assert response.status_code == 403
