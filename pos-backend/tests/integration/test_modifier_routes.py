@@ -75,6 +75,73 @@ async def test_update_modifier_group(
 
 
 @pytest.mark.asyncio
+async def test_create_modifier_group_defaults_has_quantity_false(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+) -> None:
+    """POST /modifier-groups without has_quantity defaults it to False (once-per-option)."""
+    resp = await client.post(
+        "/modifier-groups",
+        json={"name": "Syrups", "min_selections": 0, "max_selections": 3},
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 201
+    assert resp.json()["has_quantity"] is False
+
+
+@pytest.mark.asyncio
+async def test_update_modifier_group_has_quantity(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    db: AsyncSession,
+) -> None:
+    """PATCH /modifier-groups/{id} toggles has_quantity and writes the audit row with it."""
+    create_resp = await client.post(
+        "/modifier-groups",
+        json={"name": "Shots", "min_selections": 0, "max_selections": 4},
+        headers=pos_auth_headers,
+    )
+    group_id = create_resp.json()["id"]
+
+    patch_resp = await client.patch(
+        f"/modifier-groups/{group_id}",
+        json={"has_quantity": True},
+        headers=pos_auth_headers,
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["has_quantity"] is True
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.action == "modifier_group.updated",
+            AuditLog.entity_id == group_id,
+        )
+    )
+    log = result.scalar_one()
+    assert log.after_state["has_quantity"] is True
+    assert log.before_state["has_quantity"] is False
+
+
+@pytest.mark.asyncio
+async def test_duplicate_modifier_group_copies_has_quantity(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+) -> None:
+    """POST /modifier-groups/{id}/duplicate carries the source group's has_quantity across."""
+    create_resp = await client.post(
+        "/modifier-groups",
+        json={"name": "Extras", "min_selections": 0, "max_selections": 5, "has_quantity": True},
+        headers=pos_auth_headers,
+    )
+    group_id = create_resp.json()["id"]
+    assert create_resp.json()["has_quantity"] is True
+
+    dup_resp = await client.post(f"/modifier-groups/{group_id}/duplicate", headers=pos_auth_headers)
+    assert dup_resp.status_code == 201
+    assert dup_resp.json()["has_quantity"] is True
+
+
+@pytest.mark.asyncio
 async def test_create_modifier_option_happy_path(
     client: AsyncClient,
     pos_auth_headers: dict,

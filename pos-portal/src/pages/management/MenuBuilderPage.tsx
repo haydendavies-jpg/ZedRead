@@ -574,6 +574,19 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
     dragOverTabIdRef.current = next
     setDragOverTabIdState(next)
   }
+  // Insertion index for repositioning within the current tab: while dragging,
+  // hovering a tile's left/right edge shows a bar between tiles and dropping
+  // there reorders instead of moving into a folder. Ref-mirrored like the two
+  // states above (read from the once-registered pointerup listener).
+  const [dropIndex, setDropIndexState] = useState<number | null>(null)
+  const dropIndexRef = useRef<number | null>(null)
+  const setDropIndex = (next: number | null) => {
+    dropIndexRef.current = next
+    setDropIndexState(next)
+  }
+  // Extra empty rows added via "+ Row" — per-tab, purely visual (empty slots
+  // are not persisted; the grid pads to full rows of 6 and this adds more).
+  const [extraRowsByTab, setExtraRowsByTab] = useState<Record<string, number>>({})
 
   const { data: layout, isLoading } = useQuery<MenuLayoutDetail>({
     queryKey: ['menu-layout', layoutId],
@@ -724,9 +737,27 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
       if (moved) {
         const el = document.elementFromPoint(ev.clientX, ev.clientY)
         const dropEl = el?.closest('[data-drop]') ?? null
-        const target = parseDropAttr(dropEl?.getAttribute('data-drop') ?? null)
+        const tileEl = el?.closest('[data-tile-idx]') ?? null
+        let target = parseDropAttr(dropEl?.getAttribute('data-drop') ?? null)
+        let insertion: number | null = null
+        if (tileEl) {
+          // Over a grid tile: the outer 25% edges mean "insert beside it";
+          // a folder tile's middle 50% still means "drop into the folder".
+          // A non-folder tile is an insertion target across its whole width,
+          // so a product can be repositioned next to a folder without
+          // falling into it (the reported swap-into-group problem).
+          const idx = Number(tileEl.getAttribute('data-tile-idx'))
+          const rect = tileEl.getBoundingClientRect()
+          const relX = (ev.clientX - rect.left) / rect.width
+          const isFolderTile = tileEl.hasAttribute('data-drop')
+          if (!isFolderTile || relX < 0.25 || relX > 0.75) {
+            insertion = relX < 0.5 ? idx : idx + 1
+            target = null
+          }
+        }
         setDragPos({ x: ev.clientX, y: ev.clientY })
         setDragOverTabId(target?.tabId ?? null)
+        setDropIndex(insertion)
       }
     }
     const onUp = () => {
@@ -745,12 +776,31 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
       } else {
         setDragging(false)
         const target = dragOverTabIdRef.current
+        const insertion = dropIndexRef.current
         setDragOverTabId(null)
-        if (target) moveSelectionToTabWithIds(target, selectedRef.current)
+        setDropIndex(null)
+        if (insertion !== null) reorderSelectionWithinTab(insertion, selectedRef.current)
+        else if (target) moveSelectionToTabWithIds(target, selectedRef.current)
       }
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
+  }
+
+  // Reposition the dragged selection within the current tab at the given
+  // insertion index (a boundary in the pre-drag button order).
+  const reorderSelectionWithinTab = (insertion: number, ids: Set<string>) => {
+    if (!currentTab) return
+    const order = currentTab.buttons.map((b) => b.id)
+    // The insertion boundary shifts left by however many dragged buttons sat
+    // before it — remove them first, then splice the dragged block back in.
+    const draggedBefore = order.slice(0, insertion).filter((id) => ids.has(id)).length
+    const remaining = order.filter((id) => !ids.has(id))
+    const draggedInOrder = order.filter((id) => ids.has(id))
+    remaining.splice(insertion - draggedBefore, 0, ...draggedInOrder)
+    // No-op drop (same position) — skip the round trip.
+    if (remaining.every((id, i) => id === order[i])) return
+    reorderButtons.mutate({ tabId: currentTab.id, buttonIds: remaining })
   }
 
   // Same move logic as moveSelectionToTab, but takes an explicit id set —
@@ -920,6 +970,12 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
               >
                 + Product
               </button>
+              <button
+                onClick={() => { if (effectiveTabId) setExtraRowsByTab((prev) => ({ ...prev, [effectiveTabId]: (prev[effectiveTabId] ?? 0) + 1 })) }}
+                className="text-xs px-2.5 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+              >
+                + Row
+              </button>
             </div>
           </div>
 
@@ -932,17 +988,18 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
                 className="grid gap-2.5"
                 style={{ gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gridAutoRows: 92, gridAutoFlow: 'row dense' }}
               >
-                {currentTab.buttons.map((button) => {
+                {currentTab.buttons.map((button, tileIdx) => {
                   const isFolder = button.kind === 'folder'
                   const base = button.color ?? (isFolder ? '#5A5550' : button.category_color ?? '#5A5550')
                   const isSel = selected.has(button.id)
                   return (
                     <div
                       key={button.id}
+                      data-tile-idx={tileIdx}
                       data-drop={isFolder && button.child_tab_id ? `tab:${button.child_tab_id}` : undefined}
                       onPointerDown={(e) => handlePointerDownTile(e, button.id)}
                       onClick={(e) => e.stopPropagation()}
-                      className={`relative rounded-xl px-3 py-2.5 flex flex-col justify-between cursor-pointer select-none overflow-hidden shadow-sm touch-none ${
+                      className={`relative rounded-xl px-3 py-2.5 flex flex-col justify-between cursor-pointer select-none shadow-sm touch-none ${
                         isSel ? 'ring-[3px] ring-brand-600' : ''
                       } ${dragOverTabId === button.child_tab_id && isFolder ? 'ring-2 ring-brand-400' : ''}`}
                       style={{
@@ -952,6 +1009,13 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
                         color: isFolder ? undefined : textColorOn(base),
                       }}
                     >
+                      {/* Insertion bar: dropping here repositions the dragged button(s) beside this tile */}
+                      {dropIndex === tileIdx && (
+                        <div className="absolute -left-[7px] top-1 bottom-1 w-[4px] rounded-full bg-brand-600 pointer-events-none" />
+                      )}
+                      {dropIndex === tileIdx + 1 && tileIdx === currentTab.buttons.length - 1 && (
+                        <div className="absolute -right-[7px] top-1 bottom-1 w-[4px] rounded-full bg-brand-600 pointer-events-none" />
+                      )}
                       {isFolder && <div className="h-1.5 rounded-sm w-8 mb-1" style={{ background: button.color ?? '#A82040' }} />}
                       <div className={`font-semibold text-[13.5px] leading-tight overflow-hidden ${isFolder ? 'text-gray-900 dark:text-gray-100' : ''}`}>
                         {isFolder ? button.child_tab_name : button.product_name ?? button.product_ref}
@@ -984,13 +1048,27 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
                     </div>
                   )
                 })}
-                <button
-                  onClick={() => setShowProductPicker(true)}
-                  className="border-[1.5px] border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex items-center justify-center text-gray-300 dark:text-gray-600 hover:border-brand-500 hover:text-brand-600 text-2xl"
-                  style={{ gridColumn: 'span 1', gridRow: 'span 1' }}
-                >
-                  +
-                </button>
+                {(() => {
+                  // Pad the grid with dashed "+" slots to full rows of 6:
+                  // an empty tab shows one full row, and "+ Row" adds 6 more.
+                  // Cells are approximated as width×height per button — with
+                  // grid-auto-flow:dense the browser packs around spans, so
+                  // this is the same arithmetic the packing works out to
+                  // whenever tiles tessellate cleanly.
+                  const cellsUsed = currentTab.buttons.reduce((sum, b) => sum + b.width * b.height, 0)
+                  const rows = Math.max(1, Math.ceil(cellsUsed / 6)) + (extraRowsByTab[currentTab.id] ?? 0)
+                  const emptyCount = Math.max(0, rows * 6 - cellsUsed)
+                  return Array.from({ length: emptyCount }, (_, i) => (
+                    <button
+                      key={`empty-${i}`}
+                      onClick={() => setShowProductPicker(true)}
+                      className="border-[1.5px] border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex items-center justify-center text-gray-300 dark:text-gray-600 hover:border-brand-500 hover:text-brand-600 text-2xl"
+                      style={{ gridColumn: 'span 1', gridRow: 'span 1' }}
+                    >
+                      +
+                    </button>
+                  ))
+                })()}
               </div>
             )}
 

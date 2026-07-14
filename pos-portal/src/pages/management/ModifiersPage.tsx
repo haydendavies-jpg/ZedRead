@@ -35,8 +35,17 @@ export function ModifiersPage() {
 
   const createGroup = useMutation({
     mutationFn: () => api.post('/modifier-groups', { name: 'New modifier', min_selections: 0, max_selections: 1 }, { params }),
-    onSuccess: invalidate,
-    onError: (e: unknown) => showError(e, 'Failed to create modifier.'),
+    // Append the created group to the cache straight from the POST response —
+    // the card appears the moment the create returns, instead of only after
+    // the (much heavier) /modifier-groups/detailed refetch lands. The
+    // background invalidate then reconciles the full detailed shape.
+    onSuccess: (resp) => {
+      qc.setQueryData<ModifierGroupDetail[]>(['modifier-groups-detailed', brandId], (old) =>
+        old ? [...old, { ...resp.data, options: [], used_by_count: 0 }] : old,
+      )
+      invalidate()
+    },
+    onError: (e: unknown) => { invalidate(); showError(e, 'Failed to create modifier.') },
   })
 
   const duplicateGroup = useMutation({
@@ -53,20 +62,55 @@ export function ModifiersPage() {
 
   const patchGroup = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => api.patch(`/modifier-groups/${id}`, body, { params }),
+    // Optimistic: reflect the edit (checkbox toggles, min/max, rename)
+    // immediately instead of waiting for the round trip + detailed refetch —
+    // on a remote deployment that wait reads as the whole page "lagging".
+    onMutate: async ({ id, body }) => {
+      await qc.cancelQueries({ queryKey: ['modifier-groups-detailed', brandId] })
+      const previous = qc.getQueryData<ModifierGroupDetail[]>(['modifier-groups-detailed', brandId])
+      qc.setQueryData<ModifierGroupDetail[]>(['modifier-groups-detailed', brandId], (old) =>
+        old?.map((g) => (g.id === id ? { ...g, ...body } : g)),
+      )
+      return { previous }
+    },
     onSuccess: invalidate,
-    onError: (e: unknown) => showError(e, 'Failed to update modifier.'),
+    onError: (e: unknown, _vars, ctx) => {
+      if (ctx?.previous) qc.setQueryData(['modifier-groups-detailed', brandId], ctx.previous)
+      invalidate()
+      showError(e, 'Failed to update modifier.')
+    },
   })
 
   const createOption = useMutation({
     mutationFn: (groupId: string) => api.post(`/modifier-groups/${groupId}/options`, { name: 'New option', price_delta_cents: 0 }, { params }),
-    onSuccess: invalidate,
-    onError: (e: unknown) => showError(e, 'Failed to add option.'),
+    // Same cache-append-from-response pattern as createGroup — the row shows
+    // as soon as the POST returns rather than after the detailed refetch.
+    onSuccess: (resp, groupId) => {
+      qc.setQueryData<ModifierGroupDetail[]>(['modifier-groups-detailed', brandId], (old) =>
+        old?.map((g) => (g.id === groupId ? { ...g, options: [...g.options, { ...resp.data, linked_groups: [] }] } : g)),
+      )
+      invalidate()
+    },
+    onError: (e: unknown) => { invalidate(); showError(e, 'Failed to add option.') },
   })
 
   const patchOption = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => api.patch(`/modifier-options/${id}`, body, { params }),
+    // Optimistic for the same reason as patchGroup above.
+    onMutate: async ({ id, body }) => {
+      await qc.cancelQueries({ queryKey: ['modifier-groups-detailed', brandId] })
+      const previous = qc.getQueryData<ModifierGroupDetail[]>(['modifier-groups-detailed', brandId])
+      qc.setQueryData<ModifierGroupDetail[]>(['modifier-groups-detailed', brandId], (old) =>
+        old?.map((g) => ({ ...g, options: g.options.map((o) => (o.id === id ? { ...o, ...body } : o)) })),
+      )
+      return { previous }
+    },
     onSuccess: invalidate,
-    onError: (e: unknown) => showError(e, 'Failed to update option.'),
+    onError: (e: unknown, _vars, ctx) => {
+      if (ctx?.previous) qc.setQueryData(['modifier-groups-detailed', brandId], ctx.previous)
+      invalidate()
+      showError(e, 'Failed to update option.')
+    },
   })
 
   const deleteOption = useMutation({
@@ -119,13 +163,17 @@ export function ModifiersPage() {
             <div key={g.id} className="flex flex-col bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
               <div className="px-4 pt-4 pb-1">
                 <div className="flex items-start justify-between gap-2">
-                  <h2 className="font-serif font-semibold text-base text-gray-900 dark:text-gray-100">{g.name}</h2>
+                  <BufferedInput
+                    value={g.name}
+                    onCommit={(v) => { if (v.trim()) patchGroup.mutate({ id: g.id, body: { name: v.trim() } }) }}
+                    className="flex-1 min-w-0 font-serif font-semibold text-base text-gray-900 dark:text-gray-100 bg-transparent focus:outline-none focus:bg-gray-50 dark:focus:bg-gray-700 rounded px-1 -mx-1"
+                  />
                   <div className="flex items-center gap-2.5 text-gray-300 dark:text-gray-600 shrink-0">
                     <button title="Duplicate" onClick={() => duplicateGroup.mutate(g.id)} className="hover:text-gray-600 dark:hover:text-gray-300">⧉</button>
                     <button title="Delete" onClick={() => { if (confirm(`Delete "${g.name}"?`)) deleteGroup.mutate(g.id) }} className="hover:text-red-500">✕</button>
                   </div>
                 </div>
-                <div className="flex items-center gap-4 mt-3 mb-1.5">
+                <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 mt-3 mb-1.5">
                   <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer">
                     <input
                       type="checkbox"
@@ -134,6 +182,18 @@ export function ModifiersPage() {
                       className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500"
                     />
                     Required
+                  </label>
+                  <label
+                    className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer"
+                    title="Allow the same option to be selected more than once (a quantity per option), up to the group's Max in total"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={g.has_quantity}
+                      onChange={(e) => patchGroup.mutate({ id: g.id, body: { has_quantity: e.target.checked } })}
+                      className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500"
+                    />
+                    Quantity
                   </label>
                   <label className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
                     Min
@@ -235,9 +295,10 @@ export function ModifiersPage() {
           ))}
           <button
             onClick={() => createGroup.mutate()}
-            className="min-h-[240px] border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex items-center justify-center text-sm font-semibold text-gray-400 dark:text-gray-500 hover:border-brand-400 hover:text-brand-600 transition-colors"
+            disabled={createGroup.isPending}
+            className="min-h-[240px] border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex items-center justify-center text-sm font-semibold text-gray-400 dark:text-gray-500 hover:border-brand-400 hover:text-brand-600 disabled:opacity-50 transition-colors"
           >
-            + New modifier
+            {createGroup.isPending ? 'Creating…' : '+ New modifier'}
           </button>
         </div>
       )}

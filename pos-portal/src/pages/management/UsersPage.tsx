@@ -8,6 +8,7 @@ import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { EntityIdChip } from '../../components/EntityIdChip'
 import { ScopeGuard } from '../../components/ScopeGuard'
 import { Modal } from '../../components/Modal'
+import { apiErrorMessage } from '../../utils/apiError'
 import type { AccessGrant } from '../../types'
 
 // Mirrors app.services.access_grant_service._ROLE_RANK — used only to filter
@@ -83,9 +84,9 @@ function UsersPageInner() {
   const revoke = useMutation({
     mutationFn: (id: string) => api.delete(`/access-grants/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['access-grants', brandId] }),
-    onError: (e: any) => {
+    onError: (e: unknown) => {
       qc.invalidateQueries({ queryKey: ['access-grants', brandId] })
-      alert(e?.response?.data?.detail ?? 'Failed to revoke access.')
+      alert(apiErrorMessage(e, 'Failed to revoke access.'))
     },
   })
 
@@ -111,16 +112,16 @@ function UsersPageInner() {
       qc.invalidateQueries({ queryKey: ['access-grants', brandId] })
       setShowGrant(false)
     },
-    onError: (e: any) => {
+    onError: (e: unknown) => {
       qc.invalidateQueries({ queryKey: ['access-grants', brandId] })
-      setGrantError(e?.response?.data?.detail ?? 'Failed to grant access.')
+      setGrantError(apiErrorMessage(e, 'Failed to grant access.'))
     },
   })
 
   const handleGrantSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setGrantError(null)
-    const body: any = {
+    const body: { user_id: string; scope: string; site_id?: string; brand_id?: string; access_profile_id: string } = {
       user_id: grantUserId,
       scope: grantScope,
       access_profile_id: grantProfileId,
