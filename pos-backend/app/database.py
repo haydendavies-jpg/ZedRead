@@ -16,10 +16,23 @@ DATABASE_URL: str = os.getenv(
 # Single engine instance shared across the application lifetime.
 # statement_cache_size=0 is required when using Supabase's Transaction pooler
 # (PgBouncer in transaction mode), which does not support asyncpg prepared statements.
+#
+# Pool sizing is env-tunable so a deployment can hold more warm connections
+# open — establishing a fresh TLS connection to a remote pooler costs several
+# network round trips, which shows up as multi-second first-byte latency when
+# the API and database are in different regions.
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     pool_pre_ping=True,
+    # Warm connections kept open between requests (SQLAlchemy default is 5)
+    pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
+    # Extra connections allowed under burst load beyond pool_size
+    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
+    # Proactively recycle connections before the pooler's idle timeout can
+    # kill them server-side — a killed connection costs a failed round trip
+    # (pre_ping) plus a full reconnect on the next request that draws it
+    pool_recycle=int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800")),
     connect_args={"statement_cache_size": 0},
 )
 

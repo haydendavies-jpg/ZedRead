@@ -11,8 +11,10 @@ import structlog
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
-from sqlalchemy import select
+from sqlalchemy import and_, false, select
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import outerjoin
 
 from app.constants.statuses import SuperAdminRole
 from app.database import get_db
@@ -186,18 +188,150 @@ log = structlog.get_logger(__name__)
 _bearer = HTTPBearer()
 
 
-async def _assert_pos_session_active(db: AsyncSession, jti: str) -> None:
+async def _load_pos_context(
+    db: AsyncSession, user_id: uuid.UUID, site_id: uuid.UUID, jti: str
+) -> Row | None:
+    """
+    Load every entity a POS token resolution needs in ONE database round trip.
+
+    Replaces what used to be five sequential queries (user, site, grant,
+    profile, session). Each intermediate round trip costs a full network
+    RTT to the database, which dominates request latency when the API and
+    the database are deployed in different regions — auth alone accounted
+    for most of the per-request delay before this consolidation.
+
+    All joins are LEFT OUTER so a missing piece yields NULL columns rather
+    than dropping the row — callers can then raise the exact same error
+    (401 vs 403 vs 500) the old sequential checks produced.
+
+    Args:
+        db: The active database session.
+        user_id: The ``sub`` claim from the decoded POS token.
+        site_id: The ``site_id`` claim from the decoded POS token.
+        jti: The ``jti`` claim (may be empty — the session column comes back NULL).
+
+    Returns:
+        Row | None: (User, Site, UserAccessGrant, AccessProfile, UserPOSSession)
+            with NULLs for any piece that did not resolve, or None when the
+            user itself does not exist.
+    """
+    # Explicit join chain (not method-chained .outerjoin on the select) — the
+    # Site and UserPOSSession ON clauses reference only token claims, so
+    # SQLAlchemy cannot infer their left side and needs it spelled out
+    joins = (
+        # Site is keyed by the token claim, not by the user — a single-row join
+        outerjoin(User, Site, Site.id == site_id)
+        .outerjoin(
+            UserAccessGrant,
+            and_(
+                UserAccessGrant.user_id == User.id,
+                UserAccessGrant.site_id == site_id,
+                UserAccessGrant.is_active == True,  # noqa: E712
+            ),
+        )
+        # Deliberately no is_active filter — mirrors the old sequential lookup,
+        # which loaded the profile for POS access regardless of active state
+        .outerjoin(AccessProfile, AccessProfile.id == UserAccessGrant.access_profile_id)
+        .outerjoin(
+            UserPOSSession,
+            and_(
+                UserPOSSession.token_jti == jti,
+                UserPOSSession.ended_at.is_(None),  # active sessions only
+            ),
+        )
+    )
+    stmt = (
+        select(User, Site, UserAccessGrant, AccessProfile, UserPOSSession)
+        .select_from(joins)
+        .where(User.id == user_id)
+    )
+    result = await db.execute(stmt)
+    return result.first()
+
+
+async def _load_mgmt_context(
+    db: AsyncSession, user_id: uuid.UUID, grant_id: uuid.UUID, scope: str
+) -> Row | None:
+    """
+    Load every entity a management token resolution needs in ONE round trip.
+
+    Replaces what used to be up to six sequential queries (user, grant,
+    profile, then scope entities). See _load_pos_context for why round trips
+    matter: each one costs a full network RTT to the database.
+
+    The scope-entity joins are built from the token's ``scope`` claim so the
+    query resolves exactly what the old per-scope branches resolved:
+      scope='site'  → Site from grant.site_id, Brand from site.brand_id
+      scope='brand' → Brand from grant.brand_id
+      scope='group' → Group from grant.group_id
+
+    Args:
+        db: The active database session.
+        user_id: The ``sub`` claim from the decoded management token.
+        grant_id: The ``grant_id`` claim from the decoded management token.
+        scope: The ``scope`` claim ('site' | 'brand' | 'group').
+
+    Returns:
+        Row | None: (User, UserAccessGrant, AccessProfile, Site, Brand, Group)
+            with NULLs for any piece that did not resolve, or None when the
+            user itself does not exist.
+    """
+    # Scope-gated join conditions: LEFT JOIN ... ON false yields NULL columns
+    # for entities outside the token's scope, keeping the row single and flat
+    site_on = Site.id == UserAccessGrant.site_id if scope == "site" else false()
+    if scope == "site":
+        brand_on = Brand.id == Site.brand_id  # brand comes via the site
+    elif scope == "brand":
+        brand_on = Brand.id == UserAccessGrant.brand_id
+    else:
+        brand_on = false()
+    group_on = Group.id == UserAccessGrant.group_id if scope == "group" else false()
+
+    # Explicit join chain — the scope-gated ON clauses (LEFT JOIN ... ON false)
+    # reference no prior entity, so the left side must be spelled out
+    joins = (
+        outerjoin(
+            User,
+            UserAccessGrant,
+            and_(
+                UserAccessGrant.id == grant_id,
+                UserAccessGrant.user_id == User.id,
+                UserAccessGrant.is_active == True,  # noqa: E712
+            ),
+        )
+        .outerjoin(
+            AccessProfile,
+            and_(
+                AccessProfile.id == UserAccessGrant.access_profile_id,
+                AccessProfile.is_active == True,  # noqa: E712
+            ),
+        )
+        .outerjoin(Site, site_on)
+        .outerjoin(Brand, brand_on)
+        .outerjoin(Group, group_on)
+    )
+    stmt = (
+        select(User, UserAccessGrant, AccessProfile, Site, Brand, Group)
+        .select_from(joins)
+        .where(User.id == user_id)
+    )
+    result = await db.execute(stmt)
+    return result.first()
+
+
+def _check_pos_session_row(jti: str, session: UserPOSSession | None) -> None:
     """
     Verify the POS token's session has not been revoked (logged out).
 
     Every POS access token carries a ``jti`` that matches a ``user_pos_sessions``
     row written at login/PIN-verify time. Logout sets ``ended_at`` on that row;
     this check rejects any token whose session is missing or already ended, which
-    is what makes POS tokens revocable before their natural expiry.
+    is what makes POS tokens revocable before their natural expiry. The row
+    itself is fetched as part of _load_pos_context's single query.
 
     Args:
-        db: The active database session.
         jti: The ``jti`` claim from the decoded POS token.
+        session: The active UserPOSSession joined for that jti, or None.
 
     Raises:
         HTTPException: 401 if the jti is absent, unknown, or its session ended.
@@ -210,13 +344,7 @@ async def _assert_pos_session_active(db: AsyncSession, jti: str) -> None:
             detail="Malformed POS token — missing session id",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    session_result = await db.execute(
-        select(UserPOSSession).where(
-            UserPOSSession.token_jti == jti,
-            UserPOSSession.ended_at.is_(None),  # active sessions only
-        )
-    )
-    if session_result.scalar_one_or_none() is None:
+    if session is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="POS session has ended — please log in again",
@@ -391,24 +519,22 @@ async def resolve_access(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Fetch and validate the POS user
-    user_result = await db.execute(select(User).where(User.id == user_id))
-    user = user_result.scalar_one_or_none()
-    if user is None:
+    # One round trip loads user, site, grant, profile, and session together;
+    # the checks below preserve the old sequential error order and messages
+    row = await _load_pos_context(db, user_id, site_id, payload.get("jti", ""))
+    if row is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="POS user not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    user, site, grant, access_profile, pos_session = row
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="POS user account is inactive",
         )
 
-    # Fetch the site
-    site_result = await db.execute(select(Site).where(Site.id == site_id))
-    site = site_result.scalar_one_or_none()
     if site is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -416,27 +542,12 @@ async def resolve_access(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Verify the user has an active grant for this site and load the profile
-    grant_result = await db.execute(
-        select(UserAccessGrant)
-        .where(
-            UserAccessGrant.user_id == user_id,
-            UserAccessGrant.site_id == site_id,
-            UserAccessGrant.is_active == True,  # noqa: E712
-        )
-    )
-    grant = grant_result.scalar_one_or_none()
     if grant is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No active access grant for this site",
         )
 
-    # Load the access profile for this grant
-    profile_result = await db.execute(
-        select(AccessProfile).where(AccessProfile.id == grant.access_profile_id)
-    )
-    access_profile = profile_result.scalar_one_or_none()
     if access_profile is None:
         # Should never happen due to FK constraints — log and treat as server error
         log.error(
@@ -450,7 +561,7 @@ async def resolve_access(
         )
 
     # Reject tokens whose session has been revoked via logout
-    await _assert_pos_session_active(db, payload.get("jti", ""))
+    _check_pos_session_row(payload.get("jti", ""), pos_session)
 
     return POSAccess(user=user, site=site, access_profile=access_profile)
 
@@ -520,15 +631,16 @@ async def resolve_management_access(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Validate the POS user
-    user_result = await db.execute(select(User).where(User.id == user_id))
-    user = user_result.scalar_one_or_none()
-    if user is None:
+    # One round trip loads user, grant, profile, and scope entities together;
+    # the checks below preserve the old sequential error order and messages
+    row = await _load_mgmt_context(db, user_id, grant_id, scope)
+    if row is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="POS user not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    user, grant, access_profile, resolved_site, resolved_brand, resolved_group = row
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -543,15 +655,6 @@ async def resolve_management_access(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Validate the grant — must belong to this user and still be active
-    grant_result = await db.execute(
-        select(UserAccessGrant).where(
-            UserAccessGrant.id == grant_id,
-            UserAccessGrant.user_id == user_id,
-            UserAccessGrant.is_active == True,  # noqa: E712
-        )
-    )
-    grant = grant_result.scalar_one_or_none()
     if grant is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -565,41 +668,11 @@ async def resolve_management_access(
             detail="This grant does not have backend access configured",
         )
 
-    # Still load the profile — needed to populate ManagementAccess.access_profile
-    profile_result = await db.execute(
-        select(AccessProfile).where(
-            AccessProfile.id == grant.access_profile_id,
-            AccessProfile.is_active == True,  # noqa: E712
-        )
-    )
-    access_profile = profile_result.scalar_one_or_none()
     if access_profile is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access profile not found or inactive",
         )
-
-    # Resolve scope entities
-    resolved_site: Site | None = None
-    resolved_brand: Brand | None = None
-    resolved_group: Group | None = None
-
-    if scope == "site" and grant.site_id:
-        site_result = await db.execute(select(Site).where(Site.id == grant.site_id))
-        resolved_site = site_result.scalar_one_or_none()
-        if resolved_site and resolved_site.brand_id:
-            brand_result = await db.execute(
-                select(Brand).where(Brand.id == resolved_site.brand_id)
-            )
-            resolved_brand = brand_result.scalar_one_or_none()
-
-    elif scope == "brand" and grant.brand_id:
-        brand_result = await db.execute(select(Brand).where(Brand.id == grant.brand_id))
-        resolved_brand = brand_result.scalar_one_or_none()
-
-    elif scope == "group" and grant.group_id:
-        group_result = await db.execute(select(Group).where(Group.id == grant.group_id))
-        resolved_group = group_result.scalar_one_or_none()
 
     return ManagementAccess(
         user=user,
@@ -675,8 +748,9 @@ async def resolve_catalog_access(
             if _imp_id else None
         )
 
-        user_r = await db.execute(select(User).where(User.id == user_id))
-        user = user_r.scalar_one_or_none()
+        # One round trip loads user, grant, profile, and scope entities together
+        row = await _load_mgmt_context(db, user_id, grant_id, scope)
+        user = row.User if row is not None else None
         if not user or not user.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="POS user inactive")
 
@@ -688,14 +762,7 @@ async def resolve_catalog_access(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        grant_r = await db.execute(
-            select(UserAccessGrant).where(
-                UserAccessGrant.id == grant_id,
-                UserAccessGrant.user_id == user_id,
-                UserAccessGrant.is_active == True,  # noqa: E712
-            )
-        )
-        grant = grant_r.scalar_one_or_none()
+        grant = row.UserAccessGrant
         if not grant:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Grant revoked")
 
@@ -703,41 +770,17 @@ async def resolve_catalog_access(
         if not grant.backend_role:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Grant does not have backend access configured")
 
-        # Load profile — required to populate ManagementAccess.access_profile
-        prof_r = await db.execute(
-            select(AccessProfile).where(
-                AccessProfile.id == grant.access_profile_id,
-                AccessProfile.is_active == True,  # noqa: E712
-            )
-        )
-        access_profile = prof_r.scalar_one_or_none()
+        access_profile = row.AccessProfile
         if not access_profile:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access profile not found or inactive")
-
-        resolved_site: Site | None = None
-        resolved_brand: Brand | None = None
-        resolved_group: Group | None = None
-
-        if scope == "site" and grant.site_id:
-            sr = await db.execute(select(Site).where(Site.id == grant.site_id))
-            resolved_site = sr.scalar_one_or_none()
-            if resolved_site:
-                br = await db.execute(select(Brand).where(Brand.id == resolved_site.brand_id))
-                resolved_brand = br.scalar_one_or_none()
-        elif scope == "brand" and grant.brand_id:
-            br = await db.execute(select(Brand).where(Brand.id == grant.brand_id))
-            resolved_brand = br.scalar_one_or_none()
-        elif scope == "group" and grant.group_id:
-            gr = await db.execute(select(Group).where(Group.id == grant.group_id))
-            resolved_group = gr.scalar_one_or_none()
 
         mgmt = ManagementAccess(
             user=user,
             access_profile=access_profile,
             scope=scope,
-            site=resolved_site,
-            brand=resolved_brand,
-            group=resolved_group,
+            site=row.Site,
+            brand=row.Brand,
+            group=row.Group,
             grant_id=grant_id,
             impersonator=_catalog_impersonator,
         )
@@ -752,31 +795,21 @@ async def resolve_catalog_access(
         user_id = uuid.UUID(payload.get("sub", ""))
         site_id = uuid.UUID(payload.get("site_id", ""))
 
-        user_r = await db.execute(select(User).where(User.id == user_id))
-        user = user_r.scalar_one_or_none()
+        # One round trip loads user, site, grant, profile, and session together
+        row = await _load_pos_context(db, user_id, site_id, payload.get("jti", ""))
+        user = row.User if row is not None else None
         if not user or not user.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="POS user inactive")
 
-        site_r = await db.execute(select(Site).where(Site.id == site_id))
-        site = site_r.scalar_one_or_none()
+        site = row.Site
         if not site:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Site not found")
 
-        grant_r = await db.execute(
-            select(UserAccessGrant).where(
-                UserAccessGrant.user_id == user_id,
-                UserAccessGrant.site_id == site_id,
-                UserAccessGrant.is_active == True,  # noqa: E712
-            )
-        )
-        grant = grant_r.scalar_one_or_none()
+        grant = row.UserAccessGrant
         if not grant:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No active grant for this site")
 
-        prof_r = await db.execute(
-            select(AccessProfile).where(AccessProfile.id == grant.access_profile_id)
-        )
-        access_profile = prof_r.scalar_one_or_none()
+        access_profile = row.AccessProfile
         if not access_profile:
             log.error(
                 "resolve_catalog_access.profile_missing",
@@ -786,7 +819,7 @@ async def resolve_catalog_access(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Access profile missing")
 
         # Reject tokens whose session has been revoked via logout
-        await _assert_pos_session_active(db, payload.get("jti", ""))
+        _check_pos_session_row(payload.get("jti", ""), row.UserPOSSession)
 
         pos_access = POSAccess(user=user, site=site, access_profile=access_profile)
         return CatalogAccess(pos_access=pos_access, mgmt_access=None, portal_access=None)

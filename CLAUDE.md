@@ -196,6 +196,19 @@ the raw array-shaped 422 `detail` rendered as a React child crashed the app to a
 raw `detail` reads now go through `apiErrorMessage()`, and `UserOut` exposes
 `first_name`/`last_name`.
 
+**Request latency optimization (post-feedback-round-2, complete).** Diagnosed the reported 5–10 s
+delay on every action as per-request DB round-trip amplification: the auth dependencies issued 4–6
+sequential queries before any route work, so each statement paid a full network RTT to the database
+(compounding when API and DB are in different regions). `resolve_access`/`resolve_management_access`/
+`resolve_catalog_access` now resolve via single LEFT-OUTER-joined queries (`_load_pos_context`/
+`_load_mgmt_context`), cutting reads from 5–6 statements to 2 and writes from 8–10 to 5–7 with
+identical error semantics. `RequestLoggingMiddleware` logs `duration_ms` + `request.slow` WARNING
+(≥1 s) and returns `X-Response-Time-Ms`; the invoice-PDF route's WeasyPrint render moved off the
+event loop (`asyncio.to_thread`); engine pool is env-tunable (`DB_POOL_SIZE`/`DB_MAX_OVERFLOW`/
+`DB_POOL_RECYCLE_SECONDS`). Remaining fixed cost is RTT-bound — co-locating the Railway service
+with the Supabase region is the deployment-side follow-up. See `STAGE_STATUS.md` "Performance —
+request latency optimization".
+
 ## Folder structure (backend)
 ```
 pos-backend/

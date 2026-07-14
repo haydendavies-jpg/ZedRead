@@ -5,6 +5,7 @@ Read-only and reporting-scoped: the transactional invoice engine (create,
 pay, void, refund) lives in routes/invoices.py and is unaffected by this file.
 """
 
+import asyncio
 import uuid
 from datetime import date
 
@@ -270,7 +271,10 @@ async def export_invoice_pdf(
     effective_brand_id = access.effective_brand_id(brand_id)
     detail = await get_invoice_detail(db, effective_brand_id, invoice_id)
     _assert_site_visible(access, detail.site_id)
-    pdf_bytes = render_invoice_pdf(detail)
+    # WeasyPrint rendering is CPU-bound and can take seconds — run it in a
+    # worker thread so it never blocks the event loop (and with it, every
+    # other in-flight request on this single-process server)
+    pdf_bytes = await asyncio.to_thread(render_invoice_pdf, detail)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

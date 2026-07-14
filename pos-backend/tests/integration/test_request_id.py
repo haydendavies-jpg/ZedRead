@@ -45,6 +45,20 @@ async def test_x_request_id_is_a_valid_uuid(client):
     )
 
 
+async def test_every_response_has_x_response_time_ms_header(client):
+    """Every API response carries a non-negative integer X-Response-Time-Ms header."""
+    response = await client.get("/health")
+
+    header_value = response.headers.get("x-response-time-ms")
+    assert header_value is not None, (
+        "X-Response-Time-Ms header is missing — duration timing may not be wired up"
+    )
+    # Must parse as a non-negative integer number of milliseconds
+    assert header_value.isdigit(), (
+        f"X-Response-Time-Ms '{header_value}' is not a non-negative integer"
+    )
+
+
 async def test_each_request_gets_a_unique_request_id(client):
     """Two requests to the same endpoint must receive different request IDs."""
     response_a = await client.get("/health")
