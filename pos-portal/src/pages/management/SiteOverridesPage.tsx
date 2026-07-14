@@ -99,18 +99,18 @@ function SiteOverridesInner() {
       ) : isLoading ? (
         <p className="text-sm text-gray-400 dark:text-gray-500">Loading…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm min-w-[540px]">
-            <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+        <div className="zr-table-wrap">
+          <table className="zr-table min-w-[540px]">
+            <thead>
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Product</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Base price</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Site price</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Status</th>
+                <th>Product</th>
+                <th className="zr-num">Base price</th>
+                <th className="zr-num">Site price</th>
+                <th>Status</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+            <tbody>
               {catalog.map((p) => (
                 <tr key={p.product_id} className={p.is_excluded ? 'opacity-50' : 'hover:bg-gray-50 dark:hover:bg-gray-800/60'}>
                   <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{p.name}</td>
@@ -125,9 +125,9 @@ function SiteOverridesInner() {
                   </td>
                   <td className="px-4 py-3">
                     {p.is_excluded ? (
-                      <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">excluded</span>
+                      <span className="zr-pill zr-pill--void">excluded</span>
                     ) : (
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">active</span>
+                      <span className="zr-pill zr-pill--live">active</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-right space-x-2">

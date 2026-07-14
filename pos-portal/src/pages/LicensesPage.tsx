@@ -152,46 +152,48 @@ export function LicensesPage() {
       {isLoading ? (
         <div className="text-gray-400 dark:text-gray-500 text-sm">Loading…</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm min-w-[640px]">
+        <div className="zr-table-wrap">
+          <table className="zr-table min-w-[640px]">
             <thead>
-              <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                <th className="px-4 py-3">ID</th>
-                <th className="px-4 py-3">Site</th>
-                <th className="px-4 py-3">Plan</th>
-                <th className="px-4 py-3">Monthly Fee</th>
-                <th className="px-4 py-3">Expires</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Actions</th>
+              <tr>
+                <th>ID</th>
+                <th>Site</th>
+                <th>Plan</th>
+                <th className="zr-num">Monthly Fee</th>
+                <th>Expires</th>
+                <th>Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody>
               {filtered.map((l) => (
-                <tr key={l.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
-                  <td className="px-4 py-3"><EntityIdChip id={l.id} /></td>
-                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{siteName(l.site_id)}</td>
-                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
+                <tr key={l.id}>
+                  <td><EntityIdChip id={l.id} /></td>
+                  <td className="text-[var(--zr-muted)]">{siteName(l.site_id)}</td>
+                  <td className="font-medium">
                     {l.plan_name}
                     {l.is_trial && <span className="ml-1 text-xs text-brand-500">(trial)</span>}
                   </td>
-                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{formatCents(l.monthly_fee_cents)}</td>
-                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{new Date(l.expires_at).toLocaleDateString()}</td>
-                  <td className="px-4 py-3"><StatusBadge status={l.status} /></td>
-                  <td className="px-4 py-3 flex gap-2">
-                    {l.status === 'active' && (
-                      <button onClick={() => disableMutation.mutate(l.id)} className="text-amber-600 hover:underline text-xs">Disable</button>
-                    )}
-                    {l.status === 'disabled' && (
-                      <button onClick={() => enableMutation.mutate(l.id)} className="text-green-600 hover:underline text-xs">Enable</button>
-                    )}
-                    {l.status === 'expired' && (
-                      <span className="text-xs text-gray-400 dark:text-gray-500">Expired</span>
-                    )}
+                  <td className="zr-num font-mono">{formatCents(l.monthly_fee_cents)}</td>
+                  <td className="text-[var(--zr-muted)]">{new Date(l.expires_at).toLocaleDateString()}</td>
+                  <td><StatusBadge status={l.status} /></td>
+                  <td className="zr-cell-pad">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {l.status === 'active' && (
+                        <button onClick={() => disableMutation.mutate(l.id)} className="text-amber-600 hover:underline text-xs">Disable</button>
+                      )}
+                      {l.status === 'disabled' && (
+                        <button onClick={() => enableMutation.mutate(l.id)} className="text-green-600 hover:underline text-xs">Enable</button>
+                      )}
+                      {l.status === 'expired' && (
+                        <span className="text-xs text-[var(--zr-faint)]">Expired</span>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
+                <tr><td colSpan={7} className="text-center text-[var(--zr-faint)] py-8">
                   {licenses.length === 0 ? 'No licenses yet.' : 'No licenses match the current filters.'}
                 </td></tr>
               )}

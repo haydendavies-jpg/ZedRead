@@ -149,20 +149,20 @@ export function ReportsPage() {
           ) : error ? (
             <p className="text-sm text-red-500">Failed to load report data.</p>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-              <table className="w-full text-sm min-w-[480px]">
-                <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+            <div className="zr-table-wrap">
+              <table className="zr-table min-w-[480px]">
+                <thead>
                   <tr>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Date</th>
-                    <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Invoices</th>
-                    <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Subtotal</th>
-                    <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Tax</th>
-                    <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Total</th>
+                    <th>Date</th>
+                    <th className="zr-num">Invoices</th>
+                    <th className="zr-num">Subtotal</th>
+                    <th className="zr-num">Tax</th>
+                    <th className="zr-num">Total</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                <tbody>
                   {rows.map((r, i) => (
-                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                    <tr key={i}>
                       <td className="px-4 py-3 text-gray-900 dark:text-gray-100">{r.sale_date}</td>
                       <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{r.invoice_count}</td>
                       <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{centsToDisplay(r.subtotal_cents)}</td>

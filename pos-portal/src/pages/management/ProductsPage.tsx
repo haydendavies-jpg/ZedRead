@@ -146,25 +146,25 @@ export function ProductsPage() {
             totalCount={products.length}
           />
 
-          <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-            <table className="w-full text-sm min-w-[1000px]">
-              <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+          <div className="zr-table-wrap">
+            <table className="zr-table min-w-[1000px]">
+              <thead>
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">ID</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Name</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Category</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Reporting Group</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Price (inc.)</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Price (ex.)</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Tax</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Modifiers</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Status</th>
+                  <th>ID</th>
+                  <th>Name</th>
+                  <th>Category</th>
+                  <th>Reporting Group</th>
+                  <th>Price (inc.)</th>
+                  <th>Price (ex.)</th>
+                  <th>Tax</th>
+                  <th>Modifiers</th>
+                  <th>Status</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+              <tbody>
                 {filtered.map((p) => (
-                  <tr key={p.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                  <tr key={p.id}>
                     <td className="px-4 py-3"><EntityIdChip id={p.id} ref={p.ref} /></td>
                     <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
                       <EditableText

@@ -143,19 +143,19 @@ function LayoutsList({ brandId, onOpen }: { brandId: string; onOpen: (id: string
       {isLoading ? (
         <p className="text-sm text-gray-400 dark:text-gray-500">Loading…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm min-w-[860px]">
-            <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+        <div className="zr-table-wrap">
+          <table className="zr-table min-w-[860px]">
+            <thead>
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Layout</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Active time</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Last published</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Last edited</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Actions</th>
+                <th>Layout</th>
+                <th>Status</th>
+                <th>Active time</th>
+                <th>Last published</th>
+                <th>Last edited</th>
+                <th className="zr-num">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+            <tbody>
               {layouts.map((layout) => (
                 <Fragment key={layout.id}>
                 <tr className="hover:bg-gray-50 dark:hover:bg-gray-800/60 cursor-pointer" onClick={() => onOpen(layout.id)}>
@@ -169,13 +169,7 @@ function LayoutsList({ brandId, onOpen }: { brandId: string; onOpen: (id: string
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                        layout.is_published
-                          ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-                      }`}
-                    >
+                    <span className={`zr-pill ${layout.is_published ? 'zr-pill--live' : 'zr-pill--draft'}`}>
                       {layout.is_published ? 'Published' : 'Unpublished'}
                     </span>
                     {layout.scheduled_publish_at && (

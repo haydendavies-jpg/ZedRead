@@ -12,14 +12,9 @@ import { useAuth, isMgmtUser } from '../../context/AuthContext'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { Modal } from '../../components/Modal'
 import { EntityIdChip } from '../../components/EntityIdChip'
+import { StatusBadge } from '../../components/StatusBadge'
 import { apiErrorMessage } from '../../utils/apiError'
 import type { Menu, MenuLayout } from '../../types'
-
-const STATUS_STYLES: Record<Menu['status'], string> = {
-  draft: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300',
-  scheduled: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300',
-  published: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300',
-}
 
 export function MenusPage() {
   const qc = useQueryClient()
@@ -92,29 +87,27 @@ export function MenusPage() {
       {isLoading ? (
         <p className="text-sm text-gray-400">Loading…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm min-w-[820px]">
-            <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+        <div className="zr-table-wrap">
+          <table className="zr-table min-w-[820px]">
+            <thead>
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Menu</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Assigned to</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Updated</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Actions</th>
+                <th>Menu</th>
+                <th>Status</th>
+                <th>Assigned to</th>
+                <th>Updated</th>
+                <th className="zr-num">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+            <tbody>
               {menus.map((m) => (
                 <Fragment key={m.id}>
-                  <tr className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                  <tr>
                     <td className="px-4 py-3">
                       <div className="font-semibold text-gray-900 dark:text-gray-100">{m.name}</div>
                       {m.note && <div className="text-xs text-gray-400 dark:text-gray-500">{m.note}</div>}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize ${STATUS_STYLES[m.status]}`}>
-                        {m.status}
-                      </span>
+                      <StatusBadge status={m.status} />
                       {m.status === 'scheduled' && m.scheduled_at && (
                         <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">
                           {new Date(m.scheduled_at).toLocaleString()}

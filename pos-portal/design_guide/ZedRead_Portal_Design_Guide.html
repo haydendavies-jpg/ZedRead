@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#e9e4d8;font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:#A82040}
+  a:hover{color:#8a1a34}
+  .page{width:1240px;margin:0 auto;background:#faf7f2;box-sizing:border-box;padding:64px}
+  .kicker{font:600 11px 'IBM Plex Sans',sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#A82040;margin-bottom:10px}
+  .h2{font-family:'Source Serif 4',serif;font-weight:600;font-size:30px;color:#241f1a;margin-bottom:10px}
+  .lede{font:400 14px 'IBM Plex Sans',sans-serif;color:#6b6259;max-width:760px;margin-bottom:34px;line-height:1.6}
+  .swrow{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+  .swcard{border-radius:8px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;height:96px}
+  .swname{font:600 12px 'IBM Plex Sans',sans-serif}
+  .swhex{font:400 11px 'IBM Plex Mono',monospace;opacity:.85}
+  .swtok{font:400 10px 'IBM Plex Mono',monospace;opacity:.65}
+  .tblwrap{border:1px solid rgba(36,31,26,.08);border-radius:12px;overflow:hidden;background:#fff}
+  /* === table styles copied verbatim from ZedRead Menu Studio === */
+  .grow{display:grid;grid-template-columns:38px 1.4fr 1fr 1fr 0.8fr 46px;align-items:stretch}
+  .hcell{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 14px;height:42px;border-right:1px solid rgba(36,31,26,.07);font:600 11px 'IBM Plex Sans',sans-serif;color:#8a8177;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;background:#faf7f2}
+  .hcell .srt{color:#c2b9ab;font-size:11px;opacity:.7}
+  .gcell{display:flex;align-items:center;padding:0 14px;height:52px;border-right:1px solid rgba(36,31,26,.06);font:400 13.5px 'IBM Plex Sans',sans-serif;color:#241f1a;white-space:nowrap;overflow:hidden}
+  .grow:not(.headrow):hover .gcell{background:rgba(36,31,26,.02)}
+  .divrow{border-bottom:1px solid rgba(36,31,26,.06)}
+  .chk{width:16px;height:16px;border:1.5px solid #cfc7bb;border-radius:3px;background:#fff;flex:none}
+  .cbox{display:inline-flex;align-items:center;border:1px solid rgba(36,31,26,.16);border-radius:5px;padding:4px 10px;font:500 12px 'IBM Plex Sans',sans-serif;color:#3c352d;background:#fff;white-space:nowrap}
+  .taxfree{color:#2F4034}
+  .spill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;font:600 11px 'IBM Plex Sans',sans-serif;white-space:nowrap}
+  .mact{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(36,31,26,.16);border-radius:7px;padding:6px 10px;font:600 11.5px 'IBM Plex Sans',sans-serif;color:#6b6259;background:#fff;cursor:pointer;white-space:nowrap}
+  .mact.pri{background:#A82040;color:#fff;border-color:#A82040}
+  .pagedot{width:9px;height:9px;border-radius:3px;flex:none}
+  .specrow{display:flex;gap:14px;padding:12px 0;border-bottom:1px solid rgba(36,31,26,.07);align-items:baseline}
+  .speck{font:600 12.5px 'IBM Plex Sans',sans-serif;color:#241f1a;width:190px;flex:none}
+  .specv{font:400 13px 'IBM Plex Sans',sans-serif;color:#6b6259}
+  .specv code{font:500 12px 'IBM Plex Mono',monospace;color:#A82040;background:rgba(168,32,64,.08);padding:1px 6px;border-radius:4px}
+  .dosdonts{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .dobox{border-radius:8px;padding:16px 18px}
+  .dtitle{font:600 12px 'IBM Plex Sans',sans-serif;margin-bottom:6px}
+  .dtext{font:400 12.5px 'IBM Plex Sans',sans-serif;line-height:1.5}
+</style>
+</helmet>
+
+<div style="background:#e9e4d8;padding:48px 0 90px">
+
+  <!-- COVER -->
+  <div class="page" style="width:1240px;height:420px;background:#241f1a;display:flex;flex-direction:column;justify-content:space-between;padding:56px;margin-bottom:28px;box-shadow:0 8px 30px rgba(0,0,0,.15)">
+    <div class="kicker" style="color:#C77A8B">Portal Design Guide — v1.0</div>
+    <div>
+      <div style="font-family:'Source Serif 4',serif;font-weight:700;font-size:52px;color:#fff;line-height:1.05">Colour &amp; Table Standards</div>
+      <div style="font:400 15px 'IBM Plex Sans',sans-serif;color:#cfc7bb;margin-top:12px;max-width:640px">The token set and data-table pattern from Menu Studio, standardised for use across the whole ZedRead portal — Orders, Reporting, Payment Summary, Manage Catalog, and beyond.</div>
+    </div>
+  </div>
+
+  <!-- COLOR TOKENS -->
+  <div class="page" style="margin-bottom:28px">
+    <div class="kicker">01 — Colour tokens</div>
+    <div class="h2">One token set, two themes.</div>
+    <div class="lede">Every screen reads these CSS custom properties rather than hard-coded hex — that's what makes the light/dark toggle instant and consistent. Light values shown below; each has a dark-mode counterpart (see table).</div>
+
+    <div class="swrow" style="margin-bottom:28px">
+      <div class="swcard" style="background:#A82040">
+        <div><span class="swname" style="color:#fff">Accent</span></div>
+        <div><div class="swhex" style="color:#fff">#A82040</div><div class="swtok" style="color:rgba(255,255,255,.75)">--accent / --accent-text</div></div>
+      </div>
+      <div class="swcard" style="background:#2F4034">
+        <div><span class="swname" style="color:#fff">Green</span></div>
+        <div><div class="swhex" style="color:#fff">#2F4034</div><div class="swtok" style="color:rgba(255,255,255,.7)">--green</div></div>
+      </div>
+      <div class="swcard" style="background:#241f1a">
+        <div><span class="swname" style="color:#fff">Text / Ink</span></div>
+        <div><div class="swhex" style="color:#fff">#241F1A</div><div class="swtok" style="color:rgba(255,255,255,.6)">--text</div></div>
+      </div>
+      <div class="swcard" style="background:#6b6259">
+        <div><span class="swname" style="color:#fff">Muted</span></div>
+        <div><div class="swhex" style="color:#fff">#6B6259</div><div class="swtok" style="color:rgba(255,255,255,.65)">--muted</div></div>
+      </div>
+      <div class="swcard" style="background:#a39a8c">
+        <div><span class="swname" style="color:#fff">Faint</span></div>
+        <div><div class="swhex" style="color:#fff">#A39A8C</div><div class="swtok" style="color:rgba(255,255,255,.7)">--faint</div></div>
+      </div>
+      <div class="swcard" style="background:#f4efe4;border:1px solid rgba(36,31,26,.1)">
+        <div><span class="swname" style="color:#241f1a">Sidebar</span></div>
+        <div><div class="swhex" style="color:#6b6259">#F4EFE4</div><div class="swtok" style="color:#a39a8c">--sidebar</div></div>
+      </div>
+    </div>
+    <div class="swrow" style="margin-bottom:36px">
+      <div class="swcard" style="background:#faf7f2;border:1px solid rgba(36,31,26,.1)">
+        <div><span class="swname" style="color:#241f1a">Background</span></div>
+        <div><div class="swhex" style="color:#6b6259">#FAF7F2</div><div class="swtok" style="color:#a39a8c">--bg</div></div>
+      </div>
+      <div class="swcard" style="background:#ffffff;border:1px solid rgba(36,31,26,.1)">
+        <div><span class="swname" style="color:#241f1a">Surface</span></div>
+        <div><div class="swhex" style="color:#6b6259">#FFFFFF</div><div class="swtok" style="color:#a39a8c">--surface</div></div>
+      </div>
+      <div class="swcard" style="background:#f0ece3;border:1px solid rgba(36,31,26,.1)">
+        <div><span class="swname" style="color:#241f1a">Surface 2</span></div>
+        <div><div class="swhex" style="color:#6b6259">#F0ECE3</div><div class="swtok" style="color:#a39a8c">--surface2</div></div>
+      </div>
+      <div class="swcard" style="background:rgba(168,32,64,.1);border:1px solid rgba(36,31,26,.1)">
+        <div><span class="swname" style="color:#A82040">Accent soft</span></div>
+        <div><div class="swhex" style="color:#A82040">10% accent</div><div class="swtok" style="color:#a39a8c">--accent-soft</div></div>
+      </div>
+      <div class="swcard" style="background:rgba(168,32,64,.16);border:1px solid rgba(36,31,26,.1)">
+        <div><span class="swname" style="color:#A82040">Accent soft 2</span></div>
+        <div><div class="swhex" style="color:#A82040">16% accent</div><div class="swtok" style="color:#a39a8c">--accent-soft2</div></div>
+      </div>
+      <div class="swcard" style="background:#201a15">
+        <div><span class="swname" style="color:#fff">Dark bg</span></div>
+        <div><div class="swhex" style="color:#cfc7bb">#201A15</div><div class="swtok" style="color:rgba(255,255,255,.6)">--bg (dark)</div></div>
+      </div>
+    </div>
+
+    <div style="font:600 13px 'IBM Plex Sans',sans-serif;color:#241f1a;margin-bottom:12px">Semantic status colour — used for badges, pills, dots</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px">
+      <div style="background:rgba(47,64,52,.14);border-radius:6px;padding:14px 16px"><span style="font:600 13px 'IBM Plex Sans',sans-serif;color:#2F4034">● Live / Published / Paid</span></div>
+      <div style="background:rgba(197,106,26,.16);border-radius:6px;padding:14px 16px"><span style="font:600 13px 'IBM Plex Sans',sans-serif;color:#b06a1a">● Scheduled / Pending</span></div>
+      <div style="background:#f0ece3;border-radius:6px;padding:14px 16px"><span style="font:600 13px 'IBM Plex Sans',sans-serif;color:#6b6259">● Draft / Unpublished</span></div>
+      <div style="background:rgba(168,32,64,.14);border-radius:6px;padding:14px 16px"><span style="font:600 13px 'IBM Plex Sans',sans-serif;color:#A82040">● Void / Refund / Error</span></div>
+    </div>
+    <div style="font:400 12.5px 'IBM Plex Sans',sans-serif;color:#6b6259;line-height:1.6">Rule of thumb: paper/parchment carry surfaces, ink/slate/sand carry structure and secondary UI, brick red is reserved for primary actions, active-nav states, and totals — never a large background wash. Category/POS-button colours are the one place a wider palette is allowed (see the 10-swatch preset palette in Menu Studio); everything else in the chrome stays on this token set.</div>
+  </div>
+
+  <!-- DARK MODE -->
+  <div class="page" style="margin-bottom:28px;background:#201a15">
+    <div class="kicker" style="color:#e58ba0">01a — Dark theme</div>
+    <div class="h2" style="color:#efe9e0">Same structure, inked surfaces.</div>
+    <div class="lede" style="color:#a89f92">Toggled from the sidebar footer. Swap the custom-property block wholesale — never hand-tune individual dark colours per screen.</div>
+    <div class="swrow">
+      <div class="swcard" style="background:#1b1611"><div><span class="swname" style="color:#efe9e0">Sidebar</span></div><div><div class="swhex" style="color:#a89f92">#1B1611</div></div></div>
+      <div class="swcard" style="background:#2a2119"><div><span class="swname" style="color:#efe9e0">Surface</span></div><div><div class="swhex" style="color:#a89f92">#2A2119</div></div></div>
+      <div class="swcard" style="background:#2a251f"><div><span class="swname" style="color:#efe9e0">Surface 2</span></div><div><div class="swhex" style="color:#a89f92">#2A251F</div></div></div>
+      <div class="swcard" style="background:#A82040"><div><span class="swname" style="color:#fff">Accent</span></div><div><div class="swhex" style="color:#fff">#A82040</div></div></div>
+      <div class="swcard" style="background:rgba(168,32,64,.26)"><div><span class="swname" style="color:#e58ba0">Accent text</span></div><div><div class="swhex" style="color:#e58ba0">#E58BA0</div></div></div>
+      <div class="swcard" style="background:#3a332b"><div><span class="swname" style="color:#efe9e0">Toggle thumb</span></div><div><div class="swhex" style="color:#a89f92">#3A332B</div></div></div>
+    </div>
+  </div>
+
+  <!-- TYPOGRAPHY -->
+  <div class="page" style="margin-bottom:28px">
+    <div class="kicker">02 — Typography</div>
+    <div class="h2">Serif for headings, sans for the interface.</div>
+    <div class="lede">Source Serif 4 (600/700) for page titles and card titles only. IBM Plex Sans (400–700) for every control, label, and body of text. IBM Plex Mono (400/500) for IDs, prices, and time ranges — anything tabular that benefits from fixed-width digits.</div>
+    <div style="display:flex;flex-direction:column;border-top:1px solid rgba(36,31,26,.1)">
+      <div class="specrow"><span class="speck">Page title</span><span style="font-family:'Source Serif 4',serif;font-weight:700;font-size:22px;color:#241f1a">Menu Studio</span><span class="specv" style="margin-left:auto"><code>Serif · 700 · 22px</code></span></div>
+      <div class="specrow"><span class="speck">Card / section title</span><span style="font-family:'Source Serif 4',serif;font-weight:600;font-size:16px;color:#241f1a">Meal Deal</span><span class="specv" style="margin-left:auto"><code>Serif · 600 · 16px</code></span></div>
+      <div class="specrow"><span class="speck">Table header</span><span style="font:600 11px 'IBM Plex Sans',sans-serif;letter-spacing:.05em;text-transform:uppercase;color:#8a8177">Product</span><span class="specv" style="margin-left:auto"><code>Sans · 600 · 11px · upper</code></span></div>
+      <div class="specrow"><span class="speck">Table body</span><span style="font:400 13.5px 'IBM Plex Sans',sans-serif;color:#241f1a">Flat White</span><span class="specv" style="margin-left:auto"><code>Sans · 400 · 13.5px</code></span></div>
+      <div class="specrow"><span class="speck">Mono / tabular</span><span style="font:500 12.5px 'IBM Plex Mono',monospace;color:#241f1a">$5.00 · 9868549</span><span class="specv" style="margin-left:auto"><code>Mono · 500 · 12.5px</code></span></div>
+      <div class="specrow"><span class="speck">Caption / kicker</span><span style="font:600 10.5px 'IBM Plex Sans',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#a39a8c">Reporting group</span><span class="specv" style="margin-left:auto"><code>Sans · 600 · 10.5px · upper</code></span></div>
+    </div>
+  </div>
+
+  <!-- TABLE STANDARD -->
+  <div class="page" style="margin-bottom:28px">
+    <div class="kicker">03 — Table standard</div>
+    <div class="h2">One data-table pattern, everywhere.</div>
+    <div class="lede">Every data table in the portal (Products, Menus, POS Layouts, and any future table in Orders / Reporting / Manage Catalog) should reuse these exact rules rather than inventing new ones per screen — copy the CSS below verbatim.</div>
+
+    <div style="font:600 13px 'IBM Plex Sans',sans-serif;color:#241f1a;margin-bottom:12px">Anatomy</div>
+    <div class="tblwrap" style="margin-bottom:22px">
+      <div class="grow headrow" style="grid-template-columns:38px 1.4fr 1fr 1fr 0.8fr 220px;border-bottom:1px solid rgba(36,31,26,.1)">
+        <div class="hcell" style="justify-content:center;padding:0"><span class="chk"></span></div>
+        <div class="hcell">Menu <span class="srt">↕</span></div>
+        <div class="hcell">Status</div>
+        <div class="hcell">Products</div>
+        <div class="hcell">Updated</div>
+        <div class="hcell" style="border-right:none">Actions</div>
+      </div>
+      <div class="grow divrow" style="grid-template-columns:38px 1.4fr 1fr 1fr 0.8fr 220px">
+        <div class="gcell" style="justify-content:center;padding:0"><span class="chk"></span></div>
+        <div class="gcell" style="font-weight:500">Café — All Day</div>
+        <div class="gcell"><span class="spill" style="background:rgba(47,64,52,.14);color:#2F4034"><span class="pagedot" style="background:#2F4034"></span>Live</span></div>
+        <div class="gcell">35</div>
+        <div class="gcell" style="color:#6b6259">2 hours ago</div>
+        <div class="gcell" style="border-right:none;gap:6px"><span class="mact pri">Publish</span><span class="mact">⧉ Duplicate</span></div>
+      </div>
+      <div class="grow" style="grid-template-columns:38px 1.4fr 1fr 1fr 0.8fr 220px">
+        <div class="gcell" style="justify-content:center;padding:0"><span class="chk"></span></div>
+        <div class="gcell" style="font-weight:500">Wholesale</div>
+        <div class="gcell"><span class="spill" style="background:#f0ece3;color:#6b6259"><span class="pagedot" style="background:#a39a8c"></span>Draft</span></div>
+        <div class="gcell">12</div>
+        <div class="gcell" style="color:#6b6259">3 days ago</div>
+        <div class="gcell" style="border-right:none;gap:6px"><span class="mact pri">Publish</span><span class="mact">⧉ Duplicate</span></div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;margin-bottom:10px">
+      <div class="specrow"><span class="speck">Container</span><span class="specv">White surface, 1px border <code>rgba(36,31,26,.08)</code>, 10–12px radius, overflow hidden.</span></div>
+      <div class="specrow"><span class="speck">Header row</span><span class="specv">42px tall, 11px uppercase Plex Sans 600, colour <code>--faint</code>, 1px bottom border <code>rgba(36,31,26,.1)</code>, sticky on scroll for long tables.</span></div>
+      <div class="specrow"><span class="speck">Body row</span><span class="specv">52px tall, 13.5px Plex Sans 400 <code>--text</code>, 1px bottom divider <code>--divider</code>, whole-row hover tint <code>rgba(36,31,26,.02)</code>.</span></div>
+      <div class="specrow"><span class="speck">Cell padding</span><span class="specv"><code>0 14px</code> horizontal; vertical borders between grid columns use the same divider colour as rows.</span></div>
+      <div class="specrow"><span class="speck">Row selection</span><span class="specv">Leading 16×16px checkbox column, 1.5px border <code>--chk</code>, 3px radius; checked state fills <code>--accent</code> with a white ✓.</span></div>
+      <div class="specrow"><span class="speck">Status pill</span><span class="specv"><code>.spill</code> — 20px pill radius, 6px colour dot + label, semantic background per status (see §01 semantic colours).</span></div>
+      <div class="specrow"><span class="speck">Row actions</span><span class="specv"><code>.mact</code> ghost buttons (1px border, 7px radius) right-aligned; the single primary action per row uses <code>.mact.pri</code> (solid accent fill) — never more than one primary per row.</span></div>
+      <div class="specrow"><span class="speck">Numeric columns</span><span class="specv">Right-aligned or mono, <code>font-variant-numeric: tabular-nums</code> for prices/counts.</span></div>
+      <div class="specrow"><span class="speck">Category / tag chips</span><span class="specv"><code>.cbox</code> — dashed-free solid 1px border, small colour dot for category identity, used inline in a cell rather than a full pill.</span></div>
+    </div>
+
+    <div class="dosdonts">
+      <div class="dobox" style="background:rgba(47,64,52,.08)">
+        <div class="dtitle" style="color:#2F4034">Do</div>
+        <div class="dtext" style="color:#3d4a41">Reuse <code>.grow/.hcell/.gcell</code> (or <code>.mrow/.mcell</code> for the wider status-driven layout) verbatim; only change the column count/widths per screen.</div>
+      </div>
+      <div class="dobox" style="background:rgba(168,32,64,.08)">
+        <div class="dtitle" style="color:#A82040">Don't</div>
+        <div class="dtext" style="color:#6b3241">Invent a new row height, divider colour, or pill shape for a new table — extend this pattern instead of styling one-off.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BUTTONS & CONTROLS -->
+  <div class="page">
+    <div class="kicker">04 — Buttons &amp; controls</div>
+    <div class="h2">Consistent actions, everywhere they appear.</div>
+    <div class="lede">The same four button treatments recur across Menu Studio, Menus, and POS Layout — reuse them rather than the brand guide's older set below, which predates the portal build.</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:28px">
+      <div style="background:#A82040;color:#fff;font:600 13px 'IBM Plex Sans',sans-serif;padding:8px 16px;border-radius:7px">Publish</div>
+      <div class="pill" style="display:inline-flex;align-items:center;gap:6px;background:#f0ece3;color:#6b6259;font:500 12px 'IBM Plex Sans',sans-serif;padding:7px 12px;border-radius:6px">Export</div>
+      <div class="mact">⧉ Duplicate</div>
+      <div class="mact" style="border-color:rgba(168,32,64,.4);color:#A82040">Delete</div>
+      <div class="addbtn" style="display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(36,31,26,.18);border-radius:7px;padding:7px 12px;font:600 12px 'IBM Plex Sans',sans-serif;color:#6b6259">+ Add tab</div>
+    </div>
+    <div style="font:400 12.5px 'IBM Plex Sans',sans-serif;color:#6b6259;line-height:1.6">Primary (solid accent) = one per view, the single most important commit action. Ghost/ ".mact" = row-level or toolbar secondary actions. Pill = filter/utility chips in a header bar. Dashed "+ Add…" = structural creation (rows, tabs, option sets, categories).</div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:900}}"></script>
+</body>
+</html>

@@ -26,17 +26,243 @@
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 }
 
+/* ==========================================================================
+   Portal Design Guide — colour tokens (see PORTAL_DESIGN_GUIDE.md / .html)
+   One token set, two themes. Every surface reads these custom properties
+   rather than hard-coded hex, which is what makes the light/dark toggle
+   instant and consistent. Light values live on :root; the .dark block swaps
+   the whole set wholesale — never hand-tune an individual dark colour.
+   ========================================================================== */
+:root {
+  --zr-accent: #a82040;          /* brand red — primary actions, active nav, totals */
+  --zr-accent-text: #ffffff;     /* text/icon colour on an accent fill */
+  --zr-green: #2f4034;           /* live / published / paid */
+  --zr-text: #241f1a;            /* ink — primary text */
+  --zr-muted: #6b6259;           /* secondary text */
+  --zr-faint: #a39a8c;           /* captions, table-header labels */
+  --zr-sidebar: #f4efe4;         /* sidebar surface */
+  --zr-bg: #faf7f2;              /* app background / table-header fill */
+  --zr-surface: #ffffff;         /* card / table surface */
+  --zr-surface2: #f0ece3;        /* inset / hover surface */
+  --zr-accent-soft: rgba(168, 32, 64, 0.10);
+  --zr-accent-soft2: rgba(168, 32, 64, 0.16);
+  --zr-border: rgba(36, 31, 26, 0.08);        /* card / table outer border */
+  --zr-header-border: rgba(36, 31, 26, 0.10); /* under the table header row */
+  --zr-divider: rgba(36, 31, 26, 0.06);       /* row + column dividers */
+  --zr-chk: #cfc7bb;             /* unchecked selection checkbox border */
+  --zr-row-hover: rgba(36, 31, 26, 0.02);     /* whole-row hover tint */
+
+  /* Semantic status colours — badges, pills, dots (see guide §01) */
+  --zr-live-bg: rgba(47, 64, 52, 0.14);
+  --zr-live-fg: #2f4034;
+  --zr-pending-bg: rgba(197, 106, 26, 0.16);
+  --zr-pending-fg: #b06a1a;
+  --zr-draft-bg: #f0ece3;
+  --zr-draft-fg: #6b6259;
+  --zr-draft-dot: #a39a8c;
+  --zr-void-bg: rgba(168, 32, 64, 0.14);
+  --zr-void-fg: #a82040;
+}
+
+.dark {
+  --zr-accent: #a82040;
+  --zr-accent-text: #ffffff;
+  --zr-green: #8fb89a;
+  --zr-text: #efe9e0;
+  --zr-muted: #a89f92;
+  --zr-faint: #8a8177;
+  --zr-sidebar: #1b1611;
+  --zr-bg: #201a15;
+  --zr-surface: #2a2119;
+  --zr-surface2: #2a251f;
+  --zr-accent-soft: rgba(168, 32, 64, 0.22);
+  --zr-accent-soft2: rgba(168, 32, 64, 0.30);
+  --zr-border: rgba(255, 255, 255, 0.08);
+  --zr-header-border: rgba(255, 255, 255, 0.10);
+  --zr-divider: rgba(255, 255, 255, 0.06);
+  --zr-chk: #5a5148;
+  --zr-row-hover: rgba(255, 255, 255, 0.03);
+
+  --zr-live-bg: rgba(47, 64, 52, 0.40);
+  --zr-live-fg: #8fb89a;
+  --zr-pending-bg: rgba(197, 106, 26, 0.28);
+  --zr-pending-fg: #e0a86a;
+  --zr-draft-bg: #2a251f;
+  --zr-draft-fg: #a89f92;
+  --zr-draft-dot: #6b6259;
+  --zr-void-bg: rgba(168, 32, 64, 0.30);
+  --zr-void-fg: #e58ba0;
+}
+
 body {
   margin: 0;
   font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
-  background: #f9fafb;
-  color: #111827;
+  background: var(--zr-bg);
+  color: var(--zr-text);
 }
 
 .dark body {
-  background: #111827;
-  color: #f3f4f6;
+  background: var(--zr-bg);
+  color: var(--zr-text);
 }
+
+/* ==========================================================================
+   Portal Design Guide — table standard (guide §03)
+   ONE data-table pattern for the whole portal. Wrap a semantic <table> in
+   `.zr-table-wrap` and give the table `.zr-table`; the skin below owns the
+   container, header row, body rows, dividers, hover, and sticky header so no
+   screen re-styles those per-cell. Add `.zr-num` to a th/td for tabular
+   right-aligned numerics. Do NOT invent a new row height / divider / pill for
+   a new table — extend this pattern instead.
+   ========================================================================== */
+.zr-table-wrap {
+  border: 1px solid var(--zr-border);
+  border-radius: 12px;
+  overflow: auto;                 /* horizontal scroll on narrow screens */
+  background: var(--zr-surface);
+}
+
+.zr-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--zr-surface);
+  color: var(--zr-text);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+}
+
+/* Header row — 42px, 11px uppercase Plex Sans 600, faint, sticky on scroll. */
+.zr-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 42px;
+  padding: 0 14px;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--zr-faint);
+  background: var(--zr-bg);
+  border-bottom: 1px solid var(--zr-header-border);
+  border-right: 1px solid var(--zr-divider);
+}
+.zr-table thead th:last-child { border-right: none; }
+.zr-table thead th.zr-num { text-align: right; }
+
+/* Body rows — 52px, 13.5px Plex Sans 400, ink, 1px divider, whole-row hover. */
+.zr-table tbody td {
+  height: 52px;
+  padding: 0 14px;
+  vertical-align: middle;
+  font-size: 13.5px;
+  font-weight: 400;
+  border-bottom: 1px solid var(--zr-divider);
+  border-right: 1px solid var(--zr-divider);
+}
+.zr-table tbody td:last-child { border-right: none; }
+.zr-table tbody tr:last-child td { border-bottom: none; }
+.zr-table tbody tr:hover td { background: var(--zr-row-hover); }
+.zr-table tbody td.zr-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* A cell that hosts inline controls / wrapped action buttons breathes a bit. */
+.zr-table tbody td.zr-cell-pad { padding-top: 8px; padding-bottom: 8px; }
+
+/* Selection checkbox column (guide §03 "Row selection"). */
+.zr-chk {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--zr-chk);
+  border-radius: 3px;
+  background: var(--zr-surface);
+  flex: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-block;
+  vertical-align: middle;
+}
+.zr-chk:checked {
+  background: var(--zr-accent);
+  border-color: var(--zr-accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+  background-size: 14px 14px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Status pill (guide §03 ".spill") — 6px dot + label, semantic background. */
+.zr-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.zr-pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: currentColor;
+  flex: none;
+}
+.zr-pill--live { background: var(--zr-live-bg); color: var(--zr-live-fg); }
+.zr-pill--pending { background: var(--zr-pending-bg); color: var(--zr-pending-fg); }
+.zr-pill--draft { background: var(--zr-draft-bg); color: var(--zr-draft-fg); }
+.zr-pill--draft::before { background: var(--zr-draft-dot); }
+.zr-pill--void { background: var(--zr-void-bg); color: var(--zr-void-fg); }
+
+/* Row / toolbar action buttons (guide §03/§04 ".mact"). */
+.zr-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--zr-border);
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--zr-muted);
+  background: var(--zr-surface);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+}
+.zr-action:hover { background: var(--zr-surface2); }
+.zr-action:disabled { opacity: 0.5; cursor: default; }
+.zr-action--pri {
+  background: var(--zr-accent);
+  color: var(--zr-accent-text);
+  border-color: var(--zr-accent);
+}
+.zr-action--pri:hover { background: #8a1a34; border-color: #8a1a34; }
+.zr-action--danger { border-color: var(--zr-accent-soft2); color: var(--zr-accent); }
+
+/* Inline category / tag chip (guide §03 ".cbox") — solid 1px border + dot. */
+.zr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--zr-border);
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--zr-text);
+  background: var(--zr-surface);
+  white-space: nowrap;
+}
+.zr-chip__dot { width: 8px; height: 8px; border-radius: 3px; flex: none; }
 
 /* Hide native number-input spin buttons — used on Menu Studio's small numeric
    chip fields (Modifiers min/max/price), where the browser's default arrows

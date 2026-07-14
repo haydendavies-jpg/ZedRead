@@ -465,32 +465,32 @@ export function UsersPage() {
       {isLoading ? (
         <div className="text-gray-400 dark:text-gray-500 text-sm">Loading…</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm min-w-[900px]">
+        <div className="zr-table-wrap">
+          <table className="zr-table min-w-[900px]">
             <thead>
-              <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                <th className="px-4 py-3">ID</th>
-                <th className="px-4 py-3">Group</th>
-                <th className="px-4 py-3">Brand</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Sites</th>
-                <th className="px-4 py-3">Backend</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Actions</th>
+              <tr>
+                <th>ID</th>
+                <th>Group</th>
+                <th>Brand</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Sites</th>
+                <th>Backend</th>
+                <th>Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody>
               {filtered.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
-                  <td className="px-4 py-3"><EntityIdChip id={u.id} ref={u.ref} /></td>
-                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{u.group_name || <span className="text-gray-300">—</span>}</td>
-                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{u.brand_name || <span className="text-gray-300">—</span>}</td>
-                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{u.name}</td>
-                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{u.email}</td>
-                  <td className="px-4 py-3">
+                <tr key={u.id}>
+                  <td><EntityIdChip id={u.id} ref={u.ref} /></td>
+                  <td className="text-[var(--zr-muted)]">{u.group_name || <span className="text-[var(--zr-faint)]">—</span>}</td>
+                  <td className="text-[var(--zr-muted)]">{u.brand_name || <span className="text-[var(--zr-faint)]">—</span>}</td>
+                  <td className="font-medium">{u.name}</td>
+                  <td className="text-[var(--zr-muted)]">{u.email}</td>
+                  <td className="zr-cell-pad">
                     {u.site_grants.length === 0 ? (
-                      <span className="text-xs text-gray-400 dark:text-gray-500">None</span>
+                      <span className="text-xs text-[var(--zr-faint)]">None</span>
                     ) : (
                       <div className="flex flex-wrap gap-1">
                         {u.site_grants.map((g) => (
@@ -504,31 +504,33 @@ export function UsersPage() {
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td>
                     {u.backend_role ? (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 capitalize">
                         {u.backend_role}
                       </span>
                     ) : (
-                      <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
+                      <span className="text-xs text-[var(--zr-faint)]">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td>
                     <StatusBadge status={u.is_active ? 'active' : 'disabled'} />
                   </td>
-                  <td className="px-4 py-3 flex gap-3">
-                    <button onClick={() => openEdit(u)} className="text-brand-600 hover:underline text-xs">Edit</button>
-                    {u.is_active && (
-                      <button onClick={() => deactivateMutation.mutate(u.id)} className="text-red-500 hover:underline text-xs">
-                        Deactivate
-                      </button>
-                    )}
+                  <td className="zr-cell-pad">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button onClick={() => openEdit(u)} className="text-brand-600 hover:underline text-xs">Edit</button>
+                      {u.is_active && (
+                        <button onClick={() => deactivateMutation.mutate(u.id)} className="text-red-500 hover:underline text-xs">
+                          Deactivate
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
+                  <td colSpan={9} className="text-center text-[var(--zr-faint)] py-8">
                     {users.length === 0 ? 'No users yet. Create one above.' : 'No users match the current filters.'}
                   </td>
                 </tr>
@@ -674,22 +676,22 @@ export function UsersPage() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-                <table className="w-full text-sm min-w-[680px]">
+              <div className="zr-table-wrap">
+                <table className="zr-table min-w-[680px]">
                   <thead>
-                    <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                      <th className="px-3 py-2">Brand</th>
-                      <th className="px-3 py-2">Site</th>
-                      <th className="px-3 py-2">POS Access</th>
-                      <th className="px-3 py-2">Backend Access</th>
-                      <th className="px-3 py-2"></th>
+                    <tr>
+                      <th>Brand</th>
+                      <th>Site</th>
+                      <th>POS Access</th>
+                      <th>Backend Access</th>
+                      <th></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-50">
+                  <tbody>
                     {accessLoading ? (
-                      <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400 dark:text-gray-500 text-xs">Loading…</td></tr>
+                      <tr><td colSpan={5} className="text-center text-[var(--zr-faint)] text-xs py-4">Loading…</td></tr>
                     ) : filteredEntries.length === 0 ? (
-                      <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400 dark:text-gray-500 text-xs">
+                      <tr><td colSpan={5} className="text-center text-[var(--zr-faint)] text-xs py-4">
                         {(groupAccess?.entries ?? []).length === 0 ? 'No brands or sites found in this group.' : 'No results match the search.'}
                       </td></tr>
                     ) : filteredEntries.map((entry) => {

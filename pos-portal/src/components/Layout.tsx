@@ -150,9 +150,9 @@ export function Layout() {
   )
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-gray-950">
+    <div className="flex min-h-screen bg-[var(--zr-bg)]">
       {/* Desktop sidebar — always visible at sm+ */}
-      <aside className="hidden sm:flex w-56 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex-col">
+      <aside className="hidden sm:flex w-56 bg-[var(--zr-sidebar)] border-r border-[var(--zr-border)] flex-col">
         {sidebarContent}
       </aside>
 
@@ -164,7 +164,7 @@ export function Layout() {
         />
       )}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-56 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col transform transition-transform duration-200 sm:hidden ${
+        className={`fixed inset-y-0 left-0 z-50 w-56 bg-[var(--zr-sidebar)] border-r border-[var(--zr-border)] flex flex-col transform transition-transform duration-200 sm:hidden ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -172,9 +172,9 @@ export function Layout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-950 min-w-0">
+      <main className="flex-1 overflow-auto bg-[var(--zr-bg)] min-w-0">
         {/* Mobile header bar with hamburger */}
-        <div className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 sm:hidden">
+        <div className="flex items-center gap-3 px-4 py-3 bg-[var(--zr-sidebar)] border-b border-[var(--zr-border)] sm:hidden">
           <button
             onClick={() => setSidebarOpen(true)}
             className="p-1 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"

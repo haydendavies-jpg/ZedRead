@@ -136,23 +136,23 @@ export function TaxTemplatesPage() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto rounded-lg border border-gray-100 dark:border-gray-800">
-                <table className="w-full text-sm min-w-[420px]">
+              <div className="zr-table-wrap">
+                <table className="zr-table min-w-[420px]">
                   <thead>
-                    <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                      <th className="px-3 py-2">Rate</th>
-                      <th className="px-3 py-2">Percent</th>
-                      <th className="px-3 py-2">Model</th>
-                      <th className="px-3 py-2" />
+                    <tr>
+                      <th>Rate</th>
+                      <th className="zr-num">Percent</th>
+                      <th>Model</th>
+                      <th />
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-50">
+                  <tbody>
                     {t.rates.map((r) => (
                       <tr key={r.id}>
-                        <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{r.name}</td>
-                        <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{Number(r.rate_percent)}%</td>
-                        <td className="px-3 py-2 text-gray-500 dark:text-gray-400 capitalize">{r.tax_model}</td>
-                        <td className="px-3 py-2 text-right">
+                        <td>{r.name}</td>
+                        <td className="zr-num font-mono">{Number(r.rate_percent)}%</td>
+                        <td className="text-[var(--zr-muted)] capitalize">{r.tax_model}</td>
+                        <td className="text-right">
                           <button
                             onClick={() => deleteRateMutation.mutate(r.id)}
                             className="text-red-500 hover:underline text-xs"
@@ -163,7 +163,7 @@ export function TaxTemplatesPage() {
                       </tr>
                     ))}
                     {t.rates.length === 0 && (
-                      <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400 dark:text-gray-500 text-xs">No rates — add one.</td></tr>
+                      <tr><td colSpan={4} className="text-center text-[var(--zr-faint)] text-xs py-4">No rates — add one.</td></tr>
                     )}
                   </tbody>
                 </table>

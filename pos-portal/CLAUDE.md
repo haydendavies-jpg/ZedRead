@@ -5,6 +5,43 @@ Read it before writing any React, Tailwind, or TypeScript in this directory.
 
 ---
 
+## Design Guide (colour + table standards) — READ FIRST for any UI work
+
+`design_guide/PORTAL_DESIGN_GUIDE.md` is the authoritative colour-token and data-table
+standard for **both** portals (admin + management), with the original high-fidelity
+mockup saved next to it as `ZedRead_Portal_Design_Guide.html`. It is implemented in
+`src/index.css` as `--zr-*` custom properties (light on `:root`, dark on `.dark`) plus a
+global table skin.
+
+**Every data table MUST use the shared skin** — do not hand-roll table styling:
+
+```tsx
+<div className="zr-table-wrap">
+  <table className="zr-table min-w-[720px]">
+    <thead><tr><th>Name</th><th className="zr-num">Total</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td className="font-medium">…</td>
+        <td className="zr-num font-mono">…</td>
+        <td><StatusBadge status={s} /></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+```
+
+- Header/row heights, dividers, hover, sticky header, cell padding are all owned by
+  `.zr-table` — never re-style them per screen. Add `.zr-num` for numeric columns and
+  `.zr-cell-pad` to cells hosting inline controls / wrapped action buttons.
+- Status pills: use `<StatusBadge status="…" />` (maps every status onto the four
+  semantic families) or `.zr-pill .zr-pill--{live|pending|draft|void}` directly.
+- Row/toolbar buttons: `.zr-action`, `.zr-action--pri` (one primary per row), `.zr-action--danger`.
+- Selection checkbox: `.zr-chk`. Inline category chip: `.zr-chip` + `.zr-chip__dot`.
+- Chrome (background, sidebar, borders) reads `--zr-bg` / `--zr-sidebar` / `--zr-border`.
+  When adding chrome, prefer these tokens over raw `gray-*` utilities.
+
+---
+
 ## Brand
 
 ### Colors
