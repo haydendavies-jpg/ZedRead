@@ -17,19 +17,17 @@ import { CategoriesPage } from '../management/CategoriesPage'
 import { ReportsPage } from '../management/ReportsPage'
 import { InvoicesPage } from '../management/InvoicesPage'
 import { UsersPage } from '../management/UsersPage'
-import { SiteOverridesPage } from '../management/SiteOverridesPage'
 import { MenuBuilderPage } from '../management/MenuBuilderPage'
 import { sessionInto } from '../../utils/impersonation'
 import type { Brand, Group } from '../../types'
 
-type Tab = 'overview' | 'products' | 'categories' | 'menu_builder' | 'overrides' | 'reports' | 'invoices' | 'users'
+type Tab = 'overview' | 'products' | 'categories' | 'menu_builder' | 'reports' | 'invoices' | 'users'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'products', label: 'Products' },
   { id: 'categories', label: 'Categories' },
   { id: 'menu_builder', label: 'Menu Builder' },
-  { id: 'overrides', label: 'Site Overrides' },
   { id: 'reports', label: 'Reports' },
   { id: 'invoices', label: 'Invoices' },
   { id: 'users', label: 'Users & Grants' },
@@ -119,7 +117,6 @@ export function BrandDetailPage() {
           {activeTab === 'products' && <ProductsPage />}
           {activeTab === 'categories' && <CategoriesPage />}
           {activeTab === 'menu_builder' && <MenuBuilderPage />}
-          {activeTab === 'overrides' && <SiteOverridesPage />}
           {activeTab === 'reports' && <ReportsPage />}
           {activeTab === 'invoices' && <InvoicesPage />}
           {activeTab === 'users' && <UsersPage />}

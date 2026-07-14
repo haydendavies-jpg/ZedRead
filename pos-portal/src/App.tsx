@@ -37,7 +37,6 @@ import { InvoicesPage } from './pages/management/InvoicesPage'
 import { InvoiceDetailPage } from './pages/management/InvoiceDetailPage'
 import { UsersPage as MgmtUsersPage } from './pages/management/UsersPage'
 import { AccessProfilesPage } from './pages/management/AccessProfilesPage'
-import { SiteOverridesPage } from './pages/management/SiteOverridesPage'
 import { CompanyProfilePage } from './pages/management/CompanyProfilePage'
 import { UsersPage } from './pages/UsersPage'
 import { EmailTemplatesPage } from './pages/EmailTemplatesPage'
@@ -176,7 +175,6 @@ export default function App() {
               <Route path="management/invoices/:invoiceId" element={<InvoiceDetailPage />} />
               <Route path="management/users" element={<MgmtUsersPage />} />
               <Route path="management/access-profiles" element={<AccessProfilesPage />} />
-              <Route path="management/overrides" element={<SiteOverridesPage />} />
               <Route path="management/company-profile" element={<CompanyProfilePage />} />
             </Route>
 

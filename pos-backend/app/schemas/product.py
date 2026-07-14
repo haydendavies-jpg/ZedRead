@@ -1,4 +1,4 @@
-"""Pydantic schemas for product and site override requests and responses."""
+"""Pydantic schemas for product requests and responses."""
 
 import uuid
 
@@ -73,39 +73,3 @@ class ProductListItem(ProductResponse):
     reporting_group_id: uuid.UUID
     reporting_group_name: str
     modifier_names: str | None = None
-
-
-class SiteProductOverrideSet(BaseModel):
-    """Payload for PUT /site-overrides/{site_id}/{product_id}."""
-
-    override_price_cents: int | None = Field(None, ge=0)
-    is_excluded: bool = False
-
-
-class SiteProductOverrideResponse(BaseModel):
-    """Response schema for a SiteProductOverride."""
-
-    id: uuid.UUID
-    site_id: uuid.UUID
-    product_id: uuid.UUID
-    override_price_cents: int | None
-    is_excluded: bool
-
-    model_config = {"from_attributes": True}
-
-
-class ResolvedProduct(BaseModel):
-    """
-    A product as seen by a specific site — price overrides and exclusions applied.
-
-    Returned by resolve_products_for_site() and used directly by the invoice engine
-    in Stage 10. Never modify this schema's fields without updating the invoice service.
-    """
-
-    product_id: uuid.UUID
-    name: str
-    category_id: uuid.UUID
-    tax_category_id: uuid.UUID | None
-    effective_price_cents: int
-    photo_url: str | None
-    display_order: int

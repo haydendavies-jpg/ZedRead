@@ -274,16 +274,6 @@ Optional or required add-on groups attached to products (e.g. "Extra Toppings", 
 #### `product_combo_groups` / `product_combo_options`
 Combo/meal deal products that bundle other products. The service enforces that circular references (A → B → C → A) are rejected.
 
-#### `site_product_overrides` / `site_variant_overrides`
-Per-site price adjustments or exclusions on top of the brand catalog. The `product_resolver` service merges these at query time.
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `site_id` | UUID FK → sites | |
-| `product_id` | UUID FK → products | |
-| `override_price_cents` | BIGINT | NULL = use brand base price |
-| `is_excluded` | BOOLEAN | True = product hidden at this site |
-
 ---
 
 ### Tax
@@ -362,7 +352,7 @@ One row per product line. **All product and tax data is snapshotted at creation 
 | `invoice_id` | UUID FK → invoices | CASCADE delete |
 | `product_id` | UUID FK → products | SET NULL if product deleted (snapshot is truth) |
 | `product_name` | VARCHAR(255) | **SNAPSHOT** |
-| `unit_price_cents` | BIGINT | **SNAPSHOT** — effective price after site overrides |
+| `unit_price_cents` | BIGINT | **SNAPSHOT** — effective price at sale time |
 | `tax_category_name` | VARCHAR(100) | **SNAPSHOT** |
 | `tax_rate_percent` | NUMERIC(10,4) | **SNAPSHOT** — aggregate rate across all rates |
 | `tax_model` | VARCHAR(20) | **SNAPSHOT** |

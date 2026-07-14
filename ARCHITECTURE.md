@@ -130,7 +130,7 @@ sequenceDiagram
     API-->>T: InvoiceResponse
 
     T->>API: POST /invoices/{id}/line-items (product_id, quantity)
-    API->>DB: Resolve product + site overrides + tax
+    API->>DB: Resolve product + tax
     API->>DB: INSERT invoice_line_items (snapshot all price/tax fields)
     API->>DB: UPDATE invoices totals
     API-->>T: InvoiceLineItemResponse

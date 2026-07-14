@@ -95,9 +95,6 @@ TAX_TEMPLATE_RATE_CREATED = "tax_template_rate.created"
 TAX_TEMPLATE_RATE_UPDATED = "tax_template_rate.updated"
 TAX_TEMPLATE_RATE_DELETED = "tax_template_rate.deleted"
 
-SITE_PRODUCT_OVERRIDE_SET = "site_product_override.set"
-SITE_PRODUCT_OVERRIDE_REMOVED = "site_product_override.removed"
-
 VARIANT_CREATED = "variant.created"
 VARIANT_UPDATED = "variant.updated"
 VARIANT_DEACTIVATED = "variant.deactivated"

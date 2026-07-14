@@ -41,7 +41,7 @@ Multi-tenant POS platform. The hierarchy is **Group → Brand → Site**. A Grou
 | 5 | Portal Frontend | Working React portal for all CRUD and license management |
 | 6 | Deploy Phase 1 | **Portal live.** API + portal on Railway, DB on Supabase, logs in Grafana Cloud |
 | 7 | POS Auth & Users | POS login, PIN, invite flow, access profiles, permission enforcement |
-| 8 | Product Catalog | Products, categories, tax config, site overrides, photo upload to Supabase Storage |
+| 8 | Product Catalog | Products, categories, tax config, photo upload to Supabase Storage |
 | 9 | Variants, Modifiers, Combos | Advanced product features with circular reference protection |
 | 10 | Invoice Engine | Sales, payments, void, refund, split payments — all audit logged |
 | 11 | Reporting | 8 PostgreSQL reporting views, scope-enforced API routes |

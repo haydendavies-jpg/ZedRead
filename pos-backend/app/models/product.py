@@ -15,7 +15,7 @@ class Product(Base):
     A product in a brand's catalog.
 
     Prices are stored in cents (BIGINT) — never as floats (CLAUDE.md rule 4 + 9).
-    base_price_cents is the default shelf price before any site-level override.
+    base_price_cents is the shelf price charged at every site.
 
     A product belongs to a brand (scoping) and a category (display grouping).
     The tax_category_id is optional; if NULL the product inherits from its
