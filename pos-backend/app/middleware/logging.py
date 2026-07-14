@@ -1,5 +1,6 @@
 """Request logging middleware — attaches a UUID request_id to every request."""
 
+import time
 import uuid
 
 import structlog
@@ -55,16 +56,36 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             path=request.url.path,
         )
 
+        # Monotonic clock — immune to wall-clock adjustments mid-request
+        started_at: float = time.monotonic()
+
         response: Response = await call_next(request)
+
+        duration_ms: int = int((time.monotonic() - started_at) * 1000)
 
         log.info(
             "request.completed",
             method=request.method,
             path=request.url.path,
             status_code=response.status_code,
+            duration_ms=duration_ms,
         )
 
-        # Attach the request_id to the response so clients can reference it
+        # Slow requests get their own WARNING so they stand out in production
+        # logs — the first place to look when the portal feels sluggish
+        if duration_ms >= 1000:
+            log.warning(
+                "request.slow",
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+                duration_ms=duration_ms,
+            )
+
+        # Attach the request_id to the response so clients can reference it,
+        # and the server-side duration so client-observed latency can be split
+        # into server time vs network time when diagnosing slowness
         response.headers["X-Request-ID"] = request_id
+        response.headers["X-Response-Time-Ms"] = str(duration_ms)
 
         return response

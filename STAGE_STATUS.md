@@ -754,6 +754,48 @@ Nine reported issues fixed in one pass:
 
 ---
 
+### Performance — request latency optimization (all portal/POS actions) ✅
+
+Diagnosed a reported 5–10 s delay on every portal action. Root cause: **per-request database
+round-trip amplification** — the auth dependencies in `app/utils/dependencies.py` issued 4–6
+*sequential* queries (user → grant → profile → scope entities, or user → site → grant → profile →
+session) before the route's own work, so a simple PATCH sent ~11–12 sequential statements
+(auth + route query + audit INSERT + UPDATE + COMMIT + refresh + pool pre-ping). Each statement
+costs a full network RTT to the database; with the API and database in different regions this
+compounds into seconds on *every* click, and the portal's invalidate-and-refetch after each
+mutation pays it twice. Measured per-request statement counts (SQLAlchemy event listener against
+the real test DB) before → after:
+
+| Request | Before | After |
+|---|---|---|
+| `GET /products` (management JWT) | 5 | 2 |
+| `GET /products` (POS JWT) | 6 | 2 |
+| `POST /products` (management JWT) | 10 | 7 |
+| `PATCH /products/{id}` (management JWT) | 8 | 5 |
+
+- [x] **Single-round-trip auth resolution** — new `_load_pos_context()` / `_load_mgmt_context()`
+  loaders (one LEFT-OUTER-joined SELECT each) replace the sequential chains in `resolve_access`,
+  `resolve_management_access`, and both inline branches of `resolve_catalog_access` (which had
+  duplicated the logic). Error order, status codes, and messages are preserved — NULL columns from
+  the outer joins map onto the exact same 401/403/500 branches.
+- [x] **Request duration telemetry** — `RequestLoggingMiddleware` now logs `duration_ms` on
+  `request.completed`, emits a `request.slow` WARNING at ≥1000 ms, and returns an
+  `X-Response-Time-Ms` header so client-observed latency can be split into server time vs network
+  time from the browser dev tools alone.
+- [x] **Event-loop protection** — `GET /invoice-reports/{id}/pdf` ran WeasyPrint (CPU-bound,
+  seconds) directly on the event loop, stalling every concurrent request; now `asyncio.to_thread`.
+- [x] **Pool tuning** — `DB_POOL_SIZE` (default 10), `DB_MAX_OVERFLOW` (10), and
+  `DB_POOL_RECYCLE_SECONDS` (1800) env vars on the engine; recycling pre-empts the remote pooler's
+  idle timeout so requests don't pay a failed-ping + full TLS reconnect.
+- [x] Tests: `X-Response-Time-Ms` header assertions added to `test_request_id.py`; full backend
+  suite green (auth behaviour covered by the existing pos/management/catalog auth suites).
+- [ ] **Deployment follow-up (not code)**: the remaining fixed cost is RTT × ~2–7 statements — if
+  the Railway service and the Supabase project are in different regions, co-locating them is the
+  single biggest win available (turns every remaining round trip from ~150–300 ms into ~1–5 ms).
+  Compare the `duration_ms` now in Railway logs against browser-observed latency to confirm.
+
+---
+
 ## Phase 9 — Product Model Extensions
 
 ### Stage 24 — Product Extensions ✅
