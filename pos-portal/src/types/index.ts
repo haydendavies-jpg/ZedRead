@@ -499,6 +499,10 @@ export interface User {
 export interface AccessGrant {
   id: string
   user_id: string
+  /** User identity, populated by the list route so the table can show who the grant belongs to. */
+  user_name: string | null
+  user_email: string | null
+  user_ref: string | null
   scope: 'site' | 'brand' | 'group'
   site_id: string | null
   brand_id: string | null
@@ -506,7 +510,14 @@ export interface AccessGrant {
   access_profile_id: string
   granted_by_id: string | null
   is_active: boolean
+  backend_role: string | null
   created_at: string
+}
+
+/** Result of POST /access-grants/bulk-update|bulk-revoke. */
+export interface AccessGrantBulkResult {
+  succeeded: string[]
+  errors: { grant_id: string; detail: string }[]
 }
 
 // ── Page-category permission hierarchy (ROLE_MODEL.md §4/§6, Stage 18) ─────────

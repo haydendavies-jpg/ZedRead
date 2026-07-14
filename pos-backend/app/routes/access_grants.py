@@ -11,9 +11,20 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import select
+
 from app.constants.statuses import GrantScope
 from app.database import get_db
-from app.schemas.access_grant import AccessGrantCreate, AccessGrantResponse, AccessGrantUpdate
+from app.models.user import User
+from app.schemas.access_grant import (
+    AccessGrantBulkResult,
+    AccessGrantBulkRevoke,
+    AccessGrantBulkUpdate,
+    AccessGrantCreate,
+    AccessGrantResponse,
+    AccessGrantUpdate,
+    BulkGrantError,
+)
 from app.services import access_grant_service
 from app.utils.dependencies import CatalogAccess, ManagementAccess, resolve_catalog_access
 
@@ -52,7 +63,25 @@ async def list_grants(
         skip=skip,
         limit=limit,
     )
-    return [AccessGrantResponse.model_validate(g) for g in grants]
+
+    # Batch-load the grants' users so the table can show who each grant belongs
+    # to (name + login email/username + ref) without an N+1 per-row lookup.
+    user_ids = {g.user_id for g in grants}
+    users_by_id: dict[uuid.UUID, User] = {}
+    if user_ids:
+        users_r = await db.execute(select(User).where(User.id.in_(user_ids)))
+        users_by_id = {u.id: u for u in users_r.scalars().all()}
+
+    responses: list[AccessGrantResponse] = []
+    for g in grants:
+        resp = AccessGrantResponse.model_validate(g)
+        user = users_by_id.get(g.user_id)
+        if user is not None:
+            resp.user_name = user.name
+            resp.user_email = user.email
+            resp.user_ref = user.ref
+        responses.append(resp)
+    return responses
 
 
 @router.post("", response_model=AccessGrantResponse, status_code=status.HTTP_201_CREATED)
@@ -153,6 +182,81 @@ async def revoke_grant(
     )
 
 
+@router.post("/bulk-update", response_model=AccessGrantBulkResult, status_code=status.HTTP_200_OK)
+async def bulk_update_grants(
+    payload: AccessGrantBulkUpdate,
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> AccessGrantBulkResult:
+    """
+    Apply one access-profile and/or backend-role change to many grants at once.
+
+    Partial success: grants outside the caller's scope, above their role
+    ceiling, or belonging to a Master User are reported in ``errors`` and the
+    rest are applied.
+
+    Args:
+        payload: grant_ids plus the fields to apply.
+        access: Resolved catalog access.
+        db: Active database session.
+
+    Returns:
+        AccessGrantBulkResult: Which grants succeeded and which failed (with reasons).
+    """
+    if access.pos_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Grant management requires a management or portal JWT",
+        )
+    succeeded, errors = await access_grant_service.bulk_update_grants(
+        db,
+        payload=payload,
+        management_access=access.mgmt_access,
+        superadmin=access.portal_access,
+    )
+    return AccessGrantBulkResult(
+        succeeded=succeeded,
+        errors=[BulkGrantError(grant_id=gid, detail=detail) for gid, detail in errors],
+    )
+
+
+@router.post("/bulk-revoke", response_model=AccessGrantBulkResult, status_code=status.HTTP_200_OK)
+async def bulk_revoke_grants(
+    payload: AccessGrantBulkRevoke,
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> AccessGrantBulkResult:
+    """
+    Revoke (soft-delete) many grants at once.
+
+    Partial success: grants outside the caller's scope, already revoked, or
+    belonging to a Master User are reported in ``errors``; the rest are revoked.
+
+    Args:
+        payload: grant_ids to revoke.
+        access: Resolved catalog access.
+        db: Active database session.
+
+    Returns:
+        AccessGrantBulkResult: Which grants succeeded and which failed (with reasons).
+    """
+    if access.pos_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Grant management requires a management or portal JWT",
+        )
+    succeeded, errors = await access_grant_service.bulk_revoke_grants(
+        db,
+        grant_ids=payload.grant_ids,
+        management_access=access.mgmt_access,
+        superadmin=access.portal_access,
+    )
+    return AccessGrantBulkResult(
+        succeeded=succeeded,
+        errors=[BulkGrantError(grant_id=gid, detail=detail) for gid, detail in errors],
+    )
+
+
 @router.post("/{grant_id}/set-default", response_model=AccessGrantResponse, status_code=status.HTTP_200_OK)
 async def set_default_grant(
     grant_id: uuid.UUID,
@@ -194,7 +298,6 @@ from app.models.access_profile import AccessProfile as AccessProfileModel
 from app.models.brand import Brand as BrandModel
 from app.schemas.access_profile import AccessProfileCapabilitiesUpdate
 from pydantic import BaseModel
-from sqlalchemy import select
 
 class AccessProfileOut(BaseModel):
     """Minimal access profile response for dropdowns."""

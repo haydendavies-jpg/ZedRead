@@ -7,10 +7,20 @@ from pydantic import BaseModel, model_validator
 
 
 class AccessGrantResponse(BaseModel):
-    """Full representation of a UserAccessGrant row."""
+    """Full representation of a UserAccessGrant row.
+
+    The user_* fields are populated by the list route (which joins the User
+    row) so the portal grants table can show who each grant belongs to; they
+    stay None on the create/update/set-default responses, which return the
+    grant in isolation.
+    """
 
     id: uuid.UUID
     user_id: uuid.UUID
+    # Identifying details of the grant's user, resolved by the list route.
+    user_name: str | None = None
+    user_email: str | None = None
+    user_ref: str | None = None
     scope: str
     site_id: uuid.UUID | None
     brand_id: uuid.UUID | None
@@ -69,3 +79,42 @@ class AccessGrantUpdate(BaseModel):
 
     access_profile_id: uuid.UUID | None = None
     backend_role: str | None = None
+
+
+class AccessGrantBulkUpdate(BaseModel):
+    """
+    Payload for applying one profile and/or backend-role change to many grants.
+
+    Same presence semantics as AccessGrantUpdate — a field is applied to every
+    listed grant only if the key is present, so ``{"backend_role": null}``
+    clears the role on all of them while omitting it leaves each unchanged.
+    """
+
+    grant_ids: list[uuid.UUID]
+    access_profile_id: uuid.UUID | None = None
+    backend_role: str | None = None
+
+
+class AccessGrantBulkRevoke(BaseModel):
+    """Payload for revoking many grants at once."""
+
+    grant_ids: list[uuid.UUID]
+
+
+class BulkGrantError(BaseModel):
+    """One grant that could not be updated/revoked in a bulk operation."""
+
+    grant_id: uuid.UUID
+    detail: str
+
+
+class AccessGrantBulkResult(BaseModel):
+    """Outcome of a bulk grant operation — which succeeded and which failed.
+
+    Partial success is allowed: grants that pass their per-grant scope, role
+    ceiling, and Master-User checks are applied; the rest are reported in
+    ``errors`` with the reason, so the UI can surface exactly what was skipped.
+    """
+
+    succeeded: list[uuid.UUID]
+    errors: list[BulkGrantError]
