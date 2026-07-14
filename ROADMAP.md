@@ -87,10 +87,14 @@ planned after Stage 15 was already underway.
 | Stage | Summary | Key outcome |
 |-------|---------|-------------|
 | 7 | POS auth, PIN, access profiles, grants | Staff can log in to a terminal; permissions enforced |
-| 8 | Products, categories, tax, site overrides, photos | Brand catalog fully configurable |
+| 8 | Products, categories, tax, photos | Brand catalog fully configurable |
 | **9** | **Variants, modifiers, combos** | **Advanced product features; circular reference protection** |
 
-**Exit criteria:** A brand manager can build a complete menu with variants (size, flavour), modifier groups (extra toppings), combos (meal deals), tax rules, and per-site price overrides.
+**Exit criteria:** A brand manager can build a complete menu with variants (size, flavour), modifier groups (extra toppings), combos (meal deals), and tax rules.
+
+> **Descoped (2026-07):** Per-site price/availability overrides (`site_product_overrides`,
+> `site_variant_overrides`, the `product_resolver` service, and the Site Overrides portal page)
+> were removed — the implementation was not right and the feature will be rescoped later.
 
 ---
 

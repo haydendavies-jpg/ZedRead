@@ -14,8 +14,8 @@ class Site(Base):
     """
     A Site is a physical or virtual location belonging to a Brand.
 
-    Each site runs its own Android POS terminal and has its own inventory
-    overrides, user access grants, and license assignment.
+    Each site runs its own Android POS terminal and has its own user access
+    grants and license assignment.
     """
 
     __tablename__ = "sites"

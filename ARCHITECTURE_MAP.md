@@ -78,7 +78,6 @@ Tokens stored in localStorage (portal; impersonation tokens per-tab in sessionSt
 | reporting_groups.py | Reporting Group CRUD (Stage 16), bulk XLSX export/template/import (Stage 19) |
 | menu_layouts.py | POS Menu Builder (Stage 23; grid editor Phase 2): layout/tab/button CRUD, reorder, publish/unpublish, duplicate, schedule/cancel-schedule-publish, button bulk-recolor/bulk-delete/group-into-tab (management JWT); `pos_router` exposes `GET /pos/menu-layout?site_id=`, the read contract for Android |
 | menus.py | Menus (Menu Studio redesign) — distinct from a `menu_layouts` layout: CRUD, duplicate, schedule/cancel-schedule/publish (management/portal JWT only) |
-| site_overrides.py | per-site price/availability overrides |
 | pos_devices.py | terminal device registration |
 | user_invites.py / license_invoices.py | onboarding invites, recurring license billing |
 
@@ -113,7 +112,6 @@ Identity: `users` (brand- or group-scoped staff), `superadmins` (portal admin, n
 Transactions: `invoices`, `invoice_line_items` (snapshotted name/price), `invoice_line_modifiers`,
 `invoice_tax_breakdowns`, `payments`.
 Billing: `licenses` (site_id, one per site), `license_invoices`.
-Overrides: `site_product_overrides`, `site_variant_overrides`.
 Ops: `user_pos_sessions`, `pos_devices`, `audit_logs` (immutable), `user_invites`.
 Menu Builder (Stage 23; grid editor Phase 2): `menu_layouts` (brand_id, nullable site_id, `scope`
 'brand'|'site' with a check constraint tying the two together, `is_published`, `version`, `color`,
@@ -143,7 +141,6 @@ one layout may be `is_published` at once (per-site/day-part menus).
 | PIN | Secondary credential for fast terminal user-switching (separate from login password) |
 | Combo | Bundled choices baked into one product (`product_combo_groups/options`) |
 | Modifier | Reusable add-on attachable to many products via join table |
-| Site Override | Per-site price/availability exception layered over brand-wide catalog price |
 
 ## Known discrepancies to watch for vs written summaries / design doc
 

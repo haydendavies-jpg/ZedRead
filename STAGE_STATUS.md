@@ -24,6 +24,18 @@ Stages 16–24, which were planned after Android scaffolding had already begun.
 
 ---
 
+## Descoped features
+
+**Site overrides (removed 2026-07-14).** The per-site price/availability override feature built in
+Stages 8–9 was removed — the implementation was not right and will be rescoped later. Dropped:
+`site_product_overrides` / `site_variant_overrides` tables (migration `0044`), their ORM models,
+`site_override_service.py`, `product_resolver.py` (`resolve_products_for_site()` / `ResolvedProduct`),
+the `/site-overrides` router + resolved-catalog endpoint, the `SITE_PRODUCT_OVERRIDE_*` audit actions,
+their tests, and the portal `SiteOverridesPage` (management nav entry + Brand detail tab). The Stage 8
+and Stage 9 checklists below still list these items as originally delivered; this note supersedes them.
+
+---
+
 ## Phase 1 — Foundation & Portal
 
 ### Stage 1 — Project Setup + Logging ✅

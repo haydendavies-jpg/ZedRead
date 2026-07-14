@@ -34,8 +34,6 @@ from app.models.product_variant import ProductVariant
 from app.models.product_variant_attribute import ProductVariantAttribute
 from app.models.reporting_group import ReportingGroup
 from app.models.site import Site
-from app.models.site_product_override import SiteProductOverride
-from app.models.site_variant_override import SiteVariantOverride
 from app.models.tax_category import TaxCategory
 from app.models.tax_rate import TaxRate
 from app.models.tax_template import TaxTemplate
@@ -80,8 +78,6 @@ __all__ = [
     "ProductVariantAttribute",
     "ReportingGroup",
     "Site",
-    "SiteProductOverride",
-    "SiteVariantOverride",
     "TaxCategory",
     "TaxRate",
     "TaxTemplate",
