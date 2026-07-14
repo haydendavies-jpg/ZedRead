@@ -64,7 +64,7 @@ export function Layout() {
   const sidebarContent = (
     <>
       <div className="px-4 py-5 border-b border-gray-100 dark:border-gray-800">
-        <span className="font-semibold text-gray-900 dark:text-gray-100">ZedRead</span>
+        <span className="font-serif font-bold text-lg text-gray-900 dark:text-gray-100">ZedRead</span>
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
           {mgmtUser ? 'Management Portal' : 'Admin Portal'}
         </p>
@@ -184,7 +184,7 @@ export function Layout() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <span className="font-semibold text-gray-900 dark:text-gray-100 text-sm">ZedRead</span>
+          <span className="font-serif font-bold text-gray-900 dark:text-gray-100 text-base">ZedRead</span>
         </div>
         <ImpersonationBanner />
         <Outlet />
