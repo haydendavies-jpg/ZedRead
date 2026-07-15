@@ -854,3 +854,108 @@ async def test_bulk_update_pos_jwt_forbidden(client, pos_auth_headers):
         json={"grant_ids": [str(uuid.uuid4())], "backend_role": "admin"},
     )
     assert response.status_code == 403
+
+
+# ── User search (Grant Access name/email picker) ────────────────────────────
+
+
+async def test_user_search_happy_path_matches_by_name(
+    client, db, test_user, test_portal_grant, test_brand, target_user
+):
+    """Searching by a substring of the target's name returns them."""
+    headers = _mgmt_headers(test_user, test_portal_grant)
+    response = await client.get(
+        "/access-grants/user-search",
+        headers=headers,
+        params={"brand_id": str(test_brand.id), "q": "Target"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert any(u["id"] == str(target_user.id) for u in body)
+
+
+async def test_user_search_matches_by_email(
+    client, db, test_user, test_portal_grant, test_brand, target_user
+):
+    """Searching by a substring of the target's email returns them."""
+    headers = _mgmt_headers(test_user, test_portal_grant)
+    response = await client.get(
+        "/access-grants/user-search",
+        headers=headers,
+        params={"brand_id": str(test_brand.id), "q": "target@test"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert any(u["id"] == str(target_user.id) for u in body)
+
+
+async def test_user_search_no_match_returns_empty_list(
+    client, db, test_user, test_portal_grant, test_brand
+):
+    """A query matching nobody returns an empty list, not an error."""
+    headers = _mgmt_headers(test_user, test_portal_grant)
+    response = await client.get(
+        "/access-grants/user-search",
+        headers=headers,
+        params={"brand_id": str(test_brand.id), "q": "nobody-matches-this"},
+    )
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_user_search_brand_scope_rejects_other_brand(
+    client, db, test_user, test_portal_grant, test_group
+):
+    """A brand/site-scope management caller cannot search another brand."""
+    other_brand = Brand(
+        id=uuid.uuid4(),
+        group_id=test_group.id,
+        name="Other Brand",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+    )
+    db.add(other_brand)
+    await db.commit()
+
+    headers = _mgmt_headers(test_user, test_portal_grant)
+    response = await client.get(
+        "/access-grants/user-search",
+        headers=headers,
+        params={"brand_id": str(other_brand.id), "q": "Target"},
+    )
+    assert response.status_code == 403
+
+
+async def test_user_search_pos_jwt_forbidden(client, pos_auth_headers, test_brand):
+    """A POS terminal JWT cannot search users."""
+    response = await client.get(
+        "/access-grants/user-search",
+        headers=pos_auth_headers,
+        params={"brand_id": str(test_brand.id), "q": "a"},
+    )
+    assert response.status_code == 403
+
+
+async def test_user_search_no_token_returns_403(client, test_brand):
+    """User search without a token is rejected."""
+    response = await client.get(
+        "/access-grants/user-search",
+        params={"brand_id": str(test_brand.id), "q": "a"},
+    )
+    assert response.status_code == 403
+
+
+async def test_user_search_portal_jwt_full_authority(
+    client, db, test_superadmin, test_brand, target_user
+):
+    """A portal admin may search any brand without a scope check."""
+    headers = _portal_headers(test_superadmin)
+    response = await client.get(
+        "/access-grants/user-search",
+        headers=headers,
+        params={"brand_id": str(test_brand.id), "q": "Target"},
+    )
+    assert response.status_code == 200
+    assert any(u["id"] == str(target_user.id) for u in response.json())

@@ -24,6 +24,7 @@ from app.schemas.access_grant import (
     AccessGrantResponse,
     AccessGrantUpdate,
     BulkGrantError,
+    UserSearchResult,
 )
 from app.services import access_grant_service
 from app.utils.dependencies import CatalogAccess, ManagementAccess, resolve_catalog_access
@@ -82,6 +83,46 @@ async def list_grants(
             resp.user_ref = user.ref
         responses.append(resp)
     return responses
+
+
+@router.get("/user-search", response_model=list[UserSearchResult], status_code=status.HTTP_200_OK)
+async def search_users(
+    brand_id: uuid.UUID = Query(..., description="Brand to search within"),
+    q: str = Query("", description="Case-insensitive substring matched against name/email"),
+    limit: int = Query(10, ge=1, le=50),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> list[UserSearchResult]:
+    """
+    Search users by name or email within a brand, to pick a user for Grant Access.
+
+    Backs the Grant Access modal's user picker so admins can search by a
+    human-readable name/email instead of pasting a raw user UUID.
+
+    Args:
+        brand_id: Brand to search within.
+        q: Search substring; empty returns the first `limit` users by name.
+        limit: Maximum results.
+        access: Resolved catalog access.
+        db: Active database session.
+
+    Returns:
+        list[UserSearchResult]: Matching users.
+    """
+    if access.pos_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User search requires a management or portal JWT",
+        )
+    users = await access_grant_service.search_grantable_users(
+        db,
+        brand_id=brand_id,
+        query=q,
+        limit=limit,
+        management_access=access.mgmt_access,
+        superadmin=access.portal_access,
+    )
+    return [UserSearchResult.model_validate(u) for u in users]
 
 
 @router.post("", response_model=AccessGrantResponse, status_code=status.HTTP_201_CREATED)
@@ -394,6 +435,8 @@ async def list_access_profiles(
 # ── Page-category permission hierarchy (ROLE_MODEL.md §4) ────────────────────
 
 from app.schemas.access_profile_page_permission import (
+    PagePermissionBulkResult,
+    PagePermissionBulkSet,
     PagePermissionGrant,
     PagePermissionsResponse,
     VisiblePagesResponse,
@@ -489,6 +532,42 @@ async def revoke_page_permission(
     actor = access.mgmt_access.user if access.mgmt_access else access.portal_access
     assert actor is not None
     await access_profile_service.revoke_page(db, access_profile_id, page_key, actor)
+
+
+@profiles_router.post(
+    "/{access_profile_id}/pages/bulk",
+    response_model=PagePermissionBulkResult,
+    status_code=status.HTTP_200_OK,
+)
+async def bulk_set_page_permissions(
+    access_profile_id: uuid.UUID,
+    payload: PagePermissionBulkSet,
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> PagePermissionBulkResult:
+    """
+    Grant or revoke many pages on an access profile at once.
+
+    Args:
+        access_profile_id: UUID of the profile to update.
+        payload: page_keys to change plus whether to grant or revoke them all.
+        access: Resolved catalog access (any non-POS token type).
+        db: Active database session.
+
+    Returns:
+        PagePermissionBulkResult: The page keys that were actually changed.
+    """
+    if access.pos_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Page permission management requires a management or portal JWT",
+        )
+    actor = access.mgmt_access.user if access.mgmt_access else access.portal_access
+    assert actor is not None
+    changed = await access_profile_service.bulk_set_pages(
+        db, access_profile_id, payload.page_keys, payload.grant, actor
+    )
+    return PagePermissionBulkResult(access_profile_id=access_profile_id, changed=changed)
 
 
 @profiles_router.get(

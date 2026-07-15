@@ -108,6 +108,17 @@ class BulkGrantError(BaseModel):
     detail: str
 
 
+class UserSearchResult(BaseModel):
+    """A user matched by the Grant Access name/email search."""
+
+    id: uuid.UUID
+    name: str
+    email: str
+    ref: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
 class AccessGrantBulkResult(BaseModel):
     """Outcome of a bulk grant operation — which succeeded and which failed.
 

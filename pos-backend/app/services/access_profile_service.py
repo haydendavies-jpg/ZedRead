@@ -350,6 +350,96 @@ async def revoke_page(
     log.info("access_profile.page.revoked", access_profile_id=str(access_profile_id), page_key=page_key)
 
 
+async def bulk_set_pages(
+    db: AsyncSession,
+    access_profile_id: uuid.UUID,
+    page_keys: list[str],
+    grant: bool,
+    actor: User | SuperAdmin,
+) -> list[str]:
+    """
+    Grant or revoke many pages on an AccessProfile in one call.
+
+    Idempotent per key — granting an already-granted page or revoking an
+    already-ungranted page is a no-op for that key, so the Permission Scopes
+    portal page can bulk-apply a selection without first diffing state.
+    Commits once as a single transaction; each changed key still gets its own
+    audit row so the trail matches the single grant/revoke endpoints.
+
+    Args:
+        db: Active database session.
+        access_profile_id: UUID of the profile to update.
+        page_keys: Page keys to grant or revoke.
+        grant: True to grant every key, False to revoke every key.
+        actor: The User or SuperAdmin performing the change, for audit attribution.
+
+    Returns:
+        list[str]: The page keys actually changed (already-correct keys are skipped).
+
+    Raises:
+        HTTPException: 404 if the profile does not exist.
+        HTTPException: 422 if any page_key is not a recognised page.
+    """
+    await _load_profile_or_404(db, access_profile_id)
+    unknown = [k for k in page_keys if k not in PAGE_KEYS]
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown page_key(s): {', '.join(unknown)}",
+        )
+
+    existing_r = await db.execute(
+        select(AccessProfilePagePermission).where(
+            AccessProfilePagePermission.access_profile_id == access_profile_id,
+            AccessProfilePagePermission.page_key.in_(page_keys),
+        )
+    )
+    existing_by_key = {row.page_key: row for row in existing_r.scalars().all()}
+
+    action = ACCESS_PROFILE_PAGE_GRANTED if grant else ACCESS_PROFILE_PAGE_REVOKED
+    changed: list[str] = []
+    for page_key in page_keys:
+        already_granted = page_key in existing_by_key
+        if grant == already_granted:
+            # Already in the desired state — nothing to change for this key.
+            continue
+
+        if grant:
+            db.add(
+                AccessProfilePagePermission(
+                    id=uuid.uuid4(),
+                    access_profile_id=access_profile_id,
+                    page_key=page_key,
+                )
+            )
+        else:
+            await db.delete(existing_by_key[page_key])
+
+        state = {"access_profile_id": str(access_profile_id), "page_key": page_key}
+        await log_action(
+            db=db,
+            action=action,
+            entity_type="access_profile_page_permission",
+            entity_id=f"{access_profile_id}:{page_key}",
+            actor_type=ActorType.USER,
+            actor_id=actor.id,
+            actor_email=actor.email,
+            actor_name=getattr(actor, "name", None),
+            after_state=state if grant else None,
+            before_state=None if grant else state,
+        )
+        changed.append(page_key)
+
+    await db.commit()
+    log.info(
+        "access_profile.pages.bulk_set",
+        access_profile_id=str(access_profile_id),
+        grant=grant,
+        changed_count=len(changed),
+    )
+    return changed
+
+
 async def resolve_visible_pages(db: AsyncSession, access_profile_id: uuid.UUID, site_id: uuid.UUID) -> frozenset[str]:
     """
     Resolve the pages visible to a holder of an AccessProfile at a given site.
