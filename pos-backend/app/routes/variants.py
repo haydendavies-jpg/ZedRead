@@ -55,7 +55,7 @@ def _require_management(access: CatalogAccess) -> None:
 async def list_product_variants(
     product_id: uuid.UUID,
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=1000),
     brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
@@ -180,7 +180,7 @@ async def list_brand_variants(
     product_id: uuid.UUID | None = Query(None, description="Optional filter — only variants of this product"),
     include_inactive: bool = Query(False, description="Include soft-deleted variants"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(200, ge=1, le=500),
+    limit: int = Query(200, ge=1, le=1000),
     brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),

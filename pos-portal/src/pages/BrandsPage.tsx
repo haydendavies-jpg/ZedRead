@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api/axios'
+import { api, fetchAll } from '../api/axios'
 import type { Brand, Group } from '../types'
 import { Link } from 'react-router-dom'
 import { EntityIdChip } from '../components/EntityIdChip'
@@ -14,13 +14,11 @@ import { apiErrorMessage } from '../utils/apiError'
 import { sessionInto } from '../utils/impersonation'
 
 async function fetchBrands(): Promise<Brand[]> {
-  const { data } = await api.get('/brands/', { params: { limit: 200 } })
-  return data
+  return fetchAll<Brand>('/brands/')
 }
 
 async function fetchGroups(): Promise<Group[]> {
-  const { data } = await api.get('/groups/', { params: { limit: 200 } })
-  return data
+  return fetchAll<Group>('/groups/')
 }
 
 export function BrandsPage() {

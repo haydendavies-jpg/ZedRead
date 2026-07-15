@@ -18,7 +18,7 @@ router = APIRouter(prefix="/sites", tags=["sites"])
 @router.get("/", response_model=list[SiteResponse])
 async def list_sites(
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=1000),
     name: str | None = Query(default=None, description="Case-insensitive substring filter on site name"),
     brand_id: uuid.UUID | None = Query(default=None, description="Filter by parent brand ID"),
     is_active: bool | None = Query(default=None, description="Filter by active/inactive status"),

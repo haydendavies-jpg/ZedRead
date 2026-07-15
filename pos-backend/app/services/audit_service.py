@@ -80,7 +80,9 @@ async def log_action(
 
     db.add(audit_row)
 
-    log.info(
+    # DEBUG, not INFO — the audit_logs row itself is the durable record; an
+    # INFO line per write duplicated it on every single mutation in production
+    log.debug(
         "audit.queued",
         action=action,
         entity_type=entity_type,

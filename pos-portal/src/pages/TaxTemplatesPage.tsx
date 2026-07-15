@@ -10,14 +10,13 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api/axios'
+import { api, fetchAll } from '../api/axios'
 import type { TaxTemplate, TaxTemplateRate } from '../types'
 import { Modal } from '../components/Modal'
 import { apiErrorMessage } from '../utils/apiError'
 
 async function fetchTaxTemplates(): Promise<TaxTemplate[]> {
-  const { data } = await api.get('/admin/tax-templates/', { params: { limit: 200 } })
-  return data
+  return fetchAll<TaxTemplate>('/admin/tax-templates/')
 }
 
 const DEFAULT_TEMPLATE_FORM = { name: '', country: '', state: '', county: '', city: '' }

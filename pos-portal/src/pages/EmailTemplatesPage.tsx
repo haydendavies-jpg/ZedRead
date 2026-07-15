@@ -2,15 +2,14 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api/axios'
+import { api, fetchAll } from '../api/axios'
 import type { EmailTemplate } from '../types'
 import { EntityIdChip } from '../components/EntityIdChip'
 import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
 
 async function fetchEmailTemplates(): Promise<EmailTemplate[]> {
-  const { data } = await api.get('/email-templates/', { params: { limit: 200 } })
-  return data
+  return fetchAll<EmailTemplate>('/email-templates/')
 }
 
 const DEFAULT_FORM = { template_key: '', name: '', subject: '', body: '' }

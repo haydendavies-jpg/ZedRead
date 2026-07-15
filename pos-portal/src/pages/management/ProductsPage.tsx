@@ -6,7 +6,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../../api/axios'
+import { api, fetchAll } from '../../api/axios'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { Modal } from '../../components/Modal'
 import { StatusBadge } from '../../components/StatusBadge'
@@ -35,19 +35,19 @@ export function ProductsPage() {
 
   const { data: products = [], isLoading } = useQuery<ProductListItem[]>({
     queryKey: ['products', brandId],
-    queryFn: () => api.get('/products', { params: { ...params, include_inactive: true, limit: 200 } }).then((r) => r.data),
+    queryFn: () => fetchAll<ProductListItem>('/products', { ...params, include_inactive: true }),
     enabled: brandId !== undefined,
   })
 
   const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ['categories', brandId],
-    queryFn: () => api.get('/categories', { params: { ...params, limit: 200 } }).then((r) => r.data),
+    queryFn: () => fetchAll<Category>('/categories', params),
     enabled: !!brandId,
   })
 
   const { data: reportingGroups = [] } = useQuery<ReportingGroup[]>({
     queryKey: ['reporting-groups', brandId],
-    queryFn: () => api.get('/reporting-groups', { params: { ...params, limit: 200 } }).then((r) => r.data),
+    queryFn: () => fetchAll<ReportingGroup>('/reporting-groups', params),
     enabled: !!brandId,
   })
 

@@ -17,7 +17,7 @@ router = APIRouter(prefix="/portal-users", tags=["portal-users"])
 @router.get("/", response_model=list[SuperAdminResponse])
 async def list_superadmins(
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=1000),
     email: str | None = Query(default=None, description="Case-insensitive substring filter on email address"),
     role: str | None = Query(default=None, description="Exact-match filter on user role"),
     is_active: bool | None = Query(default=None, description="Filter by active/inactive status"),

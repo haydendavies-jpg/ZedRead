@@ -22,7 +22,7 @@ from app.schemas.portal_auth import (
 from app.services import management_auth_service, portal_auth_service
 from app.services.audit_service import log_action
 from app.utils.dependencies import get_current_superadmin
-from app.utils.security import hash_password, verify_password
+from app.utils.security import hash_password, verify_password_async
 
 router = APIRouter(prefix="/auth/portal", tags=["portal-auth"])
 
@@ -135,7 +135,7 @@ async def change_password(
     result = await db.execute(select(SuperAdmin).where(SuperAdmin.id == actor.id))
     user = result.scalar_one()
 
-    if not verify_password(payload.current_password, user.password_hash):
+    if not await verify_password_async(payload.current_password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Current password is incorrect.",

@@ -13,7 +13,7 @@
 
 import { Fragment, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../../api/axios'
+import { api, fetchAll } from '../../api/axios'
 import { useAuth, isMgmtUser } from '../../context/AuthContext'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { Modal } from '../../components/Modal'
@@ -79,7 +79,7 @@ function LayoutsList({ brandId, onOpen }: { brandId: string; onOpen: (id: string
 
   const { data: layouts = [], isLoading } = useQuery<MenuLayout[]>({
     queryKey: ['menu-layouts', brandId],
-    queryFn: () => api.get('/menu-layouts', { params: { ...params, limit: 200 } }).then((r) => r.data),
+    queryFn: () => fetchAll<MenuLayout>('/menu-layouts', params),
   })
 
   const invalidateList = () => qc.invalidateQueries({ queryKey: ['menu-layouts', brandId] })
@@ -589,7 +589,7 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
 
   const { data: products = [] } = useQuery<ProductListItem[]>({
     queryKey: ['products', brandId],
-    queryFn: () => api.get('/products', { params: { ...params, limit: 200 } }).then((r) => r.data),
+    queryFn: () => fetchAll<ProductListItem>('/products', params),
   })
 
   const tabsById = useMemo(() => {

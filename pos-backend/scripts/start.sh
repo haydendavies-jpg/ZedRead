@@ -20,4 +20,7 @@ if [ -n "$BOOTSTRAP_EMAIL" ] && [ -n "$BOOTSTRAP_NAME" ] && [ -n "$BOOTSTRAP_PAS
 fi
 
 echo "[start] Starting uvicorn on port ${PORT:-8000}…"
-exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}"
+# --no-access-log: RequestLoggingMiddleware already emits one structured
+# request.completed line (with status + duration_ms); uvicorn's access log
+# duplicated it on every request.
+exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}" --no-access-log

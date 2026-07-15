@@ -22,7 +22,7 @@ router = APIRouter(prefix="/email-templates", tags=["email-templates"])
 @router.get("/", response_model=list[EmailTemplateResponse])
 async def list_email_templates(
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
     _: SuperAdmin = Depends(require_super_admin),
 ) -> list[EmailTemplateResponse]:

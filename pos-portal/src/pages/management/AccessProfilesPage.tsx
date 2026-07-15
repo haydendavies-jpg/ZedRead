@@ -11,7 +11,7 @@
 
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../../api/axios'
+import { api, fetchAll } from '../../api/axios'
 import { useAuth, isMgmtUser, isSuperAdmin } from '../../context/AuthContext'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { ScopeGuard } from '../../components/ScopeGuard'
@@ -31,8 +31,7 @@ interface AccessProfileOption {
 }
 
 async function fetchProfiles(brandId: string): Promise<AccessProfileOption[]> {
-  const { data } = await api.get('/access-profiles', { params: { brand_id: brandId, limit: 200 } })
-  return data
+  return fetchAll<AccessProfileOption>('/access-profiles', { brand_id: brandId })
 }
 
 const CATEGORIES = Array.from(new Set(PAGE_CATALOG.map((p) => p.category))) as PageCategory[]
@@ -68,7 +67,7 @@ function AccessProfilesPageInner() {
   // preview is simply unavailable to them, not faked.
   const { data: sites = [] } = useQuery<Site[]>({
     queryKey: ['sites-for-license-preview', brandId],
-    queryFn: () => api.get('/sites', { params: { brand_id: brandId, limit: 200 } }).then((r) => r.data),
+    queryFn: () => fetchAll<Site>('/sites', { brand_id: brandId }),
     enabled: !!brandId && !!superAdmin,
   })
 

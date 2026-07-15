@@ -95,7 +95,7 @@ async def create_product(db: AsyncSession, payload: ProductCreate, actor: User) 
 
 ```python
 skip: int = Query(default=0, ge=0),
-limit: int = Query(default=50, ge=1, le=200),
+limit: int = Query(default=50, ge=1, le=1000),
 ```
 
 ## 8 — Money arithmetic

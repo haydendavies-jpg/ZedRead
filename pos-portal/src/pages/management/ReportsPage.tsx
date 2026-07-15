@@ -8,7 +8,7 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { api } from '../../api/axios'
+import { fetchAll } from '../../api/axios'
 import { useAuth, isMgmtUser } from '../../context/AuthContext'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import type { Site } from '../../types'
@@ -55,7 +55,7 @@ export function ReportsPage() {
   const needsSiteSelector = !fixedSiteId && !!brandId
   const { data: sites = [] } = useQuery<Site[]>({
     queryKey: ['sites-for-brand', brandId],
-    queryFn: () => api.get('/sites', { params: { brand_id: brandId } }).then((r) => r.data),
+    queryFn: () => fetchAll<Site>('/sites', { brand_id: brandId }),
     enabled: needsSiteSelector,
   })
 
@@ -68,7 +68,7 @@ export function ReportsPage() {
 
   const { data: rows = [], isLoading, error } = useQuery<DailySalesRow[]>({
     queryKey: ['reports-daily', siteId, startDate, endDate, brandId],
-    queryFn: () => api.get('/reports/daily-sales', { params: queryParams }).then((r) => r.data),
+    queryFn: () => fetchAll<DailySalesRow>('/reports/daily-sales', queryParams),
     enabled: !!siteId,
   })
 

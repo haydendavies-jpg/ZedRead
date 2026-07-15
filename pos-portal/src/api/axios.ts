@@ -21,6 +21,38 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+// ── Complete list fetching ─────────────────────────────────────────────────────
+
+/** Page size for fetchAll — matches the backend's per-request `limit` cap. */
+const FETCH_ALL_PAGE_SIZE = 1000
+
+/**
+ * Fetch every row of a paginated list endpoint.
+ *
+ * A single bounded request (the old `{ limit: 200 }` pattern) silently drops
+ * rows once an entity outgrows the cap — row 201 just never appears, with no
+ * error. This helper pages through `skip`/`limit` until a short page arrives,
+ * so callers always receive the complete list and client-side filtering stays
+ * correct. Almost every brand fits in one request at the current page size;
+ * larger ones transparently cost one extra round trip per 1000 rows.
+ */
+export async function fetchAll<T>(
+  url: string,
+  params: Record<string, unknown> = {},
+): Promise<T[]> {
+  const all: T[] = []
+  let skip = 0
+  for (;;) {
+    const { data } = await api.get<T[]>(url, {
+      params: { ...params, skip, limit: FETCH_ALL_PAGE_SIZE },
+    })
+    all.push(...data)
+    // A short page means we've reached the end of the list
+    if (data.length < FETCH_ALL_PAGE_SIZE) return all
+    skip += FETCH_ALL_PAGE_SIZE
+  }
+}
+
 // ── Token helpers ──────────────────────────────────────────────────────────────
 
 /**

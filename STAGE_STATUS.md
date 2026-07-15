@@ -793,6 +793,40 @@ the real test DB) before → after:
   the Railway service and the Supabase project are in different regions, co-locating them is the
   single biggest win available (turns every remaining round trip from ~150–300 ms into ~1–5 ms).
   Compare the `duration_ms` now in Railway logs against browser-observed latency to confirm.
+  Confirmed post-merge: Railway was US West (California) and Supabase Northeast Asia (Seoul) —
+  the plan is Railway → Southeast Asia (Singapore) now, Supabase → `ap-southeast-1` when a
+  migration window allows.
+
+---
+
+### Efficiency hardening round (post-latency-optimization) ✅
+
+Follow-up sweep from a codebase efficiency review; five deliverables:
+
+- [x] **Complete list fetching (the 200-row cap)** — every portal list page fetched at most one
+  bounded request (`{ limit: 200 }`, categories 500), so row 201 silently never appeared; several
+  pages (`/access-grants`, `/sites` pickers, `/menu-layouts`, `/reports/daily-sales`) rode the
+  backend's *default* `limit=50` and truncated even sooner. New `fetchAll<T>()` helper in
+  `src/api/axios.ts` pages through `skip`/`limit` until a short page arrives; all catalog/admin
+  list fetches now use it (~30 call sites, 18 pages). Backend list-route caps raised
+  `le=200/500 → le=1000` (28 routes) so almost every brand still costs one request. Client-side
+  filtering (per the established portal pattern) is now correct at any size.
+- [x] **Invoices got true server-side pagination instead** — invoice volume grows without bound, so
+  `InvoicesPage.tsx` now pages at 50/request (Prev/Next controls, `Showing X–Y` range chip,
+  filter changes snap back to page 1, `placeholderData` keeps rows visible while the next page
+  loads). The XLSX export still covers the full filtered set (pagination params stripped).
+- [x] **Log volume ~⅓ per request in production** — uvicorn `--no-access-log` (its access line
+  duplicated the structured `request.completed`), `request.started` and `audit.queued` demoted to
+  DEBUG (the completed line and the `audit_logs` row itself carry all the same information).
+- [x] **Event-loop protection round 2** — `resend.Emails.send` (synchronous HTTP) now runs via
+  `asyncio.to_thread` in all three senders (`app/utils/email.py`), so a slow Resend API can no
+  longer stall every in-flight request; new `verify_password_async()` moves argon2 verification
+  (~50–100 ms CPU) off the event loop on all 9 login/PIN/password-change verification call sites
+  (rare admin-time *hashing* deliberately stays sync — documented in the wrapper's docstring).
+- [x] **Rate limiter memory leak fixed** — `app/utils/rate_limit.py` kept one dict entry per key
+  ever attempted, forever; a periodic sweep (every 1024 checks) now evicts buckets whose newest
+  attempt has aged out of the largest window ever requested. Two new unit tests cover eviction
+  and survival inside the window.
 
 ---
 

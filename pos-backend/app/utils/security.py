@@ -1,5 +1,6 @@
 """Password hashing (argon2) and JWT token utilities for portal authentication."""
 
+import asyncio
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -106,6 +107,27 @@ def verify_password(plain: str, hashed: str) -> bool:
         return _hasher.verify(hashed, plain)
     except VerifyMismatchError:
         return False
+
+
+async def verify_password_async(plain: str, hashed: str) -> bool:
+    """
+    Verify a plaintext password against an argon2 hash without blocking the event loop.
+
+    Argon2 verification is deliberately CPU-expensive (~50-100 ms). Called
+    directly inside an async route it freezes the single event loop for that
+    entire time, stalling every other in-flight request. Login and PIN-verify
+    paths run constantly (and are attacker-facing), so they must use this
+    wrapper; rare admin-time hashing (user create, password set) may stay on
+    the sync verify_password()/hash_password() for simplicity.
+
+    Args:
+        plain: The user-supplied plaintext password to check.
+        hashed: The stored argon2 hash string to compare against.
+
+    Returns:
+        bool: True if the password matches, False otherwise.
+    """
+    return await asyncio.to_thread(verify_password, plain, hashed)
 
 
 def _make_token(

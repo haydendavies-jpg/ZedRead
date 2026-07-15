@@ -209,6 +209,17 @@ event loop (`asyncio.to_thread`); engine pool is env-tunable (`DB_POOL_SIZE`/`DB
 with the Supabase region is the deployment-side follow-up. See `STAGE_STATUS.md` "Performance —
 request latency optimization".
 
+**Efficiency hardening round (post-latency-optimization, complete).** Five fixes from an efficiency
+review — see `STAGE_STATUS.md` "Efficiency hardening round". Notables: the portal's bounded-fetch
+pattern (`{ limit: 200 }`) silently dropped rows past the cap — a new `fetchAll<T>()` in
+`src/api/axios.ts` pages through `skip`/`limit` until a short page and now backs every catalog/admin
+list fetch (backend list caps raised to `le=1000`); `InvoicesPage` instead got true server-side
+pagination (50/page, Prev/Next) because invoice volume is unbounded; production log volume cut ~⅓
+per request (uvicorn `--no-access-log`, `request.started`/`audit.queued` → DEBUG); sync
+`resend.Emails.send` and argon2 login verification moved off the event loop
+(`asyncio.to_thread`/`verify_password_async` — admin-time hashing stays sync by design); the
+in-process rate limiter now evicts stale keys (was a slow, unbounded memory leak).
+
 ## Folder structure (backend)
 ```
 pos-backend/

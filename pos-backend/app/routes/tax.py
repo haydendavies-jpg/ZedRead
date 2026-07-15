@@ -30,7 +30,7 @@ router = APIRouter(prefix="/tax", tags=["tax"])
 )
 async def list_tax_categories(
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=1000),
     brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
@@ -118,7 +118,7 @@ async def update_tax_category(
 async def list_tax_rates(
     tax_category_id: uuid.UUID,
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=1000),
     brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),

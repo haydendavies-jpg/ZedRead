@@ -136,7 +136,11 @@ not wrapping the modal itself.
 ## Page structure rules
 
 - Routes are thin — fetch logic lives in `queryFn` functions defined at module scope.
-- Every list page uses `{ params: { limit: 200 } }` for now (pagination added later).
+- Every list page fetches the **complete** list via `fetchAll<T>(url, params)` from
+  `src/api/axios.ts` (pages through `skip`/`limit` until a short page — never a single bounded
+  `{ limit: N }` request, which silently drops rows past the cap). Exception: unbounded-growth
+  lists (Invoices) use true server-side pagination — 50/page with Prev/Next controls, filters
+  applied by the backend, and a `useEffect` snapping back to page 1 on any filter change.
 - Every create/edit form lives in a `<Modal>`.
 - Every write mutation has `onError` that sets a `formError` state string.
 - Every list page has a `"No X yet."` empty state row.

@@ -18,7 +18,7 @@ router = APIRouter(prefix="/groups", tags=["groups"])
 @router.get("/", response_model=list[GroupResponse])
 async def list_groups(
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=1000),
     name: str | None = Query(default=None, description="Case-insensitive substring filter on group name"),
     is_active: bool | None = Query(default=None, description="Filter by active/inactive status"),
     db: AsyncSession = Depends(get_db),
