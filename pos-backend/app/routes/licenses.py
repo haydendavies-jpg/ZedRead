@@ -17,7 +17,7 @@ router = APIRouter(prefix="/licenses", tags=["licenses"])
 @router.get("/", response_model=list[LicenseResponse])
 async def list_licenses(
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=1000),
     site_id: uuid.UUID | None = Query(default=None, description="Filter by site ID"),
     status: str | None = Query(default=None, description="Exact-match filter on license status"),
     db: AsyncSession = Depends(get_db),

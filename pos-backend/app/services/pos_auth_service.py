@@ -35,7 +35,7 @@ from app.utils.rate_limit import check_rate_limit
 from app.utils.security import (
     create_pos_access_token,
     hash_password,
-    verify_password,
+    verify_password_async,
 )
 
 log = structlog.get_logger(__name__)
@@ -136,7 +136,7 @@ async def login(db: AsyncSession, payload: POSLoginRequest) -> POSLoginResponse:
     # reveal whether an email exists in the system
     credentials_valid = (
         user is not None
-        and verify_password(payload.password, user.password_hash)
+        and await verify_password_async(payload.password, user.password_hash)
         and user.is_active
     )
 
@@ -396,7 +396,7 @@ async def verify_pin(
         user is not None
         and user.is_active
         and pin_record is not None
-        and verify_password(payload.pin, pin_record.pin_hash)
+        and await verify_password_async(payload.pin, pin_record.pin_hash)
     )
 
     if not pin_valid:

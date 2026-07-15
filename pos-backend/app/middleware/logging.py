@@ -50,7 +50,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=request_id)
 
-        log.info(
+        # DEBUG, not INFO — request.completed already carries method/path plus
+        # status and duration, so a second line per request is pure log volume
+        # in production (where the root logger runs at INFO)
+        log.debug(
             "request.started",
             method=request.method,
             path=request.url.path,

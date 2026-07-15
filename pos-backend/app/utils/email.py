@@ -5,6 +5,7 @@ instantiated once and the API key is read from the environment in a
 single place.
 """
 
+import asyncio
 import os
 from string import Template
 
@@ -89,7 +90,9 @@ async def send_invite_email(
 
     log.info("email.invite.sending", to=to_email, brand=brand_name, site=site_name)
     try:
-        resend.Emails.send({
+        # Synchronous HTTP call to Resend — run off the event loop so a slow
+        # email API never stalls every other in-flight request
+        await asyncio.to_thread(resend.Emails.send, {
             "from": _FROM_ADDRESS,
             "to": [to_email],
             "subject": f"You've been invited to {brand_name} on ZedRead POS",
@@ -146,7 +149,9 @@ async def send_password_reset_email(to_email: str, token: str) -> None:
 
     log.info("email.password_reset.sending", to=to_email)
     try:
-        resend.Emails.send({
+        # Synchronous HTTP call to Resend — run off the event loop so a slow
+        # email API never stalls every other in-flight request
+        await asyncio.to_thread(resend.Emails.send, {
             "from": _FROM_ADDRESS,
             "to": [to_email],
             "subject": "Reset your ZedRead POS password",
@@ -200,7 +205,9 @@ async def send_billing_info_request_email(
 
     log.info("email.billing_info_request.sending", to=to_email, entity_name=entity_name, entity_type=entity_type)
     try:
-        resend.Emails.send({
+        # Synchronous HTTP call to Resend — run off the event loop so a slow
+        # email API never stalls every other in-flight request
+        await asyncio.to_thread(resend.Emails.send, {
             "from": _FROM_ADDRESS,
             "to": [to_email],
             "subject": subject,

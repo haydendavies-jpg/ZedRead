@@ -26,7 +26,7 @@ from app.utils.security import (
     create_refresh_token,
     decode_token,
     hash_password,
-    verify_password,
+    verify_password_async,
 )
 
 log = structlog.get_logger(__name__)
@@ -75,7 +75,7 @@ async def login(db: AsyncSession, payload: LoginRequest) -> TokenResponse:
     # could reveal whether an email exists in the system
     credentials_valid = (
         user is not None
-        and verify_password(payload.password, user.password_hash)
+        and await verify_password_async(payload.password, user.password_hash)
         and user.is_active
     )
 

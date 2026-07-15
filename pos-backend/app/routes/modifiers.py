@@ -45,7 +45,7 @@ router = APIRouter(tags=["modifiers"])
 )
 async def list_brand_modifier_groups(
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=1000),
     brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
@@ -127,7 +127,7 @@ async def update_brand_modifier_group(
 )
 async def list_brand_modifier_groups_detailed(
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=1000),
     brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
@@ -211,7 +211,7 @@ async def deactivate_brand_modifier_group(
 async def list_group_options(
     group_id: uuid.UUID,
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=1000),
     brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),

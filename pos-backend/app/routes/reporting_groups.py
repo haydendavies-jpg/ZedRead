@@ -43,7 +43,7 @@ def _require_management(access: CatalogAccess) -> None:
 @router.get("", response_model=list[ReportingGroupOut], status_code=status.HTTP_200_OK)
 async def list_reporting_groups(
     skip: int = Query(0, ge=0),
-    limit: int = Query(200, ge=1, le=500),
+    limit: int = Query(200, ge=1, le=1000),
     brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),

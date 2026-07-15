@@ -29,7 +29,7 @@ router = APIRouter(prefix="/admin/tax-templates", tags=["admin"])
 @router.get("/", response_model=list[TaxTemplateResponse], status_code=status.HTTP_200_OK)
 async def list_tax_templates(
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=1000),
     country: str | None = Query(None, min_length=2, max_length=2),
     db: AsyncSession = Depends(get_db),
     admin: SuperAdmin = Depends(require_super_admin),

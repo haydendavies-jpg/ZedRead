@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { api } from '../api/axios'
+import { api, fetchAll } from '../api/axios'
 import type { Brand, Site } from '../types'
 import { EntityIdChip } from '../components/EntityIdChip'
 import { StatusBadge } from '../components/StatusBadge'
@@ -24,13 +24,11 @@ interface AddressValues {
 const DEFAULT_ADDRESS_VALUES: AddressValues = { address_street: '', address_city: '', address_state: '', address_postcode: '' }
 
 async function fetchSites(): Promise<Site[]> {
-  const { data } = await api.get('/sites/', { params: { limit: 200 } })
-  return data
+  return fetchAll<Site>('/sites/')
 }
 
 async function fetchBrands(): Promise<Brand[]> {
-  const { data } = await api.get('/brands/', { params: { limit: 200 } })
-  return data
+  return fetchAll<Brand>('/brands/')
 }
 
 export function SitesPage() {

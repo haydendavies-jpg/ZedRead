@@ -9,7 +9,7 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { api } from '../../api/axios'
+import { fetchAll } from '../../api/axios'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { ProductsPage } from './ProductsPage'
 import { ModifiersPage } from './ModifiersPage'
@@ -29,7 +29,7 @@ export function MenuStudioPage() {
 
   const { data: products = [] } = useQuery<ProductListItem[]>({
     queryKey: ['products', brandId],
-    queryFn: () => api.get('/products', { params: { ...params, limit: 200 } }).then((r) => r.data),
+    queryFn: () => fetchAll<ProductListItem>('/products', params),
     enabled: !!brandId,
   })
   // Plain (non-nested) list — just for the tab count badge. The Modifiers tab
@@ -38,12 +38,12 @@ export function MenuStudioPage() {
   // Studio visit regardless of which tab is open.
   const { data: modifierGroups = [] } = useQuery<ModifierGroup[]>({
     queryKey: ['modifier-groups', brandId],
-    queryFn: () => api.get('/modifier-groups', { params: { ...params, limit: 200 } }).then((r) => r.data),
+    queryFn: () => fetchAll<ModifierGroup>('/modifier-groups', params),
     enabled: !!brandId,
   })
   const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ['categories', brandId],
-    queryFn: () => api.get('/categories', { params: { ...params, limit: 500 } }).then((r) => r.data),
+    queryFn: () => fetchAll<Category>('/categories', params),
     enabled: !!brandId,
   })
 

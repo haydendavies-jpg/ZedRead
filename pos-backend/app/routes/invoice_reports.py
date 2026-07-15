@@ -100,7 +100,7 @@ async def list_invoices_report(
     min_amount_cents: int | None = Query(None, ge=0),
     max_amount_cents: int | None = Query(None, ge=0),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=1000),
     brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),

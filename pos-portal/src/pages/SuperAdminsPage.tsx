@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api/axios'
+import { api, fetchAll } from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import type { SuperAdmin } from '../types'
 import { EntityIdChip } from '../components/EntityIdChip'
@@ -10,8 +10,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
 
 async function fetchSuperAdmins(): Promise<SuperAdmin[]> {
-  const { data } = await api.get('/portal-users/', { params: { limit: 200 } })
-  return data
+  return fetchAll<SuperAdmin>('/portal-users/')
 }
 
 const ROLES = [

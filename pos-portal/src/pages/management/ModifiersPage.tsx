@@ -9,7 +9,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../../api/axios'
+import { api, fetchAll } from '../../api/axios'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { apiErrorMessage } from '../../utils/apiError'
 import { centsToDisplay } from '../../utils/menuStudio'
@@ -25,7 +25,7 @@ export function ModifiersPage() {
 
   const { data: groups = [], isLoading } = useQuery<ModifierGroupDetail[]>({
     queryKey: ['modifier-groups-detailed', brandId],
-    queryFn: () => api.get('/modifier-groups/detailed', { params: { ...params, limit: 200 } }).then((r) => r.data),
+    queryFn: () => fetchAll<ModifierGroupDetail>('/modifier-groups/detailed', params),
     enabled: !!brandId,
   })
 

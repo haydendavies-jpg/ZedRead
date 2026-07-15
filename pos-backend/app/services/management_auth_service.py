@@ -51,7 +51,7 @@ from app.utils.security import (
     create_mgmt_refresh_token,
     create_refresh_token,
     decode_token,
-    verify_password,
+    verify_password_async,
 )
 
 log = structlog.get_logger(__name__)
@@ -351,7 +351,7 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
     superadmin = await _load_superadmin(db, payload.email)
     superadmin_valid = (
         superadmin is not None
-        and verify_password(payload.password, superadmin.password_hash)
+        and await verify_password_async(payload.password, superadmin.password_hash)
         and superadmin.is_active
     )
 
@@ -361,7 +361,7 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
     authenticated_user_grants: list[tuple[User, list[UserAccessGrant]]] = []
     any_user_creds_valid = False
     for candidate in all_users:
-        if not candidate.is_active or not verify_password(payload.password, candidate.password_hash):
+        if not candidate.is_active or not await verify_password_async(payload.password, candidate.password_hash):
             continue
         any_user_creds_valid = True
         grants = await _portal_capable_grants(db, candidate.id)
@@ -516,7 +516,7 @@ async def issue_identity_token(
         superadmin = await _load_superadmin(db, payload.email)
         if (
             superadmin is None
-            or not verify_password(payload.password, superadmin.password_hash)
+            or not await verify_password_async(payload.password, superadmin.password_hash)
             or not superadmin.is_active
         ):
             raise HTTPException(
@@ -532,7 +532,7 @@ async def issue_identity_token(
         authenticated_user_grants: list[tuple[User, list[UserAccessGrant]]] = []
         any_creds_valid = False
         for candidate in all_users:
-            if not candidate.is_active or not verify_password(payload.password, candidate.password_hash):
+            if not candidate.is_active or not await verify_password_async(payload.password, candidate.password_hash):
                 continue
             any_creds_valid = True
             grants = await _portal_capable_grants(db, candidate.id)
@@ -618,7 +618,7 @@ async def issue_management_token(
     result = await db.execute(select(User).where(User.id == payload.user_id))
     user = result.scalar_one_or_none()
 
-    if user is None or not verify_password(payload.password, user.password_hash) or not user.is_active:
+    if user is None or not await verify_password_async(payload.password, user.password_hash) or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",

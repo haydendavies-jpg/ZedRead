@@ -21,7 +21,7 @@ router = APIRouter(prefix="/license-invoices", tags=["license-invoices"])
 @router.get("/", response_model=list[LicenseInvoiceResponse])
 async def list_invoices(
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
     _: SuperAdmin = Depends(get_current_superadmin),
 ) -> list[LicenseInvoiceResponse]:

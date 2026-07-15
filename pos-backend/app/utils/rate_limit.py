@@ -19,6 +19,34 @@ from fastapi import HTTPException, status
 # Per-key deque of monotonic attempt timestamps (oldest first)
 _hits: dict[str, deque[float]] = defaultdict(deque)
 
+# Sweep stale keys once per this many check_rate_limit calls. Without eviction
+# the dict keeps one entry per key ever attempted (e.g. a bot cycling fake
+# emails), growing without bound over the process lifetime.
+_SWEEP_INTERVAL: int = 1024
+
+# Calls since the last sweep, and the largest window ever requested — any
+# bucket whose newest timestamp is older than that window is dead for every
+# possible limit and can be dropped safely.
+_calls_since_sweep: int = 0
+_max_window_seconds: float = 0.0
+
+
+def _sweep_stale_keys(now: float) -> None:
+    """
+    Drop buckets whose newest attempt has aged out of every possible window.
+
+    Args:
+        now: Current monotonic timestamp.
+
+    Returns:
+        None
+    """
+    cutoff = now - _max_window_seconds
+    # Materialise the key list — deleting while iterating a dict raises
+    stale = [key for key, bucket in _hits.items() if not bucket or bucket[-1] < cutoff]
+    for key in stale:
+        del _hits[key]
+
 
 def _enabled() -> bool:
     """Return True unless RATE_LIMIT_ENABLED is explicitly set to 'false'."""
@@ -27,8 +55,11 @@ def _enabled() -> bool:
 
 
 def reset() -> None:
-    """Clear all recorded attempts. Used by tests to isolate state per case."""
+    """Clear all recorded attempts and sweep state. Used by tests to isolate state per case."""
+    global _calls_since_sweep, _max_window_seconds
     _hits.clear()
+    _calls_since_sweep = 0
+    _max_window_seconds = 0.0
 
 
 def check_rate_limit(key: str, max_attempts: int, window_seconds: int) -> None:
@@ -47,8 +78,19 @@ def check_rate_limit(key: str, max_attempts: int, window_seconds: int) -> None:
     if not _enabled():
         return
 
+    global _calls_since_sweep, _max_window_seconds
+
     now = time.monotonic()
     cutoff = now - window_seconds
+
+    # Periodically evict keys whose attempts have all aged out — otherwise the
+    # dict grows by one entry per distinct key forever (slow memory leak)
+    _max_window_seconds = max(_max_window_seconds, float(window_seconds))
+    _calls_since_sweep += 1
+    if _calls_since_sweep >= _SWEEP_INTERVAL:
+        _calls_since_sweep = 0
+        _sweep_stale_keys(now)
+
     bucket = _hits[key]
 
     # Drop timestamps that have aged out of the window

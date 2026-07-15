@@ -26,7 +26,7 @@ def _require_management(access: CatalogAccess) -> None:
 @router.get("", response_model=list[MenuOut], status_code=status.HTTP_200_OK)
 async def list_brand_menus(
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=1000),
     brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),

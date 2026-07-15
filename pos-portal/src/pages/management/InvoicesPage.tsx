@@ -6,16 +6,21 @@
  * SuperAdmins: must supply brand_id via URL param, and may optionally pick a site.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { api } from '../../api/axios'
+import { api, fetchAll } from '../../api/axios'
 import { useAuth, isMgmtUser } from '../../context/AuthContext'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { StatusBadge } from '../../components/StatusBadge'
 import { EntityIdChip } from '../../components/EntityIdChip'
 import { downloadBlob } from '../../utils/download'
 import type { InvoiceReportRow, Site } from '../../types'
+
+// Server-side page size — invoice volume grows without bound, so unlike the
+// catalog pages (which fetchAll and filter client-side) this list is truly
+// paginated: filters are applied by the backend and each page is one request.
+const PAGE_SIZE = 50
 
 function centsToDisplay(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
@@ -47,11 +52,16 @@ export function InvoicesPage() {
   const needsSiteSelector = !fixedSiteId && !!brandId
   const { data: sites = [] } = useQuery<Site[]>({
     queryKey: ['sites-for-brand', brandId],
-    queryFn: () => api.get('/sites', { params: { brand_id: brandId } }).then((r) => r.data),
+    queryFn: () => fetchAll<Site>('/sites', { brand_id: brandId }),
     enabled: needsSiteSelector,
   })
 
-  const queryParams: Record<string, string | number> = { limit: 200 }
+  const [page, setPage] = useState(0)
+
+  const queryParams: Record<string, string | number> = {
+    limit: PAGE_SIZE,
+    skip: page * PAGE_SIZE,
+  }
   if (brandId) queryParams.brand_id = brandId
   if (siteId) queryParams.site_id = siteId
   if (statusFilter) queryParams.status = statusFilter
@@ -62,17 +72,30 @@ export function InvoicesPage() {
   if (minCents !== undefined) queryParams.min_amount_cents = minCents
   if (maxCents !== undefined) queryParams.max_amount_cents = maxCents
 
+  // Changing any filter must snap back to the first page — page 3 of the old
+  // filter set is meaningless under the new one
+  useEffect(() => {
+    setPage(0)
+  }, [siteId, statusFilter, startDate, endDate, minAmount, maxAmount])
+
   const { data: invoices = [], isLoading, error } = useQuery<InvoiceReportRow[]>({
     queryKey: ['invoice-reports', queryParams],
     queryFn: () => api.get('/invoice-reports', { params: queryParams }).then((r) => r.data),
     enabled: !!brandId || !!fixedSiteId,
+    // Keep the previous page's rows visible while the next page loads,
+    // instead of flashing the whole table back to "Loading…"
+    placeholderData: (prev) => prev,
   })
+
+  // A full page means there may be more; a short page is definitely the end
+  const hasMore = invoices.length === PAGE_SIZE
 
   const handleExport = async () => {
     setExportError(null)
     setIsExporting(true)
     try {
-      const { limit: _limit, ...exportParams } = queryParams
+      // Export always covers the full filtered set — strip the pagination params
+      const { limit: _limit, skip: _skip, ...exportParams } = queryParams
       const resp = await api.get('/invoice-reports/export', {
         params: exportParams,
         responseType: 'blob',
@@ -192,7 +215,11 @@ export function InvoicesPage() {
             Clear filters
           </button>
         )}
-        <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto pb-2">{invoices.length} invoices</span>
+        <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto pb-2">
+          {invoices.length === 0
+            ? '0 invoices'
+            : `Showing ${page * PAGE_SIZE + 1}–${page * PAGE_SIZE + invoices.length}`}
+        </span>
       </div>
 
       {isLoading ? (
@@ -244,6 +271,27 @@ export function InvoicesPage() {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Pagination — shown whenever there is anything to page between */}
+      {(page > 0 || hasMore) && (
+        <div className="flex items-center justify-end gap-2">
+          <button
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="zr-action disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            ← Previous
+          </button>
+          <span className="text-xs text-gray-400 dark:text-gray-500">Page {page + 1}</span>
+          <button
+            onClick={() => setPage((p) => p + 1)}
+            disabled={!hasMore}
+            className="zr-action disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Next →
+          </button>
         </div>
       )}
     </div>

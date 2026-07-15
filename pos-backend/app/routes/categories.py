@@ -26,7 +26,7 @@ _XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.
 @router.get("", response_model=list[CategoryOut], status_code=status.HTTP_200_OK)
 async def list_categories(
     skip: int = Query(0, ge=0),
-    limit: int = Query(200, ge=1, le=500),
+    limit: int = Query(200, ge=1, le=1000),
     include_inactive: bool = Query(False, description="Include soft-deleted categories (Stage 20 table view)"),
     brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
     access: CatalogAccess = Depends(resolve_catalog_access),

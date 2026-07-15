@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api/axios'
+import { api, fetchAll } from '../api/axios'
 import type { Brand, Site } from '../types'
 import { EntityIdChip } from '../components/EntityIdChip'
 import { StatusBadge } from '../components/StatusBadge'
@@ -74,26 +74,22 @@ interface GroupAccess {
 // ── API helpers ───────────────────────────────────────────────────────────────
 
 async function fetchBrands(): Promise<Brand[]> {
-  const { data } = await api.get('/brands/', { params: { limit: 200 } })
-  return data
+  return fetchAll<Brand>('/brands/')
 }
 
 async function fetchSites(): Promise<Site[]> {
-  const { data } = await api.get('/sites/', { params: { limit: 200 } })
-  return data
+  return fetchAll<Site>('/sites/')
 }
 
 async function fetchUsers(brandId: string): Promise<AppUser[]> {
-  const params: Record<string, unknown> = { limit: 200 }
+  const params: Record<string, unknown> = {}
   if (brandId) params.brand_id = brandId
-  const { data } = await api.get('/users', { params })
-  return data
+  return fetchAll<AppUser>('/users', params)
 }
 
 async function fetchProfiles(brandId: string | null): Promise<AccessProfile[]> {
   if (!brandId) return []
-  const { data } = await api.get('/access-profiles', { params: { brand_id: brandId, limit: 200 } })
-  return data
+  return fetchAll<AccessProfile>('/access-profiles', { brand_id: brandId })
 }
 
 async function fetchGroupAccess(userId: string): Promise<GroupAccess> {

@@ -7,7 +7,7 @@
 
 import { Fragment, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../../api/axios'
+import { api, fetchAll } from '../../api/axios'
 import { useAuth, isMgmtUser } from '../../context/AuthContext'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { Modal } from '../../components/Modal'
@@ -28,7 +28,7 @@ export function MenusPage() {
 
   const { data: menus = [], isLoading } = useQuery<Menu[]>({
     queryKey: ['menus', brandId],
-    queryFn: () => api.get('/menus', { params: { ...params, limit: 200 } }).then((r) => r.data),
+    queryFn: () => fetchAll<Menu>('/menus', params),
     enabled: !!brandId,
   })
 
@@ -215,7 +215,7 @@ function MenuCreateModal({ brandId, onClose, onSaved }: { brandId: string; onClo
   const params = { brand_id: brandId }
   const { data: layouts = [] } = useQuery<MenuLayout[]>({
     queryKey: ['menu-layouts', brandId],
-    queryFn: () => api.get('/menu-layouts', { params }).then((r) => r.data),
+    queryFn: () => fetchAll<MenuLayout>('/menu-layouts', params),
   })
 
   const handleSave = async () => {

@@ -34,7 +34,7 @@ router = APIRouter(prefix="/access-grants", tags=["access-grants"])
 @router.get("", response_model=list[AccessGrantResponse], status_code=status.HTTP_200_OK)
 async def list_grants(
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=1000),
     brand_id: uuid.UUID | None = Query(None, description="Filter by brand (required for portal/group-scope)"),
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),

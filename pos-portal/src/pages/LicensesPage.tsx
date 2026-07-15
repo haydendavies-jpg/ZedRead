@@ -2,20 +2,18 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api/axios'
+import { api, fetchAll } from '../api/axios'
 import type { License, Site } from '../types'
 import { EntityIdChip } from '../components/EntityIdChip'
 import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
 
 async function fetchLicenses(): Promise<License[]> {
-  const { data } = await api.get('/licenses/', { params: { limit: 200 } })
-  return data
+  return fetchAll<License>('/licenses/')
 }
 
 async function fetchSites(): Promise<Site[]> {
-  const { data } = await api.get('/sites/', { params: { limit: 200 } })
-  return data
+  return fetchAll<Site>('/sites/')
 }
 
 function formatCents(cents: number): string {

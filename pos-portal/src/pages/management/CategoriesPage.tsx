@@ -9,7 +9,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../../api/axios'
+import { api, fetchAll } from '../../api/axios'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { ColorSwatchPicker } from '../../components/ColorSwatchPicker'
 import { EditableText } from '../../components/EditableCell'
@@ -35,13 +35,13 @@ export function CategoriesPage() {
 
   const { data: categories = [], isLoading } = useQuery<Category[]>({
     queryKey: ['categories', brandId],
-    queryFn: () => api.get('/categories', { params: { ...params, include_inactive: true, limit: 500 } }).then((r) => r.data),
+    queryFn: () => fetchAll<Category>('/categories', { ...params, include_inactive: true }),
     enabled: brandId !== undefined,
   })
 
   const { data: reportingGroups = [] } = useQuery<ReportingGroup[]>({
     queryKey: ['reporting-groups', brandId],
-    queryFn: () => api.get('/reporting-groups', { params: { ...params, limit: 200 } }).then((r) => r.data),
+    queryFn: () => fetchAll<ReportingGroup>('/reporting-groups', params),
     enabled: !!brandId,
   })
 

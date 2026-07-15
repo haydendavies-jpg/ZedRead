@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../../api/axios'
+import { api, fetchAll } from '../../api/axios'
 import { useAuth, isMgmtUser, isSuperAdmin } from '../../context/AuthContext'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { EntityIdChip } from '../../components/EntityIdChip'
@@ -42,8 +42,7 @@ interface AccessProfileOption {
 }
 
 async function fetchProfiles(brandId: string): Promise<AccessProfileOption[]> {
-  const { data } = await api.get('/access-profiles', { params: { brand_id: brandId, limit: 200 } })
-  return data
+  return fetchAll<AccessProfileOption>('/access-profiles', { brand_id: brandId })
 }
 
 export function UsersPage() {
@@ -70,7 +69,7 @@ function UsersPageInner() {
 
   const { data: grants = [], isLoading } = useQuery<AccessGrant[]>({
     queryKey: ['access-grants', brandId],
-    queryFn: () => api.get('/access-grants', { params }).then((r) => r.data),
+    queryFn: () => fetchAll<AccessGrant>('/access-grants', params),
     enabled: brandId !== undefined,
   })
 
