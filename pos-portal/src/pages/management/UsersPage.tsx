@@ -1,6 +1,6 @@
-/** POS user access grants management page — list, grant, revoke, and bulk-update grants in scope. */
+/** Users & Access management page — list, edit, add, revoke, and bulk-update access in scope. */
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, fetchAll } from '../../api/axios'
 import { useAuth, isMgmtUser, isSuperAdmin } from '../../context/AuthContext'
@@ -10,7 +10,7 @@ import { ScopeGuard } from '../../components/ScopeGuard'
 import { Modal } from '../../components/Modal'
 import { FilterBar, type FilterConfig } from '../../components/FilterBar'
 import { apiErrorMessage } from '../../utils/apiError'
-import type { AccessGrant, AccessGrantBulkResult } from '../../types'
+import type { AccessGrant, AccessGrantBulkResult, UserSearchResult } from '../../types'
 
 // Mirrors app.services.access_grant_service._ROLE_RANK — used only to filter
 // which profiles this UI offers to grant. The backend enforces the real
@@ -58,7 +58,7 @@ function UsersPageInner() {
   const brandId = useMgmtBrandId()
   const { user } = useAuth()
   const mgmtUser = isMgmtUser(user) ? user : null
-  // SuperAdmins reach this page via the Brand detail "Users & Grants" tab. The
+  // SuperAdmins reach this page via the Brand detail "Users & Access" tab. The
   // backend gives them full grant authority (access_grant_service bypasses the
   // scope and role-ceiling checks for portal admins), so the ceiling/scope
   // machinery below — which is derived from a management user's own grant —
@@ -241,24 +241,51 @@ function UsersPageInner() {
   }
   const applyBulkRevoke = () => {
     if (selectedIds.length === 0) return
-    if (!confirm(`Revoke ${selectedIds.length} grant(s)?`)) return
+    if (!confirm(`Revoke ${selectedIds.length} access record(s)?`)) return
     setBulkResult(null); setBulkError(null)
     bulkRevoke.mutate(selectedIds)
   }
 
-  // ── Grant-creation form state ────────────────────────────────────────────
+  // ── Add-access form state ────────────────────────────────────────────────
   const [showGrant, setShowGrant] = useState(false)
   const [grantUserId, setGrantUserId] = useState('')
+  const [grantUserQuery, setGrantUserQuery] = useState('')
+  const [grantUserOpen, setGrantUserOpen] = useState(false)
   const [grantScope, setGrantScope] = useState<'brand' | 'site'>(scopeOptions[0])
   const [grantEntityId, setGrantEntityId] = useState('')
   const [grantProfileId, setGrantProfileId] = useState('')
   const [grantError, setGrantError] = useState<string | null>(null)
 
   const openGrant = () => {
-    setGrantUserId(''); setGrantEntityId(''); setGrantProfileId('')
+    setGrantUserId(''); setGrantUserQuery(''); setGrantUserOpen(false)
+    setGrantEntityId(''); setGrantProfileId('')
     setGrantScope(scopeOptions[0])
     setGrantError(null)
     setShowGrant(true)
+  }
+
+  // Debounce the search box so we don't fire a request on every keystroke.
+  const [debouncedGrantUserQuery, setDebouncedGrantUserQuery] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedGrantUserQuery(grantUserQuery.trim()), 300)
+    return () => clearTimeout(t)
+  }, [grantUserQuery])
+
+  const { data: userResults = [], isFetching: userSearchLoading } = useQuery<UserSearchResult[]>({
+    queryKey: ['user-search', brandId, debouncedGrantUserQuery],
+    queryFn: () =>
+      api
+        .get<UserSearchResult[]>('/access-grants/user-search', {
+          params: { brand_id: brandId, q: debouncedGrantUserQuery, limit: 10 },
+        })
+        .then((r) => r.data),
+    enabled: showGrant && !!brandId && debouncedGrantUserQuery.length > 0 && !grantUserId,
+  })
+
+  const selectGrantUser = (u: UserSearchResult) => {
+    setGrantUserId(u.id)
+    setGrantUserQuery(`${u.name} (${u.email})`)
+    setGrantUserOpen(false)
   }
 
   const createGrant = useMutation({
@@ -270,13 +297,17 @@ function UsersPageInner() {
     },
     onError: (e: unknown) => {
       invalidateGrants()
-      setGrantError(apiErrorMessage(e, 'Failed to grant access.'))
+      setGrantError(apiErrorMessage(e, 'Failed to add access.'))
     },
   })
 
   const handleGrantSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setGrantError(null)
+    if (!grantUserId) {
+      setGrantError('Search for the user by name or email and select them from the results.')
+      return
+    }
     const body: { user_id: string; scope: string; site_id?: string; brand_id?: string; access_profile_id: string } = {
       user_id: grantUserId,
       scope: grantScope,
@@ -285,6 +316,48 @@ function UsersPageInner() {
     if (grantScope === 'site') body.site_id = grantEntityId
     else body.brand_id = grantEntityId
     createGrant.mutate(body)
+  }
+
+  // ── Edit-user modal state ────────────────────────────────────────────────
+  // Edits the grant row's profile/backend access; email is only editable here
+  // by SuperAdmins, since PATCH /users/{id} is a portal-admin-only route —
+  // management users see it read-only instead of a control that would 403.
+  const [editGrant, setEditGrant] = useState<AccessGrant | null>(null)
+  const [editEmail, setEditEmail] = useState('')
+  const [editProfileId, setEditProfileId] = useState('')
+  const [editBackend, setEditBackend] = useState('')
+  const [editError, setEditError] = useState<string | null>(null)
+  const [editSubmitting, setEditSubmitting] = useState(false)
+
+  const openEdit = (g: AccessGrant) => {
+    setEditGrant(g)
+    setEditEmail(g.user_email ?? '')
+    setEditProfileId(g.access_profile_id)
+    setEditBackend(g.backend_role ?? '')
+    setEditError(null)
+  }
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editGrant) return
+    setEditError(null)
+    setEditSubmitting(true)
+    try {
+      if (superadmin && editEmail !== (editGrant.user_email ?? '')) {
+        await api.patch(`/users/${editGrant.user_id}`, { email: editEmail })
+      }
+      await api.patch(`/access-grants/${editGrant.id}`, {
+        access_profile_id: editProfileId,
+        backend_role: editBackend || null,
+      })
+      invalidateGrants()
+      setEditGrant(null)
+    } catch (err) {
+      invalidateGrants()
+      setEditError(apiErrorMessage(err, 'Failed to update user.'))
+    } finally {
+      setEditSubmitting(false)
+    }
   }
 
   if (!brandId) {
@@ -298,14 +371,14 @@ function UsersPageInner() {
   return (
     <div className="p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Users &amp; Grants</h1>
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Users &amp; Access</h1>
         <button
           onClick={openGrant}
           disabled={!canGrant}
           title={!canGrant ? 'Your own access profile could not be determined' : undefined}
           className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
         >
-          + Grant Access
+          + Add Access
         </button>
       </div>
 
@@ -382,7 +455,7 @@ function UsersPageInner() {
           {bulkResult && (
             <div className="text-xs mb-3">
               <p className="text-green-600 dark:text-green-400">
-                Updated {bulkResult.succeeded.length} grant(s).
+                Updated {bulkResult.succeeded.length} access record(s).
                 {bulkResult.errors.length > 0 && ` ${bulkResult.errors.length} skipped:`}
               </p>
               {bulkResult.errors.length > 0 && (
@@ -458,7 +531,13 @@ function UsersPageInner() {
                           <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => openEdit(g)}
+                          className="text-brand-600 hover:underline text-xs font-medium mr-3"
+                        >
+                          Edit
+                        </button>
                         <button
                           onClick={() => revoke.mutate(g.id)}
                           disabled={revoke.isPending}
@@ -473,7 +552,7 @@ function UsersPageInner() {
                 {filtered.length === 0 && (
                   <tr>
                     <td colSpan={9} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
-                      {grants.length === 0 ? 'No active grants in scope.' : 'No grants match the current filters.'}
+                      {grants.length === 0 ? 'No active access in scope.' : 'No access records match the current filters.'}
                     </td>
                   </tr>
                 )}
@@ -484,22 +563,46 @@ function UsersPageInner() {
       )}
 
       {showGrant && (
-        <Modal title="Grant Access" onClose={() => setShowGrant(false)}>
+        <Modal title="Add Access" onClose={() => setShowGrant(false)}>
           <form onSubmit={handleGrantSubmit} className="flex flex-col gap-3">
             <p className="text-xs text-gray-400 dark:text-gray-500">
               You can only grant scope and access at or below your own level — the server
               re-checks this regardless of what's shown here.
             </p>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">User ID</label>
+            <div className="flex flex-col gap-1 relative">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">User</label>
               <input
                 type="text"
                 required
-                value={grantUserId}
-                onChange={(e) => setGrantUserId(e.target.value)}
-                placeholder="Existing user's UUID"
+                value={grantUserQuery}
+                onChange={(e) => { setGrantUserQuery(e.target.value); setGrantUserId(''); setGrantUserOpen(true) }}
+                onFocus={() => setGrantUserOpen(true)}
+                onBlur={() => setTimeout(() => setGrantUserOpen(false), 150)}
+                placeholder="Search by name or email…"
+                autoComplete="off"
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
+              {grantUserOpen && !grantUserId && debouncedGrantUserQuery.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 z-10 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                  {userSearchLoading ? (
+                    <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">Searching…</p>
+                  ) : userResults.length === 0 ? (
+                    <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">No matching users.</p>
+                  ) : (
+                    userResults.map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => selectGrantUser(u)}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+                      >
+                        <span className="font-medium text-gray-900 dark:text-gray-100">{u.name}</span>
+                        <span className="text-gray-400 dark:text-gray-500 ml-1.5">{u.email}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
 
             {scopeOptions.length > 1 && (
@@ -553,7 +656,75 @@ function UsersPageInner() {
               disabled={createGrant.isPending}
               className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors mt-1"
             >
-              Grant Access
+              Add Access
+            </button>
+          </form>
+        </Modal>
+      )}
+
+      {editGrant && (
+        <Modal title={`Edit — ${editGrant.user_name ?? editGrant.user_email ?? 'User'}`} onClose={() => setEditGrant(null)}>
+          <form onSubmit={handleEditSubmit} className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Email</label>
+              {superadmin ? (
+                <input
+                  type="email"
+                  required
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              ) : (
+                <p className="text-sm text-gray-500 dark:text-gray-400 px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900">
+                  {editGrant.user_email || '—'}{' '}
+                  <span className="text-xs text-gray-400 dark:text-gray-500">(only a SuperAdmin can change email)</span>
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Access Profile</label>
+              <select
+                required
+                value={editProfileId}
+                onChange={(e) => setEditProfileId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              >
+                {/* Include the grant's current profile even if it's above what this
+                    caller may newly assign, so editing backend access alone doesn't
+                    silently downgrade an existing higher-ranked grant. */}
+                {!grantableProfiles.some((p) => p.id === editProfileId) && profileName(editProfileId) && (
+                  <option value={editProfileId}>{profileName(editProfileId)}</option>
+                )}
+                {grantableProfiles.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Backend Access</label>
+              <select
+                value={editBackend}
+                onChange={(e) => setEditBackend(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              >
+                <option value="">No access</option>
+                {BACKEND_ROLES.map((r) => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {editError && <p className="text-xs text-red-500">{editError}</p>}
+
+            <button
+              type="submit"
+              disabled={editSubmitting}
+              className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors mt-1"
+            >
+              Save Changes
             </button>
           </form>
         </Modal>

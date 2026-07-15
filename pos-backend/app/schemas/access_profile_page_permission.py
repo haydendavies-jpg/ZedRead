@@ -24,3 +24,17 @@ class VisiblePagesResponse(BaseModel):
     access_profile_id: uuid.UUID
     site_id: uuid.UUID
     page_keys: list[str]
+
+
+class PagePermissionBulkSet(BaseModel):
+    """Payload to grant or revoke many pages on an AccessProfile at once."""
+
+    page_keys: list[str]
+    grant: bool
+
+
+class PagePermissionBulkResult(BaseModel):
+    """Outcome of a bulk page grant/revoke — the keys that were actually changed."""
+
+    access_profile_id: uuid.UUID
+    changed: list[str]

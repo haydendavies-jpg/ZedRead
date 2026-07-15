@@ -32,7 +32,7 @@ const MGMT_NAV = [
 
 /** Nav items shown to brand/group scope management users only. */
 const MGMT_BRAND_NAV = [
-  { to: '/management/users', label: 'Users & Grants' },
+  { to: '/management/users', label: 'Users & Access' },
   { to: '/management/access-profiles', label: 'Permission Scopes' },
 ]
 

@@ -36,7 +36,7 @@ PAGE_CATALOG: list[tuple[str, PageCategory, str]] = [
     ("audit_log", PageCategory.REPORTS, "Audit Log"),
     # User Management
     ("users", PageCategory.USER_MANAGEMENT, "Users"),
-    ("access_grants", PageCategory.USER_MANAGEMENT, "Access Grants"),
+    ("access_grants", PageCategory.USER_MANAGEMENT, "Users & Access"),
     ("access_profiles", PageCategory.USER_MANAGEMENT, "Access Profiles"),
     # Customers & Loyalty
     ("customers", PageCategory.CUSTOMERS_LOYALTY, "Customers"),

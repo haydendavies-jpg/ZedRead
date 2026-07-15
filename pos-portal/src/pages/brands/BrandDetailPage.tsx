@@ -30,7 +30,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'menu_builder', label: 'Menu Builder' },
   { id: 'reports', label: 'Reports' },
   { id: 'invoices', label: 'Invoices' },
-  { id: 'users', label: 'Users & Grants' },
+  { id: 'users', label: 'Users & Access' },
 ]
 
 export function BrandDetailPage() {

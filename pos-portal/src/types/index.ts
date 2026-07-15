@@ -520,6 +520,14 @@ export interface AccessGrantBulkResult {
   errors: { grant_id: string; detail: string }[]
 }
 
+/** Result of GET /access-grants/user-search — the Grant Access name/email picker. */
+export interface UserSearchResult {
+  id: string
+  name: string
+  email: string
+  ref: string | null
+}
+
 // ── Page-category permission hierarchy (ROLE_MODEL.md §4/§6, Stage 18) ─────────
 //
 // Mirrors app.constants.pages.PAGE_CATALOG for rendering only — page_key
@@ -557,7 +565,7 @@ export const PAGE_CATALOG: Array<{ key: string; category: PageCategory; label: s
   { key: 'invoices', category: 'reports', label: 'Invoices' },
   { key: 'audit_log', category: 'reports', label: 'Audit Log' },
   { key: 'users', category: 'user_management', label: 'Users' },
-  { key: 'access_grants', category: 'user_management', label: 'Access Grants' },
+  { key: 'access_grants', category: 'user_management', label: 'Users & Access' },
   { key: 'access_profiles', category: 'user_management', label: 'Access Profiles' },
   { key: 'customers', category: 'customers_loyalty', label: 'Customers' },
   { key: 'loyalty_programs', category: 'customers_loyalty', label: 'Loyalty Programs' },
@@ -572,6 +580,12 @@ export interface VisiblePagesResponse {
   access_profile_id: string
   site_id: string
   page_keys: string[]
+}
+
+/** Result of POST /access-profiles/{id}/pages/bulk. */
+export interface PagePermissionBulkResult {
+  access_profile_id: string
+  changed: string[]
 }
 
 // ── Report types ──────────────────────────────────────────────────────────────

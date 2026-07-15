@@ -9,16 +9,18 @@
  * the license gate are independent — see ROLE_MODEL.md §4).
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, fetchAll } from '../../api/axios'
 import { useAuth, isMgmtUser, isSuperAdmin } from '../../context/AuthContext'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { ScopeGuard } from '../../components/ScopeGuard'
+import { apiErrorMessage } from '../../utils/apiError'
 import {
   PAGE_CATALOG,
   PAGE_CATEGORY_LABELS,
   type PageCategory,
+  type PagePermissionBulkResult,
   type PagePermissionsResponse,
   type VisiblePagesResponse,
   type Site,
@@ -126,6 +128,54 @@ function AccessProfilesPageInner() {
     else grant.mutate(pageKey)
   }
 
+  // ── Bulk select + apply ──────────────────────────────────────────────────
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Selection is scoped to the active profile — switching profiles clears it.
+  useEffect(() => { setSelected(new Set()) }, [activeProfileId])
+
+  const toggleSelected = (pageKey: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(pageKey)) next.delete(pageKey)
+      else next.add(pageKey)
+      return next
+    })
+  }
+  const toggleCategorySelected = (category: PageCategory) => {
+    const keys = PAGE_CATALOG.filter((p) => p.category === category).map((p) => p.key)
+    setSelected((prev) => {
+      const allSelected = keys.every((k) => prev.has(k))
+      const next = new Set(prev)
+      keys.forEach((k) => (allSelected ? next.delete(k) : next.add(k)))
+      return next
+    })
+  }
+  const clearSelection = () => setSelected(new Set())
+
+  const [bulkError, setBulkError] = useState<string | null>(null)
+
+  const bulkSet = useMutation({
+    mutationFn: (body: { page_keys: string[]; grant: boolean }) =>
+      api
+        .post(`/access-profiles/${activeProfileId}/pages/bulk`, body)
+        .then((r) => r.data as PagePermissionBulkResult),
+    onSuccess: () => {
+      invalidatePages()
+      setBulkError(null)
+      clearSelection()
+    },
+    onError: (e: unknown) => {
+      invalidatePages()
+      setBulkError(apiErrorMessage(e, 'Bulk update failed.'))
+    },
+  })
+
+  const applyBulk = (grantAll: boolean) => {
+    if (!activeProfileId || selected.size === 0) return
+    setBulkError(null)
+    bulkSet.mutate({ page_keys: [...selected], grant: grantAll })
+  }
+
   if (!brandId) {
     return (
       <div className="flex items-center justify-center h-64 text-sm text-gray-400 dark:text-gray-500">
@@ -187,51 +237,110 @@ function AccessProfilesPageInner() {
         pagesLoading ? (
           <p className="text-sm text-gray-400 dark:text-gray-500">Loading permissions…</p>
         ) : (
-          <div className="space-y-6">
-            {CATEGORIES.map((category) => (
-              <div key={category}>
-                <h2 className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">
-                  {PAGE_CATEGORY_LABELS[category]}
-                </h2>
-                <div className="zr-table-wrap">
-                  <table className="zr-table min-w-[400px]">
-                    <tbody>
-                      {PAGE_CATALOG.filter((p) => p.category === category).map((p) => {
-                        const isGranted = granted.includes(p.key)
-                        const isLicenseBlocked = licenseBlocked.has(p.key)
-                        return (
-                          <tr key={p.key}>
-                            <td className="px-4 py-3">
-                              <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={isGranted}
-                                  disabled={grant.isPending || revoke.isPending}
-                                  onChange={() => toggle(p.key, isGranted)}
-                                  className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500"
-                                />
-                                <span className="text-gray-900 dark:text-gray-100">{p.label}</span>
-                              </label>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              {isLicenseBlocked && (
-                                <span
-                                  title="Granted by role, but this site's license plan doesn't include this page"
-                                  className="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
-                                >
-                                  License-gated
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+          <>
+            {/* ── Bulk action bar (shown when rows are selected) ────────────── */}
+            {selected.size > 0 && (
+              <div className="flex flex-wrap items-center gap-3 mb-4 px-3 py-2 rounded-lg border border-brand-200 dark:border-brand-900 bg-brand-50 dark:bg-brand-950/30">
+                <span className="text-sm font-medium text-brand-800 dark:text-brand-300">{selected.size} selected</span>
+                <button
+                  onClick={() => applyBulk(true)}
+                  disabled={bulkSet.isPending}
+                  className="text-xs font-medium text-brand-700 dark:text-brand-300 hover:underline disabled:opacity-50"
+                >
+                  Grant selected
+                </button>
+                <button
+                  onClick={() => applyBulk(false)}
+                  disabled={bulkSet.isPending}
+                  className="text-xs font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
+                >
+                  Revoke selected
+                </button>
+                <button
+                  onClick={clearSelection}
+                  disabled={bulkSet.isPending}
+                  className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 ml-auto"
+                >
+                  Clear selection
+                </button>
               </div>
-            ))}
-          </div>
+            )}
+            {bulkError && <p className="text-xs text-red-500 mb-3">{bulkError}</p>}
+
+            <div className="space-y-6">
+              {CATEGORIES.map((category) => {
+                const categoryKeys = PAGE_CATALOG.filter((p) => p.category === category).map((p) => p.key)
+                const categoryAllSelected = categoryKeys.length > 0 && categoryKeys.every((k) => selected.has(k))
+                return (
+                  <div key={category}>
+                    <h2 className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">
+                      {PAGE_CATEGORY_LABELS[category]}
+                    </h2>
+                    <div className="zr-table-wrap">
+                      <table className="zr-table min-w-[440px]">
+                        <thead>
+                          <tr>
+                            <th className="w-10 px-4 py-3">
+                              <input
+                                type="checkbox"
+                                className="zr-chk"
+                                checked={categoryAllSelected}
+                                onChange={() => toggleCategorySelected(category)}
+                                aria-label={`Select all in ${PAGE_CATEGORY_LABELS[category]}`}
+                              />
+                            </th>
+                            <th>Page</th>
+                            <th className="px-4 py-3" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {PAGE_CATALOG.filter((p) => p.category === category).map((p) => {
+                            const isGranted = granted.includes(p.key)
+                            const isLicenseBlocked = licenseBlocked.has(p.key)
+                            return (
+                              <tr key={p.key}>
+                                <td className="px-4 py-3">
+                                  <input
+                                    type="checkbox"
+                                    className="zr-chk"
+                                    checked={selected.has(p.key)}
+                                    onChange={() => toggleSelected(p.key)}
+                                    aria-label={`Select ${p.label}`}
+                                  />
+                                </td>
+                                <td className="px-4 py-3">
+                                  <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={isGranted}
+                                      disabled={grant.isPending || revoke.isPending}
+                                      onChange={() => toggle(p.key, isGranted)}
+                                      className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500"
+                                    />
+                                    <span className="text-gray-900 dark:text-gray-100">{p.label}</span>
+                                  </label>
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  {isLicenseBlocked && (
+                                    <span
+                                      title="Granted by role, but this site's license plan doesn't include this page"
+                                      className="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
+                                    >
+                                      License-gated
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </>
         )
       )}
     </div>

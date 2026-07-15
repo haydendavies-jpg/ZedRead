@@ -20,7 +20,7 @@ import uuid
 
 import structlog
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
@@ -211,6 +211,56 @@ async def list_grants(
             )
 
     result = await db.execute(query.offset(skip).limit(limit))
+    return list(result.scalars().all())
+
+
+async def search_grantable_users(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    query: str,
+    limit: int,
+    management_access: ManagementAccess | None,
+    superadmin: SuperAdmin | None,
+) -> list[User]:
+    """
+    Search users by name or email within a brand, for the Grant Access user picker.
+
+    Lets the portal search by a human-readable name/email instead of requiring
+    the admin to paste a raw user UUID. Scope-checked the same way as
+    list_access_profiles (routes/access_grants.py): site/brand-scope callers may
+    only search their own brand; group-scope callers may search any brand in
+    their group; portal admins may search any brand.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand to search within.
+        query: Case-insensitive substring matched against name and email.
+        limit: Maximum results to return.
+        management_access: Set for management JWT callers.
+        superadmin: Set for portal admin callers.
+
+    Returns:
+        list[User]: Matching users, ordered by name.
+
+    Raises:
+        HTTPException: 403 if brand_id is outside a management caller's scope.
+    """
+    if management_access is not None:
+        if management_access.scope in (GrantScope.SITE, GrantScope.BRAND):
+            if management_access.brand is None or management_access.brand.id != brand_id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Brand is outside your scope")
+        elif management_access.scope == GrantScope.GROUP:
+            brand_r = await db.execute(select(Brand).where(Brand.id == brand_id))
+            brand = brand_r.scalar_one_or_none()
+            if brand is None or management_access.group is None or brand.group_id != management_access.group.id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Brand is outside your scope")
+
+    q = select(User).where(User.brand_id == brand_id)
+    if query:
+        like = f"%{query}%"
+        q = q.where(or_(User.name.ilike(like), User.email.ilike(like)))
+    q = q.order_by(User.name).limit(limit)
+    result = await db.execute(q)
     return list(result.scalars().all())
 
 

@@ -225,3 +225,111 @@ async def test_visible_pages_combines_role_and_license_gate(
     page_keys = response.json()["page_keys"]
     assert "products" in page_keys
     assert "audit_log" not in page_keys
+
+
+# ── Bulk grant/revoke ──────────────────────────────────────────────────────────
+
+
+async def test_bulk_set_pages_grant_happy_path_writes_audit_logs(
+    client, db, test_user, test_portal_grant, test_access_profile
+):
+    """Bulk-granting multiple pages creates all rows and one audit row per key."""
+    headers = _mgmt_headers(test_user, test_portal_grant)
+    response = await client.post(
+        f"/access-profiles/{test_access_profile.id}/pages/bulk",
+        headers=headers,
+        json={"page_keys": ["daily_sales", "tax_collected"], "grant": True},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body["changed"]) == {"daily_sales", "tax_collected"}
+
+    result = await db.execute(
+        select(AccessProfilePagePermission.page_key).where(
+            AccessProfilePagePermission.access_profile_id == test_access_profile.id,
+        )
+    )
+    assert {row[0] for row in result} == {"daily_sales", "tax_collected"}
+
+    audit_result = await db.execute(
+        select(AuditLog).where(AuditLog.action == ACCESS_PROFILE_PAGE_GRANTED)
+    )
+    assert len(audit_result.scalars().all()) == 2
+
+
+async def test_bulk_set_pages_grant_is_idempotent(
+    client, db, test_user, test_portal_grant, granted_profile
+):
+    """Bulk-granting a mix of already-granted and new pages only changes the new ones."""
+    headers = _mgmt_headers(test_user, test_portal_grant)
+    response = await client.post(
+        f"/access-profiles/{granted_profile.id}/pages/bulk",
+        headers=headers,
+        json={"page_keys": ["products", "daily_sales"], "grant": True},
+    )
+    assert response.status_code == 200
+    assert response.json()["changed"] == ["daily_sales"]
+
+
+async def test_bulk_set_pages_revoke_happy_path(
+    client, db, test_user, test_portal_grant, test_access_profile
+):
+    """Bulk-revoking granted pages removes them and skips ones never granted."""
+    db.add_all(
+        [
+            AccessProfilePagePermission(
+                id=uuid.uuid4(), access_profile_id=test_access_profile.id, page_key="products"
+            ),
+            AccessProfilePagePermission(
+                id=uuid.uuid4(), access_profile_id=test_access_profile.id, page_key="daily_sales"
+            ),
+        ]
+    )
+    await db.commit()
+
+    headers = _mgmt_headers(test_user, test_portal_grant)
+    response = await client.post(
+        f"/access-profiles/{test_access_profile.id}/pages/bulk",
+        headers=headers,
+        json={"page_keys": ["products", "audit_log"], "grant": False},
+    )
+    assert response.status_code == 200
+    # "audit_log" was never granted, so only "products" is actually changed.
+    assert response.json()["changed"] == ["products"]
+
+    result = await db.execute(
+        select(AccessProfilePagePermission.page_key).where(
+            AccessProfilePagePermission.access_profile_id == test_access_profile.id,
+        )
+    )
+    assert {row[0] for row in result} == {"daily_sales"}
+
+
+async def test_bulk_set_pages_unknown_page_key_returns_422(
+    client, db, test_user, test_portal_grant, test_access_profile
+):
+    """An unrecognised page_key in the batch returns 422 without changing anything."""
+    headers = _mgmt_headers(test_user, test_portal_grant)
+    response = await client.post(
+        f"/access-profiles/{test_access_profile.id}/pages/bulk",
+        headers=headers,
+        json={"page_keys": ["products", "not_a_real_page"], "grant": True},
+    )
+    assert response.status_code == 422
+
+    result = await db.execute(
+        select(AccessProfilePagePermission).where(
+            AccessProfilePagePermission.access_profile_id == test_access_profile.id,
+        )
+    )
+    assert result.scalar_one_or_none() is None
+
+
+async def test_bulk_set_pages_rejects_pos_jwt(client, db, pos_auth_headers, test_access_profile):
+    """POS terminal JWTs cannot bulk-manage page permissions."""
+    response = await client.post(
+        f"/access-profiles/{test_access_profile.id}/pages/bulk",
+        headers=pos_auth_headers,
+        json={"page_keys": ["products"], "grant": True},
+    )
+    assert response.status_code == 403
