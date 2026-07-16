@@ -20,6 +20,7 @@ from sqlalchemy import select
 from app.constants.audit_actions import (
     MENU_BUTTON_BULK_RECOLORED,
     MENU_BUTTON_BULK_REMOVED,
+    MENU_BUTTON_MOVED,
     MENU_BUTTON_UPDATED,
     MENU_LAYOUT_DUPLICATED,
     MENU_LAYOUT_SCHEDULED,
@@ -179,6 +180,105 @@ async def test_update_button_pos_token_returns_403(client, pos_auth_headers):
     assert response.status_code == 403
 
 
+# ── Grid placement (drag-to-any-cell) ────────────────────────────────────────
+
+
+async def test_place_button_sets_grid_position(client, db, mgmt_auth_headers, test_user, test_product):
+    """PATCH /menu-layouts/buttons/{id}/place sets grid_col/grid_row and writes MENU_BUTTON_MOVED."""
+    layout_id, tab_id = await _create_layout_with_tab(client, mgmt_auth_headers)
+    button = await _create_product_button(client, mgmt_auth_headers, layout_id, tab_id, test_product.ref)
+    assert button["grid_col"] is None
+    assert button["grid_row"] is None
+
+    response = await client.patch(
+        f"/menu-layouts/buttons/{button['id']}/place",
+        json={"tab_id": tab_id, "grid_col": 2, "grid_row": 1},
+        headers=mgmt_auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["grid_col"] == 2
+    assert body["grid_row"] == 1
+    assert body["tab_id"] == tab_id
+    # Full resolved button, not a bare id/flag — width/height/color/product preview all present.
+    assert body["width"] == button["width"]
+    assert body["product_name"] is not None
+
+    result = await db.execute(select(AuditLog).where(AuditLog.action == MENU_BUTTON_MOVED))
+    row = result.scalar_one()
+    assert row.actor_id == test_user.id
+    assert row.entity_id == button["id"]
+
+
+async def test_place_button_cross_tab_move_updates_tab_and_display_order(client, mgmt_auth_headers, test_product):
+    """PATCH .../place into a different tab reassigns tab_id and appends display_order at the end of that tab."""
+    layout_id, tab_a = await _create_layout_with_tab(client, mgmt_auth_headers, tab_name="A")
+    tab_b = (await client.post(f"/menu-layouts/{layout_id}/tabs", json={"name": "B"}, headers=mgmt_auth_headers)).json()["id"]
+    # An existing button in tab_b so the moved button must land after it (display_order >= 1).
+    await _create_product_button(client, mgmt_auth_headers, layout_id, tab_b, test_product.ref)
+    button = await _create_product_button(client, mgmt_auth_headers, layout_id, tab_a, test_product.ref)
+
+    response = await client.patch(
+        f"/menu-layouts/buttons/{button['id']}/place",
+        json={"tab_id": tab_b, "grid_col": 0, "grid_row": 0},
+        headers=mgmt_auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tab_id"] == tab_b
+    assert body["display_order"] >= 1
+
+    detail = (await client.get(f"/menu-layouts/{layout_id}", headers=mgmt_auth_headers)).json()
+    tab_a_buttons = next(t for t in detail["tabs"] if t["id"] == tab_a)["buttons"]
+    assert all(b["id"] != button["id"] for b in tab_a_buttons)
+
+
+async def test_place_button_out_of_grid_bounds_returns_400(client, mgmt_auth_headers, test_product):
+    """PATCH .../place with grid_col + button width exceeding the 6-column grid returns 400."""
+    layout_id, tab_id = await _create_layout_with_tab(client, mgmt_auth_headers)
+    button = await _create_product_button(client, mgmt_auth_headers, layout_id, tab_id, test_product.ref, width=3)
+
+    response = await client.patch(
+        f"/menu-layouts/buttons/{button['id']}/place",
+        json={"tab_id": tab_id, "grid_col": 5, "grid_row": 0},
+        headers=mgmt_auth_headers,
+    )
+    assert response.status_code == 400
+
+
+async def test_place_button_invalid_grid_col_returns_422(client, mgmt_auth_headers, test_product):
+    """PATCH .../place with grid_col outside 0-5 returns 422."""
+    layout_id, tab_id = await _create_layout_with_tab(client, mgmt_auth_headers)
+    button = await _create_product_button(client, mgmt_auth_headers, layout_id, tab_id, test_product.ref)
+
+    response = await client.patch(
+        f"/menu-layouts/buttons/{button['id']}/place",
+        json={"tab_id": tab_id, "grid_col": 6, "grid_row": 0},
+        headers=mgmt_auth_headers,
+    )
+    assert response.status_code == 422
+
+
+async def test_place_button_not_found_returns_404(client, mgmt_auth_headers):
+    """PATCH .../place for a button id that doesn't exist (or belongs to another brand) returns 404."""
+    response = await client.patch(
+        f"/menu-layouts/buttons/{uuid.uuid4()}/place",
+        json={"tab_id": str(uuid.uuid4()), "grid_col": 0, "grid_row": 0},
+        headers=mgmt_auth_headers,
+    )
+    assert response.status_code == 404
+
+
+async def test_place_button_pos_token_returns_403(client, pos_auth_headers):
+    """PATCH .../place with a POS terminal token returns 403."""
+    response = await client.patch(
+        f"/menu-layouts/buttons/{uuid.uuid4()}/place",
+        json={"tab_id": str(uuid.uuid4()), "grid_col": 0, "grid_row": 0},
+        headers=pos_auth_headers,
+    )
+    assert response.status_code == 403
+
+
 # ── Bulk actions ──────────────────────────────────────────────────────────────
 
 
@@ -200,7 +300,11 @@ async def test_bulk_recolor_buttons(client, db, mgmt_auth_headers, test_user, te
         headers=mgmt_auth_headers,
     )
     assert response.status_code == 200
-    assert set(response.json()) == {b1["id"], b2["id"]}
+    body = response.json()
+    assert {b["id"] for b in body} == {b1["id"], b2["id"]}
+    # Full resolved buttons — not just ids — so the frontend can cache-patch without a refetch.
+    assert {b["color"] for b in body} == {"#ABCDEF"}
+    assert all("width" in b and "height" in b and "grid_col" in b and "grid_row" in b for b in body)
 
     detail = (await client.get(f"/menu-layouts/{layout_id}", headers=mgmt_auth_headers)).json()
     tab = next(t for t in detail["tabs"] if t["id"] == tab_id)
@@ -249,7 +353,10 @@ async def test_bulk_delete_buttons_cascades_folder_tabs(client, db, mgmt_auth_he
         json={"button_ids": [b1["id"], b2["id"]]},
         headers=mgmt_auth_headers,
     )
-    assert response.status_code == 204
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body["deleted_button_ids"]) == {b1["id"], b2["id"]}
+    assert body["deleted_tab_ids"] == [b2["child_tab_id"]]
 
     detail = (await client.get(f"/menu-layouts/{layout_id}", headers=mgmt_auth_headers)).json()
     tab = next(t for t in detail["tabs"] if t["id"] == tab_id)

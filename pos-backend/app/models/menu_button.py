@@ -28,9 +28,18 @@ class MenuButton(Base):
     constraint enforces exactly one of product_ref/child_tab_id per kind.
 
     width/height are the tile's span in the layout's 6-column CSS grid
-    (grid-auto-flow: dense packs remaining tiles around it) — no x/y
-    coordinates are stored; the browser computes position from span + order.
-    color overrides the linked product's category default colour when set.
+    (grid-auto-flow: dense packs remaining tiles around it). color overrides
+    the linked product's category default colour when set.
+
+    grid_col/grid_row (nullable — added for drag-to-any-cell placement) are
+    the 0-indexed top-left cell the button has been explicitly pinned to.
+    Both start NULL for every button: a freshly created one, or one that has
+    never been dragged, keeps falling back to the dense-pack layout computed
+    from width/height/display_order. Once a button is moved via
+    menu_builder_service.place_menu_button, both are set and the frontend
+    switches that tile to absolute grid positioning instead. Clearing them
+    back to NULL (not currently exposed by any route) would restore the
+    dense-pack fallback.
     """
 
     __tablename__ = "menu_buttons"
@@ -43,6 +52,8 @@ class MenuButton(Base):
             "(kind = 'folder' AND child_tab_id IS NOT NULL AND product_ref IS NULL)",
             name="ck_menu_buttons_kind_fields_consistency",
         ),
+        CheckConstraint("grid_col IS NULL OR grid_col BETWEEN 0 AND 5", name="ck_menu_buttons_grid_col_range"),
+        CheckConstraint("grid_row IS NULL OR grid_row >= 0", name="ck_menu_buttons_grid_row_range"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -97,7 +108,17 @@ class MenuButton(Base):
         Integer,
         nullable=False,
         default=0,
-        comment="Order buttons are shown in within the tab — lower values appear first",
+        comment="Order buttons are shown in within the tab — lower values appear first (fallback when grid_col/grid_row are NULL)",
+    )
+    grid_col: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="0-indexed column of the button's top-left cell (0-5); NULL means auto-packed via display_order",
+    )
+    grid_row: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="0-indexed row of the button's top-left cell; NULL means auto-packed via display_order",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

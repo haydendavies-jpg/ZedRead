@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-14 (Menu Studio — user-testing feedback round 2)
+Last updated: 2026-07-16 (Menu Studio — feedback round 3)
 
 ---
 
@@ -796,6 +796,85 @@ the real test DB) before → after:
   Confirmed post-merge: Railway was US West (California) and Supabase Northeast Asia (Seoul) —
   the plan is Railway → Southeast Asia (Singapore) now, Supabase → `ap-southeast-1` when a
   migration window allows.
+
+---
+
+### Menu Studio — feedback round 3 ✅
+
+Six reported issues fixed in one pass:
+
+- [x] **Products couldn't attach modifiers** — the `product_modifier_group_links` table existed
+  (Stage 9) with attach/detach routes but no frontend consumer. Added `GET /products/{id}/modifiers`
+  (attached, ordered by `display_order`, + available) and `PATCH /products/{id}/modifiers/reorder`
+  (reconciles membership and resequences `display_order` for the whole set in one transaction —
+  `sync_product_modifier_groups()` in `modifier_service.py`, mirroring `reorder_menu_buttons()`'s
+  whole-list-resequence pattern). Portal: the Modifiers cell on `ProductsPage.tsx` is now clickable,
+  opening a new `ModifierPickerModal.tsx` — an "attached, drag to reorder" list (native HTML5 drag)
+  above an "add more" checklist of the brand's other active groups, "Done" calling the reorder route
+  with the full ordered set.
+- [x] **No bulk multi-select/edit on Products** — `ProductsPage.tsx` gained a checkbox column
+  (header select-all/indeterminate) and a floating bulk-action bar. New `POST /products/bulk`
+  (`ProductBulkUpdate` schema, `bulk_update_products()` in `product_service.py`) applies any
+  combination of category, price (absolute or `price_markup_percent` — multiplies each selected
+  product's *current* price via `Decimal`/`ROUND_HALF_UP`, never float, per CLAUDE.md rule 9), tax
+  category, one modifier-group attach (append-only, never detaches), and archive/reactivate to a
+  selected set in one all-or-nothing transaction; every product_id/category_id/tax_category_id/
+  modifier_group_id is validated against the caller's brand up front (400 with the offending ids,
+  mirroring `import_service.py`'s validate-then-upsert convention) before any row is touched. One
+  `log_action()` row is written per product actually changed, so each product's own audit trail
+  stays complete. **There is no bulk "Reporting Group" action** — reporting group is derived through
+  Category (`categories.reporting_group_id`), not a Product column, so bulk category assignment
+  already changes a product's effective reporting group; adding a separate override column was
+  explicitly decided against to avoid diverging from that model. The Reporting Group *column* was
+  also dropped from the Products table for the same reason (the filter stays, since it's still a
+  useful lever).
+- [x] **No real archive action, and archiving left stale references behind** — `is_active=False`
+  was already soft-delete-only (there is no hard-delete route), but archiving previously left a
+  product's modifier links and any POS-layout buttons pointing at it dangling. The bulk-archive path
+  above (and any future single-product archive reusing the same service call) now cascades:
+  `_cascade_deactivate_products()` deletes every `product_modifier_group_links` row for the archived
+  products, and every `menu_buttons` row (`kind='product'`) across the brand's `menu_layouts` whose
+  `product_ref` matches one of them (scoped via `tab_id → menu_tabs.layout_id → menu_layouts.brand_id`,
+  since `menu_buttons` has no direct brand column). `StatusBadge` on `ProductsPage.tsx` now reads
+  active/archived with "Click to archive"/"Click to reactivate" titles.
+- [x] **No way to add products to a modifier group from the modifier side** — `ModifiersPage.tsx`'s
+  static "Used by N product(s)" line is now a toggle that expands into the actual product list
+  (name, an inactive badge where relevant) via a new `GET /modifier-groups/{id}/products`
+  (`list_products_for_modifier_group()`, reusing the same join `used_by_count` already used), lazily
+  fetched only while expanded. An inline "+ Add product" select (populated from the brand's products
+  not already linked) calls the *existing* `POST /products/{product_id}/modifiers` route from this
+  side, optimistically patching the expanded list and the group's `used_by_count` in cache.
+- [x] **POS Layout: could only drop between existing tiles, not onto an empty cell** —
+  `menu_buttons` gained nullable `grid_col`/`grid_row` (migration `0045`; null = unchanged auto-pack-
+  by-`display_order` fallback, set = explicit absolute grid position) and a new
+  `PATCH /menu-layouts/buttons/{id}/place` route (`place_menu_button()`, clamps to the 6-column
+  bound, no overlap enforcement — dense-pack/CSS resolves minor overlaps visually, and strict
+  rejection would make quick drags error-prone). Portal: the grid's dashed "+" empty-slot tiles now
+  carry a `data-drop="cell:<tab>:<col>:<row>"` target wired through the existing pointer-drag
+  machinery, so a product tile, a folder tile, or the click-to-add-product flow can all target a
+  specific empty cell instead of only appending to the end of the tab's ordered list; a button with
+  an explicit `grid_col`/`grid_row` renders at that absolute position, everything else keeps the
+  prior dense auto-pack layout.
+- [x] **POS Layout: 5-10s lag on every drag/resize/recolor/add/group-into-tab** — root-caused (this
+  round, not the earlier general "request latency optimization" pass, which fixed a different,
+  auth-dependency-shaped problem) to every `GridEditor` mutation calling
+  `invalidateQueries({ queryKey: ['menu-layout', layoutId] })` on success, forcing a full refetch of
+  the entire tab tree + every button + product-ref resolution regardless of how small the actual
+  change was. Several menu-layout mutation routes/services were broadened to return the full
+  resolved object they touched (not a bare id/204) so the frontend could patch its cache instead:
+  `update_menu_button`, `create_menu_button`, `reorder_menu_buttons`, `bulk_recolor_menu_buttons`,
+  `bulk_delete_menu_buttons`, `group_menu_buttons_into_tab`, plus the new `place_menu_button`. Every
+  `GridEditor` mutation (move/place, resize/recolor/relink, add product/folder, delete (incl. folder
+  → descendant-tab cascade computed from the cached tree), reorder/drag-move, rename tab, bulk
+  recolor/delete, group-into-tab, publish/unpublish) now patches the `['menu-layout', layoutId]`
+  cache directly from its own response — `invalidateQueries` remains only as the `onError` rollback
+  path, never on the success path, so no single-button interaction pays for a whole-tree reload.
+- [x] Tests: `test_product_modifiers_routes.py`, `test_product_bulk_routes.py` (reorder/reconcile
+  correctness, bulk price/markup/category/tax, bulk-archive cascade asserting both the modifier
+  links and menu_buttons rows are actually gone, brand-scope rejection, per-product audit rows);
+  extended `test_menu_layout_editor_routes.py` (`/place` grid-bounds validation, cross-tab move,
+  audit row, broadened response shapes). Full backend suite (734 tests) green; portal typecheck
+  (`tsc -p tsconfig.app.json --noEmit`, `tsc -b --noEmit`) clean.
 
 ---
 

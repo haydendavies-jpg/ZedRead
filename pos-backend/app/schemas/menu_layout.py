@@ -18,6 +18,11 @@ class MenuButtonOut(BaseModel):
     default" colour reset and the tile's fallback fill when color is unset).
     For kind='folder': child_tab_name/child_tab_button_count preview the
     nested tab this button opens.
+
+    grid_col/grid_row are the button's explicit grid cell placement (drag-to-
+    any-cell); both are None until the button has been moved via
+    PATCH .../buttons/{button_id}/place, meaning the frontend should fall
+    back to dense-pack layout from width/height/display_order.
     """
 
     id: uuid.UUID
@@ -29,6 +34,8 @@ class MenuButtonOut(BaseModel):
     height: int
     color: str | None
     display_order: int
+    grid_col: int | None = None
+    grid_row: int | None = None
     product_name: str | None = None
     price_cents: int | None = None
     is_active: bool | None = None
@@ -57,6 +64,24 @@ class MenuButtonUpdate(BaseModel):
     color: str | None = Field(None, pattern=_HEX_COLOR_PATTERN)
 
 
+class MenuButtonPlace(BaseModel):
+    """
+    Payload for PATCH /menu-layouts/buttons/{button_id}/place — drag a button to an explicit grid cell.
+
+    tab_id is the destination tab (may be the button's current tab, or a
+    different one in the same layout — a cross-tab drag). grid_col/grid_row
+    address the button's new top-left cell; the service additionally checks
+    grid_col + the button's stored width does not exceed the 6-column grid.
+    No overlap checking is performed against other buttons in the same cell —
+    dense-pack/CSS visually resolves minor overlaps and strict rejection would
+    make quick drag-reorders error-prone.
+    """
+
+    tab_id: uuid.UUID
+    grid_col: int = Field(..., ge=0, le=5)
+    grid_row: int = Field(..., ge=0)
+
+
 class MenuButtonsReorder(BaseModel):
     """
     Payload to reorder (and/or move into) a tab's buttons.
@@ -81,6 +106,20 @@ class MenuButtonsBulkDelete(BaseModel):
     """Payload to bulk-delete a multi-selection of buttons."""
 
     button_ids: list[uuid.UUID] = Field(..., min_length=1)
+
+
+class MenuButtonsBulkDeleteResult(BaseModel):
+    """
+    Response for POST /{layout_id}/buttons/bulk-delete.
+
+    Lets the frontend patch its local cache (drop these ids) instead of
+    refetching the whole layout. deleted_tab_ids covers folder buttons among
+    the selection whose nested child tab cascade-deleted too — those ids also
+    need dropping from any locally-cached tab tree.
+    """
+
+    deleted_button_ids: list[uuid.UUID]
+    deleted_tab_ids: list[uuid.UUID]
 
 
 class MenuButtonsGroupIntoTab(BaseModel):

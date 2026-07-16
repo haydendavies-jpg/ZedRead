@@ -9,12 +9,15 @@ from app.database import get_db
 from app.services.modifier_service import (
     ModifierGroupCreate,
     ModifierGroupDetail,
+    ModifierGroupProductItem,
     ModifierGroupResponse,
     ModifierGroupUpdate,
     ModifierOptionCreate,
     ModifierOptionLinkCreate,
     ModifierOptionResponse,
     ModifierOptionUpdate,
+    ProductModifiersOut,
+    ProductModifiersReorderRequest,
     create_modifier_group,
     create_modifier_option,
     deactivate_modifier_group,
@@ -25,6 +28,9 @@ from app.services.modifier_service import (
     list_modifier_groups,
     list_modifier_groups_detailed,
     list_modifier_options,
+    list_product_modifiers,
+    list_products_for_modifier_group,
+    sync_product_modifier_groups,
     unlink_modifier_group,
     unlink_option_group,
     update_modifier_group,
@@ -198,6 +204,42 @@ async def deactivate_brand_modifier_group(
         db: Active database session.
     """
     await deactivate_modifier_group(db, access.effective_brand_id(brand_id), group_id, access.actor_user)
+
+
+# ── Used-by-products routes ───────────────────────────────────────────────────
+
+
+@router.get(
+    "/modifier-groups/{modifier_group_id}/products",
+    response_model=list[ModifierGroupProductItem],
+    status_code=status.HTTP_200_OK,
+)
+async def list_modifier_group_products(
+    modifier_group_id: uuid.UUID,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> list[ModifierGroupProductItem]:
+    """
+    List the products currently linked to a modifier group.
+
+    Powers the "used by products" expand on the Modifiers tab card; adding a
+    product from this screen reuses the existing
+    POST /products/{product_id}/modifiers route with this group's id.
+
+    Args:
+        modifier_group_id: UUID of the modifier group.
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access (POS, management, or portal).
+        db: Active database session.
+
+    Returns:
+        list[ModifierGroupProductItem]: Linked products ordered by name.
+    """
+    products = await list_products_for_modifier_group(
+        db, access.effective_brand_id(brand_id), modifier_group_id
+    )
+    return [ModifierGroupProductItem.model_validate(p) for p in products]
 
 
 # ── Modifier option routes ────────────────────────────────────────────────────
@@ -395,6 +437,32 @@ class ModifierLinkResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+@router.get(
+    "/products/{product_id}/modifiers",
+    response_model=ProductModifiersOut,
+    status_code=status.HTTP_200_OK,
+)
+async def list_product_modifier_groups(
+    product_id: uuid.UUID,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> ProductModifiersOut:
+    """
+    List a product's attached modifier groups (ordered) and available ones to attach.
+
+    Args:
+        product_id: UUID of the product.
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access (POS, management, or portal).
+        db: Active database session.
+
+    Returns:
+        ProductModifiersOut: attached (ordered) and available modifier groups.
+    """
+    return await list_product_modifiers(db, access.effective_brand_id(brand_id), product_id)
+
+
 @router.post(
     "/products/{product_id}/modifiers",
     response_model=ModifierLinkResponse,
@@ -428,6 +496,44 @@ async def link_product_modifier(
         access.actor_user,
     )
     return ModifierLinkResponse.model_validate(link)
+
+
+@router.patch(
+    "/products/{product_id}/modifiers/reorder",
+    response_model=ProductModifiersOut,
+    status_code=status.HTTP_200_OK,
+)
+async def reorder_product_modifier_groups(
+    product_id: uuid.UUID,
+    payload: ProductModifiersReorderRequest,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> ProductModifiersOut:
+    """
+    Reconcile a product's attached modifier groups to the full ordered set given.
+
+    Attaches any id in modifier_group_ids not currently attached, detaches any
+    currently-attached id missing from the list, and resequences display_order
+    to match list index — all in one transaction.
+
+    Args:
+        product_id: UUID of the product.
+        payload: The full desired attached set, in order.
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access (POS, management, or portal).
+        db: Active database session.
+
+    Returns:
+        ProductModifiersOut: The product's attached/available groups after the sync.
+    """
+    return await sync_product_modifier_groups(
+        db,
+        access.effective_brand_id(brand_id),
+        product_id,
+        payload.modifier_group_ids,
+        access.actor_user,
+    )
 
 
 @router.delete(

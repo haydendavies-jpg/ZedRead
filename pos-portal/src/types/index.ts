@@ -341,6 +341,14 @@ export interface ModifierGroupDetail extends ModifierGroup {
   used_by_count: number
 }
 
+/** One product linked to a modifier group — powers the "used by products" expand. */
+export interface ModifierGroupProductItem {
+  id: string
+  ref: string
+  name: string
+  is_active: boolean
+}
+
 // ── Menus (distinct from a POS MenuLayout) ──────────────────────────────────────
 
 export interface Menu {
@@ -416,6 +424,9 @@ export interface MenuButton {
   height: number
   color: string | null
   display_order: number
+  /** 0-indexed explicit grid cell (drag-to-any-cell placement); null until moved via the /place endpoint, meaning fall back to dense-pack via display_order. */
+  grid_col: number | null
+  grid_row: number | null
   /** Resolved live from the brand's catalog by product_ref — null if the ref no longer resolves, or kind='folder'. */
   product_name: string | null
   price_cents: number | null

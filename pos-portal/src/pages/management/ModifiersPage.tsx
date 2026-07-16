@@ -13,15 +13,28 @@ import { api, fetchAll } from '../../api/axios'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { apiErrorMessage } from '../../utils/apiError'
 import { centsToDisplay } from '../../utils/menuStudio'
-import type { ModifierGroupDetail } from '../../types'
+import { StatusBadge } from '../../components/StatusBadge'
+import type { ModifierGroupDetail, ModifierGroupProductItem, ProductListItem } from '../../types'
 
 export function ModifiersPage() {
   const qc = useQueryClient()
   const brandId = useMgmtBrandId()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Separate expand state for the "used by products" section — independent
+  // of the comboing `expanded` Set above so opening one never toggles the other.
+  const [expandedUsedBy, setExpandedUsedBy] = useState<Set<string>>(new Set())
   const [formError, setFormError] = useState<string | null>(null)
 
   const params = brandId ? { brand_id: brandId } : {}
+
+  // Brand's full product list, used to populate the "+ Add product" picker
+  // in the used-by-products expand — same query key/shape MenuBuilderPage.tsx
+  // uses for its own product picker, so the two pages can share the cache.
+  const { data: allProducts = [] } = useQuery<ProductListItem[]>({
+    queryKey: ['products', brandId],
+    queryFn: () => fetchAll<ProductListItem>('/products', params),
+    enabled: !!brandId,
+  })
 
   const { data: groups = [], isLoading } = useQuery<ModifierGroupDetail[]>({
     queryKey: ['modifier-groups-detailed', brandId],
@@ -138,6 +151,14 @@ export function ModifiersPage() {
       const next = new Set(prev)
       if (next.has(optionId)) next.delete(optionId)
       else next.add(optionId)
+      return next
+    })
+
+  const toggleUsedBy = (groupId: string) =>
+    setExpandedUsedBy((prev) => {
+      const next = new Set(prev)
+      if (next.has(groupId)) next.delete(groupId)
+      else next.add(groupId)
       return next
     })
 
@@ -288,8 +309,23 @@ export function ModifiersPage() {
                 </button>
               </div>
 
-              <div className="bg-gray-50 dark:bg-gray-900/40 border-t border-gray-100 dark:border-gray-700 px-4 py-2.5 text-xs text-gray-400 dark:text-gray-500">
-                ▸ Used by {g.used_by_count} product{g.used_by_count === 1 ? '' : 's'}
+              <div className="bg-gray-50 dark:bg-gray-900/40 border-t border-gray-100 dark:border-gray-700 px-4 py-2.5">
+                <button
+                  onClick={() => toggleUsedBy(g.id)}
+                  className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-brand-600 dark:hover:text-brand-300"
+                >
+                  <span className="text-[9px]">{expandedUsedBy.has(g.id) ? '︿' : '▸'}</span>
+                  Used by {g.used_by_count} product{g.used_by_count === 1 ? '' : 's'}
+                </button>
+                {expandedUsedBy.has(g.id) && (
+                  <UsedByProducts
+                    group={g}
+                    brandId={brandId}
+                    params={params}
+                    allProducts={allProducts}
+                    onError={(msg) => setFormError(msg)}
+                  />
+                )}
               </div>
             </div>
           ))}
@@ -356,6 +392,134 @@ function BufferedInput({ value, onCommit, type = 'text', step, min, className }:
       }}
       className={className}
     />
+  )
+}
+
+/**
+ * "Used by products" expand for a modifier group card — lazy-loads the
+ * group's linked products only while expanded, and offers a "+ Add product"
+ * picker that attaches another product via the existing
+ * POST /products/{id}/modifiers route.
+ */
+function UsedByProducts({
+  group,
+  brandId,
+  params,
+  allProducts,
+  onError,
+}: {
+  group: ModifierGroupDetail
+  brandId: string | null
+  params: Record<string, unknown>
+  allProducts: ProductListItem[]
+  onError: (message: string) => void
+}) {
+  const qc = useQueryClient()
+
+  // Lazy-loaded: only fetched while this card's used-by section is expanded
+  // (the caller only mounts this component when expandedUsedBy has the id,
+  // and `enabled` here guards against any stale re-mount race).
+  const { data: linked = [], isLoading } = useQuery<ModifierGroupProductItem[]>({
+    queryKey: ['modifier-group-products', group.id],
+    queryFn: () => fetchAll<ModifierGroupProductItem>(`/modifier-groups/${group.id}/products`, params),
+    enabled: true,
+  })
+
+  const addProduct = useMutation({
+    mutationFn: (productId: string) =>
+      api.post(`/products/${productId}/modifiers`, { modifier_group_id: group.id }, { params }),
+    // Optimistic-ish: append the product to the linked list straight from the
+    // brand's already-fetched product list (the POST response only carries
+    // link ids, not product fields), and bump this card's used_by_count in
+    // the modifier-groups list cache — same convention as createGroup/
+    // createOption's cache-append pattern above.
+    onSuccess: (_resp, productId) => {
+      const product = allProducts.find((p) => p.id === productId)
+      if (product) {
+        qc.setQueryData<ModifierGroupProductItem[]>(['modifier-group-products', group.id], (old) =>
+          old
+            ? [...old, { id: product.id, ref: product.ref, name: product.name, is_active: product.is_active }]
+            : old,
+        )
+      }
+      qc.setQueryData<ModifierGroupDetail[]>(['modifier-groups-detailed', brandId], (old) =>
+        old?.map((g2) => (g2.id === group.id ? { ...g2, used_by_count: g2.used_by_count + 1 } : g2)),
+      )
+      qc.invalidateQueries({ queryKey: ['modifier-group-products', group.id] })
+      qc.invalidateQueries({ queryKey: ['modifier-groups-detailed', brandId] })
+    },
+    onError: (e: unknown) => {
+      // Re-fetch so any DB-written link still appears even if this optimistic
+      // patch fails to reconcile (same "invalidate on error too" rule as the
+      // rest of this page's mutations).
+      qc.invalidateQueries({ queryKey: ['modifier-group-products', group.id] })
+      qc.invalidateQueries({ queryKey: ['modifier-groups-detailed', brandId] })
+      onError(apiErrorMessage(e, 'Failed to add product.'))
+    },
+  })
+
+  const candidates = allProducts.filter((p) => !linked.some((l) => l.id === p.id))
+
+  return (
+    <div className="mt-2 pl-4 flex flex-col gap-1">
+      {isLoading ? (
+        <p className="text-xs text-gray-400 dark:text-gray-500">Loading…</p>
+      ) : (
+        <>
+          {linked.length === 0 && <p className="text-xs text-gray-400 dark:text-gray-500">No products yet.</p>}
+          {linked.map((p) => (
+            <div key={p.id} className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+              <span className="truncate">{p.name}</span>
+              {!p.is_active && <StatusBadge status="inactive" />}
+            </div>
+          ))}
+        </>
+      )}
+      <AddProductTrigger
+        candidates={candidates}
+        onPick={(productId) => addProduct.mutate(productId)}
+        disabled={addProduct.isPending}
+      />
+    </div>
+  )
+}
+
+/** Ghost "+ Add product" action with an inline dropdown of candidate products. */
+function AddProductTrigger({
+  candidates,
+  onPick,
+  disabled,
+}: {
+  candidates: ProductListItem[]
+  onPick: (productId: string) => void
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+
+  if (candidates.length === 0) return null
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        disabled={disabled}
+        className="text-[10.5px] font-medium text-gray-300 dark:text-gray-600 hover:text-brand-600 disabled:opacity-50 self-start mt-1"
+      >
+        + Add product
+      </button>
+    )
+  }
+  return (
+    <select
+      autoFocus
+      defaultValue=""
+      onChange={(e) => { if (e.target.value) { onPick(e.target.value); setOpen(false) } }}
+      onBlur={() => setOpen(false)}
+      className="border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-md text-xs px-2 py-1.5 mt-1"
+    >
+      <option value="" disabled>Choose a product…</option>
+      {candidates.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+    </select>
   )
 }
 

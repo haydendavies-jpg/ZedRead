@@ -111,6 +111,10 @@ MODIFIER_OPTION_GROUP_LINKED = "modifier_option.group_linked"
 MODIFIER_OPTION_GROUP_UNLINKED = "modifier_option.group_unlinked"
 PRODUCT_MODIFIER_LINKED = "product.modifier.linked"
 PRODUCT_MODIFIER_UNLINKED = "product.modifier.unlinked"
+PRODUCT_MODIFIERS_REORDERED = "product.modifiers.reordered"  # Whole-list attach/detach/resequence in one call
+
+# ── Products/Modifiers bulk operations (post-Menu-Studio catalog tooling) ───
+PRODUCT_BULK_UPDATED = "product.bulk_updated"  # One row per product actually changed by POST /products/bulk
 
 # ── Menu Studio redesign — Menus entity (distinct from a MenuLayout) ────────
 MENU_CREATED = "menu.created"
@@ -186,3 +190,7 @@ MENU_BUTTON_REMOVED = "menu_button.removed"
 MENU_BUTTON_REORDERED = "menu_button.reordered"
 MENU_BUTTON_BULK_RECOLORED = "menu_button.bulk_recolored"
 MENU_BUTTON_BULK_REMOVED = "menu_button.bulk_removed"
+
+# Explicit grid-cell placement (drag-to-any-cell) — distinct from
+# MENU_BUTTON_REORDERED, which resequences a whole tab's button list.
+MENU_BUTTON_MOVED = "menu_button.moved"

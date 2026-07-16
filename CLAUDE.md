@@ -220,6 +220,21 @@ per request (uvicorn `--no-access-log`, `request.started`/`audit.queued` → DEB
 (`asyncio.to_thread`/`verify_password_async` — admin-time hashing stays sync by design); the
 in-process rate limiter now evicts stale keys (was a slow, unbounded memory leak).
 
+**Menu Studio feedback round 3 (post-efficiency-hardening, complete).** Six user-reported gaps — see
+`STAGE_STATUS.md` "Menu Studio — feedback round 3" for details. Notables: `ProductsPage` gained a
+modifier-attach picker (`ModifierPickerModal.tsx`, drag-to-reorder, backed by
+`GET`/`PATCH .../modifiers/reorder`) and multi-select bulk actions (`POST /products/bulk` — category/
+price/%-markup/tax/modifier-attach/archive, all-or-nothing, per-product audit rows); archiving a
+product now cascades to detach its modifier links and remove any POS-layout buttons referencing it;
+there's deliberately no bulk "Reporting Group" action or table column — reporting group is derived
+through Category, not a Product column; `ModifiersPage`'s "used by N products" line now expands into
+an actual product list with an add-product control; `menu_buttons` gained nullable `grid_col`/
+`grid_row` (migration `0045`) plus a `PATCH .../buttons/{id}/place` route so a product/folder tile
+can be dropped onto any empty grid cell, not just sequential positions; and the grid editor's 5-10s
+lag (a page-specific full-tree `invalidateQueries` on every mutation, distinct from the earlier
+general request-latency round) is fixed by patching the `['menu-layout', id]` cache directly from
+each mutation's own (now-broadened) response instead of refetching.
+
 ## Folder structure (backend)
 ```
 pos-backend/

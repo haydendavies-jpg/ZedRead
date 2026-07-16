@@ -22,6 +22,7 @@ from app.constants.audit_actions import (
     MENU_BUTTON_ADDED,
     MENU_BUTTON_BULK_RECOLORED,
     MENU_BUTTON_BULK_REMOVED,
+    MENU_BUTTON_MOVED,
     MENU_BUTTON_REMOVED,
     MENU_BUTTON_REORDERED,
     MENU_BUTTON_UPDATED,
@@ -154,6 +155,8 @@ def _build_button_out(
             height=button.height,
             color=button.color,
             display_order=button.display_order,
+            grid_col=button.grid_col,
+            grid_row=button.grid_row,
             child_tab_name=child.name if child else None,
             child_tab_button_count=button_count_by_tab.get(button.child_tab_id, 0) if button.child_tab_id else None,
         )
@@ -170,11 +173,52 @@ def _build_button_out(
         height=button.height,
         color=button.color,
         display_order=button.display_order,
+        grid_col=button.grid_col,
+        grid_row=button.grid_row,
         product_name=product.name if product else None,
         price_cents=product.base_price_cents if product else None,
         is_active=product.is_active if product else None,
         category_color=category_color,
     )
+
+
+async def _resolve_buttons_out(
+    db: AsyncSession, brand_id: uuid.UUID, buttons: list[MenuButton]
+) -> list[MenuButtonOut]:
+    """
+    Build full MenuButtonOut responses for an explicit, small list of buttons.
+
+    Used by mutation endpoints that only touch a handful of buttons (bulk
+    recolor, single-button placement) so they can hand the frontend a fully
+    resolved cache-patch without paying for _load_tabs_with_buttons' whole-
+    layout scan and catalog resolution.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand the buttons' products must resolve against.
+        buttons: The specific buttons to resolve (assumed already committed/refreshed).
+
+    Returns:
+        list[MenuButtonOut]: One resolved entry per input button, same order.
+    """
+    product_refs = {b.product_ref for b in buttons if b.kind == "product" and b.product_ref}
+    products_by_ref = await _resolve_products_by_ref(db, brand_id, product_refs)
+
+    # Only folder-kind buttons need their child tab's name/button-count preview resolved.
+    child_tab_ids = [b.child_tab_id for b in buttons if b.kind == "folder" and b.child_tab_id]
+    tabs_by_id: dict[uuid.UUID, MenuTab] = {}
+    button_count_by_tab: dict[uuid.UUID, int] = {}
+    if child_tab_ids:
+        tabs_result = await db.execute(select(MenuTab).where(MenuTab.id.in_(child_tab_ids)))
+        tabs_by_id = {t.id: t for t in tabs_result.scalars().all()}
+        counts_result = await db.execute(
+            select(MenuButton.tab_id, func.count(MenuButton.id))
+            .where(MenuButton.tab_id.in_(child_tab_ids))
+            .group_by(MenuButton.tab_id)
+        )
+        button_count_by_tab = dict(counts_result.all())
+
+    return [_build_button_out(b, products_by_ref, tabs_by_id, button_count_by_tab) for b in buttons]
 
 
 async def _load_all_tabs(db: AsyncSession, layout_id: uuid.UUID) -> list[MenuTab]:
@@ -930,6 +974,93 @@ async def update_menu_button(
     return _build_button_out(button, products_by_ref, {}, {})
 
 
+async def place_menu_button(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    button_id: uuid.UUID,
+    tab_id: uuid.UUID,
+    grid_col: int,
+    grid_row: int,
+    actor: User | SuperAdmin,
+) -> MenuButtonOut:
+    """
+    Move a button to an explicit grid cell — the drag-to-any-cell operation.
+
+    Unlike update_menu_button/reorder_menu_buttons (which take layout_id/tab_id
+    from the URL path), this is addressed by button_id alone, so the button's
+    current tab/layout is resolved via a join first (and used to authorize the
+    move against brand_id and to validate the destination tab belongs to the
+    same layout). On a cross-tab move, display_order is also bumped to the end
+    of the destination tab's list, so a sane fallback order exists if
+    grid_col/grid_row are ever cleared back to NULL.
+
+    No overlap checking is performed against other buttons already occupying
+    the destination cell — see MenuButtonPlace's docstring for why.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand to scope/authorize the move within.
+        button_id: The button being moved.
+        tab_id: Destination tab (may equal the button's current tab_id).
+        grid_col: New 0-indexed column for the button's top-left cell.
+        grid_row: New 0-indexed row for the button's top-left cell.
+        actor: The authenticated user/superadmin performing the move.
+
+    Returns:
+        MenuButtonOut: The full, resolved button at its new position.
+
+    Raises:
+        HTTPException: 404 if the button (scoped to brand_id) or the
+            destination tab_id (scoped to the button's own layout) is not found.
+        HTTPException: 400 if grid_col + the button's stored width would
+            exceed the 6-column grid.
+    """
+    # Resolve the button plus its current tab/layout in one join, scoped to
+    # brand_id — this both authorizes the call and tells us which layout the
+    # destination tab_id must belong to.
+    result = await db.execute(
+        select(MenuButton, MenuTab)
+        .join(MenuTab, MenuButton.tab_id == MenuTab.id)
+        .join(MenuLayout, MenuTab.layout_id == MenuLayout.id)
+        .where(MenuButton.id == button_id, MenuLayout.brand_id == brand_id)
+    )
+    row = result.one_or_none()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu button not found")
+    button, current_tab = row
+
+    # Destination tab must exist in the same layout the button already belongs to.
+    await _get_tab_or_404(db, current_tab.layout_id, tab_id)
+
+    if grid_col + button.width > 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="grid_col + width exceeds the 6-column grid")
+
+    before = {"tab_id": str(button.tab_id), "grid_col": button.grid_col, "grid_row": button.grid_row}
+    moved_to_new_tab = button.tab_id != tab_id
+    button.tab_id = tab_id
+    button.grid_col = grid_col
+    button.grid_row = grid_row
+
+    if moved_to_new_tab:
+        # Keep a sane fallback order for this tab in case grid position is ever cleared.
+        max_order_result = await db.execute(
+            select(MenuButton.display_order).where(MenuButton.tab_id == tab_id).order_by(MenuButton.display_order.desc())
+        )
+        max_order = max_order_result.scalars().first()
+        button.display_order = (max_order + 1) if max_order is not None else 0
+
+    after = {"tab_id": str(tab_id), "grid_col": grid_col, "grid_row": grid_row}
+    await log_action(
+        db=db, action=MENU_BUTTON_MOVED, entity_type="menu_button", entity_id=str(button.id),
+        actor_id=actor.id, actor_email=actor.email, actor_name=actor.name, before_state=before, after_state=after,
+    )
+    await db.commit()
+    await db.refresh(button)
+
+    resolved = await _resolve_buttons_out(db, brand_id, [button])
+    return resolved[0]
+
+
 async def delete_menu_button(
     db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, tab_id: uuid.UUID, button_id: uuid.UUID, actor: User | SuperAdmin
 ) -> None:
@@ -995,8 +1126,21 @@ async def reorder_menu_buttons(
     )
     await db.commit()
 
-    tabs = await _load_tabs_with_buttons(db, brand_id, layout_id)
-    return next(t for t in tabs if t.id == tab_id)
+    # Resolve only this tab's own buttons rather than reloading the whole
+    # layout (_load_tabs_with_buttons) — this endpoint is called on every
+    # drag-reorder, so scoping the reload to one tab matters for latency.
+    tab = await _get_tab_or_404(db, layout_id, tab_id)
+    tab_buttons = await _load_buttons_for_tabs(db, [tab_id])
+    resolved_buttons = await _resolve_buttons_out(db, brand_id, tab_buttons)
+    return MenuTabOut(
+        id=tab.id,
+        layout_id=tab.layout_id,
+        parent_tab_id=tab.parent_tab_id,
+        name=tab.name,
+        color=tab.color,
+        display_order=tab.display_order,
+        buttons=resolved_buttons,
+    )
 
 
 async def _buttons_in_one_tab_or_400(db: AsyncSession, layout_id: uuid.UUID, button_ids: list[uuid.UUID]) -> tuple[uuid.UUID, list[MenuButton]]:
@@ -1017,8 +1161,13 @@ async def _buttons_in_one_tab_or_400(db: AsyncSession, layout_id: uuid.UUID, but
 
 async def bulk_recolor_menu_buttons(
     db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, button_ids: list[uuid.UUID], color: str, actor: User | SuperAdmin
-) -> list[uuid.UUID]:
-    """Bulk-recolor a multi-selection of buttons (the grid editor's floating action bar)."""
+) -> list[MenuButtonOut]:
+    """
+    Bulk-recolor a multi-selection of buttons (the grid editor's floating action bar).
+
+    Returns the full resolved buttons (not just their ids) so the frontend
+    can patch its local cache in place instead of refetching the layout.
+    """
     await _get_layout_or_404(db, brand_id, layout_id)
     _, buttons = await _buttons_in_one_tab_or_400(db, layout_id, button_ids)
 
@@ -1031,13 +1180,22 @@ async def bulk_recolor_menu_buttons(
         after_state={"button_ids": [str(b.id) for b in buttons], "color": color},
     )
     await db.commit()
-    return [b.id for b in buttons]
+    for button in buttons:
+        await db.refresh(button)
+    return await _resolve_buttons_out(db, brand_id, buttons)
 
 
 async def bulk_delete_menu_buttons(
     db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, button_ids: list[uuid.UUID], actor: User | SuperAdmin
-) -> None:
-    """Bulk-delete a multi-selection of buttons (folder buttons' nested tabs cascade too)."""
+) -> dict[str, list[uuid.UUID]]:
+    """
+    Bulk-delete a multi-selection of buttons (folder buttons' nested tabs cascade too).
+
+    Returns:
+        dict[str, list[uuid.UUID]]: 'deleted_button_ids' and 'deleted_tab_ids'
+            (the cascaded nested tabs) so the frontend can drop both from its
+            local cache without refetching the layout.
+    """
     await _get_layout_or_404(db, brand_id, layout_id)
     _, buttons = await _buttons_in_one_tab_or_400(db, layout_id, button_ids)
 
@@ -1046,6 +1204,7 @@ async def bulk_delete_menu_buttons(
         actor_id=actor.id, actor_email=actor.email, actor_name=actor.name,
         before_state={"button_ids": [str(b.id) for b in buttons]},
     )
+    deleted_button_ids = [b.id for b in buttons]
     child_tab_ids = [b.child_tab_id for b in buttons if b.kind == "folder" and b.child_tab_id]
     for button in buttons:
         await db.delete(button)
@@ -1054,6 +1213,7 @@ async def bulk_delete_menu_buttons(
         for child_tab in child_tabs_result.scalars().all():
             await db.delete(child_tab)
     await db.commit()
+    return {"deleted_button_ids": deleted_button_ids, "deleted_tab_ids": child_tab_ids}
 
 
 async def group_menu_buttons_into_tab(

@@ -8,7 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.schemas.import_export import ImportSummary
-from app.schemas.product import ProductCreate, ProductListItem, ProductResponse, ProductUpdate
+from app.schemas.product import (
+    ProductBulkUpdate,
+    ProductBulkUpdateResult,
+    ProductCreate,
+    ProductListItem,
+    ProductResponse,
+    ProductUpdate,
+)
 from app.services import export_service, import_service, product_service
 from app.services.import_service import InvalidWorkbookError
 from app.utils.dependencies import CatalogAccess, resolve_catalog_access
@@ -83,6 +90,37 @@ async def create_product(
     """
     product = await product_service.create_product(db, access.effective_brand_id(brand_id), payload, access.actor_user)
     return ProductResponse.model_validate(product)
+
+
+@router.post("/bulk", response_model=ProductBulkUpdateResult, status_code=status.HTTP_200_OK)
+async def bulk_update_products(
+    payload: ProductBulkUpdate,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> ProductBulkUpdateResult:
+    """
+    Apply one or more field changes to a set of products in one call.
+
+    All-or-nothing: if any product_id (or a reassigned category_id/
+    tax_category_id/modifier_group_id) does not belong to this brand, the
+    whole batch is rejected with HTTP 400 before any row is touched. Setting
+    is_active=False is the bulk archive action — it cascades, deleting the
+    archived products' modifier links and any menu_buttons pointing at them;
+    see product_service.bulk_update_products for the full field contract.
+
+    Args:
+        payload: The bulk update fields to apply.
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access (POS, management, or portal).
+        db: Active database session.
+
+    Returns:
+        ProductBulkUpdateResult: Count and ids of the products actually modified.
+    """
+    return await product_service.bulk_update_products(
+        db, access.effective_brand_id(brand_id), payload, access.actor_user
+    )
 
 
 @router.get("/export/template", response_model=None, status_code=status.HTTP_200_OK)

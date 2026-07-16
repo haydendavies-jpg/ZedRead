@@ -523,12 +523,21 @@ function ActiveHoursModal({
 
 // ── Grid editor ──────────────────────────────────────────────────────────────
 
-type DropTarget = { kind: 'tab'; tabId: string }
+// A drag can end over a rail tab / folder tile ('tab' — move the selection
+// into that tab, appended at the end) or over an empty dashed "+" grid cell
+// ('cell' — place the single dragged button at that exact col/row via the
+// /place endpoint; see placeSelectionAtCell for the multi-select fallback).
+type DropTarget = { kind: 'tab'; tabId: string } | { kind: 'cell'; tabId: string; gridCol: number; gridRow: number }
 
 function parseDropAttr(attr: string | null): DropTarget | null {
   if (!attr) return null
-  const [kind, id] = attr.split(':')
-  return kind === 'tab' && id ? { kind: 'tab', tabId: id } : null
+  const parts = attr.split(':')
+  if (parts[0] === 'tab' && parts[1]) return { kind: 'tab', tabId: parts[1] }
+  if (parts[0] === 'cell' && parts.length === 4) {
+    const [, tabId, col, row] = parts
+    return { kind: 'cell', tabId, gridCol: Number(col), gridRow: Number(row) }
+  }
+  return null
 }
 
 function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: string; onBack: () => void }) {
@@ -557,17 +566,21 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
   const [actionError, setActionError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [dragPos, setDragPos] = useState({ x: 0, y: 0 })
-  const [dragOverTabId, setDragOverTabIdState] = useState<string | null>(null)
+  const [dragOverTarget, setDragOverTargetState] = useState<DropTarget | null>(null)
   // Same staleness problem as selectedRef above: onUp is a plain window
   // listener closure created once at press-start, so reading the
-  // `dragOverTabId` variable directly would see whatever it was at that
+  // `dragOverTarget` variable directly would see whatever it was at that
   // moment (always null) rather than what onMove last set as the pointer
   // crossed drop targets. Mirror it through a ref for the same reason.
-  const dragOverTabIdRef = useRef<string | null>(null)
-  const setDragOverTabId = (next: string | null) => {
-    dragOverTabIdRef.current = next
-    setDragOverTabIdState(next)
+  const dragOverTargetRef = useRef<DropTarget | null>(null)
+  const setDragOverTarget = (next: DropTarget | null) => {
+    dragOverTargetRef.current = next
+    setDragOverTargetState(next)
   }
+  // Which specific empty "+" cell was clicked (as opposed to the generic
+  // toolbar "+ Product" button) — carried through to addProductButton so the
+  // created button can be placed at that exact cell instead of appended.
+  const [pendingCell, setPendingCell] = useState<{ col: number; row: number } | null>(null)
   // Insertion index for repositioning within the current tab: while dragging,
   // hovering a tile's left/right edge shows a bar between tiles and dropping
   // there reorders instead of moving into a folder. Ref-mirrored like the two
@@ -619,70 +632,252 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['menu-layout', layoutId] })
   const onMutErr = (e: unknown) => { invalidate(); setActionError(apiErrorMessage(e, 'Action failed.')) }
 
+  // ── Cache-patch helpers ──────────────────────────────────────────────────
+  // Every mutation below patches the ['menu-layout', layoutId] cache directly
+  // from its own response instead of invalidating (which re-fetches the
+  // entire tab tree + all buttons + product-ref resolution on every single
+  // small edit — the confirmed cause of the reported 5-10s lag). Each
+  // response shape was read from the actual route/service code, not assumed.
+
+  /** Patch a single resolved button into whichever tab it now belongs to (button.tab_id), removing any stale copy from other tabs (covers cross-tab moves via /place). */
+  const patchButtonMove = (button: MenuButton) => {
+    qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) => {
+      if (!old) return old
+      return {
+        ...old,
+        tabs: old.tabs.map((t) => {
+          const withoutIt = t.buttons.filter((b) => b.id !== button.id)
+          if (t.id === button.tab_id) return { ...t, buttons: [...withoutIt, button] }
+          return withoutIt.length === t.buttons.length ? t : { ...t, buttons: withoutIt }
+        }),
+      }
+    })
+  }
+
+  /** Recursively remove a tab and every descendant tab (parent_tab_id chain) — mirrors the backend's FK cascade for folder-button deletes, computed locally since the whole tab tree is already in cache. */
+  const removeTabAndDescendants = (tabs: MenuTab[], rootId: string): MenuTab[] => {
+    const toRemove = new Set([rootId])
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const t of tabs) {
+        if (t.parent_tab_id && toRemove.has(t.parent_tab_id) && !toRemove.has(t.id)) {
+          toRemove.add(t.id)
+          changed = true
+        }
+      }
+    }
+    return tabs.filter((t) => !toRemove.has(t.id))
+  }
+
   const addTab = useMutation({
-    mutationFn: (name: string) => api.post(`/menu-layouts/${layoutId}/tabs`, { name }, { params }),
-    onSuccess: (resp) => { invalidate(); setCurrentTabId(resp.data.id); setSelected(new Set()) },
+    mutationFn: (name: string) => api.post<MenuTab>(`/menu-layouts/${layoutId}/tabs`, { name }, { params }),
+    onSuccess: (resp) => {
+      qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) => (old ? { ...old, tabs: [...old.tabs, resp.data] } : old))
+      setCurrentTabId(resp.data.id)
+      setSelected(new Set())
+    },
     onError: onMutErr,
   })
   const addFolderButton = useMutation({
     mutationFn: ({ tabId, name }: { tabId: string; name: string }) =>
-      api.post(`/menu-layouts/${layoutId}/tabs/${tabId}/buttons`, { kind: 'folder', name }, { params }),
-    onSuccess: invalidate,
+      api.post<MenuButton>(`/menu-layouts/${layoutId}/tabs/${tabId}/buttons`, { kind: 'folder', name }, { params }),
+    // The response is the new folder button (with child_tab_id/child_tab_name
+    // resolved) but not a full MenuTabOut for the tab it just created — that
+    // tab is reconstructed locally (empty buttons array; a brand-new nested
+    // tab can't have any yet) rather than refetched.
+    onSuccess: (resp, vars) => {
+      qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) => {
+        if (!old) return old
+        const newTab: MenuTab = {
+          id: resp.data.child_tab_id as string,
+          layout_id: old.id,
+          parent_tab_id: vars.tabId,
+          name: resp.data.child_tab_name ?? vars.name,
+          color: null,
+          display_order: 0,
+          buttons: [],
+        }
+        return {
+          ...old,
+          tabs: [
+            ...old.tabs.map((t) => (t.id === vars.tabId ? { ...t, buttons: [...t.buttons, resp.data] } : t)),
+            newTab,
+          ],
+        }
+      })
+    },
+    onError: onMutErr,
+  })
+  const placeButton = useMutation({
+    mutationFn: ({ buttonId, tabId, gridCol, gridRow }: { buttonId: string; tabId: string; gridCol: number; gridRow: number }) =>
+      api.patch<MenuButton>(`/menu-layouts/buttons/${buttonId}/place`, { tab_id: tabId, grid_col: gridCol, grid_row: gridRow }, { params }),
+    onSuccess: (resp) => patchButtonMove(resp.data),
     onError: onMutErr,
   })
   const addProductButton = useMutation({
-    mutationFn: ({ tabId, productRef }: { tabId: string; productRef: string }) =>
-      api.post(`/menu-layouts/${layoutId}/tabs/${tabId}/buttons`, { kind: 'product', product_ref: productRef }, { params }),
-    onSuccess: invalidate,
+    mutationFn: ({ tabId, productRef }: { tabId: string; productRef: string; cell?: { col: number; row: number } }) =>
+      api.post<MenuButton>(`/menu-layouts/${layoutId}/tabs/${tabId}/buttons`, { kind: 'product', product_ref: productRef }, { params }),
+    // Append the created button straight into its tab's cached buttons array.
+    // If the user clicked a specific empty cell (rather than the generic
+    // "+ Product" toolbar button), create_menu_button's payload has no
+    // grid_col/grid_row of its own — follow up with a /place call using the
+    // id this response just returned.
+    onSuccess: (resp, vars) => {
+      qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) =>
+        old ? { ...old, tabs: old.tabs.map((t) => (t.id === vars.tabId ? { ...t, buttons: [...t.buttons, resp.data] } : t)) } : old,
+      )
+      if (vars.cell) {
+        placeButton.mutate({ buttonId: resp.data.id, tabId: vars.tabId, gridCol: vars.cell.col, gridRow: vars.cell.row })
+      }
+    },
     onError: onMutErr,
   })
   const updateButton = useMutation({
     mutationFn: ({ tabId, buttonId, body }: { tabId: string; buttonId: string; body: Record<string, unknown> }) =>
-      api.patch(`/menu-layouts/${layoutId}/tabs/${tabId}/buttons/${buttonId}`, body, { params }),
-    onSuccess: invalidate,
+      api.patch<MenuButton>(`/menu-layouts/${layoutId}/tabs/${tabId}/buttons/${buttonId}`, body, { params }),
+    onSuccess: (resp) => patchButtonMove(resp.data),
     onError: onMutErr,
   })
   const deleteButton = useMutation({
-    mutationFn: ({ tabId, buttonId }: { tabId: string; buttonId: string }) =>
+    mutationFn: ({ tabId, buttonId }: { tabId: string; buttonId: string; childTabId?: string | null }) =>
       api.delete(`/menu-layouts/${layoutId}/tabs/${tabId}/buttons/${buttonId}`, { params }),
-    onSuccess: () => { invalidate(); setSelected(new Set()) },
+    // 204 No Content — nothing to read from the response, but we already
+    // know everything needed (tabId/buttonId, and childTabId when deleting a
+    // folder button) from the variables passed in by the caller.
+    onSuccess: (_resp, vars) => {
+      qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) => {
+        if (!old) return old
+        const withoutButton = old.tabs.map((t) =>
+          t.id === vars.tabId ? { ...t, buttons: t.buttons.filter((b) => b.id !== vars.buttonId) } : t,
+        )
+        const tabs = vars.childTabId ? removeTabAndDescendants(withoutButton, vars.childTabId) : withoutButton
+        return { ...old, tabs }
+      })
+      setSelected(new Set())
+    },
     onError: onMutErr,
   })
   const reorderButtons = useMutation({
     mutationFn: ({ tabId, buttonIds }: { tabId: string; buttonIds: string[] }) =>
-      api.post(`/menu-layouts/${layoutId}/tabs/${tabId}/buttons/reorder`, { button_ids: buttonIds }, { params }),
-    onSuccess: invalidate,
+      api.post<MenuTab>(`/menu-layouts/${layoutId}/tabs/${tabId}/buttons/reorder`, { button_ids: buttonIds }, { params }),
+    // Response is the full resolved destination tab (every button it now
+    // holds) — authoritative, so replace it wholesale, and drop any of those
+    // button ids from every other tab's cached array (covers a cross-tab
+    // drag: the button left its old tab, which this endpoint doesn't touch).
+    onSuccess: (resp) => {
+      const destTab = resp.data
+      const movedIds = new Set(destTab.buttons.map((b) => b.id))
+      qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          tabs: old.tabs.map((t) => {
+            if (t.id === destTab.id) return destTab
+            const filtered = t.buttons.filter((b) => !movedIds.has(b.id))
+            return filtered.length === t.buttons.length ? t : { ...t, buttons: filtered }
+          }),
+        }
+      })
+    },
     onError: onMutErr,
   })
   const renameTab = useMutation({
     mutationFn: ({ tabId, name }: { tabId: string; name: string }) =>
-      api.patch(`/menu-layouts/${layoutId}/tabs/${tabId}`, { name }, { params }),
-    onSuccess: invalidate,
+      api.patch<MenuTab>(`/menu-layouts/${layoutId}/tabs/${tabId}`, { name }, { params }),
+    // Response is the full resolved tab (route re-reads it via get_menu_layout_detail) — replace wholesale.
+    onSuccess: (resp) => {
+      qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) =>
+        old ? { ...old, tabs: old.tabs.map((t) => (t.id === resp.data.id ? resp.data : t)) } : old,
+      )
+    },
     onError: onMutErr,
   })
   const bulkRecolor = useMutation({
-    mutationFn: (color: string) => api.post(`/menu-layouts/${layoutId}/buttons/bulk-recolor`, { button_ids: [...selected], color }, { params }),
-    onSuccess: invalidate,
+    mutationFn: (color: string) => api.post<MenuButton[]>(`/menu-layouts/${layoutId}/buttons/bulk-recolor`, { button_ids: [...selected], color }, { params }),
+    onSuccess: (resp) => {
+      const byId = new Map(resp.data.map((b) => [b.id, b]))
+      qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) =>
+        old ? { ...old, tabs: old.tabs.map((t) => ({ ...t, buttons: t.buttons.map((b) => byId.get(b.id) ?? b) })) } : old,
+      )
+    },
     onError: onMutErr,
   })
   const bulkDelete = useMutation({
-    mutationFn: () => api.post(`/menu-layouts/${layoutId}/buttons/bulk-delete`, { button_ids: [...selected] }, { params }),
-    onSuccess: () => { invalidate(); setSelected(new Set()) },
+    mutationFn: () =>
+      api.post<{ deleted_button_ids: string[]; deleted_tab_ids: string[] }>(
+        `/menu-layouts/${layoutId}/buttons/bulk-delete`,
+        { button_ids: [...selected] },
+        { params },
+      ),
+    onSuccess: (resp) => {
+      const deletedButtonIds = new Set(resp.data.deleted_button_ids)
+      qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) => {
+        if (!old) return old
+        let tabs = old.tabs.map((t) => ({ ...t, buttons: t.buttons.filter((b) => !deletedButtonIds.has(b.id)) }))
+        for (const tabId of resp.data.deleted_tab_ids) tabs = removeTabAndDescendants(tabs, tabId)
+        return { ...old, tabs }
+      })
+      setSelected(new Set())
+    },
     onError: onMutErr,
   })
   const groupIntoTab = useMutation({
-    mutationFn: (name: string) => api.post(`/menu-layouts/${layoutId}/buttons/group-into-tab`, { button_ids: [...selected], name }, { params }),
-    onSuccess: () => { invalidate(); setSelected(new Set()) },
+    mutationFn: (name: string) => api.post<MenuButton>(`/menu-layouts/${layoutId}/buttons/group-into-tab`, { button_ids: [...selected], name }, { params }),
+    // Response is only the new folder button left behind in the source tab —
+    // not a full MenuTabOut for the tab it just created. Reconstructed
+    // locally: the moved buttons are exactly the ones this render's
+    // `selected` ids pulled out of the source tab (group_menu_buttons_into_tab
+    // only reassigns their tab_id/display_order — see service code — so the
+    // rest of each button's fields carry over unchanged).
+    onSuccess: (resp, groupName) => {
+      const movedIds = new Set(selected)
+      const newTabId = resp.data.child_tab_id as string
+      qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) => {
+        if (!old) return old
+        const source = currentTab ? old.tabs.find((t) => t.id === currentTab.id) : undefined
+        if (!source) return old
+        const movedButtons = source.buttons
+          .filter((b) => movedIds.has(b.id))
+          .map((b, i) => ({ ...b, tab_id: newTabId, display_order: i }))
+        const newTab: MenuTab = {
+          id: newTabId,
+          layout_id: old.id,
+          parent_tab_id: source.id,
+          name: resp.data.child_tab_name ?? groupName,
+          color: null,
+          display_order: 0,
+          buttons: movedButtons,
+        }
+        return {
+          ...old,
+          tabs: [
+            ...old.tabs.map((t) =>
+              t.id === source.id ? { ...t, buttons: [...t.buttons.filter((b) => !movedIds.has(b.id)), resp.data] } : t,
+            ),
+            newTab,
+          ],
+        }
+      })
+      setSelected(new Set())
+    },
     onError: onMutErr,
   })
   const publish = useMutation({
     mutationFn: () => api.post<PublishResult>(`/menu-layouts/${layoutId}/publish`, {}, { params }),
-    onSuccess: (resp) => { invalidate(); setWarnings(resp.data.warnings) },
+    // PublishResult carries a MenuLayoutOut (layout-level fields only, no
+    // tabs) — merge those fields over the cached detail, keep tabs as-is.
+    onSuccess: (resp) => {
+      qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) => (old ? { ...old, ...resp.data.layout } : old))
+      setWarnings(resp.data.warnings)
+    },
     onError: onMutErr,
   })
   const unpublish = useMutation({
-    mutationFn: () => api.post(`/menu-layouts/${layoutId}/unpublish`, {}, { params }),
-    onSuccess: invalidate,
+    mutationFn: () => api.post<MenuLayout>(`/menu-layouts/${layoutId}/unpublish`, {}, { params }),
+    onSuccess: (resp) => {
+      qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) => (old ? { ...old, ...resp.data } : old))
+    },
     onError: onMutErr,
   })
 
@@ -750,7 +945,7 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
           }
         }
         setDragPos({ x: ev.clientX, y: ev.clientY })
-        setDragOverTabId(target?.tabId ?? null)
+        setDragOverTarget(target)
         setDropIndex(insertion)
       }
     }
@@ -769,12 +964,13 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
         }
       } else {
         setDragging(false)
-        const target = dragOverTabIdRef.current
+        const target = dragOverTargetRef.current
         const insertion = dropIndexRef.current
-        setDragOverTabId(null)
+        setDragOverTarget(null)
         setDropIndex(null)
         if (insertion !== null) reorderSelectionWithinTab(insertion, selectedRef.current)
-        else if (target) moveSelectionToTabWithIds(target, selectedRef.current)
+        else if (target?.kind === 'cell') placeSelectionAtCell(target, selectedRef.current)
+        else if (target?.kind === 'tab') moveSelectionToTabWithIds(target.tabId, selectedRef.current)
       }
     }
     window.addEventListener('pointermove', onMove)
@@ -813,6 +1009,21 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
     const existing = targetTab.buttons.map((b) => b.id).filter((id) => !ids.has(id))
     reorderButtons.mutate({ tabId: targetTabId, buttonIds: [...existing, ...movingIds] })
     setSelected(new Set())
+  }
+
+  // Drop onto an empty dashed "+" cell — places the dragged button at that
+  // exact grid_col/grid_row via PATCH .../place. A single explicit cell only
+  // makes sense for one button at a time; a multi-selection drag falls back
+  // to the existing "move into this tab, appended at the end" behavior
+  // (same as dropping the selection on the tab itself).
+  const placeSelectionAtCell = (target: { tabId: string; gridCol: number; gridRow: number }, ids: Set<string>) => {
+    if (ids.size === 1) {
+      const buttonId = [...ids][0]
+      placeButton.mutate({ buttonId, tabId: target.tabId, gridCol: target.gridCol, gridRow: target.gridRow })
+      setSelected(new Set())
+    } else {
+      moveSelectionToTabWithIds(target.tabId, ids)
+    }
   }
 
   const handleResizeStart = (e: React.PointerEvent, button: MenuButton) => {
@@ -916,7 +1127,7 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
               onClick={() => { setCurrentTabId(tab.id); setSelected(new Set()) }}
               className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm cursor-pointer ${
                 tab.id === effectiveTabId ? 'bg-brand-50 dark:bg-brand-950/40 text-brand-800 dark:text-brand-300 font-medium' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
-              } ${dragOverTabId === tab.id ? 'ring-2 ring-brand-500' : ''}`}
+              } ${dragOverTarget?.kind === 'tab' && dragOverTarget.tabId === tab.id ? 'ring-2 ring-brand-500' : ''}`}
             >
               <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: tab.color ?? '#5A5550' }} />
               <span className="truncate flex-1">{tab.name}</span>
@@ -995,10 +1206,13 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
                       onClick={(e) => e.stopPropagation()}
                       className={`relative rounded-xl px-3 py-2.5 flex flex-col justify-between cursor-pointer select-none shadow-sm touch-none ${
                         isSel ? 'ring-[3px] ring-brand-600' : ''
-                      } ${dragOverTabId === button.child_tab_id && isFolder ? 'ring-2 ring-brand-400' : ''}`}
+                      } ${isFolder && dragOverTarget?.kind === 'tab' && dragOverTarget.tabId === button.child_tab_id ? 'ring-2 ring-brand-400' : ''}`}
                       style={{
-                        gridColumn: `span ${button.width}`,
-                        gridRow: `span ${button.height}`,
+                        // grid_col/grid_row (drag-to-any-cell placement) pin the
+                        // tile to an explicit cell; null falls back to dense
+                        // auto-flow packing via display_order, same as before.
+                        gridColumn: button.grid_col !== null ? `${button.grid_col + 1} / span ${button.width}` : `span ${button.width}`,
+                        gridRow: button.grid_row !== null ? `${button.grid_row + 1} / span ${button.height}` : `span ${button.height}`,
                         background: isFolder ? undefined : base,
                         color: isFolder ? undefined : textColorOn(base),
                       }}
@@ -1048,20 +1262,41 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
                   // Cells are approximated as width×height per button — with
                   // grid-auto-flow:dense the browser packs around spans, so
                   // this is the same arithmetic the packing works out to
-                  // whenever tiles tessellate cleanly.
+                  // whenever tiles tessellate cleanly. Each empty slot's own
+                  // grid_col/grid_row (for drag/click placement) is derived
+                  // from the same running cell offset — accurate whenever
+                  // tiles tessellate cleanly, same caveat as the count above;
+                  // an explicitly-placed button sitting at a discontinuous
+                  // cell can make an empty tile's computed coordinate overlap
+                  // it visually, which this approximation doesn't detect.
                   const cellsUsed = currentTab.buttons.reduce((sum, b) => sum + b.width * b.height, 0)
                   const rows = Math.max(1, Math.ceil(cellsUsed / 6)) + (extraRowsByTab[currentTab.id] ?? 0)
                   const emptyCount = Math.max(0, rows * 6 - cellsUsed)
-                  return Array.from({ length: emptyCount }, (_, i) => (
-                    <button
-                      key={`empty-${i}`}
-                      onClick={() => setShowProductPicker(true)}
-                      className="border-[1.5px] border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex items-center justify-center text-gray-300 dark:text-gray-600 hover:border-brand-500 hover:text-brand-600 text-2xl"
-                      style={{ gridColumn: 'span 1', gridRow: 'span 1' }}
-                    >
-                      +
-                    </button>
-                  ))
+                  return Array.from({ length: emptyCount }, (_, i) => {
+                    const offset = cellsUsed + i
+                    const col = offset % 6
+                    const row = Math.floor(offset / 6)
+                    const isDragOver =
+                      dragOverTarget?.kind === 'cell' &&
+                      dragOverTarget.tabId === currentTab.id &&
+                      dragOverTarget.gridCol === col &&
+                      dragOverTarget.gridRow === row
+                    return (
+                      <button
+                        key={`empty-${i}`}
+                        data-drop={`cell:${currentTab.id}:${col}:${row}`}
+                        onClick={() => { setPendingCell({ col, row }); setShowProductPicker(true) }}
+                        className={`border-[1.5px] border-dashed rounded-xl flex items-center justify-center text-2xl ${
+                          isDragOver
+                            ? 'border-brand-500 ring-2 ring-brand-400 text-brand-500'
+                            : 'border-gray-300 dark:border-gray-600 text-gray-300 dark:text-gray-600 hover:border-brand-500 hover:text-brand-600'
+                        }`}
+                        style={{ gridColumn: 'span 1', gridRow: 'span 1' }}
+                      >
+                        +
+                      </button>
+                    )
+                  })
                 })()}
               </div>
             )}
@@ -1128,7 +1363,13 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
             onColor={(color) => updateButton.mutate({ tabId: currentTab.id, buttonId: oneSelected.id, body: { color } })}
             onUseCategoryDefault={() => updateButton.mutate({ tabId: currentTab.id, buttonId: oneSelected.id, body: { color: null } })}
             onResize={(width, height) => updateButton.mutate({ tabId: currentTab.id, buttonId: oneSelected.id, body: { width, height } })}
-            onDelete={() => deleteButton.mutate({ tabId: currentTab.id, buttonId: oneSelected.id })}
+            onDelete={() =>
+              deleteButton.mutate({
+                tabId: currentTab.id,
+                buttonId: oneSelected.id,
+                childTabId: oneSelected.kind === 'folder' ? oneSelected.child_tab_id : null,
+              })
+            }
           />
         )}
       </div>
@@ -1139,8 +1380,12 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
       {showProductPicker && currentTab && (
         <ProductPickerModal
           products={products}
-          onClose={() => setShowProductPicker(false)}
-          onPick={(ref) => { addProductButton.mutate({ tabId: currentTab.id, productRef: ref }); setShowProductPicker(false) }}
+          onClose={() => { setShowProductPicker(false); setPendingCell(null) }}
+          onPick={(ref) => {
+            addProductButton.mutate({ tabId: currentTab.id, productRef: ref, cell: pendingCell ?? undefined })
+            setShowProductPicker(false)
+            setPendingCell(null)
+          }}
         />
       )}
     </div>
