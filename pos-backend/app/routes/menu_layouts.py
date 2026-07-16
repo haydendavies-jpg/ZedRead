@@ -17,8 +17,10 @@ from app.models.site import Site
 from app.schemas.menu_layout import (
     MenuButtonCreate,
     MenuButtonOut,
+    MenuButtonPlace,
     MenuButtonsBulkColor,
     MenuButtonsBulkDelete,
+    MenuButtonsBulkDeleteResult,
     MenuButtonsGroupIntoTab,
     MenuButtonsReorder,
     MenuButtonUpdate,
@@ -395,7 +397,7 @@ async def reorder_menu_buttons(
 
 
 @router.post(
-    "/{layout_id}/buttons/bulk-recolor", response_model=list[uuid.UUID], status_code=status.HTTP_200_OK
+    "/{layout_id}/buttons/bulk-recolor", response_model=list[MenuButtonOut], status_code=status.HTTP_200_OK
 )
 async def bulk_recolor_menu_buttons(
     layout_id: uuid.UUID,
@@ -403,8 +405,13 @@ async def bulk_recolor_menu_buttons(
     brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
-) -> list[uuid.UUID]:
-    """Bulk-recolor a multi-selection of buttons (the grid editor's floating action bar)."""
+) -> list[MenuButtonOut]:
+    """
+    Bulk-recolor a multi-selection of buttons (the grid editor's floating action bar).
+
+    Returns the full resolved buttons (not just their ids) so the frontend
+    can patch its local cache instead of refetching the whole layout.
+    """
     _require_management(access)
     effective_brand_id = access.effective_brand_id(brand_id)
     return await menu_builder_service.bulk_recolor_menu_buttons(
@@ -412,19 +419,43 @@ async def bulk_recolor_menu_buttons(
     )
 
 
-@router.post("/{layout_id}/buttons/bulk-delete", response_model=None, status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/{layout_id}/buttons/bulk-delete", response_model=MenuButtonsBulkDeleteResult, status_code=status.HTTP_200_OK
+)
 async def bulk_delete_menu_buttons(
     layout_id: uuid.UUID,
     payload: MenuButtonsBulkDelete,
     brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
-) -> None:
-    """Bulk-delete a multi-selection of buttons (folder buttons' nested tabs cascade too)."""
+) -> MenuButtonsBulkDeleteResult:
+    """
+    Bulk-delete a multi-selection of buttons (folder buttons' nested tabs cascade too).
+
+    Returns the deleted button ids and any cascade-deleted nested tab ids so
+    the frontend can drop both from its local cache instead of refetching.
+    """
     _require_management(access)
     effective_brand_id = access.effective_brand_id(brand_id)
-    await menu_builder_service.bulk_delete_menu_buttons(
+    result = await menu_builder_service.bulk_delete_menu_buttons(
         db, effective_brand_id, layout_id, payload.button_ids, access.actor_user
+    )
+    return MenuButtonsBulkDeleteResult(**result)
+
+
+@router.patch("/buttons/{button_id}/place", response_model=MenuButtonOut, status_code=status.HTTP_200_OK)
+async def place_menu_button(
+    button_id: uuid.UUID,
+    payload: MenuButtonPlace,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> MenuButtonOut:
+    """Drag a button to an explicit grid cell — possibly moving it into a different tab in the same layout."""
+    _require_management(access)
+    effective_brand_id = access.effective_brand_id(brand_id)
+    return await menu_builder_service.place_menu_button(
+        db, effective_brand_id, button_id, payload.tab_id, payload.grid_col, payload.grid_row, access.actor_user
     )
 
 

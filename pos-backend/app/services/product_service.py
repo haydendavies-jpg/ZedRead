@@ -10,29 +10,37 @@ Photo upload is handled via the upload_photo() helper which:
 
 import io
 import uuid
+from collections import defaultdict
+from decimal import ROUND_HALF_UP, Decimal
 
 import structlog
 from fastapi import HTTPException, UploadFile, status
 from PIL import Image
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
+    PRODUCT_BULK_UPDATED,
     PRODUCT_CREATED,
     PRODUCT_DEACTIVATED,
+    PRODUCT_MODIFIER_LINKED,
     PRODUCT_PHOTO_UPDATED,
     PRODUCT_REACTIVATED,
     PRODUCT_UPDATED,
 )
 from app.constants.statuses import ActorType
 from app.models.category import Category
+from app.models.menu_button import MenuButton
+from app.models.menu_layout import MenuLayout
+from app.models.menu_tab import MenuTab
 from app.models.modifier_group import ModifierGroup
 from app.models.product_modifier_group_link import ProductModifierGroupLink
 from app.models.reporting_group import ReportingGroup
 from app.models.superadmin import SuperAdmin
+from app.models.tax_category import TaxCategory
 from app.models.user import User
 from app.models.product import Product
-from app.schemas.product import ProductCreate, ProductUpdate
+from app.schemas.product import ProductBulkUpdate, ProductBulkUpdateResult, ProductCreate, ProductUpdate
 from app.services.audit_service import log_action
 from app.services.tax_resolution_service import derive_ex_price_cents
 from app.utils.storage import extension_for_content_type, upload_image
@@ -163,6 +171,62 @@ async def _validate_category(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Category belongs to a different brand",
         )
+
+
+async def _validate_tax_category(
+    db: AsyncSession, brand_id: uuid.UUID, tax_category_id: uuid.UUID
+) -> None:
+    """
+    Raise HTTP 400/404 if the tax category does not belong to the given brand.
+
+    Args:
+        db: Active database session.
+        brand_id: Expected brand owner of the tax category.
+        tax_category_id: UUID of the tax category to validate.
+
+    Raises:
+        HTTPException: 404 if the tax category does not exist.
+        HTTPException: 400 if it belongs to a different brand.
+    """
+    result = await db.execute(select(TaxCategory).where(TaxCategory.id == tax_category_id))
+    tax_category = result.scalar_one_or_none()
+    if tax_category is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tax category not found")
+    if tax_category.brand_id != brand_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tax category belongs to a different brand",
+        )
+
+
+async def _validate_modifier_group(
+    db: AsyncSession, brand_id: uuid.UUID, modifier_group_id: uuid.UUID
+) -> ModifierGroup:
+    """
+    Fetch a ModifierGroup scoped to a brand, or raise HTTP 400/404.
+
+    Args:
+        db: Active database session.
+        brand_id: Expected brand owner of the modifier group.
+        modifier_group_id: UUID of the modifier group to validate.
+
+    Returns:
+        ModifierGroup: The found, brand-owned modifier group.
+
+    Raises:
+        HTTPException: 404 if the modifier group does not exist.
+        HTTPException: 400 if it belongs to a different brand.
+    """
+    result = await db.execute(select(ModifierGroup).where(ModifierGroup.id == modifier_group_id))
+    group = result.scalar_one_or_none()
+    if group is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Modifier group not found")
+    if group.brand_id != brand_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Modifier group belongs to a different brand",
+        )
+    return group
 
 
 async def list_products(
@@ -588,3 +652,325 @@ async def upload_photo(
     await db.refresh(product)
     log.info("product.photo.uploaded", product_id=str(product.id))
     return product
+
+
+# ── Bulk operations ────────────────────────────────────────────────────────────
+
+
+async def _bulk_attach_modifier_group(
+    db: AsyncSession,
+    product_ids: list[uuid.UUID],
+    modifier_group_id: uuid.UUID,
+    actor: User | SuperAdmin,
+) -> set[uuid.UUID]:
+    """
+    Attach modifier_group_id to every product in product_ids missing it.
+
+    Append-only: never detaches or reorders a product's existing modifier
+    links. Each new link is placed after the product's current maximum
+    display_order (or 0 if it has none).
+
+    Args:
+        db: Active database session.
+        product_ids: Candidate products to attach the group to.
+        modifier_group_id: The modifier group to attach.
+        actor: The authenticated user performing the action.
+
+    Returns:
+        set[uuid.UUID]: product_ids that received a new link.
+    """
+    # One query to find who already has the link, rather than N existence checks
+    existing_result = await db.execute(
+        select(ProductModifierGroupLink.product_id).where(
+            ProductModifierGroupLink.product_id.in_(product_ids),
+            ProductModifierGroupLink.modifier_group_id == modifier_group_id,
+        )
+    )
+    already_linked = {row[0] for row in existing_result.all()}
+    to_link = [pid for pid in product_ids if pid not in already_linked]
+    if not to_link:
+        return set()
+
+    # One query for every product's current max display_order, rather than N
+    max_orders_result = await db.execute(
+        select(ProductModifierGroupLink.product_id, func.max(ProductModifierGroupLink.display_order))
+        .where(ProductModifierGroupLink.product_id.in_(to_link))
+        .group_by(ProductModifierGroupLink.product_id)
+    )
+    max_order_by_product = dict(max_orders_result.all())
+
+    linked: set[uuid.UUID] = set()
+    for product_id in to_link:
+        current_max = max_order_by_product.get(product_id)
+        next_order = (current_max + 1) if current_max is not None else 0
+        link = ProductModifierGroupLink(
+            id=uuid.uuid4(),
+            product_id=product_id,
+            modifier_group_id=modifier_group_id,
+            display_order=next_order,
+        )
+        db.add(link)
+        await log_action(
+            db=db,
+            action=PRODUCT_MODIFIER_LINKED,
+            entity_type="product_modifier_group_link",
+            entity_id=str(link.id),
+            actor_type=ActorType.USER,
+            actor_id=actor.id,
+            actor_email=actor.email,
+            actor_name=actor.name,
+            after_state={
+                "product_id": str(product_id),
+                "modifier_group_id": str(modifier_group_id),
+                "via": "bulk_update",
+            },
+        )
+        linked.add(product_id)
+    return linked
+
+
+async def _cascade_deactivate_products(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    product_ids: list[uuid.UUID],
+    ref_by_product: dict[uuid.UUID, str],
+) -> dict[uuid.UUID, tuple[int, int]]:
+    """
+    Delete stale POS-facing rows for products archived by bulk_update_products().
+
+    Deletes every product_modifier_group_links row for these products (an
+    archived product's modifier attachments no longer mean anything), and
+    every menu_buttons row (kind='product') across the brand's menu_layouts
+    whose product_ref matches one of these products' ref codes — otherwise a
+    stale POS button would keep pointing at a soft-deleted product.
+    menu_buttons has no direct brand_id column, so it's scoped through
+    tab_id -> menu_tabs.layout_id -> menu_layouts.brand_id.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope for the menu_buttons join.
+        product_ids: Products being archived in this call.
+        ref_by_product: Each product's `ref` code, needed to match menu_buttons.
+
+    Returns:
+        dict[uuid.UUID, tuple[int, int]]: product_id -> (deleted_modifier_link_count,
+            deleted_menu_button_count), for the per-product audit rows.
+    """
+    if not product_ids:
+        return {}
+
+    links_result = await db.execute(
+        select(ProductModifierGroupLink.id, ProductModifierGroupLink.product_id).where(
+            ProductModifierGroupLink.product_id.in_(product_ids)
+        )
+    )
+    link_ids: list[uuid.UUID] = []
+    link_count_by_product: dict[uuid.UUID, int] = defaultdict(int)
+    for link_id, product_id in links_result.all():
+        link_ids.append(link_id)
+        link_count_by_product[product_id] += 1
+    if link_ids:
+        await db.execute(delete(ProductModifierGroupLink).where(ProductModifierGroupLink.id.in_(link_ids)))
+
+    refs = list(ref_by_product.values())
+    buttons_result = await db.execute(
+        select(MenuButton.id, MenuButton.product_ref)
+        .join(MenuTab, MenuButton.tab_id == MenuTab.id)
+        .join(MenuLayout, MenuTab.layout_id == MenuLayout.id)
+        .where(
+            MenuLayout.brand_id == brand_id,
+            MenuButton.kind == "product",
+            MenuButton.product_ref.in_(refs),
+        )
+    )
+    button_ids: list[uuid.UUID] = []
+    button_count_by_ref: dict[str, int] = defaultdict(int)
+    for button_id, ref in buttons_result.all():
+        button_ids.append(button_id)
+        button_count_by_ref[ref] += 1
+    if button_ids:
+        await db.execute(delete(MenuButton).where(MenuButton.id.in_(button_ids)))
+
+    return {
+        product_id: (
+            link_count_by_product.get(product_id, 0),
+            button_count_by_ref.get(ref_by_product[product_id], 0),
+        )
+        for product_id in product_ids
+    }
+
+
+async def bulk_update_products(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    payload: ProductBulkUpdate,
+    actor: User | SuperAdmin,
+) -> ProductBulkUpdateResult:
+    """
+    Apply one or more field changes to a set of products in one transaction.
+
+    All-or-nothing: every product_id must belong to brand_id, and any
+    reassigned category_id/tax_category_id/modifier_group_id must too — the
+    whole batch is rejected with HTTP 400 before any row is touched (mirrors
+    import_service.py's validate-then-upsert convention: validate everything
+    up front, then write).
+
+    Field order of operations within a product: category, price (either
+    price_cents or the price_markup_percent rounded to the nearest cent via
+    Decimal/ROUND_HALF_UP — never float, CLAUDE.md rule 9), tax_category_id
+    (model_fields_set-aware so an explicit null clears the override), then
+    is_active. modifier_group_id attaches (append-only) after every product's
+    field changes are applied. Finally, if is_active is False, every selected
+    product's modifier links and matching menu_buttons rows are deleted (the
+    bulk archive cascade) — is_active=True only reactivates, no cascade.
+
+    One log_action() row is written per product that actually changed (not
+    one for the whole batch) so each product's own audit trail stays
+    complete — a query for entity_type='product' AND entity_id=<id> shows
+    every field this bulk call touched on that product, including any
+    cascade-deleted link/button counts.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope — every product_id must belong to this brand.
+        payload: The bulk update fields to apply.
+        actor: The authenticated user performing the action.
+
+    Returns:
+        ProductBulkUpdateResult: Count and ids of the products actually modified.
+
+    Raises:
+        HTTPException: 400 if any product_id, category_id, tax_category_id,
+            or modifier_group_id does not belong to this brand.
+        HTTPException: 404 if category_id/tax_category_id/modifier_group_id
+            does not exist at all.
+    """
+    # Load every requested product scoped to the brand in one query
+    products_result = await db.execute(
+        select(Product).where(Product.id.in_(payload.product_ids), Product.brand_id == brand_id)
+    )
+    products_by_id = {p.id: p for p in products_result.scalars().all()}
+    missing = set(payload.product_ids) - set(products_by_id.keys())
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "message": "One or more product_ids do not belong to this brand",
+                "invalid_product_ids": sorted(str(pid) for pid in missing),
+            },
+        )
+
+    # Validate every cross-brand reference before touching any row
+    if payload.category_id is not None:
+        await _validate_category(db, brand_id, payload.category_id)
+    if payload.tax_category_id is not None:
+        await _validate_tax_category(db, brand_id, payload.tax_category_id)
+    modifier_group: ModifierGroup | None = None
+    if payload.modifier_group_id is not None:
+        modifier_group = await _validate_modifier_group(db, brand_id, payload.modifier_group_id)
+
+    products = list(products_by_id.values())
+    is_archiving = payload.is_active is False
+    tax_category_field_set = "tax_category_id" in payload.model_fields_set
+
+    # Snapshot before-state per product ahead of any mutation, for audit rows
+    before_snapshots: dict[uuid.UUID, dict] = {
+        product.id: {
+            "category_id": str(product.category_id),
+            "base_price_cents": product.base_price_cents,
+            "tax_category_id": str(product.tax_category_id) if product.tax_category_id else None,
+            "is_active": product.is_active,
+        }
+        for product in products
+    }
+
+    touched: set[uuid.UUID] = set()
+
+    for product in products:
+        if payload.category_id is not None and product.category_id != payload.category_id:
+            product.category_id = payload.category_id
+            touched.add(product.id)
+
+        price_changed = False
+        if payload.price_cents is not None:
+            if product.base_price_cents != payload.price_cents:
+                product.base_price_cents = payload.price_cents
+                price_changed = True
+        elif payload.price_markup_percent is not None:
+            # Money arithmetic via Decimal/ROUND_HALF_UP, never float (CLAUDE.md rule 9)
+            markup_multiplier = 1 + Decimal(str(payload.price_markup_percent)) / Decimal("100")
+            new_price_cents = int(
+                (Decimal(product.base_price_cents) * markup_multiplier).quantize(
+                    Decimal("1"), rounding=ROUND_HALF_UP
+                )
+            )
+            if new_price_cents != product.base_price_cents:
+                product.base_price_cents = new_price_cents
+                price_changed = True
+        if price_changed:
+            touched.add(product.id)
+            # Re-derive the exclusive price since the inclusive price moved
+            product.price_ex_cents = await _compute_price_ex_cents(
+                db, brand_id, product.base_price_cents, product.is_taxable
+            )
+
+        if tax_category_field_set and product.tax_category_id != payload.tax_category_id:
+            product.tax_category_id = payload.tax_category_id
+            touched.add(product.id)
+
+        if payload.is_active is not None and product.is_active != payload.is_active:
+            product.is_active = payload.is_active
+            touched.add(product.id)
+
+    # Attach the modifier group before the archive cascade so a product that's
+    # both newly-linked and archived in the same call still gets cleaned up
+    newly_linked: set[uuid.UUID] = set()
+    if modifier_group is not None:
+        newly_linked = await _bulk_attach_modifier_group(
+            db, [product.id for product in products], modifier_group.id, actor
+        )
+        touched |= newly_linked
+
+    cascade_counts: dict[uuid.UUID, tuple[int, int]] = {}
+    if is_archiving:
+        ref_by_product = {product.id: product.ref for product in products}
+        cascade_counts = await _cascade_deactivate_products(
+            db, brand_id, [product.id for product in products], ref_by_product
+        )
+        # A product already inactive with nothing left to clean up is a true
+        # no-op; one that still had stale links/buttons removed did change
+        touched |= {pid for pid, (link_n, button_n) in cascade_counts.items() if link_n or button_n}
+
+    for product in products:
+        if product.id not in touched:
+            continue
+        after_state: dict = {
+            "category_id": str(product.category_id),
+            "base_price_cents": product.base_price_cents,
+            "tax_category_id": str(product.tax_category_id) if product.tax_category_id else None,
+            "is_active": product.is_active,
+        }
+        if product.id in newly_linked:
+            after_state["modifier_group_linked"] = str(modifier_group.id)  # type: ignore[union-attr]
+        if product.id in cascade_counts:
+            deleted_links, deleted_buttons = cascade_counts[product.id]
+            after_state["deleted_modifier_link_count"] = deleted_links
+            after_state["deleted_menu_button_count"] = deleted_buttons
+
+        await log_action(
+            db=db,
+            action=PRODUCT_BULK_UPDATED,
+            entity_type="product",
+            entity_id=str(product.id),
+            actor_type=ActorType.USER,
+            actor_id=actor.id,
+            actor_email=actor.email,
+            actor_name=actor.name,
+            before_state=before_snapshots[product.id],
+            after_state=after_state,
+        )
+
+    await db.commit()
+    updated_ids = sorted(touched, key=str)
+    log.info("product.bulk_updated", brand_id=str(brand_id), updated_count=len(updated_ids))
+    return ProductBulkUpdateResult(updated_count=len(updated_ids), updated_product_ids=updated_ids)

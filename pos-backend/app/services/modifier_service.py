@@ -20,6 +20,7 @@ from app.constants.audit_actions import (
     MODIFIER_OPTION_UPDATED,
     PRODUCT_MODIFIER_LINKED,
     PRODUCT_MODIFIER_UNLINKED,
+    PRODUCT_MODIFIERS_REORDERED,
 )
 from app.constants.statuses import ActorType
 from app.models.modifier_group import ModifierGroup
@@ -136,6 +137,59 @@ class ModifierGroupDetail(ModifierGroupResponse):
 
     options: list[ModifierOptionDetail]
     used_by_count: int
+
+
+class ModifierGroupProductItem(BaseModel):
+    """One product linked to a modifier group — powers the "used by products" expand."""
+
+    id: uuid.UUID
+    ref: str
+    name: str
+    is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
+class ProductModifierAttachedItem(BaseModel):
+    """A modifier group already attached to a product, in its display order."""
+
+    modifier_group_id: uuid.UUID
+    name: str
+    min_selections: int
+    max_selections: int
+    option_count: int
+    display_order: int
+
+
+class ProductModifierAvailableItem(BaseModel):
+    """An active modifier group in the brand not yet attached to this product."""
+
+    modifier_group_id: uuid.UUID
+    name: str
+    min_selections: int
+    max_selections: int
+    option_count: int
+
+
+class ProductModifiersOut(BaseModel):
+    """Response for GET /products/{id}/modifiers — the attached/available split."""
+
+    attached: list[ProductModifierAttachedItem]
+    available: list[ProductModifierAvailableItem]
+
+
+class ProductModifiersReorderRequest(BaseModel):
+    """
+    Payload for PATCH /products/{id}/modifiers/reorder.
+
+    modifier_group_ids is the FULL desired attached set, in order — any id
+    missing from a previous call's attached set is attached, any previously
+    attached id missing from this list is detached, and every id's
+    display_order is set to its index here (mirrors
+    menu_builder_service.reorder_menu_buttons()'s whole-list resequence).
+    """
+
+    modifier_group_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -492,6 +546,242 @@ async def unlink_modifier_group(
 
     await db.delete(link)
     await db.commit()
+
+
+async def list_products_for_modifier_group(
+    db: AsyncSession, brand_id: uuid.UUID, group_id: uuid.UUID
+) -> list[Product]:
+    """
+    Return the products currently linked to a modifier group, scoped to the brand.
+
+    Powers the "used by products" expand on a modifier group card — reuses
+    list_modifier_groups_detailed()'s usage-count join (ProductModifierGroupLink
+    joined to ModifierGroup for brand scoping) but selects the Product rows
+    themselves instead of a count.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+        group_id: UUID of the modifier group.
+
+    Returns:
+        list[Product]: Linked products ordered by name.
+
+    Raises:
+        HTTPException: 404 if the modifier group is not found for this brand.
+    """
+    await _get_group_or_404(db, brand_id, group_id)
+
+    result = await db.execute(
+        select(Product)
+        .join(ProductModifierGroupLink, ProductModifierGroupLink.product_id == Product.id)
+        .join(ModifierGroup, ProductModifierGroupLink.modifier_group_id == ModifierGroup.id)
+        .where(ModifierGroup.id == group_id, ModifierGroup.brand_id == brand_id)
+        .order_by(Product.name)
+    )
+    return list(result.scalars().all())
+
+
+async def _option_counts_by_group(
+    db: AsyncSession, brand_id: uuid.UUID
+) -> dict[uuid.UUID, int]:
+    """
+    Return the count of active options per modifier group for a brand, in one query.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+
+    Returns:
+        dict[uuid.UUID, int]: modifier_group_id -> active option count.
+    """
+    result = await db.execute(
+        select(ModifierOption.modifier_group_id, func.count(ModifierOption.id))
+        .join(ModifierGroup, ModifierOption.modifier_group_id == ModifierGroup.id)
+        .where(ModifierGroup.brand_id == brand_id, ModifierOption.is_active == True)  # noqa: E712
+        .group_by(ModifierOption.modifier_group_id)
+    )
+    return dict(result.all())
+
+
+async def list_product_modifiers(
+    db: AsyncSession, brand_id: uuid.UUID, product_id: uuid.UUID
+) -> ProductModifiersOut:
+    """
+    Return a product's attached modifier groups (ordered) and every other
+    active modifier group in the brand not yet attached — powers the product
+    modifiers picker/reorder screen in one call.
+
+    Attached groups are shown even if since deactivated (the link still
+    exists and the operator should still see and be able to detach it);
+    available groups are always filtered to is_active — an inactive group
+    should not be offered for a fresh attach.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+        product_id: UUID of the product.
+
+    Returns:
+        ProductModifiersOut: attached (ordered by display_order) and available
+            (ordered by name) modifier groups.
+
+    Raises:
+        HTTPException: 404 if the product is not found for this brand.
+    """
+    product_result = await db.execute(
+        select(Product).where(Product.id == product_id, Product.brand_id == brand_id)
+    )
+    if product_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+
+    option_counts = await _option_counts_by_group(db, brand_id)
+
+    attached_result = await db.execute(
+        select(ProductModifierGroupLink, ModifierGroup)
+        .join(ModifierGroup, ProductModifierGroupLink.modifier_group_id == ModifierGroup.id)
+        .where(ProductModifierGroupLink.product_id == product_id)
+        .order_by(ProductModifierGroupLink.display_order)
+    )
+    attached_rows = attached_result.all()
+    attached_ids = {group.id for _, group in attached_rows}
+
+    attached = [
+        ProductModifierAttachedItem(
+            modifier_group_id=group.id,
+            name=group.name,
+            min_selections=group.min_selections,
+            max_selections=group.max_selections,
+            option_count=option_counts.get(group.id, 0),
+            display_order=link.display_order,
+        )
+        for link, group in attached_rows
+    ]
+
+    available_query = select(ModifierGroup).where(
+        ModifierGroup.brand_id == brand_id,
+        ModifierGroup.is_active == True,  # noqa: E712
+    )
+    if attached_ids:
+        # Guard the notin_() call — an empty collection is valid SQL but not
+        # needed here since there's nothing to exclude
+        available_query = available_query.where(ModifierGroup.id.notin_(attached_ids))
+    available_result = await db.execute(available_query.order_by(ModifierGroup.name))
+
+    available = [
+        ProductModifierAvailableItem(
+            modifier_group_id=group.id,
+            name=group.name,
+            min_selections=group.min_selections,
+            max_selections=group.max_selections,
+            option_count=option_counts.get(group.id, 0),
+        )
+        for group in available_result.scalars().all()
+    ]
+
+    return ProductModifiersOut(attached=attached, available=available)
+
+
+async def sync_product_modifier_groups(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    product_id: uuid.UUID,
+    modifier_group_ids: list[uuid.UUID],
+    actor: User | SuperAdmin,
+) -> ProductModifiersOut:
+    """
+    Reconcile a product's attached modifier groups to exactly modifier_group_ids
+    and resequence display_order to match list index — all in one transaction.
+
+    Mirrors menu_builder_service.reorder_menu_buttons()'s whole-list resequence
+    pattern: every id present gets (re)attached with display_order = its index;
+    every previously-attached id absent from the list is detached.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+        product_id: UUID of the product.
+        modifier_group_ids: The full desired attached set, in display order.
+        actor: The authenticated user performing the action.
+
+    Returns:
+        ProductModifiersOut: The product's attached/available groups after the sync.
+
+    Raises:
+        HTTPException: 404 if the product is not found for this brand.
+        HTTPException: 400 if modifier_group_ids contains a duplicate, or any
+            id does not belong to this brand.
+    """
+    product_result = await db.execute(
+        select(Product).where(Product.id == product_id, Product.brand_id == brand_id)
+    )
+    if product_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+
+    if len(set(modifier_group_ids)) != len(modifier_group_ids):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="modifier_group_ids must not contain duplicates",
+        )
+
+    if modifier_group_ids:
+        found_result = await db.execute(
+            select(ModifierGroup.id).where(
+                ModifierGroup.id.in_(modifier_group_ids), ModifierGroup.brand_id == brand_id
+            )
+        )
+        found_ids = {row[0] for row in found_result.all()}
+        missing = set(modifier_group_ids) - found_ids
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "One or more modifier_group_ids do not belong to this brand: "
+                    f"{sorted(str(m) for m in missing)}"
+                ),
+            )
+
+    existing_result = await db.execute(
+        select(ProductModifierGroupLink).where(ProductModifierGroupLink.product_id == product_id)
+    )
+    existing_by_group = {link.modifier_group_id: link for link in existing_result.scalars().all()}
+    target_ids = set(modifier_group_ids)
+
+    # Detach anything attached but no longer in the target set
+    for group_id, link in existing_by_group.items():
+        if group_id not in target_ids:
+            await db.delete(link)
+
+    # Attach new ids / resequence existing ones to match list index
+    for index, group_id in enumerate(modifier_group_ids):
+        link = existing_by_group.get(group_id)
+        if link is None:
+            db.add(
+                ProductModifierGroupLink(
+                    id=uuid.uuid4(),
+                    product_id=product_id,
+                    modifier_group_id=group_id,
+                    display_order=index,
+                )
+            )
+        else:
+            link.display_order = index
+
+    await log_action(
+        db=db,
+        action=PRODUCT_MODIFIERS_REORDERED,
+        entity_type="product",
+        entity_id=str(product_id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"modifier_group_ids": [str(gid) for gid in existing_by_group]},
+        after_state={"modifier_group_ids": [str(gid) for gid in modifier_group_ids]},
+    )
+
+    await db.commit()
+    return await list_product_modifiers(db, brand_id, product_id)
 
 
 # ── Deactivation / duplication ────────────────────────────────────────────────

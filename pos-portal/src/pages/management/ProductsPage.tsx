@@ -1,10 +1,19 @@
-/** Catalog products management page — list, create, edit, deactivate products.
+/** Catalog products management page — list, create, edit, archive products.
  *
- * Stage 20: table shows joined Category + Reporting Group columns, supports
- * inline cell edit (name, category, price, status) and a shared filter bar.
+ * Stage 20: table shows a joined Category column, supports inline cell edit
+ * (name, category, price, status) and a shared filter bar (Category,
+ * Reporting Group, Status — Reporting Group is a filter only, not a column:
+ * it's derived from Category, not a Product field).
+ *
+ * Post-Stage-23: the Modifiers cell opens ModifierPickerModal (attach/
+ * reorder/detach a product's modifier sets); a checkbox column supports
+ * multi-select with a floating bulk-action bar (category, price, % markup,
+ * tax, modifier attach, archive) backed by POST /products/bulk. There is no
+ * hard-delete anywhere in this app — "archive" (soft-delete via is_active)
+ * is the only removal action, both per-row (StatusBadge) and in bulk.
  */
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, fetchAll } from '../../api/axios'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
@@ -13,8 +22,9 @@ import { StatusBadge } from '../../components/StatusBadge'
 import { EntityIdChip } from '../../components/EntityIdChip'
 import { EditableText, EditableSelect } from '../../components/EditableCell'
 import { FilterBar, type FilterConfig } from '../../components/FilterBar'
+import { ModifierPickerModal } from '../../components/ModifierPickerModal'
 import { apiErrorMessage } from '../../utils/apiError'
-import type { Product, ProductListItem, Category, ReportingGroup } from '../../types'
+import type { Product, ProductListItem, Category, ReportingGroup, TaxCategory, ModifierGroup } from '../../types'
 
 function centsToDisplay(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
@@ -51,6 +61,18 @@ export function ProductsPage() {
     enabled: !!brandId,
   })
 
+  const { data: taxCategories = [] } = useQuery<TaxCategory[]>({
+    queryKey: ['tax-categories', brandId],
+    queryFn: () => fetchAll<TaxCategory>('/tax/categories', params),
+    enabled: !!brandId,
+  })
+
+  const { data: modifierGroups = [] } = useQuery<ModifierGroup[]>({
+    queryKey: ['modifier-groups', brandId],
+    queryFn: () => fetchAll<ModifierGroup>('/modifier-groups', params),
+    enabled: !!brandId,
+  })
+
   const invalidateList = () => qc.invalidateQueries({ queryKey: ['products', brandId] })
 
   const patch = useMutation({
@@ -72,6 +94,100 @@ export function ProductsPage() {
     onError: invalidateList,
   })
 
+  const [modifierPickerFor, setModifierPickerFor] = useState<ProductListItem | null>(null)
+
+  // ── Row selection + bulk actions ──────────────────────────────────────────
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkError, setBulkError] = useState<string | null>(null)
+  const [bulkSuccess, setBulkSuccess] = useState<string | null>(null)
+  const [bulkPriceStr, setBulkPriceStr] = useState('')
+  const [bulkMarkupStr, setBulkMarkupStr] = useState('')
+  const selectAllRef = useRef<HTMLInputElement>(null)
+
+  const toggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const clearSelection = () => setSelected(new Set())
+
+  const bulkOnSuccess = (msg: string) => () => {
+    invalidateList()
+    setBulkError(null)
+    setBulkSuccess(msg)
+    clearSelection()
+  }
+  const bulkOnError = (e: unknown) => {
+    invalidateList()
+    setBulkSuccess(null)
+    setBulkError(apiErrorMessage(e, 'Bulk action failed.'))
+  }
+
+  const bulkUpdate = useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      api.post('/products/bulk', { product_ids: [...selected], ...body }, { params }),
+  })
+
+  const applyBulkCategory = (categoryId: string) => {
+    if (!categoryId || selected.size === 0) return
+    bulkUpdate.mutate(
+      { category_id: categoryId },
+      { onSuccess: bulkOnSuccess(`Updated category for ${selected.size} product(s).`), onError: bulkOnError },
+    )
+  }
+
+  const applyBulkPrice = () => {
+    const cents = Math.round(parseFloat(bulkPriceStr) * 100)
+    if (isNaN(cents) || cents < 0 || selected.size === 0) return
+    bulkUpdate.mutate(
+      { price_cents: cents },
+      {
+        onSuccess: () => { bulkOnSuccess(`Updated price for ${selected.size} product(s).`)(); setBulkPriceStr('') },
+        onError: bulkOnError,
+      },
+    )
+  }
+
+  const applyBulkMarkup = () => {
+    const percent = parseFloat(bulkMarkupStr)
+    if (isNaN(percent) || selected.size === 0) return
+    bulkUpdate.mutate(
+      { price_markup_percent: percent },
+      {
+        onSuccess: () => { bulkOnSuccess(`Applied ${percent}% markup to ${selected.size} product(s).`)(); setBulkMarkupStr('') },
+        onError: bulkOnError,
+      },
+    )
+  }
+
+  const applyBulkTax = (taxCategoryId: string) => {
+    if (!taxCategoryId || selected.size === 0) return
+    bulkUpdate.mutate(
+      { tax_category_id: taxCategoryId },
+      { onSuccess: bulkOnSuccess(`Updated tax category for ${selected.size} product(s).`), onError: bulkOnError },
+    )
+  }
+
+  const applyBulkModifier = (modifierGroupId: string) => {
+    if (!modifierGroupId || selected.size === 0) return
+    bulkUpdate.mutate(
+      { modifier_group_id: modifierGroupId },
+      { onSuccess: bulkOnSuccess(`Attached modifier set to ${selected.size} product(s).`), onError: bulkOnError },
+    )
+  }
+
+  const applyBulkArchive = () => {
+    if (selected.size === 0) return
+    if (!confirm(`Archive ${selected.size} product(s)? They can be reactivated later.`)) return
+    bulkUpdate.mutate(
+      { is_active: false },
+      { onSuccess: bulkOnSuccess(`Archived ${selected.size} product(s).`), onError: bulkOnError },
+    )
+  }
+
   const categoryOptions = categories.map((c) => ({ value: c.id, label: c.name }))
 
   const filtered = products.filter((p) => {
@@ -85,6 +201,22 @@ export function ProductsPage() {
 
   const hasFilters = !!(search || categoryFilter || reportingGroupFilter || statusFilter)
   const clearFilters = () => { setSearch(''); setCategoryFilter(''); setReportingGroupFilter(''); setStatusFilter('') }
+
+  // Selection is scoped to the currently-filtered/visible rows.
+  const filteredIds = filtered.map((p) => p.id)
+  const allSelected = filteredIds.length > 0 && filteredIds.every((id) => selected.has(id))
+  const someSelected = filteredIds.some((id) => selected.has(id))
+  if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected && !allSelected
+  const toggleAll = () => {
+    setSelected((prev) => {
+      if (filteredIds.every((id) => prev.has(id))) {
+        const next = new Set(prev)
+        filteredIds.forEach((id) => next.delete(id))
+        return next
+      }
+      return new Set([...prev, ...filteredIds])
+    })
+  }
 
   const filters: FilterConfig[] = [
     {
@@ -146,14 +278,133 @@ export function ProductsPage() {
             totalCount={products.length}
           />
 
+          {/* ── Bulk action bar (shown when rows are selected) ──────────────── */}
+          {selected.size > 0 && (
+            <div className="flex flex-wrap items-center gap-3 mb-3 px-3 py-2 rounded-lg border border-brand-200 dark:border-brand-900 bg-brand-50 dark:bg-brand-950/30">
+              <span className="text-sm font-medium text-brand-800 dark:text-brand-300">{selected.size} selected</span>
+
+              <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400">
+                Category
+                <select
+                  value=""
+                  disabled={bulkUpdate.isPending}
+                  onChange={(e) => { applyBulkCategory(e.target.value); e.target.value = '' }}
+                  className="px-2 py-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500"
+                >
+                  <option value="">Choose…</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400">
+                Price ($)
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={bulkPriceStr}
+                  disabled={bulkUpdate.isPending}
+                  onChange={(e) => setBulkPriceStr(e.target.value)}
+                  className="w-20 px-2 py-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+                <button
+                  onClick={applyBulkPrice}
+                  disabled={bulkUpdate.isPending || !bulkPriceStr}
+                  className="text-brand-600 hover:text-brand-800 disabled:opacity-50 font-medium"
+                >
+                  Apply
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400">
+                % markup
+                <input
+                  type="number"
+                  step="1"
+                  value={bulkMarkupStr}
+                  disabled={bulkUpdate.isPending}
+                  placeholder="+10"
+                  onChange={(e) => setBulkMarkupStr(e.target.value)}
+                  className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+                <button
+                  onClick={applyBulkMarkup}
+                  disabled={bulkUpdate.isPending || !bulkMarkupStr}
+                  className="text-brand-600 hover:text-brand-800 disabled:opacity-50 font-medium"
+                >
+                  Apply
+                </button>
+              </div>
+
+              <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400">
+                Tax
+                <select
+                  value=""
+                  disabled={bulkUpdate.isPending}
+                  onChange={(e) => { applyBulkTax(e.target.value); e.target.value = '' }}
+                  className="px-2 py-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500"
+                >
+                  <option value="">Choose…</option>
+                  {taxCategories.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400">
+                Modifiers
+                <select
+                  value=""
+                  disabled={bulkUpdate.isPending}
+                  onChange={(e) => { applyBulkModifier(e.target.value); e.target.value = '' }}
+                  className="px-2 py-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500"
+                >
+                  <option value="">Choose…</option>
+                  {modifierGroups.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </label>
+
+              <button
+                onClick={applyBulkArchive}
+                disabled={bulkUpdate.isPending}
+                className="text-xs font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
+              >
+                Archive
+              </button>
+              <button
+                onClick={clearSelection}
+                disabled={bulkUpdate.isPending}
+                className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 ml-auto"
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
+
+          {bulkError && <p className="text-xs text-red-500 mb-3">{bulkError}</p>}
+          {bulkSuccess && !bulkError && <p className="text-xs text-green-600 dark:text-green-400 mb-3">{bulkSuccess}</p>}
+
           <div className="zr-table-wrap">
             <table className="zr-table min-w-[1000px]">
               <thead>
                 <tr>
+                  <th className="w-10 px-4 py-3">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      className="zr-chk"
+                      checked={allSelected}
+                      onChange={toggleAll}
+                      aria-label="Select all"
+                    />
+                  </th>
                   <th>ID</th>
                   <th>Name</th>
                   <th>Category</th>
-                  <th>Reporting Group</th>
                   <th>Price (inc.)</th>
                   <th>Price (ex.)</th>
                   <th>Tax</th>
@@ -165,6 +416,15 @@ export function ProductsPage() {
               <tbody>
                 {filtered.map((p) => (
                   <tr key={p.id}>
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        className="zr-chk"
+                        checked={selected.has(p.id)}
+                        onChange={() => toggleOne(p.id)}
+                        aria-label={`Select ${p.name}`}
+                      />
+                    </td>
                     <td className="px-4 py-3"><EntityIdChip id={p.id} ref={p.ref} /></td>
                     <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
                       <EditableText
@@ -182,7 +442,6 @@ export function ProductsPage() {
                         />
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{p.reporting_group_name}</td>
                     <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                       <EditableText
                         value={(p.base_price_cents / 100).toFixed(2)}
@@ -204,18 +463,25 @@ export function ProductsPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      {p.modifier_names ? (
-                        <span className="inline-block max-w-[160px] truncate border border-brand-300 dark:border-brand-700 rounded-md px-2 py-1 text-xs text-gray-700 dark:text-gray-300" title={p.modifier_names}>
-                          {p.modifier_names}
-                        </span>
-                      ) : (
-                        <span className="inline-block border border-dashed border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-xs text-gray-400 dark:text-gray-500">None</span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => setModifierPickerFor(p)}
+                        title="Manage modifier sets"
+                        className="text-left"
+                      >
+                        {p.modifier_names ? (
+                          <span className="inline-block max-w-[160px] truncate border border-brand-300 dark:border-brand-700 rounded-md px-2 py-1 text-xs text-gray-700 dark:text-gray-300 hover:bg-brand-50 dark:hover:bg-brand-950/30" title={p.modifier_names}>
+                            {p.modifier_names}
+                          </span>
+                        ) : (
+                          <span className="inline-block border border-dashed border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-xs text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700/50">None</span>
+                        )}
+                      </button>
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge
-                        status={p.is_active ? 'active' : 'disabled'}
-                        title={p.is_active ? 'Click to deactivate' : 'Click to activate'}
+                        status={p.is_active ? 'active' : 'archived'}
+                        title={p.is_active ? 'Click to archive' : 'Click to reactivate'}
                         onClick={() => (p.is_active ? deactivate.mutate(p.id) : activate.mutate(p.id))}
                       />
                     </td>
@@ -231,7 +497,7 @@ export function ProductsPage() {
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-gray-400">
+                    <td colSpan={11} className="px-4 py-8 text-center text-gray-400">
                       {products.length === 0 ? 'No products yet.' : 'No products match the current filters.'}
                     </td>
                   </tr>
@@ -253,6 +519,15 @@ export function ProductsPage() {
             setShowCreate(false)
             setEditing(null)
           }}
+        />
+      )}
+
+      {modifierPickerFor && (
+        <ModifierPickerModal
+          productId={modifierPickerFor.id}
+          productName={modifierPickerFor.name}
+          onClose={() => setModifierPickerFor(null)}
+          onSaved={invalidateList}
         />
       )}
     </div>

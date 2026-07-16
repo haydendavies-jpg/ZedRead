@@ -341,6 +341,14 @@ export interface ModifierGroupDetail extends ModifierGroup {
   used_by_count: number
 }
 
+/** One product linked to a modifier group — powers the "used by products" expand. */
+export interface ModifierGroupProductItem {
+  id: string
+  ref: string
+  name: string
+  is_active: boolean
+}
+
 // ── Menus (distinct from a POS MenuLayout) ──────────────────────────────────────
 
 export interface Menu {
