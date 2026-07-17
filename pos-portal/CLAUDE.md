@@ -46,18 +46,26 @@ global table skin.
 
 ### Colors
 
-The ZedRead brand color is a deep crimson. The full scale is defined in `src/index.css` via Tailwind's
-`@theme` directive and is available as `brand-*` utility classes throughout the app.
+The ZedRead brand color is a warm taupe (`#554c44`, same hex as the `--zr-accent` design-guide
+token — see `design_guide/PORTAL_DESIGN_GUIDE.md` §1). The full scale is defined in `src/index.css`
+via Tailwind's `@theme` directive and is available as `brand-*` utility classes throughout the app;
+it exists precisely so form-level buttons, links, focus rings, and active/selected states recolour
+from one edit instead of per-component overrides.
 
 | Token | Hex | Usage |
 |---|---|---|
-| `brand-50` | `#fdf2f4` | Active nav background |
-| `brand-500` | `#c94060` | Focus rings (`focus:ring-brand-500`) |
-| `brand-600` | `#a82040` | Primary buttons, action links |
-| `brand-700` | `#8a1c35` | Hover state for buttons (`hover:bg-brand-700`) |
-| `brand-800` | `#7b1d2a` | Wordmark, active nav text |
+| `brand-50` | `#eeedec` | Selected-row / active-chip backgrounds |
+| `brand-500` | `#746c66` | Focus rings (`focus:ring-brand-500`) |
+| `brand-600` | `#554c44` | Primary buttons, action links — equals `--zr-accent` |
+| `brand-700` | `#403933` | Hover state for buttons (`hover:bg-brand-700`) — equals the accent hover/darker shade |
+| `brand-800` | `#36302b` | Wordmark |
 
 **Never use `indigo-*` classes.** All interactive elements use `brand-*`.
+
+The sidebar (`Layout.tsx`) is the one exception: its own surface reads `--zr-sidebar`, which is now
+a solid accent-toned colour in **both** themes (not a light/dark-toggling parchment/ink pair), so
+its nav links/labels/borders use fixed light-on-dark utilities (`text-white/70`, `hover:bg-white/10`,
+`border-white/10`, active state `bg-white/15 text-white`) instead of `brand-*`/`dark:` pairs.
 
 ### Dark mode (Menu Studio redesign)
 
