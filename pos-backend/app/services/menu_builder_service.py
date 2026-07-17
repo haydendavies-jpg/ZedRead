@@ -1055,7 +1055,10 @@ async def place_menu_button(
         actor_id=actor.id, actor_email=actor.email, actor_name=actor.name, before_state=before, after_state=after,
     )
     await db.commit()
-    await db.refresh(button)
+    # No refresh needed: every field MenuButtonOut reads (tab_id/grid_col/
+    # grid_row/display_order) was already assigned above in memory and none
+    # of them are server-generated — a refresh here would just be another
+    # avoidable round trip on a call this hot (fired on every drag).
 
     resolved = await _resolve_buttons_out(db, brand_id, [button])
     return resolved[0]
@@ -1102,7 +1105,7 @@ async def reorder_menu_buttons(
             layout's other tabs) does not exist.
     """
     await _get_layout_or_404(db, brand_id, layout_id)
-    await _get_tab_or_404(db, layout_id, tab_id)
+    tab = await _get_tab_or_404(db, layout_id, tab_id)
 
     layout_tabs_result = await db.execute(select(MenuTab.id).where(MenuTab.layout_id == layout_id))
     layout_tab_ids = [row[0] for row in layout_tabs_result.all()]
@@ -1129,8 +1132,11 @@ async def reorder_menu_buttons(
     # Resolve only this tab's own buttons rather than reloading the whole
     # layout (_load_tabs_with_buttons) — this endpoint is called on every
     # drag-reorder, so scoping the reload to one tab matters for latency.
-    tab = await _get_tab_or_404(db, layout_id, tab_id)
-    tab_buttons = await _load_buttons_for_tabs(db, [tab_id])
+    # buttons_by_id already holds every layout button (mutated + committed
+    # above, so the ORM objects reflect the new tab_id/display_order) — reuse
+    # it instead of paying two more round trips (_get_tab_or_404 + a fresh
+    # _load_buttons_for_tabs select) for data already in hand.
+    tab_buttons = sorted((b for b in buttons_by_id.values() if b.tab_id == tab_id), key=lambda b: b.display_order)
     resolved_buttons = await _resolve_buttons_out(db, brand_id, tab_buttons)
     return MenuTabOut(
         id=tab.id,

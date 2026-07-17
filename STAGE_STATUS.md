@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-16 (Menu Studio — feedback round 3)
+Last updated: 2026-07-17 (Menu Studio — feedback round 3 follow-up: swap-onto-tile + place/reorder latency)
 
 ---
 
@@ -875,6 +875,16 @@ Six reported issues fixed in one pass:
   extended `test_menu_layout_editor_routes.py` (`/place` grid-bounds validation, cross-tab move,
   audit row, broadened response shapes). Full backend suite (734 tests) green; portal typecheck
   (`tsc -p tsconfig.app.json --noEmit`, `tsc -b --noEmit`) clean.
+
+---
+
+### Menu Studio — feedback round 3 follow-up ✅
+
+Two issues reported after the round-3 merge, on the same POS Layout grid editor:
+
+- [x] **Dropping a button onto an occupied tile still only "slotted between" buttons, never onto the tile itself.** Root cause: `handlePointerDownTile`'s hover detection treated *any* position over a non-folder tile as an insertion target (`!isFolderTile || relX < 0.25 || relX > 0.75` was always true for a product tile, since `!isFolderTile` alone satisfies it) — there was no code path that ever resolved to "drop directly onto this tile," only "insert beside it." Fixed by scoping insertion to the tile's outer 25% edges for *every* tile kind, and giving the center 50% of a non-folder tile a new `'button'` drop-target kind: dropping there now swaps the dragged button and the tile's occupant into each other's exact grid cells via two `PATCH .../place` calls (`swapOntoButton()`, `computeCellForButton()` — the latter reuses the same running width×height offset already used to compute empty "+" slot coordinates when a button has no explicit `grid_col`/`grid_row` yet). Both gestures — slot-between (edges) and drop-onto/swap (center) — are now reachable on the same tile.
+- [x] **Still-slow moves.** `reorder_menu_buttons()` and `place_menu_button()` — both fired on every single drag — carried avoidable extra round trips: `reorder_menu_buttons` re-fetched the destination tab and re-selected its buttons from the database *after* already committing the very same (in-memory, now-committed) rows moments earlier, instead of just reusing them; `place_menu_button` called `db.refresh(button)` even though every field `MenuButtonOut` reads was already assigned in Python before the commit and none of them are server-generated. Removed both redundant round trips — under this project's already-documented RTT-bound deployment (Railway US-West / Supabase Seoul, not yet co-located per the earlier "request latency optimization" round's deployment follow-up), each avoided round trip is a full network hop, so this directly compounds with that known, still-outstanding regional-latency gap rather than being a separate bug.
+- [x] Tests: full backend suite (746 tests) green; portal typecheck (`tsc -p tsconfig.app.json --noEmit`) clean. Not covered: no browser-driven verification of the drag gestures was performed this session.
 
 ---
 
