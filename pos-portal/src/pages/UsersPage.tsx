@@ -8,6 +8,12 @@ import { EntityIdChip } from '../components/EntityIdChip'
 import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
 import { apiErrorMessage } from '../utils/apiError'
+import { isSuperAdmin, useAuth } from '../context/AuthContext'
+
+// Temporary: admin-set password on the edit form is being trialled with a
+// single SuperAdmin before it's opened up more broadly — mirrors the
+// backend's _PASSWORD_SET_ALLOWED_EMAIL gate in routes/users.py.
+const PASSWORD_SET_ALLOWED_EMAIL = 'hayden_davies@live.com.au'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -109,6 +115,8 @@ const BACKEND_ROLES = [
 
 export function UsersPage() {
   const qc = useQueryClient()
+  const { user: currentUser } = useAuth()
+  const canSetPassword = isSuperAdmin(currentUser) && currentUser.email === PASSWORD_SET_ALLOWED_EMAIL
 
   const { data: brands = [] } = useQuery({ queryKey: ['brands'], queryFn: fetchBrands })
   const { data: sites = [] } = useQuery({ queryKey: ['sites'], queryFn: fetchSites })
@@ -160,6 +168,7 @@ export function UsersPage() {
   const [editFirstName, setEditFirstName] = useState('')
   const [editLastName, setEditLastName] = useState('')
   const [editEmail, setEditEmail] = useState('')
+  const [editPassword, setEditPassword] = useState('')
   const [editError, setEditError] = useState<string | null>(null)
 
   // PIN section
@@ -204,11 +213,12 @@ export function UsersPage() {
   })
 
   const editMutation = useMutation({
-    mutationFn: ({ id, firstName, lastName, email }: { id: string; firstName: string; lastName: string; email: string }) =>
-      api.patch(`/users/${id}`, { first_name: firstName, last_name: lastName, email }),
+    mutationFn: ({ id, firstName, lastName, email, password }: { id: string; firstName: string; lastName: string; email: string; password?: string }) =>
+      api.patch(`/users/${id}`, { first_name: firstName, last_name: lastName, email, ...(password ? { password } : {}) }),
     onSuccess: () => {
       invalidateUsers()
       setEditError(null)
+      setEditPassword('')
     },
     onError: (e: unknown) => {
       invalidateUsers()
@@ -286,6 +296,7 @@ export function UsersPage() {
     setEditFirstName(user.first_name ?? user.name.split(' ')[0] ?? '')
     setEditLastName(user.last_name ?? user.name.split(' ').slice(1).join(' '))
     setEditEmail(user.email)
+    setEditPassword('')
     setEditError(null)
     setPinValue(''); setPinError(null); setPinSuccess(false)
     setAccessSearch('')
@@ -305,7 +316,17 @@ export function UsersPage() {
     e.preventDefault()
     if (!editUser) return
     setEditError(null)
-    editMutation.mutate({ id: editUser.id, firstName: editFirstName, lastName: editLastName, email: editEmail })
+    if (canSetPassword && editPassword && editPassword.length < 8) {
+      setEditError('Password must be at least 8 characters.')
+      return
+    }
+    editMutation.mutate({
+      id: editUser.id,
+      firstName: editFirstName,
+      lastName: editLastName,
+      email: editEmail,
+      ...(canSetPassword && editPassword ? { password: editPassword } : {}),
+    })
   }
 
   const handleSetPin = (e: React.FormEvent) => {
@@ -616,6 +637,16 @@ export function UsersPage() {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
                   </div>
                 </div>
+                {canSetPassword && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Set password</label>
+                    <input type="password" autoComplete="new-password" value={editPassword}
+                      onChange={(e) => setEditPassword(e.target.value)}
+                      placeholder="Leave blank to keep the current password"
+                      className="w-full sm:w-1/3 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">At least 8 characters. Only visible to you while this is being trialled.</p>
+                  </div>
+                )}
                 {editError && <p className="text-sm text-red-600">{editError}</p>}
                 <div className="flex justify-end">
                   <button type="submit" disabled={editMutation.isPending}

@@ -17,12 +17,30 @@ from sqlalchemy import select
 # Master-user credentials required on POST /sites/ since Change 1
 _MASTER_CREDS = {"master_email": "owner@userstest.example", "master_password": "TestPass123!"}
 
-from app.constants.audit_actions import USER_CREATED
+from app.constants.audit_actions import USER_CREATED, USER_PASSWORD_ADMIN_SET
 from app.models.audit_log import AuditLog
+from app.models.superadmin import SuperAdmin
 from app.models.user import User
-from app.utils.security import verify_password
+from app.utils.security import create_access_token, hash_password, verify_password
 
 pytestmark = pytest.mark.asyncio
+
+
+async def _headers_for_email(db, email: str) -> dict[str, str]:
+    """Create+persist a SuperAdmin with the given email and return its auth header dict."""
+    admin = SuperAdmin(
+        id=uuid.uuid4(),
+        email=email,
+        password_hash=hash_password("TestPassword123!"),
+        name="Gated Admin",
+        role="admin",
+        is_active=True,
+    )
+    db.add(admin)
+    await db.commit()
+    await db.refresh(admin)
+    token = create_access_token(str(admin.id), admin.role)
+    return {"Authorization": f"Bearer {token}"}
 
 
 # ── Happy path ────────────────────────────────────────────────────────────────
@@ -248,3 +266,82 @@ async def test_email_check_no_token_returns_403(client):
     """GET /users/email-check without a token returns 403."""
     response = await client.get("/users/email-check", params={"email": "x@y.example"})
     assert response.status_code == 403
+
+
+# ── Update user: admin-set password (temporary single-admin gate) ──────────────
+
+
+async def test_update_user_password_allowed_admin_writes_audit(client, db, test_user):
+    """The gated SuperAdmin can set a user's password; it's hashed and audited, never echoed back."""
+    headers = await _headers_for_email(db, "hayden_davies@live.com.au")
+
+    response = await client.patch(
+        f"/users/{test_user.id}",
+        json={"password": "NewSecretPass123!"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert "password" not in response.json()
+
+    row = (await db.execute(select(User).where(User.id == test_user.id))).scalar_one()
+    assert verify_password("NewSecretPass123!", row.password_hash)
+
+    audit = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_user.id),
+            AuditLog.action == USER_PASSWORD_ADMIN_SET,
+        )
+    )
+    assert audit.scalar_one() is not None  # raises if 0 or 2+ rows
+
+
+async def test_update_user_password_other_admin_returns_403(client, db, test_user, portal_auth_headers):
+    """Any SuperAdmin other than the gated one is rejected with 403, and the password is unchanged."""
+    original_hash = test_user.password_hash
+
+    response = await client.patch(
+        f"/users/{test_user.id}",
+        json={"password": "NewSecretPass123!"},
+        headers=portal_auth_headers,
+    )
+
+    assert response.status_code == 403
+
+    row = (await db.execute(select(User).where(User.id == test_user.id))).scalar_one()
+    assert row.password_hash == original_hash
+
+
+async def test_update_user_password_too_short_returns_422(client, db):
+    """A password under 8 characters is rejected before the gate check runs."""
+    headers = await _headers_for_email(db, "hayden_davies@live.com.au")
+
+    response = await client.patch(
+        f"/users/{uuid.uuid4()}",
+        json={"password": "short"},
+        headers=headers,
+    )
+    assert response.status_code == 422
+
+
+async def test_update_user_password_no_email_returns_409(client, db, test_brand):
+    """Setting a password on a User with no email yet is rejected — it would be unusable."""
+    user = User(
+        id=uuid.uuid4(),
+        group_id=test_brand.group_id,
+        brand_id=test_brand.id,
+        name="No Email User",
+        email=None,
+        is_active=True,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    headers = await _headers_for_email(db, "hayden_davies@live.com.au")
+    response = await client.patch(
+        f"/users/{user.id}",
+        json={"password": "NewSecretPass123!"},
+        headers=headers,
+    )
+    assert response.status_code == 409

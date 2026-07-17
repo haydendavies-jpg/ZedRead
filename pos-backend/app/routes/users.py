@@ -5,7 +5,7 @@ import uuid
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +13,7 @@ from app.constants.audit_actions import (
     USER_BACKEND_ROLE_UPDATED,
     USER_CREATED,
     USER_DEACTIVATED,
+    USER_PASSWORD_ADMIN_SET,
     USER_PIN_ADMIN_SET,
     USER_UPDATED,
 )
@@ -35,6 +36,10 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 # Valid backend role values — all carry full permissions for now
 _BACKEND_ROLES = {"admin", "users", "reporting"}
+
+# Temporary: admin-set password on edit is being trialled with a single SuperAdmin
+# before it's opened up to the rest of the admin/reseller_staff roles.
+_PASSWORD_SET_ALLOWED_EMAIL = "hayden_davies@live.com.au"
 
 
 class SiteGrantSummary(BaseModel):
@@ -121,12 +126,18 @@ class EmailCheckOut(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    """Request body for editing a POS user — all fields optional."""
+    """
+    Request body for editing a POS user — all fields optional.
+
+    password is write-only (never echoed back on UserOut) and, for now, may
+    only be supplied by a single SuperAdmin — see _PASSWORD_SET_ALLOWED_EMAIL.
+    """
 
     first_name: str | None = None
     last_name: str | None = None
     email: EmailStr | None = None
     backend_role: str | None = None  # Use sentinel to distinguish "not supplied" from "clear"
+    password: str | None = Field(default=None, min_length=8)
 
     model_config = {"from_attributes": True}
 
@@ -712,7 +723,7 @@ async def update_user(
     db: AsyncSession = Depends(get_db),
     actor=Depends(get_current_superadmin),
 ):
-    """Edit a POS user's name, email, and/or backend_role. Requires portal JWT."""
+    """Edit a POS user's name, email, backend_role, and/or password. Requires portal JWT."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -739,6 +750,32 @@ async def update_user(
         if dup.scalar_one_or_none():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
         user.email = body.email
+
+    if body.password is not None:
+        # Temporary rollout gate: only one SuperAdmin may admin-set a user's
+        # password while this capability is being trialled.
+        if actor.email != _PASSWORD_SET_ALLOWED_EMAIL:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions",
+            )
+        if user.email is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User must have an email before a password can be set",
+            )
+        user.password_hash = hash_password(body.password)
+        # Never write the raw or hashed password into the audit log.
+        await log_action(
+            db=db,
+            actor_id=actor.id,
+            actor_email=actor.email,
+            actor_name=actor.name,
+            action=USER_PASSWORD_ADMIN_SET,
+            entity_type="user",
+            entity_id=str(user.id),
+            after_state={"set_by_admin": True},
+        )
 
     # backend_role uses a special sentinel: the field is present in the model
     # but we only update when the key was explicitly provided in the request body
