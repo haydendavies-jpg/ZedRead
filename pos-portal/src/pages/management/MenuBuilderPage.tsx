@@ -524,10 +524,18 @@ function ActiveHoursModal({
 // ── Grid editor ──────────────────────────────────────────────────────────────
 
 // A drag can end over a rail tab / folder tile ('tab' — move the selection
-// into that tab, appended at the end) or over an empty dashed "+" grid cell
+// into that tab, appended at the end), over an empty dashed "+" grid cell
 // ('cell' — place the single dragged button at that exact col/row via the
-// /place endpoint; see placeSelectionAtCell for the multi-select fallback).
-type DropTarget = { kind: 'tab'; tabId: string } | { kind: 'cell'; tabId: string; gridCol: number; gridRow: number }
+// /place endpoint; see placeSelectionAtCell for the multi-select fallback),
+// or over the CENTER of an occupied, non-folder tile ('button' — swap the
+// dragged button directly into that tile's slot; see swapOntoButton). The
+// tile's outer 25% edges always mean "insert beside it" regardless of kind —
+// only the center 50% of a product tile is a 'button' target, so both
+// gestures (slot-between vs. drop-onto) are reachable on the same tile.
+type DropTarget =
+  | { kind: 'tab'; tabId: string }
+  | { kind: 'cell'; tabId: string; gridCol: number; gridRow: number }
+  | { kind: 'button'; buttonId: string; tabId: string }
 
 function parseDropAttr(attr: string | null): DropTarget | null {
   if (!attr) return null
@@ -538,6 +546,22 @@ function parseDropAttr(attr: string | null): DropTarget | null {
     return { kind: 'cell', tabId, gridCol: Number(col), gridRow: Number(row) }
   }
   return null
+}
+
+// A button's effective grid cell: its explicit grid_col/grid_row when set,
+// else the same running width×height offset the empty-"+"-slot padding uses
+// (see the render loop below) — accurate whenever tiles tessellate cleanly,
+// same documented caveat as that computation.
+function computeCellForButton(buttons: MenuButton[], buttonId: string): { col: number; row: number } {
+  let offset = 0
+  for (const b of buttons) {
+    if (b.id === buttonId) {
+      if (b.grid_col !== null && b.grid_row !== null) return { col: b.grid_col, row: b.grid_row }
+      return { col: offset % 6, row: Math.floor(offset / 6) }
+    }
+    offset += b.width * b.height
+  }
+  return { col: 0, row: 0 }
 }
 
 function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: string; onBack: () => void }) {
@@ -930,18 +954,21 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
         let target = parseDropAttr(dropEl?.getAttribute('data-drop') ?? null)
         let insertion: number | null = null
         if (tileEl) {
-          // Over a grid tile: the outer 25% edges mean "insert beside it";
-          // a folder tile's middle 50% still means "drop into the folder".
-          // A non-folder tile is an insertion target across its whole width,
-          // so a product can be repositioned next to a folder without
-          // falling into it (the reported swap-into-group problem).
+          // Over a grid tile: the outer 25% edges always mean "insert beside
+          // it" (reorder), regardless of tile kind. The center 50% means
+          // "drop into the folder" for a folder tile, or "swap directly onto
+          // this slot" for a product tile — both a slot-between and a
+          // drop-onto gesture are reachable on the same tile this way.
           const idx = Number(tileEl.getAttribute('data-tile-idx'))
           const rect = tileEl.getBoundingClientRect()
           const relX = (ev.clientX - rect.left) / rect.width
           const isFolderTile = tileEl.hasAttribute('data-drop')
-          if (!isFolderTile || relX < 0.25 || relX > 0.75) {
+          if (relX < 0.25 || relX > 0.75) {
             insertion = relX < 0.5 ? idx : idx + 1
             target = null
+          } else if (!isFolderTile) {
+            const hoveredButtonId = tileEl.getAttribute('data-button-id')
+            target = hoveredButtonId && currentTab ? { kind: 'button', buttonId: hoveredButtonId, tabId: currentTab.id } : null
           }
         }
         setDragPos({ x: ev.clientX, y: ev.clientY })
@@ -970,6 +997,7 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
         setDropIndex(null)
         if (insertion !== null) reorderSelectionWithinTab(insertion, selectedRef.current)
         else if (target?.kind === 'cell') placeSelectionAtCell(target, selectedRef.current)
+        else if (target?.kind === 'button') swapOntoButton(target.buttonId, target.tabId, selectedRef.current)
         else if (target?.kind === 'tab') moveSelectionToTabWithIds(target.tabId, selectedRef.current)
       }
     }
@@ -1024,6 +1052,32 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
     } else {
       moveSelectionToTabWithIds(target.tabId, ids)
     }
+  }
+
+  // Drop directly onto an occupied, non-folder tile's center — swaps the
+  // dragged button into that tile's exact grid_col/grid_row via /place, and
+  // moves the tile's previous occupant into the dragged button's prior slot,
+  // so the two genuinely trade places instead of silently overlapping. This
+  // is the "drop onto a tile" gesture the edge-zone insertion (reorder) bars
+  // don't cover — both are now reachable on the same tile. Only makes sense
+  // for a single dragged button; a multi-selection falls back to the same
+  // append-into-tab behavior as placeSelectionAtCell/moveSelectionToTab.
+  const swapOntoButton = (targetButtonId: string, tabId: string, ids: Set<string>) => {
+    if (!currentTab) return
+    if (ids.size !== 1) {
+      moveSelectionToTabWithIds(tabId, ids)
+      return
+    }
+    const draggedId = [...ids][0]
+    if (draggedId === targetButtonId) {
+      setSelected(new Set())
+      return
+    }
+    const draggedCell = computeCellForButton(currentTab.buttons, draggedId)
+    const targetCell = computeCellForButton(currentTab.buttons, targetButtonId)
+    placeButton.mutate({ buttonId: draggedId, tabId, gridCol: targetCell.col, gridRow: targetCell.row })
+    placeButton.mutate({ buttonId: targetButtonId, tabId, gridCol: draggedCell.col, gridRow: draggedCell.row })
+    setSelected(new Set())
   }
 
   const handleResizeStart = (e: React.PointerEvent, button: MenuButton) => {
@@ -1201,12 +1255,15 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
                     <div
                       key={button.id}
                       data-tile-idx={tileIdx}
+                      data-button-id={button.id}
                       data-drop={isFolder && button.child_tab_id ? `tab:${button.child_tab_id}` : undefined}
                       onPointerDown={(e) => handlePointerDownTile(e, button.id)}
                       onClick={(e) => e.stopPropagation()}
                       className={`relative rounded-xl px-3 py-2.5 flex flex-col justify-between cursor-pointer select-none shadow-sm touch-none ${
                         isSel ? 'ring-[3px] ring-brand-600' : ''
-                      } ${isFolder && dragOverTarget?.kind === 'tab' && dragOverTarget.tabId === button.child_tab_id ? 'ring-2 ring-brand-400' : ''}`}
+                      } ${isFolder && dragOverTarget?.kind === 'tab' && dragOverTarget.tabId === button.child_tab_id ? 'ring-2 ring-brand-400' : ''} ${
+                        !isFolder && dragOverTarget?.kind === 'button' && dragOverTarget.buttonId === button.id ? 'ring-2 ring-brand-400' : ''
+                      }`}
                       style={{
                         // grid_col/grid_row (drag-to-any-cell placement) pin the
                         // tile to an explicit cell; null falls back to dense
