@@ -43,6 +43,7 @@ async def test_login_valid_credentials_returns_token_pair(client, test_superadmi
     body = response.json()
     assert "access_token" in body
     assert "refresh_token" in body
+    assert body["token_type"] == "bearer"
 
 
 async def test_login_email_case_insensitive(client, test_superadmin):
@@ -53,7 +54,6 @@ async def test_login_email_case_insensitive(client, test_superadmin):
     )
 
     assert response.status_code == 200
-    assert body["token_type"] == "bearer"
 
 
 async def test_login_success_writes_audit_log(client, db, test_superadmin):
