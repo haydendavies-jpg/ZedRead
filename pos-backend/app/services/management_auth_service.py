@@ -15,7 +15,7 @@ import uuid
 
 import structlog
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
@@ -51,6 +51,7 @@ from app.utils.security import (
     create_mgmt_refresh_token,
     create_refresh_token,
     decode_token,
+    normalize_email,
     verify_password_async,
 )
 
@@ -62,14 +63,14 @@ _LOGIN_WINDOW_SECONDS = int(os.getenv("LOGIN_RATE_WINDOW_SECONDS", "300"))
 
 
 async def _load_superadmin(db: AsyncSession, email: str) -> SuperAdmin | None:
-    """Fetch a superadmin by email."""
-    result = await db.execute(select(SuperAdmin).where(SuperAdmin.email == email))
+    """Fetch a superadmin by email, case-insensitively."""
+    result = await db.execute(select(SuperAdmin).where(func.lower(SuperAdmin.email) == normalize_email(email)))
     return result.scalar_one_or_none()
 
 
 async def _load_users(db: AsyncSession, email: str) -> list[User]:
-    """Fetch all users with the given email (multiple allowed — same person can manage several entities)."""
-    result = await db.execute(select(User).where(User.email == email))
+    """Fetch all users with the given email, case-insensitively (multiple allowed — same person can manage several entities)."""
+    result = await db.execute(select(User).where(func.lower(User.email) == normalize_email(email)))
     return list(result.scalars().all())
 
 

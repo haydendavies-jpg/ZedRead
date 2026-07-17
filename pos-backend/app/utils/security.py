@@ -35,6 +35,24 @@ _ACCESS_TOKEN_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
 _REFRESH_TOKEN_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
 
+def normalize_email(email: str) -> str:
+    """
+    Normalize an email address for storage and comparison.
+
+    Login/identity lookups must be case-insensitive — every write path calls
+    this before persisting so stored values are consistently lowercased, and
+    every lookup normalizes its input the same way. Whitespace is stripped
+    too, since a pasted email commonly carries leading/trailing spaces.
+
+    Args:
+        email: The raw email address as typed/submitted.
+
+    Returns:
+        str: The trimmed, lowercased email.
+    """
+    return email.strip().lower()
+
+
 def validate_secret_key(environment: str, secret_key: str | None = None) -> None:
     """
     Refuse to start with an insecure JWT signing key in a non-dev environment.

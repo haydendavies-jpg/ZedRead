@@ -43,6 +43,16 @@ async def test_login_valid_credentials_returns_token_pair(client, test_superadmi
     body = response.json()
     assert "access_token" in body
     assert "refresh_token" in body
+
+
+async def test_login_email_case_insensitive(client, test_superadmin):
+    """Login succeeds regardless of the casing typed for the account's email."""
+    response = await client.post(
+        "/auth/portal/login",
+        json={"email": "Admin@Test.COM", "password": "TestPassword123!"},
+    )
+
+    assert response.status_code == 200
     assert body["token_type"] == "bearer"
 
 

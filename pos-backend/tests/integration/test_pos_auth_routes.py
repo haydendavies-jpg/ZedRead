@@ -471,3 +471,23 @@ async def test_pos_login_missing_site_id_returns_422(client, test_user):
     )
 
     assert response.status_code == 422
+
+
+# ── Case-insensitive email login ────────────────────────────────────────────────
+
+
+async def test_pos_login_email_case_insensitive(
+    client, test_user, test_site, test_access_grant
+):
+    """Login succeeds regardless of the casing typed for the account's email."""
+    response = await client.post(
+        "/auth/pos/login",
+        json={
+            "email": "PosUser@TEST.com",
+            "password": "POSPassword123!",
+            "site_id": str(test_site.id),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["user_id"] == str(test_user.id)

@@ -214,6 +214,40 @@ async def list_grants(
     return list(result.scalars().all())
 
 
+async def assert_brand_readable(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    management_access: ManagementAccess | None,
+) -> None:
+    """
+    Raise HTTP 403 if brand_id is outside a management caller's scope.
+
+    Site/brand-scope callers may only read their own brand; group-scope
+    callers may read any brand in their group; portal admins (management_access
+    is None) are unrestricted. Shared by search_grantable_users() and
+    list_grantable_sites() — both are read-only lookups for the same "which
+    brand may this caller act on" question.
+
+    Args:
+        db: Active database session.
+        brand_id: The brand being read.
+        management_access: Set for management JWT callers; None for portal admins.
+
+    Raises:
+        HTTPException: 403 if brand_id is outside the caller's scope.
+    """
+    if management_access is None:
+        return
+    if management_access.scope in (GrantScope.SITE, GrantScope.BRAND):
+        if management_access.brand is None or management_access.brand.id != brand_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Brand is outside your scope")
+    elif management_access.scope == GrantScope.GROUP:
+        brand_r = await db.execute(select(Brand).where(Brand.id == brand_id))
+        brand = brand_r.scalar_one_or_none()
+        if brand is None or management_access.group is None or brand.group_id != management_access.group.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Brand is outside your scope")
+
+
 async def search_grantable_users(
     db: AsyncSession,
     brand_id: uuid.UUID,
@@ -245,21 +279,54 @@ async def search_grantable_users(
     Raises:
         HTTPException: 403 if brand_id is outside a management caller's scope.
     """
-    if management_access is not None:
-        if management_access.scope in (GrantScope.SITE, GrantScope.BRAND):
-            if management_access.brand is None or management_access.brand.id != brand_id:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Brand is outside your scope")
-        elif management_access.scope == GrantScope.GROUP:
-            brand_r = await db.execute(select(Brand).where(Brand.id == brand_id))
-            brand = brand_r.scalar_one_or_none()
-            if brand is None or management_access.group is None or brand.group_id != management_access.group.id:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Brand is outside your scope")
+    await assert_brand_readable(db, brand_id, management_access)
 
     q = select(User).where(User.brand_id == brand_id)
     if query:
         like = f"%{query}%"
         q = q.where(or_(User.name.ilike(like), User.email.ilike(like)))
     q = q.order_by(User.name).limit(limit)
+    result = await db.execute(q)
+    return list(result.scalars().all())
+
+
+async def list_grantable_sites(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    query: str,
+    limit: int,
+    management_access: ManagementAccess | None,
+    superadmin: SuperAdmin | None,
+) -> list[Site]:
+    """
+    List active sites within a brand, for the Add Access/Add User site picker.
+
+    Replaces the free-text site-UUID field the portal previously required —
+    lets the caller search by name instead of pasting an ID. Scope-checked
+    the same way as search_grantable_users(): site/brand-scope callers may
+    only list their own brand's sites; group-scope callers may list sites in
+    any brand within their group; portal admins may list any brand's sites.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand to list sites within.
+        query: Case-insensitive substring matched against site name.
+        limit: Maximum results to return.
+        management_access: Set for management JWT callers.
+        superadmin: Set for portal admin callers.
+
+    Returns:
+        list[Site]: Matching active sites, ordered by name.
+
+    Raises:
+        HTTPException: 403 if brand_id is outside a management caller's scope.
+    """
+    await assert_brand_readable(db, brand_id, management_access)
+
+    q = select(Site).where(Site.brand_id == brand_id, Site.is_active == True)  # noqa: E712
+    if query:
+        q = q.where(Site.name.ilike(f"%{query}%"))
+    q = q.order_by(Site.name).limit(limit)
     result = await db.execute(q)
     return list(result.scalars().all())
 
@@ -306,12 +373,30 @@ async def create_grant(
 
     # Master User is auto-created once per site (site_service.create_site()) and
     # is never delegated into, by any caller (ROLE_MODEL.md §2, Stage 17).
-    _assert_not_master_profile(access_profile)
+    assert_not_master_profile(access_profile)
 
     # Enforce scope authority if the caller is a management user (not portal admin)
     if management_access:
-        await _assert_create_authority(db, management_access, payload)
-        _assert_role_ceiling(management_access, access_profile)
+        await assert_create_authority(db, management_access, payload.scope, payload.site_id, payload.brand_id)
+        assert_role_ceiling(management_access, access_profile)
+
+    # Backend/portal access may be granted in the same call as the POS-side
+    # profile — validated the same way _apply_grant_update validates it on a
+    # PATCH, so a caller is never forced to create the grant first and add
+    # backend access as a separate follow-up request.
+    if payload.backend_role is not None:
+        if payload.backend_role not in _BACKEND_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"backend_role must be one of: {sorted(_BACKEND_ROLES)} or null",
+            )
+        # ROLE_MODEL.md §2 — email/password are only required once a grant
+        # gives the user backend access.
+        if target_user.email is None or target_user.password_hash is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User must have an email and password before being granted backend access",
+            )
 
     # Check for duplicate active grant
     dup_filter = [
@@ -388,6 +473,7 @@ async def create_grant(
         granted_by_id=granted_by,
         is_active=True,
         is_default=is_default,
+        backend_role=payload.backend_role,
     )
     db.add(grant)
 
@@ -404,6 +490,7 @@ async def create_grant(
             "user_id": str(payload.user_id),
             "scope": payload.scope,
             "access_profile_id": str(payload.access_profile_id),
+            "backend_role": payload.backend_role,
         },
     )
 
@@ -515,22 +602,30 @@ async def create_grant(
     return grant
 
 
-async def _assert_create_authority(
+async def assert_create_authority(
     db: AsyncSession,
     access: ManagementAccess,
-    payload: AccessGrantCreate,
+    scope: str,
+    site_id: uuid.UUID | None,
+    brand_id: uuid.UUID | None,
 ) -> None:
     """
-    Enforce that the management user has authority to create this grant.
+    Enforce that the management user has authority to create a grant at this scope/entity.
 
     Group-scope → can create site or brand-scope grants within their group.
     Brand-scope → can create site-scope grants within their brand.
     Site-scope  → cannot create any grant.
 
+    Public (not module-private) because user_service.create_managed_user() runs
+    this same check before creating a brand-new User row, so a caller outside
+    their authority never leaves an orphaned user behind.
+
     Args:
         db: Active session.
         access: The caller's management access context.
-        payload: The grant creation request.
+        scope: The grant scope being requested ('site', 'brand', or 'group').
+        site_id: The target site, when scope='site'.
+        brand_id: The target brand, when scope='brand'.
 
     Raises:
         HTTPException: 403 if the caller lacks the authority.
@@ -544,14 +639,14 @@ async def _assert_create_authority(
         )
 
     if caller_scope == GrantScope.BRAND:
-        if payload.scope != GrantScope.SITE:
+        if scope != GrantScope.SITE:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Brand-scope users can only create site-scope grants",
             )
         # Verify the site is within the caller's brand
-        if payload.site_id:
-            site_r = await db.execute(select(Site).where(Site.id == payload.site_id))
+        if site_id:
+            site_r = await db.execute(select(Site).where(Site.id == site_id))
             site = site_r.scalar_one_or_none()
             if not site or site.brand_id != access.brand.id:  # type: ignore[union-attr]
                 raise HTTPException(
@@ -560,23 +655,23 @@ async def _assert_create_authority(
                 )
 
     elif caller_scope == GrantScope.GROUP:
-        if payload.scope == GrantScope.GROUP:
+        if scope == GrantScope.GROUP:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Group-scope users cannot create group-scope grants",
             )
         group_id = access.group.id  # type: ignore[union-attr]
 
-        if payload.scope == GrantScope.BRAND and payload.brand_id:
-            brand_r = await db.execute(select(Brand).where(Brand.id == payload.brand_id))
+        if scope == GrantScope.BRAND and brand_id:
+            brand_r = await db.execute(select(Brand).where(Brand.id == brand_id))
             brand = brand_r.scalar_one_or_none()
             if not brand or brand.group_id != group_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Brand is not within your group",
                 )
-        elif payload.scope == GrantScope.SITE and payload.site_id:
-            site_r = await db.execute(select(Site).where(Site.id == payload.site_id))
+        elif scope == GrantScope.SITE and site_id:
+            site_r = await db.execute(select(Site).where(Site.id == site_id))
             site = site_r.scalar_one_or_none()
             if not site:
                 raise HTTPException(
@@ -609,9 +704,13 @@ _ROLE_RANK: dict[str, int] = {
 _UNRANKED_PROFILE_RANK = _ROLE_RANK[SystemAccessProfile.ADMIN.value]
 
 
-def _role_rank(profile_name: str) -> int:
+def role_rank(profile_name: str) -> int:
     """
     Resolve an access profile's rank in the delegation ceiling ladder.
+
+    Public because user_invite_service.create_invite() runs the same ceiling
+    comparison for POS-terminal-originated invites (a POSAccess caller has no
+    ManagementAccess object for assert_role_ceiling() to take).
 
     Args:
         profile_name: The AccessProfile.name value (system role name or a
@@ -624,13 +723,14 @@ def _role_rank(profile_name: str) -> int:
     return _ROLE_RANK.get(profile_name, _UNRANKED_PROFILE_RANK)
 
 
-def _assert_not_master_profile(profile: AccessProfile) -> None:
+def assert_not_master_profile(profile: AccessProfile) -> None:
     """
     Raise HTTP 403 if the profile being granted is the Master User tier.
 
     Master User is auto-created exactly once per site by
     site_service.create_site() and is immutable (ROLE_MODEL.md §2) — no
     caller, including a portal admin, may grant it through this service.
+    Public because user_service.create_managed_user() runs this same check.
 
     Args:
         profile: The access profile the caller is attempting to grant.
@@ -646,13 +746,14 @@ def _assert_not_master_profile(profile: AccessProfile) -> None:
         )
 
 
-def _assert_role_ceiling(access: ManagementAccess, target_profile: AccessProfile) -> None:
+def assert_role_ceiling(access: ManagementAccess, target_profile: AccessProfile) -> None:
     """
     Raise HTTP 403 if the target profile outranks the management caller's own.
 
     Implements the Stage 17 rule: "a user cannot grant a level of access
     higher than themself." The caller's rank comes from the access profile
-    tied to the grant they authenticated with (access.access_profile).
+    tied to the grant they authenticated with (access.access_profile). Public
+    because user_service.create_managed_user() runs this same check.
 
     Args:
         access: The management caller's resolved access context.
@@ -661,8 +762,8 @@ def _assert_role_ceiling(access: ManagementAccess, target_profile: AccessProfile
     Raises:
         HTTPException: 403 if target_profile outranks the caller's own profile.
     """
-    caller_rank = _role_rank(access.access_profile.name)
-    target_rank = _role_rank(target_profile.name)
+    caller_rank = role_rank(access.access_profile.name)
+    target_rank = role_rank(target_profile.name)
     if target_rank > caller_rank:
         log.warning(
             "access_grant.role_ceiling_rejected",
@@ -777,9 +878,9 @@ async def _apply_grant_update(
         if not new_profile:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Access profile not found or inactive")
 
-        _assert_not_master_profile(new_profile)
+        assert_not_master_profile(new_profile)
         if management_access:
-            _assert_role_ceiling(management_access, new_profile)
+            assert_role_ceiling(management_access, new_profile)
 
         old_profile_id = grant.access_profile_id
         grant.access_profile_id = payload.access_profile_id

@@ -49,6 +49,9 @@ class AccessGrantCreate(BaseModel):
     brand_id: uuid.UUID | None = None
     group_id: uuid.UUID | None = None
     access_profile_id: uuid.UUID
+    # Optional — lets a caller grant backend/portal access in the same request
+    # that creates the POS-side grant, instead of requiring a follow-up PATCH.
+    backend_role: str | None = None
 
     @model_validator(mode="after")
     def check_scope_fk_consistency(self) -> "AccessGrantCreate":
@@ -106,6 +109,15 @@ class BulkGrantError(BaseModel):
 
     grant_id: uuid.UUID
     detail: str
+
+
+class SiteOption(BaseModel):
+    """A site matched by the Add Access/Add User site picker."""
+
+    id: uuid.UUID
+    name: str
+
+    model_config = {"from_attributes": True}
 
 
 class UserSearchResult(BaseModel):

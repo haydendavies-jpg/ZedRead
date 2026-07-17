@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import structlog
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
@@ -35,6 +35,7 @@ from app.utils.rate_limit import check_rate_limit
 from app.utils.security import (
     create_pos_access_token,
     hash_password,
+    normalize_email,
     verify_password_async,
 )
 
@@ -50,7 +51,7 @@ _PIN_WINDOW_SECONDS = int(os.getenv("PIN_RATE_WINDOW_SECONDS", "300"))
 
 async def _get_user_by_email(db: AsyncSession, email: str) -> User | None:
     """
-    Fetch a POS user by email address.
+    Fetch a POS user by email address, case-insensitively.
 
     Args:
         db: Active database session.
@@ -59,7 +60,7 @@ async def _get_user_by_email(db: AsyncSession, email: str) -> User | None:
     Returns:
         User | None: The matching user, or None if not found.
     """
-    result = await db.execute(select(User).where(User.email == email))
+    result = await db.execute(select(User).where(func.lower(User.email) == normalize_email(email)))
     return result.scalar_one_or_none()
 
 

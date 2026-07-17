@@ -24,6 +24,7 @@ from app.constants.audit_actions import (
     ACCESS_GRANT_CREATED,
     ACCESS_GRANT_REVOKED,
     ACCESS_PROFILE_PORTAL_UPDATED,
+    USER_CREATED,
 )
 from app.constants.statuses import SystemAccessProfile
 from app.models.access_profile import AccessProfile
@@ -959,3 +960,291 @@ async def test_user_search_portal_jwt_full_authority(
     )
     assert response.status_code == 200
     assert any(u["id"] == str(target_user.id) for u in response.json())
+
+
+# ── Create grant with backend_role in one request ───────────────────────────────
+# Previously backend access could only be added via a follow-up PATCH once the
+# grant already existed — the portal's "POS Access" and "Backend Access"
+# selects were sequential, not a single action.
+
+
+async def test_create_grant_with_backend_role_in_one_request(
+    client, db, test_superadmin, test_site, test_manager_profile, target_user
+):
+    """A grant can be created with backend_role set in the same request."""
+    headers = _portal_headers(test_superadmin)
+    payload = {
+        "user_id": str(target_user.id),
+        "scope": "site",
+        "site_id": str(test_site.id),
+        "access_profile_id": str(test_manager_profile.id),
+        "backend_role": "admin",
+    }
+    response = await client.post("/access-grants", headers=headers, json=payload)
+    assert response.status_code == 201
+    assert response.json()["backend_role"] == "admin"
+
+    # A site-scope grant auto-cascades brand + group grants too — filter to the
+    # one this test created.
+    result = await db.execute(
+        select(UserAccessGrant).where(
+            UserAccessGrant.user_id == target_user.id, UserAccessGrant.scope == "site"
+        )
+    )
+    grant = result.scalar_one()
+    assert grant.backend_role == "admin"
+
+
+async def test_create_grant_backend_role_requires_email_and_password(
+    client, db, test_superadmin, test_brand, test_site, test_manager_profile
+):
+    """Setting backend_role at creation still requires the user have email+password (409)."""
+    passwordless_user = User(
+        id=uuid.uuid4(),
+        group_id=test_brand.group_id,
+        brand_id=test_brand.id,
+        name="No Email User",
+        first_name="No",
+        last_name="Email",
+        is_active=True,
+    )
+    db.add(passwordless_user)
+    await db.commit()
+
+    headers = _portal_headers(test_superadmin)
+    payload = {
+        "user_id": str(passwordless_user.id),
+        "scope": "site",
+        "site_id": str(test_site.id),
+        "access_profile_id": str(test_manager_profile.id),
+        "backend_role": "admin",
+    }
+    response = await client.post("/access-grants", headers=headers, json=payload)
+    assert response.status_code == 409
+
+
+async def test_create_grant_invalid_backend_role_returns_422(
+    client, db, test_superadmin, test_site, test_manager_profile, target_user
+):
+    """An unrecognised backend_role value is rejected."""
+    headers = _portal_headers(test_superadmin)
+    payload = {
+        "user_id": str(target_user.id),
+        "scope": "site",
+        "site_id": str(test_site.id),
+        "access_profile_id": str(test_manager_profile.id),
+        "backend_role": "superuser",
+    }
+    response = await client.post("/access-grants", headers=headers, json=payload)
+    assert response.status_code == 422
+
+
+# ── Grantable sites (searchable site picker, replaces the free-text ID field) ──
+
+
+async def test_grantable_sites_brand_scope_returns_own_sites(
+    client, test_user, test_brand, test_brand_grant, test_site
+):
+    """A brand-scope caller sees sites within their own brand."""
+    headers = _mgmt_headers(test_user, test_brand_grant)
+    response = await client.get(
+        "/access-grants/grantable-sites", headers=headers, params={"brand_id": str(test_brand.id)}
+    )
+    assert response.status_code == 200
+    ids = [s["id"] for s in response.json()]
+    assert str(test_site.id) in ids
+
+
+async def test_grantable_sites_search_filters_by_name(
+    client, test_user, test_brand, test_brand_grant, test_site
+):
+    """The q param filters sites by a case-insensitive name substring."""
+    headers = _mgmt_headers(test_user, test_brand_grant)
+    response = await client.get(
+        "/access-grants/grantable-sites",
+        headers=headers,
+        params={"brand_id": str(test_brand.id), "q": "nonexistent-site-name"},
+    )
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_grantable_sites_rejects_other_brand(
+    client, db, test_user, test_brand_grant, test_group
+):
+    """A brand-scope caller cannot list another brand's sites."""
+    other_brand = Brand(
+        id=uuid.uuid4(),
+        group_id=test_group.id,
+        name="Other Brand",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+    )
+    db.add(other_brand)
+    await db.commit()
+
+    headers = _mgmt_headers(test_user, test_brand_grant)
+    response = await client.get(
+        "/access-grants/grantable-sites", headers=headers, params={"brand_id": str(other_brand.id)}
+    )
+    assert response.status_code == 403
+
+
+async def test_grantable_sites_pos_jwt_forbidden(client, pos_auth_headers, test_brand):
+    """A POS terminal JWT cannot list grantable sites."""
+    response = await client.get(
+        "/access-grants/grantable-sites",
+        headers=pos_auth_headers,
+        params={"brand_id": str(test_brand.id)},
+    )
+    assert response.status_code == 403
+
+
+# ── Create user with grant (Users page "Add User") ──────────────────────────────
+# Until this route existed, a management caller could only grant additional
+# access to an *existing* user found via search — there was no way to
+# onboard a brand-new colleague without a SuperAdmin using POST /users.
+
+
+def _create_user_payload(site_id: uuid.UUID, profile_id: uuid.UUID, **overrides: object) -> dict:
+    """Build a minimal valid ManagedUserCreate dict for a site-scope grant."""
+    payload = {
+        "first_name": "New",
+        "last_name": "Colleague",
+        "email": "newcolleague@test.com",
+        "password": "NewColleague123!",
+        "scope": "site",
+        "site_id": str(site_id),
+        "access_profile_id": str(profile_id),
+    }
+    payload.update(overrides)
+    return payload
+
+
+async def test_create_user_with_grant_brand_scope_creates_site_scoped_user(
+    client, db, test_user, test_brand_grant, test_site, staff_profile
+):
+    """A brand-scope Manager can onboard a new Staff-tier user at one of their sites."""
+    headers = _mgmt_headers(test_user, test_brand_grant)
+    response = await client.post(
+        "/access-grants/create-user",
+        headers=headers,
+        json=_create_user_payload(test_site.id, staff_profile.id),
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["user_email"] == "newcolleague@test.com"
+    assert body["scope"] == "site"
+    assert body["site_id"] == str(test_site.id)
+    assert body["access_profile_id"] == str(staff_profile.id)
+
+    user_r = await db.execute(select(User).where(User.email == "newcolleague@test.com"))
+    created_user = user_r.scalar_one()
+    assert created_user.first_name == "New"
+    assert created_user.brand_id == test_site.brand_id
+
+    # A site-scope grant auto-cascades a brand grant too — filter to the site one.
+    grant_r = await db.execute(
+        select(UserAccessGrant).where(
+            UserAccessGrant.user_id == created_user.id, UserAccessGrant.scope == "site"
+        )
+    )
+    assert grant_r.scalar_one().access_profile_id == staff_profile.id
+
+
+async def test_create_user_with_grant_role_ceiling_rejects_higher_profile(
+    client, db, test_user, test_brand_grant, test_site, admin_profile
+):
+    """A Manager-ranked caller cannot onboard a new user at the higher Admin tier.
+
+    Also asserts no orphaned User row is left behind — the authority check
+    runs before any write.
+    """
+    headers = _mgmt_headers(test_user, test_brand_grant)
+    response = await client.post(
+        "/access-grants/create-user",
+        headers=headers,
+        json=_create_user_payload(test_site.id, admin_profile.id),
+    )
+    assert response.status_code == 403
+
+    user_r = await db.execute(select(User).where(User.email == "newcolleague@test.com"))
+    assert user_r.scalar_one_or_none() is None
+
+
+async def test_create_user_with_grant_site_scope_forbidden(
+    client, test_user, test_portal_grant, test_site, test_manager_profile
+):
+    """A site-scope caller cannot create a new user (site-scope cannot create any grant)."""
+    headers = _mgmt_headers(test_user, test_portal_grant)
+    response = await client.post(
+        "/access-grants/create-user",
+        headers=headers,
+        json=_create_user_payload(test_site.id, test_manager_profile.id),
+    )
+    assert response.status_code == 403
+
+
+async def test_create_user_with_grant_pos_jwt_forbidden(
+    client, pos_auth_headers, test_site, test_access_profile
+):
+    """A POS terminal JWT cannot create a new user."""
+    response = await client.post(
+        "/access-grants/create-user",
+        headers=pos_auth_headers,
+        json=_create_user_payload(test_site.id, test_access_profile.id),
+    )
+    assert response.status_code == 403
+
+
+async def test_create_user_with_grant_writes_audit_logs(
+    client, db, test_superadmin, test_site, test_manager_profile
+):
+    """Creating a user with an initial grant writes both a USER_CREATED and an ACCESS_GRANT_CREATED row."""
+    headers = _portal_headers(test_superadmin)
+    response = await client.post(
+        "/access-grants/create-user",
+        headers=headers,
+        json=_create_user_payload(test_site.id, test_manager_profile.id),
+    )
+    assert response.status_code == 201
+    body = response.json()
+
+    user_audit_r = await db.execute(
+        select(AuditLog).where(AuditLog.action == USER_CREATED, AuditLog.entity_id == body["user_id"])
+    )
+    assert user_audit_r.scalar_one_or_none() is not None
+
+    grant_audit_r = await db.execute(
+        select(AuditLog).where(AuditLog.action == ACCESS_GRANT_CREATED, AuditLog.entity_id == body["id"])
+    )
+    assert grant_audit_r.scalar_one_or_none() is not None
+
+
+async def test_create_user_with_grant_linked_email_rejects_new_password(
+    client, test_superadmin, test_site, test_manager_profile, target_user
+):
+    """Reusing an existing identity's email while also supplying a new password is rejected (409)."""
+    headers = _portal_headers(test_superadmin)
+    response = await client.post(
+        "/access-grants/create-user",
+        headers=headers,
+        json=_create_user_payload(
+            test_site.id, test_manager_profile.id,
+            email=target_user.email, password="SomeOtherPassword123!",
+        ),
+    )
+    assert response.status_code == 409
+
+
+async def test_create_user_with_grant_missing_names_returns_422(
+    client, test_superadmin, test_site, test_manager_profile
+):
+    """first_name/last_name are required."""
+    headers = _portal_headers(test_superadmin)
+    payload = _create_user_payload(test_site.id, test_manager_profile.id)
+    del payload["first_name"]
+    response = await client.post("/access-grants/create-user", headers=headers, json=payload)
+    assert response.status_code == 422

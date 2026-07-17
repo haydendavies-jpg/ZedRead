@@ -39,6 +39,7 @@ async def create_invite(
         brand_id=access.user.brand_id,
         payload=payload,
         actor=access.user,
+        actor_profile=access.access_profile,
     )
 
 
