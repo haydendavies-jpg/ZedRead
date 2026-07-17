@@ -10,7 +10,7 @@ import { ScopeGuard } from '../../components/ScopeGuard'
 import { Modal } from '../../components/Modal'
 import { FilterBar, type FilterConfig } from '../../components/FilterBar'
 import { apiErrorMessage } from '../../utils/apiError'
-import type { AccessGrant, AccessGrantBulkResult, UserSearchResult } from '../../types'
+import type { AccessGrant, AccessGrantBulkResult, SiteOption, UserSearchResult } from '../../types'
 
 // Mirrors app.services.access_grant_service._ROLE_RANK — used only to filter
 // which profiles this UI offers to grant. The backend enforces the real
@@ -195,6 +195,16 @@ function UsersPageInner() {
     },
   })
 
+  const [resetSent, setResetSent] = useState(false)
+  const sendReset = useMutation({
+    mutationFn: (userId: string) => api.post(`/users/${userId}/send-password-reset`),
+    onSuccess: () => {
+      setResetSent(true)
+      setTimeout(() => setResetSent(false), 4000)
+    },
+    onError: (e: unknown) => alert(apiErrorMessage(e, 'Failed to send reset email.')),
+  })
+
   // ── Bulk actions ─────────────────────────────────────────────────────────────
   const [bulkResult, setBulkResult] = useState<AccessGrantBulkResult | null>(null)
   const [bulkError, setBulkError] = useState<string | null>(null)
@@ -246,25 +256,42 @@ function UsersPageInner() {
     bulkRevoke.mutate(selectedIds)
   }
 
-  // ── Add-access form state ────────────────────────────────────────────────
+  // ── Add-user / add-access form state ─────────────────────────────────────
+  // "existing" grants additional access to a user found by search (the
+  // original flow); "new" onboards a brand-new colleague in the same step —
+  // until this was added there was no way to create a user from the
+  // management portal at all, only a SuperAdmin's separate /users route.
   const [showGrant, setShowGrant] = useState(false)
+  const [addMode, setAddMode] = useState<'existing' | 'new'>('existing')
   const [grantUserId, setGrantUserId] = useState('')
   const [grantUserQuery, setGrantUserQuery] = useState('')
   const [grantUserOpen, setGrantUserOpen] = useState(false)
+  const [newFirstName, setNewFirstName] = useState('')
+  const [newLastName, setNewLastName] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+  const [newPassword, setNewPassword] = useState('')
   const [grantScope, setGrantScope] = useState<'brand' | 'site'>(scopeOptions[0])
-  const [grantEntityId, setGrantEntityId] = useState('')
+  // Multiple sites may be selected at once — one grant per site, same user/profile/backend role.
+  const [grantSites, setGrantSites] = useState<SiteOption[]>([])
+  const [siteQuery, setSiteQuery] = useState('')
+  const [siteOpen, setSiteOpen] = useState(false)
   const [grantProfileId, setGrantProfileId] = useState('')
+  const [grantBackendRole, setGrantBackendRole] = useState('')
   const [grantError, setGrantError] = useState<string | null>(null)
+  const [grantSubmitting, setGrantSubmitting] = useState(false)
 
   const openGrant = () => {
+    setAddMode('existing')
     setGrantUserId(''); setGrantUserQuery(''); setGrantUserOpen(false)
-    setGrantEntityId(''); setGrantProfileId('')
+    setNewFirstName(''); setNewLastName(''); setNewEmail(''); setNewPassword('')
+    setGrantSites([]); setSiteQuery(''); setSiteOpen(false)
+    setGrantProfileId(''); setGrantBackendRole('')
     setGrantScope(scopeOptions[0])
     setGrantError(null)
     setShowGrant(true)
   }
 
-  // Debounce the search box so we don't fire a request on every keystroke.
+  // Debounce the search boxes so we don't fire a request on every keystroke.
   const [debouncedGrantUserQuery, setDebouncedGrantUserQuery] = useState('')
   useEffect(() => {
     const t = setTimeout(() => setDebouncedGrantUserQuery(grantUserQuery.trim()), 300)
@@ -279,7 +306,7 @@ function UsersPageInner() {
           params: { brand_id: brandId, q: debouncedGrantUserQuery, limit: 10 },
         })
         .then((r) => r.data),
-    enabled: showGrant && !!brandId && debouncedGrantUserQuery.length > 0 && !grantUserId,
+    enabled: showGrant && addMode === 'existing' && !!brandId && debouncedGrantUserQuery.length > 0 && !grantUserId,
   })
 
   const selectGrantUser = (u: UserSearchResult) => {
@@ -288,34 +315,87 @@ function UsersPageInner() {
     setGrantUserOpen(false)
   }
 
-  const createGrant = useMutation({
-    mutationFn: (body: { user_id: string; scope: string; site_id?: string; brand_id?: string; access_profile_id: string }) =>
-      api.post('/access-grants', body),
-    onSuccess: () => {
-      invalidateGrants()
-      setShowGrant(false)
-    },
-    onError: (e: unknown) => {
-      invalidateGrants()
-      setGrantError(apiErrorMessage(e, 'Failed to add access.'))
-    },
+  const [debouncedSiteQuery, setDebouncedSiteQuery] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSiteQuery(siteQuery.trim()), 300)
+    return () => clearTimeout(t)
+  }, [siteQuery])
+
+  const { data: siteResults = [], isFetching: siteSearchLoading } = useQuery<SiteOption[]>({
+    queryKey: ['grantable-sites', brandId, debouncedSiteQuery],
+    queryFn: () =>
+      api
+        .get<SiteOption[]>('/access-grants/grantable-sites', {
+          params: { brand_id: brandId, q: debouncedSiteQuery, limit: 50 },
+        })
+        .then((r) => r.data),
+    enabled: showGrant && grantScope === 'site' && !!brandId,
   })
 
-  const handleGrantSubmit = (e: React.FormEvent) => {
+  const toggleGrantSite = (site: SiteOption) => {
+    setGrantSites((prev) => (prev.some((s) => s.id === site.id) ? prev.filter((s) => s.id !== site.id) : [...prev, site]))
+  }
+
+  const handleGrantSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setGrantError(null)
-    if (!grantUserId) {
+
+    if (!grantProfileId) {
+      setGrantError('Select an access profile.')
+      return
+    }
+    const siteIds = grantScope === 'site' ? grantSites.map((s) => s.id) : []
+    if (grantScope === 'site' && siteIds.length === 0) {
+      setGrantError('Select at least one site.')
+      return
+    }
+    if (addMode === 'existing' && !grantUserId) {
       setGrantError('Search for the user by name or email and select them from the results.')
       return
     }
-    const body: { user_id: string; scope: string; site_id?: string; brand_id?: string; access_profile_id: string } = {
-      user_id: grantUserId,
-      scope: grantScope,
-      access_profile_id: grantProfileId,
+    if (addMode === 'new' && (!newFirstName.trim() || !newLastName.trim())) {
+      setGrantError('First and last name are required.')
+      return
     }
-    if (grantScope === 'site') body.site_id = grantEntityId
-    else body.brand_id = grantEntityId
-    createGrant.mutate(body)
+
+    const firstEntityId = grantScope === 'site' ? siteIds[0] : brandId!
+    const backendRole = grantBackendRole || null
+
+    setGrantSubmitting(true)
+    try {
+      let userId = grantUserId
+      if (addMode === 'new') {
+        const body: Record<string, unknown> = {
+          first_name: newFirstName, last_name: newLastName,
+          email: newEmail || undefined, password: newPassword || undefined,
+          scope: grantScope, access_profile_id: grantProfileId, backend_role: backendRole,
+        }
+        if (grantScope === 'site') body.site_id = firstEntityId
+        else body.brand_id = firstEntityId
+        const { data } = await api.post('/access-grants/create-user', body)
+        userId = data.user_id
+      } else {
+        const body: Record<string, unknown> = {
+          user_id: grantUserId, scope: grantScope, access_profile_id: grantProfileId, backend_role: backendRole,
+        }
+        if (grantScope === 'site') body.site_id = firstEntityId
+        else body.brand_id = firstEntityId
+        await api.post('/access-grants', body)
+      }
+      // Any additional selected sites become extra grants for the same user/profile/backend role.
+      for (const siteId of siteIds.slice(1)) {
+        await api.post('/access-grants', {
+          user_id: userId, scope: 'site', site_id: siteId, access_profile_id: grantProfileId, backend_role: backendRole,
+        })
+      }
+      invalidateGrants()
+      setShowGrant(false)
+    } catch (err) {
+      invalidateGrants()
+      setGrantError(apiErrorMessage(err, addMode === 'new' ? 'Failed to create user.' : 'Failed to add access.'))
+    } finally {
+      setGrantSubmitting(false)
+    }
   }
 
   // ── Edit-user modal state ────────────────────────────────────────────────
@@ -335,6 +415,7 @@ function UsersPageInner() {
     setEditProfileId(g.access_profile_id)
     setEditBackend(g.backend_role ?? '')
     setEditError(null)
+    setResetSent(false)
   }
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -378,7 +459,7 @@ function UsersPageInner() {
           title={!canGrant ? 'Your own access profile could not be determined' : undefined}
           className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
         >
-          + Add Access
+          + Add User
         </button>
       </div>
 
@@ -563,54 +644,111 @@ function UsersPageInner() {
       )}
 
       {showGrant && (
-        <Modal title="Add Access" onClose={() => setShowGrant(false)}>
+        <Modal title="Add User" onClose={() => setShowGrant(false)}>
           <form onSubmit={handleGrantSubmit} className="flex flex-col gap-3">
             <p className="text-xs text-gray-400 dark:text-gray-500">
               You can only grant scope and access at or below your own level — the server
               re-checks this regardless of what's shown here.
             </p>
-            <div className="flex flex-col gap-1 relative">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">User</label>
-              <input
-                type="text"
-                required
-                value={grantUserQuery}
-                onChange={(e) => { setGrantUserQuery(e.target.value); setGrantUserId(''); setGrantUserOpen(true) }}
-                onFocus={() => setGrantUserOpen(true)}
-                onBlur={() => setTimeout(() => setGrantUserOpen(false), 150)}
-                placeholder="Search by name or email…"
-                autoComplete="off"
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-              />
-              {grantUserOpen && !grantUserId && debouncedGrantUserQuery.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-1 z-10 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                  {userSearchLoading ? (
-                    <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">Searching…</p>
-                  ) : userResults.length === 0 ? (
-                    <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">No matching users.</p>
-                  ) : (
-                    userResults.map((u) => (
-                      <button
-                        key={u.id}
-                        type="button"
-                        onClick={() => selectGrantUser(u)}
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
-                      >
-                        <span className="font-medium text-gray-900 dark:text-gray-100">{u.name}</span>
-                        <span className="text-gray-400 dark:text-gray-500 ml-1.5">{u.email}</span>
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
+
+            <div className="flex gap-1 p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg w-fit">
+              <button
+                type="button"
+                onClick={() => setAddMode('existing')}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${addMode === 'existing' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}
+              >
+                Existing user
+              </button>
+              <button
+                type="button"
+                onClick={() => setAddMode('new')}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${addMode === 'new' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}
+              >
+                New user
+              </button>
             </div>
+
+            {addMode === 'existing' ? (
+              <div className="flex flex-col gap-1 relative">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">User</label>
+                <input
+                  type="text"
+                  required
+                  value={grantUserQuery}
+                  onChange={(e) => { setGrantUserQuery(e.target.value); setGrantUserId(''); setGrantUserOpen(true) }}
+                  onFocus={() => setGrantUserOpen(true)}
+                  onBlur={() => setTimeout(() => setGrantUserOpen(false), 150)}
+                  placeholder="Search by name or email…"
+                  autoComplete="off"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+                {grantUserOpen && !grantUserId && debouncedGrantUserQuery.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 z-10 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                    {userSearchLoading ? (
+                      <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">Searching…</p>
+                    ) : userResults.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">No matching users.</p>
+                    ) : (
+                      userResults.map((u) => (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => selectGrantUser(u)}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+                        >
+                          <span className="font-medium text-gray-900 dark:text-gray-100">{u.name}</span>
+                          <span className="text-gray-400 dark:text-gray-500 ml-1.5">{u.email}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="flex gap-3">
+                  <div className="flex flex-col gap-1 flex-1">
+                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">First name</label>
+                    <input
+                      type="text" required value={newFirstName}
+                      onChange={(e) => setNewFirstName(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 flex-1">
+                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Last name</label>
+                    <input
+                      type="text" required value={newLastName}
+                      onChange={(e) => setNewLastName(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Email (optional unless given backend access)</label>
+                  <input
+                    type="email" value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Password (optional unless given backend access)</label>
+                  <input
+                    type="password" value={newPassword} autoComplete="new-password"
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                </div>
+              </>
+            )}
 
             {scopeOptions.length > 1 && (
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Scope</label>
                 <select
                   value={grantScope}
-                  onChange={(e) => setGrantScope(e.target.value as 'brand' | 'site')}
+                  onChange={(e) => { setGrantScope(e.target.value as 'brand' | 'site'); setGrantSites([]) }}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
                   {scopeOptions.map((s) => (
@@ -620,19 +758,60 @@ function UsersPageInner() {
               </div>
             )}
 
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                {grantScope === 'site' ? 'Site ID' : 'Brand ID'}
-              </label>
-              <input
-                type="text"
-                required
-                value={grantEntityId}
-                onChange={(e) => setGrantEntityId(e.target.value)}
-                placeholder={grantScope === 'site' ? "Site's UUID" : "Brand's UUID"}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-              />
-            </div>
+            {grantScope === 'site' ? (
+              <div className="flex flex-col gap-1 relative">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Sites</label>
+                {grantSites.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-1">
+                    {grantSites.map((s) => (
+                      <span key={s.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300">
+                        {s.name}
+                        <button type="button" onClick={() => toggleGrantSite(s)} className="hover:text-brand-900 dark:hover:text-brand-100">×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <input
+                  type="text"
+                  value={siteQuery}
+                  onChange={(e) => { setSiteQuery(e.target.value); setSiteOpen(true) }}
+                  onFocus={() => setSiteOpen(true)}
+                  onBlur={() => setTimeout(() => setSiteOpen(false), 150)}
+                  placeholder="Search sites…"
+                  autoComplete="off"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+                {siteOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-1 z-10 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                    {siteSearchLoading ? (
+                      <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">Searching…</p>
+                    ) : siteResults.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">No matching sites.</p>
+                    ) : (
+                      siteResults.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => toggleGrantSite(s)}
+                          className="w-full flex items-center gap-2 text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+                        >
+                          <input type="checkbox" readOnly checked={grantSites.some((g) => g.id === s.id)} className="zr-chk" />
+                          <span className="text-gray-900 dark:text-gray-100">{s.name}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Brand</label>
+                <div className="px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 text-sm text-gray-600 dark:text-gray-400">
+                  This brand — access applies brand-wide.
+                </div>
+              </div>
+            )}
 
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Access Profile</label>
@@ -649,14 +828,28 @@ function UsersPageInner() {
               </select>
             </div>
 
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Backend Access</label>
+              <select
+                value={grantBackendRole}
+                onChange={(e) => setGrantBackendRole(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              >
+                <option value="">No access</option>
+                {BACKEND_ROLES.map((r) => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
+            </div>
+
             {grantError && <p className="text-xs text-red-500">{grantError}</p>}
 
             <button
               type="submit"
-              disabled={createGrant.isPending}
+              disabled={grantSubmitting}
               className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors mt-1"
             >
-              Add Access
+              {addMode === 'new' ? 'Create User' : 'Add Access'}
             </button>
           </form>
         </Modal>
@@ -716,6 +909,17 @@ function UsersPageInner() {
                 ))}
               </select>
             </div>
+
+            {editGrant.user_email && (
+              <button
+                type="button"
+                onClick={() => sendReset.mutate(editGrant.user_id)}
+                disabled={sendReset.isPending}
+                className="text-brand-600 hover:underline text-xs font-medium disabled:opacity-50 text-left"
+              >
+                {sendReset.isPending ? 'Sending…' : resetSent ? 'Reset email sent' : 'Send password reset email'}
+              </button>
+            )}
 
             {editError && <p className="text-xs text-red-500">{editError}</p>}
 

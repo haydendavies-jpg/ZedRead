@@ -29,9 +29,10 @@ from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
 from app.models.user_invite import UserInvite
 from app.schemas.user_invite import InviteAcceptRequest, InviteCreateRequest, InviteResponse
+from app.services import access_grant_service
 from app.services.audit_service import log_action
 from app.utils.email import INVITE_EXPIRY_HOURS, send_invite_email
-from app.utils.security import hash_password
+from app.utils.security import hash_password, normalize_email
 
 log = structlog.get_logger(__name__)
 
@@ -41,6 +42,7 @@ async def create_invite(
     brand_id: uuid.UUID,
     payload: InviteCreateRequest,
     actor: User,
+    actor_profile: AccessProfile,
 ) -> InviteResponse:
     """
     Create a UserInvite row and send an invitation email via Resend.
@@ -48,6 +50,10 @@ async def create_invite(
     Validates that the site belongs to the same brand as the actor and that
     the access profile belongs to the same brand.  Both checks prevent
     cross-brand data leakage (rule: routes are thin, all logic in services).
+    Also enforces the same role-ceiling and Master-User rules
+    access_grant_service.create_grant() applies to portal-originated grants —
+    a POS-terminal-originated invite is otherwise a second, unchecked path to
+    the same UserAccessGrant table.
 
     The Resend API call happens after the DB flush but before commit.  If the
     email send fails, the exception propagates and the caller's transaction is
@@ -58,15 +64,21 @@ async def create_invite(
         brand_id: Brand the actor belongs to; used to scope validation.
         payload: Invite creation data (email, site_id, access_profile_id).
         actor: The authenticated POS user sending the invite.
+        actor_profile: The actor's own access profile, for the role-ceiling check.
 
     Returns:
         InviteResponse: The newly created invite row.
 
     Raises:
         HTTPException: 404 if site or access profile not found within brand.
+        HTTPException: 403 if the invited profile outranks the actor's own,
+            or is the Master User tier.
         HTTPException: 409 if there is already a pending invite for this email+site.
         Exception: Re-raised from Resend SDK on email delivery failure.
     """
+    # Emails are case-insensitive for login — normalize before storing/comparing.
+    email = normalize_email(payload.email)
+
     # Validate site belongs to this brand
     site_result = await db.execute(
         select(Site).where(Site.id == payload.site_id, Site.brand_id == brand_id)
@@ -93,10 +105,20 @@ async def create_invite(
             detail="Access profile not found within this brand",
         )
 
+    # Same delegation rules as portal-originated grants (ROLE_MODEL.md §2,
+    # Stage 17) — an invite is never allowed to hand out more than the actor
+    # themself holds.
+    access_grant_service.assert_not_master_profile(access_profile)
+    if access_grant_service.role_rank(access_profile.name) > access_grant_service.role_rank(actor_profile.name):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot invite an access level higher than your own",
+        )
+
     # Reject duplicate pending invite for the same email+site
     existing_result = await db.execute(
         select(UserInvite).where(
-            UserInvite.email == payload.email,
+            UserInvite.email == email,
             UserInvite.site_id == payload.site_id,
             UserInvite.is_accepted == False,  # noqa: E712
             UserInvite.expires_at > datetime.now(UTC),
@@ -123,7 +145,7 @@ async def create_invite(
         site_id=payload.site_id,
         access_profile_id=payload.access_profile_id,
         invited_by_id=actor.id,
-        email=payload.email,
+        email=email,
         token=token,
         is_accepted=False,
         expires_at=expires_at,
@@ -142,7 +164,7 @@ async def create_invite(
         actor_email=actor.email,
         actor_name=actor.name,
         after_state={
-            "email": payload.email,
+            "email": email,
             "site_id": str(payload.site_id),
             "access_profile_id": str(payload.access_profile_id),
             "expires_at": expires_at.isoformat(),
@@ -152,7 +174,7 @@ async def create_invite(
     # Send email — if this raises, explicitly rollback and re-raise (rule 14)
     try:
         await send_invite_email(
-            to_email=payload.email,
+            to_email=email,
             inviter_name=actor.name,
             brand_name=brand_name,
             site_name=site.name,
@@ -164,7 +186,7 @@ async def create_invite(
 
     await db.commit()
     await db.refresh(invite)
-    log.info("user_invite.created", invite_id=str(invite.id), email=payload.email)
+    log.info("user_invite.created", invite_id=str(invite.id), email=email)
     return InviteResponse.model_validate(invite)
 
 

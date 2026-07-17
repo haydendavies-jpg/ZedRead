@@ -24,9 +24,11 @@ from app.schemas.access_grant import (
     AccessGrantResponse,
     AccessGrantUpdate,
     BulkGrantError,
+    SiteOption,
     UserSearchResult,
 )
-from app.services import access_grant_service
+from app.schemas.user import ManagedUserCreate
+from app.services import access_grant_service, user_service
 from app.utils.dependencies import CatalogAccess, ManagementAccess, resolve_catalog_access
 
 router = APIRouter(prefix="/access-grants", tags=["access-grants"])
@@ -123,6 +125,89 @@ async def search_users(
         superadmin=access.portal_access,
     )
     return [UserSearchResult.model_validate(u) for u in users]
+
+
+@router.get("/grantable-sites", response_model=list[SiteOption], status_code=status.HTTP_200_OK)
+async def list_grantable_sites(
+    brand_id: uuid.UUID = Query(..., description="Brand to list sites within"),
+    q: str = Query("", description="Case-insensitive substring matched against site name"),
+    limit: int = Query(50, ge=1, le=200),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> list[SiteOption]:
+    """
+    List active sites within a brand, for the Add Access/Add User site picker.
+
+    Replaces pasting a raw site UUID — the portal's dropdown is populated
+    from this, scoped to what the caller may actually grant.
+
+    Args:
+        brand_id: Brand to list sites within.
+        q: Search substring; empty returns the first `limit` sites by name.
+        limit: Maximum results.
+        access: Resolved catalog access.
+        db: Active database session.
+
+    Returns:
+        list[SiteOption]: Matching active sites.
+    """
+    if access.pos_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Site lookup requires a management or portal JWT",
+        )
+    sites = await access_grant_service.list_grantable_sites(
+        db,
+        brand_id=brand_id,
+        query=q,
+        limit=limit,
+        management_access=access.mgmt_access,
+        superadmin=access.portal_access,
+    )
+    return [SiteOption.model_validate(s) for s in sites]
+
+
+@router.post("/create-user", response_model=AccessGrantResponse, status_code=status.HTTP_201_CREATED)
+async def create_user_with_grant(
+    payload: ManagedUserCreate,
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> AccessGrantResponse:
+    """
+    Create a brand-new User plus their initial access grant, in scope.
+
+    Backs the Users page "Add User" action. Until now, a management caller
+    could only grant additional access to an *existing* user (found via
+    search) — there was no way to onboard a brand-new colleague without a
+    SuperAdmin using the separate POST /users route. Scope and role-ceiling
+    authority are the same rules create_grant() enforces (ROLE_MODEL.md §2):
+    the new user's access can never exceed the caller's own, and the
+    site/brand must be within the caller's scope.
+
+    Args:
+        payload: New user's name/credentials plus the initial grant to create.
+        access: Resolved catalog access.
+        db: Active database session.
+
+    Returns:
+        AccessGrantResponse: The created grant, with the new user's name/email/ref attached.
+    """
+    if access.pos_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User creation requires a management or portal JWT",
+        )
+    user, grant = await user_service.create_managed_user(
+        db,
+        payload=payload,
+        management_access=access.mgmt_access,
+        superadmin=access.portal_access,
+    )
+    resp = AccessGrantResponse.model_validate(grant)
+    resp.user_name = user.name
+    resp.user_email = user.email
+    resp.user_ref = user.ref
+    return resp
 
 
 @router.post("", response_model=AccessGrantResponse, status_code=status.HTTP_201_CREATED)

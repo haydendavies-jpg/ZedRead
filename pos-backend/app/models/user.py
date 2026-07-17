@@ -137,3 +137,11 @@ class User(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+    # Single-use token for the forgot-password flow; NULL when no reset is pending.
+    # Mirrors SuperAdmin.password_reset_token — same mechanism, separate table.
+    password_reset_token: Mapped[str | None] = mapped_column(
+        String(255), unique=True, nullable=True
+    )
+    password_reset_token_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

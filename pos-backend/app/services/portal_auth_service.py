@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 import structlog
 from fastapi import HTTPException, status
 from jose import JWTError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
@@ -18,6 +18,7 @@ from app.constants.audit_actions import (
 )
 from app.constants.statuses import ActorType
 from app.models.superadmin import SuperAdmin
+from app.models.user import User
 from app.schemas.portal_auth import LoginRequest, TokenResponse
 from app.services.audit_service import log_action
 from app.utils.email import PASSWORD_RESET_EXPIRY_HOURS, send_password_reset_email
@@ -26,6 +27,7 @@ from app.utils.security import (
     create_refresh_token,
     decode_token,
     hash_password,
+    normalize_email,
     verify_password_async,
 )
 
@@ -34,7 +36,7 @@ log = structlog.get_logger(__name__)
 
 async def _get_user_by_email(db: AsyncSession, email: str) -> SuperAdmin | None:
     """
-    Fetch a portal user by email address.
+    Fetch a portal user by email address, case-insensitively.
 
     Args:
         db: The active database session.
@@ -44,7 +46,7 @@ async def _get_user_by_email(db: AsyncSession, email: str) -> SuperAdmin | None:
         SuperAdmin | None: The matching user, or None if not found.
     """
     result = await db.execute(
-        select(SuperAdmin).where(SuperAdmin.email == email)
+        select(SuperAdmin).where(func.lower(SuperAdmin.email) == normalize_email(email))
     )
     return result.scalar_one_or_none()
 
@@ -238,7 +240,12 @@ async def request_password_reset(db: AsyncSession, email: str) -> None:
 
 async def reset_password(db: AsyncSession, token: str, new_password: str) -> None:
     """
-    Consume a password reset token and set the user's new password.
+    Consume a password reset token and set the account's new password.
+
+    Checks SuperAdmin first, then User — the same emailed-link/consume
+    endpoint serves both the portal self-service flow (SuperAdmin) and the
+    admin-triggered reset (User, see user_service.request_user_password_reset())
+    since reset tokens are opaque random strings, not derived from identity type.
 
     Args:
         db: The active database session.
@@ -251,40 +258,45 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> Non
     Raises:
         HTTPException: 400 if the token is invalid or has expired.
     """
-    result = await db.execute(
+    sa_result = await db.execute(
         select(SuperAdmin).where(SuperAdmin.password_reset_token == token)
     )
-    user = result.scalar_one_or_none()
+    account: SuperAdmin | User | None = sa_result.scalar_one_or_none()
+    entity_type = "superadmin"
+    if account is None:
+        user_result = await db.execute(select(User).where(User.password_reset_token == token))
+        account = user_result.scalar_one_or_none()
+        entity_type = "user"
 
-    if user is None or user.password_reset_token_expires_at is None:
+    if account is None or account.password_reset_token_expires_at is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token",
         )
 
-    if datetime.now(UTC) > user.password_reset_token_expires_at:
+    if datetime.now(UTC) > account.password_reset_token_expires_at:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token",
         )
 
-    user.password_hash = hash_password(new_password)
+    account.password_hash = hash_password(new_password)
     # Single-use — clear the token so it cannot be replayed
-    user.password_reset_token = None
-    user.password_reset_token_expires_at = None
-    # Revoke every previously issued token for this admin — a reset implies the
-    # old credential (and any session riding on it) can no longer be trusted
-    user.token_version += 1
+    account.password_reset_token = None
+    account.password_reset_token_expires_at = None
+    # Revoke every previously issued token for this account — a reset implies
+    # the old credential (and any session riding on it) can no longer be trusted
+    account.token_version += 1
 
     await log_action(
         db=db,
         action=AUTH_PASSWORD_RESET_COMPLETED,
-        entity_type="superadmin",
-        entity_id=str(user.id),
+        entity_type=entity_type,
+        entity_id=str(account.id),
         actor_type=ActorType.USER,
-        actor_id=user.id,
-        actor_email=user.email,
-        actor_name=user.name,
+        actor_id=account.id,
+        actor_email=account.email,
+        actor_name=account.name,
     )
     await db.commit()
-    log.info("auth.password_reset.completed", user_id=str(user.id))
+    log.info("auth.password_reset.completed", entity_type=entity_type, user_id=str(account.id))

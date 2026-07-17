@@ -6,7 +6,7 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
@@ -26,9 +26,10 @@ from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
 from app.models.user_pin import UserPIN
+from app.services import user_service
 from app.services.audit_service import log_action
-from app.utils.dependencies import get_current_superadmin
-from app.utils.security import hash_password
+from app.utils.dependencies import CatalogAccess, get_current_superadmin, resolve_catalog_access
+from app.utils.security import hash_password, normalize_email
 
 log = structlog.get_logger(__name__)
 
@@ -327,29 +328,6 @@ async def list_users(
     return await _attach_sites(db, users)
 
 
-async def _find_email_owner(db: AsyncSession, email: str) -> SuperAdmin | User | None:
-    """
-    Return an existing identity that already holds this email, if any.
-
-    Checks SuperAdmins first, then Users, so a shared email resolves to a
-    single existing sign-in credential to link a new User against. Returns
-    None when the email is not yet registered anywhere.
-
-    Args:
-        db: Active session.
-        email: The email to look up.
-
-    Returns:
-        SuperAdmin | User | None: The first identity owning the email, or None.
-    """
-    sa_r = await db.execute(select(SuperAdmin).where(SuperAdmin.email == email))
-    superadmin = sa_r.scalar_one_or_none()
-    if superadmin is not None:
-        return superadmin
-    user_r = await db.execute(select(User).where(User.email == email))
-    return user_r.scalar_one_or_none()
-
-
 @router.get("/email-check", response_model=EmailCheckOut)
 async def check_email(
     email: EmailStr,
@@ -370,7 +348,7 @@ async def check_email(
         EmailCheckOut: Existence flag plus the matching identity's type/name
         and whether it has a usable password.
     """
-    owner = await _find_email_owner(db, email)
+    owner = await user_service.find_email_owner(db, email)
     if owner is None:
         return EmailCheckOut(exists=False)
     identity_type = "superadmin" if isinstance(owner, SuperAdmin) else "user"
@@ -398,10 +376,13 @@ async def create_user(
     login. Supplying a fresh password for an already-registered email is
     rejected, to avoid two different passwords for the same login email.
     """
+    # Emails are case-insensitive for login — normalize before storing/comparing.
+    email = normalize_email(body.email) if body.email is not None else None
+
     # Resolve the sign-in password for the new row from the email's current state.
     password_hash: str | None = None
-    if body.email is not None:
-        existing_source = await _find_email_owner(db, body.email)
+    if email is not None:
+        existing_source = await user_service.find_email_owner(db, email)
         if existing_source is not None and existing_source.password_hash is not None:
             # Linked identity — reuse the existing password; reject a new one so
             # the shared email never ends up with two different passwords.
@@ -432,7 +413,7 @@ async def create_user(
         first_name=body.first_name,
         last_name=body.last_name,
         name=f"{body.first_name} {body.last_name}",
-        email=body.email,
+        email=email,
         password_hash=password_hash,
     )
     db.add(user)
@@ -743,18 +724,20 @@ async def update_user(
     if body.first_name is not None or body.last_name is not None:
         user.name = f"{user.first_name} {user.last_name}"
     if body.email is not None:
+        # Emails are case-insensitive for login — normalize before storing/comparing.
+        new_email = normalize_email(body.email)
         # Check for email conflict with another user
         dup = await db.execute(
-            select(User).where(User.email == body.email, User.id != user.id)
+            select(User).where(func.lower(User.email) == new_email, User.id != user.id)
         )
         if dup.scalar_one_or_none():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
-        user.email = body.email
+        user.email = new_email
 
     if body.password is not None:
         # Temporary rollout gate: only one SuperAdmin may admin-set a user's
         # password while this capability is being trialled.
-        if actor.email != _PASSWORD_SET_ALLOWED_EMAIL:
+        if actor.email.lower() != _PASSWORD_SET_ALLOWED_EMAIL.lower():
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions",
@@ -873,6 +856,38 @@ async def set_pin_for_user(
     )
 
     await db.commit()
+
+
+@router.post("/{user_id}/send-password-reset", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def send_password_reset(
+    user_id: uuid.UUID,
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Trigger a password-reset email for a POS user.
+
+    Reachable by a SuperAdmin or a management caller within their scope (see
+    user_service.request_user_password_reset()). The user clicks the emailed
+    link to /reset-password, consumed by the same endpoint SuperAdmin resets
+    use (POST /auth/portal/reset-password).
+
+    Args:
+        user_id: The target User.
+        access: Resolved catalog access.
+        db: Active database session.
+    """
+    if access.pos_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password reset requires a management or portal JWT",
+        )
+    await user_service.request_user_password_reset(
+        db,
+        user_id=user_id,
+        management_access=access.mgmt_access,
+        superadmin=access.portal_access,
+    )
 
 
 @router.patch("/{user_id}/deactivate", response_model=UserOut)

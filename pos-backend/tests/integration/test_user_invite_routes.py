@@ -17,10 +17,15 @@ import pytest
 from sqlalchemy import select
 
 from app.constants.audit_actions import USER_INVITE_ACCEPTED, USER_INVITED
+from app.models.access_profile import AccessProfile
 from app.models.audit_log import AuditLog
+from app.models.brand import Brand
+from app.models.site import Site
 from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
 from app.models.user_invite import UserInvite
+from app.models.user_pos_session import UserPOSSession
+from app.utils.security import create_pos_access_token
 
 pytestmark = pytest.mark.asyncio
 
@@ -389,3 +394,118 @@ async def test_accept_invite_missing_fields_returns_422(client):
     )
 
     assert response.status_code == 422
+
+
+# ── Role ceiling (matches access_grant_service's create_grant rules) ───────────
+
+
+async def test_create_invite_rejects_master_profile(
+    client, test_brand, test_site, pos_auth_headers, db
+):
+    """An invite can never target the Master User profile, regardless of the actor's rank."""
+    master_r = await db.execute(
+        select(AccessProfile).where(
+            AccessProfile.brand_id == test_brand.id, AccessProfile.name == "Master User"
+        )
+    )
+    master_profile = master_r.scalar_one()
+
+    with patch(_SEND_EMAIL_PATH, new_callable=AsyncMock) as mock_send:
+        response = await client.post(
+            "/invites",
+            json=_invite_payload(test_site.id, master_profile.id),
+            headers=pos_auth_headers,
+        )
+
+    assert response.status_code == 403
+    assert not mock_send.called
+
+
+async def test_create_invite_role_ceiling_rejects_higher_profile(
+    client, db, test_user, test_brand, test_site
+):
+    """A Staff-tier POS user cannot invite someone at the Admin tier (403).
+
+    Regression test — create_invite() previously ran no rank check at all,
+    so any POS-authenticated user could invite a colleague at any profile
+    level within their brand.
+    """
+    staff_r = await db.execute(
+        select(AccessProfile).where(
+            AccessProfile.brand_id == test_brand.id, AccessProfile.name == "Staff"
+        )
+    )
+    staff_profile = staff_r.scalar_one()
+    admin_r = await db.execute(
+        select(AccessProfile).where(
+            AccessProfile.brand_id == test_brand.id, AccessProfile.name == "Admin"
+        )
+    )
+    admin_profile = admin_r.scalar_one()
+
+    # The actor's own grant uses the Staff profile (rank 1) — lower than Admin (rank 4).
+    grant = UserAccessGrant(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        scope="site",
+        site_id=test_site.id,
+        access_profile_id=staff_profile.id,
+        is_active=True,
+    )
+    db.add(grant)
+    await db.commit()
+
+    jti = str(uuid.uuid4())
+    db.add(UserPOSSession(id=uuid.uuid4(), user_id=test_user.id, site_id=test_site.id, token_jti=jti))
+    await db.commit()
+    token = create_pos_access_token(user_id=str(test_user.id), site_id=str(test_site.id), jti=jti)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    with patch(_SEND_EMAIL_PATH, new_callable=AsyncMock) as mock_send:
+        response = await client.post(
+            "/invites",
+            json=_invite_payload(test_site.id, admin_profile.id),
+            headers=headers,
+        )
+
+    assert response.status_code == 403
+    assert not mock_send.called
+
+
+async def test_create_invite_role_ceiling_allows_equal_rank(
+    client, db, test_user, test_brand, test_site
+):
+    """A Staff-tier POS user can invite another Staff-tier colleague."""
+    staff_r = await db.execute(
+        select(AccessProfile).where(
+            AccessProfile.brand_id == test_brand.id, AccessProfile.name == "Staff"
+        )
+    )
+    staff_profile = staff_r.scalar_one()
+
+    grant = UserAccessGrant(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        scope="site",
+        site_id=test_site.id,
+        access_profile_id=staff_profile.id,
+        is_active=True,
+    )
+    db.add(grant)
+    await db.commit()
+
+    jti = str(uuid.uuid4())
+    db.add(UserPOSSession(id=uuid.uuid4(), user_id=test_user.id, site_id=test_site.id, token_jti=jti))
+    await db.commit()
+    token = create_pos_access_token(user_id=str(test_user.id), site_id=str(test_site.id), jti=jti)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    with patch(_SEND_EMAIL_PATH, new_callable=AsyncMock) as mock_send:
+        response = await client.post(
+            "/invites",
+            json=_invite_payload(test_site.id, staff_profile.id),
+            headers=headers,
+        )
+
+    assert response.status_code == 201
+    assert mock_send.called

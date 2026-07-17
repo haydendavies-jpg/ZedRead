@@ -539,6 +539,12 @@ export interface UserSearchResult {
   ref: string | null
 }
 
+/** Result of GET /access-grants/grantable-sites — the Add Access/Add User site picker. */
+export interface SiteOption {
+  id: string
+  name: string
+}
+
 // ── Page-category permission hierarchy (ROLE_MODEL.md §4/§6, Stage 18) ─────────
 //
 // Mirrors app.constants.pages.PAGE_CATALOG for rendering only — page_key

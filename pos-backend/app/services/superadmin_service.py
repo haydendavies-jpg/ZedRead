@@ -4,7 +4,7 @@ import uuid
 
 import structlog
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
@@ -16,7 +16,7 @@ from app.constants.audit_actions import (
 from app.models.superadmin import SuperAdmin
 from app.schemas.superadmin import SuperAdminCreate, SuperAdminUpdate
 from app.services.audit_service import log_action
-from app.utils.security import hash_password
+from app.utils.security import hash_password, normalize_email
 
 log = structlog.get_logger(__name__)
 
@@ -115,19 +115,23 @@ async def create_superadmin(
     Raises:
         HTTPException: 409 if the email address is already taken.
     """
+    # Emails are case-insensitive for login — normalize before storing/comparing
+    # so "Jane@x.com" and "jane@x.com" are always the same account.
+    email = normalize_email(payload.email)
+
     # Check for duplicate email before hashing the password (cheaper failure path)
-    existing = await db.execute(select(SuperAdmin).where(SuperAdmin.email == payload.email))
+    existing = await db.execute(select(SuperAdmin).where(func.lower(SuperAdmin.email) == email))
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A portal user with this email already exists",
         )
 
-    log.info("superadmin.creating", email=payload.email, role=payload.role)
+    log.info("superadmin.creating", email=email, role=payload.role)
 
     user = SuperAdmin(
         id=uuid.uuid4(),
-        email=payload.email,
+        email=email,
         password_hash=hash_password(payload.password),
         name=payload.name,
         role=payload.role,

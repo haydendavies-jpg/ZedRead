@@ -170,6 +170,7 @@ export function UsersPage() {
   const [editEmail, setEditEmail] = useState('')
   const [editPassword, setEditPassword] = useState('')
   const [editError, setEditError] = useState<string | null>(null)
+  const [resetSent, setResetSent] = useState(false)
 
   // PIN section
   const [pinValue, setPinValue] = useState('')
@@ -241,7 +242,7 @@ export function UsersPage() {
   })
 
   const addGrantMutation = useMutation({
-    mutationFn: (body: { user_id: string; scope: string; site_id?: string; brand_id?: string; access_profile_id: string }) =>
+    mutationFn: (body: { user_id: string; scope: string; site_id?: string; brand_id?: string; access_profile_id: string; backend_role?: string | null }) =>
       api.post('/access-grants', body),
     onSuccess: () => { invalidateUsers(); invalidateAccess() },
     onError: (e: unknown) => {
@@ -284,6 +285,15 @@ export function UsersPage() {
     onSuccess: invalidateUsers,
   })
 
+  const sendResetMutation = useMutation({
+    mutationFn: (userId: string) => api.post(`/users/${userId}/send-password-reset`),
+    onSuccess: () => {
+      setResetSent(true)
+      setTimeout(() => setResetSent(false), 4000)
+    },
+    onError: (e: unknown) => alert(apiErrorMessage(e, 'Failed to send reset email.')),
+  })
+
   // ── Handlers ──────────────────────────────────────────────────────────────
   const openCreate = () => {
     setFirstName(''); setLastName(''); setEmail(''); setPassword(''); setCreateError(null)
@@ -300,6 +310,7 @@ export function UsersPage() {
     setEditError(null)
     setPinValue(''); setPinError(null); setPinSuccess(false)
     setAccessSearch('')
+    setResetSent(false)
     setEditUser(user)
   }
 
@@ -354,10 +365,42 @@ export function UsersPage() {
     }
   }
 
-  /** Called when the Backend Access dropdown changes for any row. */
+  /**
+   * Called when the Backend Access dropdown changes for any row.
+   *
+   * Backend access no longer requires POS access to already be assigned —
+   * if the row has no grant yet, one is created in the same request using
+   * the row's currently-selected POS profile, or "Reporting Only" (the
+   * system profile ROLE_MODEL.md documents as backend-oriented, POS-access
+   * N/A) as a sensible default when none is selected.
+   */
   const handleBackendRoleChange = (entry: GroupScopeEntry, newRole: string) => {
-    if (!editUser || !entry.grant_id) return
-    updateGrantBackendRoleMutation.mutate({ grantId: entry.grant_id, backendRole: newRole || null })
+    if (!editUser) return
+    if (entry.grant_id) {
+      updateGrantBackendRoleMutation.mutate({ grantId: entry.grant_id, backendRole: newRole || null })
+      return
+    }
+    if (!newRole) return // nothing to create just to set "No access"
+    // Group-scope grants only ever exist via the site/brand cascade in
+    // create_grant() — there's no group_id on this row to create one directly.
+    if (entry.scope === 'group') {
+      alert('Assign backend access at the brand or site level first.')
+      return
+    }
+    const defaultProfileId =
+      entry.access_profile_id ??
+      editUserProfiles.find((p) => p.name === 'Reporting Only')?.id ??
+      editUserProfiles[0]?.id
+    if (!defaultProfileId) {
+      alert('No access profiles are available for this brand yet.')
+      return
+    }
+    const body: { user_id: string; scope: string; site_id?: string; brand_id?: string; access_profile_id: string; backend_role?: string | null } = {
+      user_id: editUser.id, scope: entry.scope, access_profile_id: defaultProfileId, backend_role: newRole,
+    }
+    if (entry.scope === 'site') body.site_id = entry.site_id ?? undefined
+    else body.brand_id = entry.brand_id ?? undefined
+    addGrantMutation.mutate(body)
   }
 
   // ── Filtered data ─────────────────────────────────────────────────────────
@@ -648,7 +691,21 @@ export function UsersPage() {
                   </div>
                 )}
                 {editError && <p className="text-sm text-red-600">{editError}</p>}
-                <div className="flex justify-end">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    {editUser.email ? (
+                      <button
+                        type="button"
+                        onClick={() => sendResetMutation.mutate(editUser.id)}
+                        disabled={sendResetMutation.isPending}
+                        className="text-brand-600 hover:underline text-xs font-medium disabled:opacity-50"
+                      >
+                        {sendResetMutation.isPending ? 'Sending…' : resetSent ? 'Reset email sent' : 'Send password reset email'}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-gray-400 dark:text-gray-500">Add an email to enable password reset</span>
+                    )}
+                  </div>
                   <button type="submit" disabled={editMutation.isPending}
                     className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
                     {editMutation.isPending ? 'Saving…' : 'Save Details'}
@@ -734,20 +791,16 @@ export function UsersPage() {
                             </td>
                             <td className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">—</td>
                             <td className="px-3 py-2">
-                              {entry.grant_id ? (
-                                <select
-                                  value={entry.backend_role ?? ''}
-                                  onChange={(e) => handleBackendRoleChange(entry, e.target.value)}
-                                  className={`px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 ${entry.backend_role ? 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300' : 'border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500'}`}
-                                >
-                                  <option value="">No access</option>
-                                  {BACKEND_ROLES.map((r) => (
-                                    <option key={r.value} value={r.value}>{r.label}</option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <span className="text-xs text-gray-400 dark:text-gray-500">Assign a site first</span>
-                              )}
+                              <select
+                                value={entry.backend_role ?? ''}
+                                onChange={(e) => handleBackendRoleChange(entry, e.target.value)}
+                                className={`px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 ${entry.backend_role ? 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300' : 'border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500'}`}
+                              >
+                                <option value="">No access</option>
+                                {BACKEND_ROLES.map((r) => (
+                                  <option key={r.value} value={r.value}>{r.label}</option>
+                                ))}
+                              </select>
                             </td>
                             <td className="px-3 py-2" />
                           </tr>
@@ -782,20 +835,16 @@ export function UsersPage() {
                             </select>
                           </td>
                           <td className="px-3 py-2">
-                            {entry.grant_id ? (
-                              <select
-                                value={entry.backend_role ?? ''}
-                                onChange={(e) => handleBackendRoleChange(entry, e.target.value)}
-                                className={`px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 ${entry.backend_role ? 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300' : 'border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500'}`}
-                              >
-                                <option value="">No access</option>
-                                {BACKEND_ROLES.map((r) => (
-                                  <option key={r.value} value={r.value}>{r.label}</option>
-                                ))}
-                              </select>
-                            ) : (
-                              <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
-                            )}
+                            <select
+                              value={entry.backend_role ?? ''}
+                              onChange={(e) => handleBackendRoleChange(entry, e.target.value)}
+                              className={`px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 ${entry.backend_role ? 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300' : 'border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500'}`}
+                            >
+                              <option value="">No access</option>
+                              {BACKEND_ROLES.map((r) => (
+                                <option key={r.value} value={r.value}>{r.label}</option>
+                              ))}
+                            </select>
                           </td>
                           <td className="px-3 py-2">
                             {entry.scope === 'site' && entry.grant_id && (

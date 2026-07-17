@@ -46,6 +46,16 @@ async def test_login_valid_credentials_returns_token_pair(client, test_superadmi
     assert body["token_type"] == "bearer"
 
 
+async def test_login_email_case_insensitive(client, test_superadmin):
+    """Login succeeds regardless of the casing typed for the account's email."""
+    response = await client.post(
+        "/auth/portal/login",
+        json={"email": "Admin@Test.COM", "password": "TestPassword123!"},
+    )
+
+    assert response.status_code == 200
+
+
 async def test_login_success_writes_audit_log(client, db, test_superadmin):
     """Successful login writes an AUTH_LOGIN_SUCCESS audit row."""
     await client.post(
