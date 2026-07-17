@@ -21,18 +21,18 @@ token.**
 
 | Token | Light | Dark | Usage |
 |---|---|---|---|
-| `--zr-accent` | `#a82040` | `#a82040` | Primary actions, active nav, totals |
-| `--zr-accent-text` | `#ffffff` | `#ffffff` | Text/icon on an accent fill |
+| `--zr-accent` | `#554c44` | `#554c44` | Primary actions, active nav, totals — same warm taupe in both themes |
+| `--zr-accent-text` | `#403933` | `#c2b6a8` | Accent-toned **text** (links, active tab/pill labels) on the normal canvas — lighter taupe in dark mode for legibility. NOT for text on a solid accent fill — that stays hardcoded white (`.zr-action--pri`, primary buttons) regardless of theme. |
 | `--zr-green` | `#2f4034` | `#8fb89a` | Live / published / paid |
 | `--zr-text` | `#241f1a` | `#efe9e0` | Primary ink |
 | `--zr-muted` | `#6b6259` | `#a89f92` | Secondary text |
 | `--zr-faint` | `#a39a8c` | `#8a8177` | Captions, table-header labels |
-| `--zr-sidebar` | `#f4efe4` | `#1b1611` | Sidebar surface |
+| `--zr-sidebar` | `#554c44` | `#332e29` | Sidebar surface — a solid accent-toned colour in **both** themes (darker in dark mode so it doesn't glow against the dark canvas), not a light/dark-toggling parchment/ink pair. Sidebar text/hover/active/border styling in `Layout.tsx` is therefore fixed light-on-dark and does not follow the app-wide `dark:` variant. |
 | `--zr-bg` | `#faf7f2` | `#201a15` | App background / table-header fill |
 | `--zr-surface` | `#ffffff` | `#2a2119` | Card / table surface |
 | `--zr-surface2` | `#f0ece3` | `#2a251f` | Inset / hover surface |
-| `--zr-accent-soft` | 10% accent | 22% accent | Accent tint backgrounds |
-| `--zr-accent-soft2` | 16% accent | 30% accent | Stronger accent tint |
+| `--zr-accent-soft` | 10% accent | 18% accent | Accent tint backgrounds |
+| `--zr-accent-soft2` | 16% accent | 26% accent | Stronger accent tint |
 | `--zr-border` | `rgba(36,31,26,.08)` | `rgba(255,255,255,.08)` | Card / table outer border |
 | `--zr-header-border` | `rgba(36,31,26,.10)` | `rgba(255,255,255,.10)` | Under the table header row |
 | `--zr-thead` | `#faf9f5` | `#2f2820` | Table header-row fill |
@@ -41,10 +41,19 @@ token.**
 | `--zr-row-hover` | `rgba(36,31,26,.02)` | `rgba(255,255,255,.03)` | Whole-row hover tint |
 
 **Rule of thumb:** paper/parchment carry surfaces; ink/slate/sand carry structure and
-secondary UI; brick red (`--zr-accent`) is reserved for primary actions, active-nav
+secondary UI; warm taupe (`--zr-accent`) is reserved for primary actions, active-nav
 states, and totals — never a large background wash. Category / POS-button colours are
 the one place a wider palette is allowed (the Menu Studio preset palette); everything
 else in the chrome stays on this token set.
+
+Every selection/active state (active tabs, selected table rows, checked checkboxes,
+link/option chips, input focus borders, drag drop-target outlines, tile selection
+rings) pulls from `--zr-accent` / `--zr-accent-soft` — either directly, or via the
+Tailwind `brand-*` scale (`src/index.css` `@theme` block), which is defined from the
+same two accent values (`brand-600` = `--zr-accent` = `#554c44`; `brand-700` = the
+hover/darker shade `#403933`) so form-level buttons, links, and focus rings never need
+a per-component override. `::selection` (browser text-selection highlight) uses the
+same `#554c44` in both themes.
 
 ### Semantic status colours
 
