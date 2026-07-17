@@ -12,10 +12,12 @@ class MenuButtonOut(BaseModel):
     """
     A resolved menu button — the stored row plus a live preview.
 
-    For kind='product': product_name/price_cents/is_active/category_color are
-    resolved live against the brand's catalog by product_ref (None when the
-    ref no longer resolves — category_color powers the inspector's "Category
-    default" colour reset and the tile's fallback fill when color is unset).
+    For kind='product': product_name/price_cents/is_active/category_color/
+    product_photo_url are resolved live against the brand's catalog by
+    product_ref (None when the ref no longer resolves — category_color powers
+    the inspector's "Category default" colour reset and the tile's fallback
+    fill when color is unset; product_photo_url renders as the tile's
+    background image when the linked product has one).
     For kind='folder': child_tab_name/child_tab_button_count preview the
     nested tab this button opens.
 
@@ -40,6 +42,7 @@ class MenuButtonOut(BaseModel):
     price_cents: int | None = None
     is_active: bool | None = None
     category_color: str | None = None
+    product_photo_url: str | None = None
     child_tab_name: str | None = None
     child_tab_button_count: int | None = None
 

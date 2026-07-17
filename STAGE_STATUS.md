@@ -958,6 +958,40 @@ Follow-up sweep from a codebase efficiency review; five deliverables:
 
 ---
 
+### Menu Studio — POS Layout tile style redesign ✅
+
+Restyled the grid editor's product/folder tiles to match a reference POS mockup showing large
+colour-blocked buttons (bold white product name top-left, price bottom-left, a small round "+"
+quick-add badge top-right, generous rounded corners), one tile shown with a product photo filling
+the tile instead of a flat colour. The rail of top-level tabs on the left was explicitly left
+unchanged — the reference's own sidebar list wasn't the object of the redesign.
+
+- [x] `MenuBuilderPage.tsx` grid tiles: `rounded-xl` → `rounded-2xl`, bumped padding, bolder/larger
+  product name (`font-semibold` → `font-bold`, 13.5px → 14.5px), price switched from
+  `font-mono`/11.5px to a bolder 13px sans figure to read as a POS price tag rather than a table
+  numeral, and a decorative round "+" badge (top-right, `rgba(255,255,255,0.28)` fill) on every
+  unselected product tile — mirrors the mockup's per-tile add affordance; hidden when a tile is
+  selected so it doesn't collide with the existing checkmark badge. Folder tiles keep their
+  existing neutral (non-colour-filled) look, just with the same corner radius for visual
+  consistency with product tiles in the same grid.
+- [x] **Photo tiles**: `MenuButtonOut` gained `product_photo_url` (resolved from the linked
+  product's existing `photo_url` column — no migration needed, the field and its upload
+  route/service have existed since Stage 8/24, just not yet surfaced anywhere in the portal). When
+  set, the tile renders the photo as a full-bleed background (its own `rounded-2xl overflow-hidden`
+  wrapper, separate from the tile's own edges, so the drag-reorder insertion bars' `-7px` offset
+  isn't clipped) under a bottom-weighted dark gradient scrim, with a text-shadow on the name/price
+  so both stay legible over an arbitrary photo. Falls back to the flat colour tile when the linked
+  product has no photo — most products still will, since there's no photo-upload control on
+  `ProductsPage.tsx` yet (existing gap, out of scope here). The inspector's single-button preview
+  card got the same treatment for consistency.
+- [x] Verified via a static Tailwind-class-accurate mockup screenshot (rendered with the
+  pre-installed Playwright/Chromium) reproducing the flat-colour, photo, selected, and folder tile
+  states side by side — this environment has no reachable Postgres instance to run the full
+  app/backend against real catalog data, so this was a layout/contrast check of the exact classes
+  landed in `MenuBuilderPage.tsx`, not an end-to-end browser session against the live editor.
+
+---
+
 ## Phase 9 — Product Model Extensions
 
 ### Stage 24 — Product Extensions ✅

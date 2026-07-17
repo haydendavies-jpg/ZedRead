@@ -1346,6 +1346,10 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
                   const isFolder = button.kind === 'folder'
                   const base = button.color ?? (isFolder ? '#5A5550' : button.category_color ?? '#5A5550')
                   const isSel = selected.has(button.id)
+                  // Only product tiles carry a POS-style photo background (the reference mockup's
+                  // "Latte" tile) — folder tiles preview a nested tab, not a catalog item.
+                  const photoUrl = !isFolder ? button.product_photo_url : null
+                  const fg = photoUrl ? '#ffffff' : isFolder ? undefined : textColorOn(base)
                   return (
                     <div
                       key={button.id}
@@ -1354,7 +1358,7 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
                       data-drop={isFolder && button.child_tab_id ? `tab:${button.child_tab_id}` : undefined}
                       onPointerDown={(e) => handlePointerDownTile(e, button.id)}
                       onClick={(e) => e.stopPropagation()}
-                      className={`relative rounded-xl px-3 py-2.5 flex flex-col justify-between cursor-pointer select-none shadow-sm touch-none ${
+                      className={`relative rounded-2xl flex flex-col justify-between px-3.5 py-3 cursor-pointer select-none shadow-sm touch-none ${
                         isSel ? 'ring-[3px] ring-brand-600' : ''
                       } ${isFolder && dragOverTarget?.kind === 'tab' && dragOverTarget.tabId === button.child_tab_id ? 'ring-2 ring-brand-400' : ''} ${
                         !isFolder && dragOverTarget?.kind === 'button' && dragOverTarget.buttonId === button.id ? 'ring-2 ring-brand-400' : ''
@@ -1369,11 +1373,20 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
                         return {
                           gridColumn: cell ? `${cell.col + 1} / span ${button.width}` : `span ${button.width}`,
                           gridRow: cell ? `${cell.row + 1} / span ${button.height}` : `span ${button.height}`,
-                          background: isFolder ? undefined : base,
-                          color: isFolder ? undefined : textColorOn(base),
+                          background: isFolder || photoUrl ? undefined : base,
+                          color: fg,
                         }
                       })()}
                     >
+                      {/* Own rounded/overflow-hidden wrapper (rather than on the tile itself) so the
+                          -7px-offset insertion bars below still protrude past the tile's edge. */}
+                      {photoUrl && (
+                        <div className="absolute inset-0 rounded-2xl overflow-hidden">
+                          <img src={photoUrl} alt="" draggable={false} className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-black/40" />
+                        </div>
+                      )}
+
                       {/* Insertion bar: dropping here repositions the dragged button(s) beside this tile */}
                       {dropIndex === tileIdx && (
                         <div className="absolute -left-[7px] top-1 bottom-1 w-[4px] rounded-full bg-brand-600 pointer-events-none" />
@@ -1381,22 +1394,42 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
                       {dropIndex === tileIdx + 1 && tileIdx === currentTab.buttons.length - 1 && (
                         <div className="absolute -right-[7px] top-1 bottom-1 w-[4px] rounded-full bg-brand-600 pointer-events-none" />
                       )}
-                      {isFolder && <div className="h-1.5 rounded-sm w-8 mb-1" style={{ background: button.color ?? '#A82040' }} />}
-                      <div className={`font-semibold text-[13.5px] leading-tight overflow-hidden ${isFolder ? 'text-gray-900 dark:text-gray-100' : ''}`}>
-                        {isFolder ? button.child_tab_name : button.product_name ?? button.product_ref}
+                      {/* `relative` so this stacks above the absolutely-positioned photo layer regardless of DOM order. */}
+                      <div className="relative flex-1 flex flex-col justify-between min-h-0">
+                        {isFolder && <div className="h-1.5 rounded-sm w-8 mb-1" style={{ background: button.color ?? '#A82040' }} />}
+                        <div
+                          className={`font-bold text-[14.5px] leading-tight overflow-hidden ${isFolder ? 'text-gray-900 dark:text-gray-100' : ''}`}
+                          style={photoUrl ? { textShadow: '0 1px 3px rgba(0,0,0,0.55)' } : undefined}
+                        >
+                          {isFolder ? button.child_tab_name : button.product_name ?? button.product_ref}
+                        </div>
+                        <div className="flex items-end justify-between gap-1.5">
+                          <span
+                            className={isFolder ? 'font-mono text-[11.5px] text-gray-500 dark:text-gray-400' : 'font-bold text-[13px]'}
+                            style={!isFolder && photoUrl ? { textShadow: '0 1px 3px rgba(0,0,0,0.55)' } : !isFolder ? { opacity: 0.9 } : undefined}
+                          >
+                            {isFolder ? '' : button.price_cents !== null ? centsToDisplay(button.price_cents) : ''}
+                          </span>
+                          {isFolder && <span className="text-[10px] font-medium opacity-70 text-gray-500 dark:text-gray-400">{button.child_tab_button_count ?? 0} items</span>}
+                        </div>
                       </div>
-                      <div className="flex items-end justify-between gap-1.5">
-                        <span className={`font-mono text-[11.5px] ${isFolder ? 'text-gray-500 dark:text-gray-400' : 'opacity-90'}`}>
-                          {isFolder ? '' : button.price_cents !== null ? centsToDisplay(button.price_cents) : ''}
-                        </span>
-                        {isFolder && <span className="text-[10px] font-medium opacity-70 text-gray-500 dark:text-gray-400">{button.child_tab_button_count ?? 0} items</span>}
-                      </div>
-                      {isSel && <div className="absolute top-1.5 right-1.5 w-[19px] h-[19px] rounded-full bg-brand-600 text-white text-[11px] flex items-center justify-center shadow">✓</div>}
+                      {/* Decorative "+" quick-add badge — mirrors the POS mockup's per-tile add
+                          affordance; purely visual here since the builder has no order/cart to add
+                          to. Hidden once selected so it doesn't collide with the checkmark badge. */}
+                      {!isFolder && !isSel && (
+                        <div
+                          className="absolute top-1.5 right-1.5 w-[22px] h-[22px] rounded-md flex items-center justify-center text-[15px] font-bold leading-none pointer-events-none"
+                          style={{ background: 'rgba(255,255,255,0.28)', color: fg }}
+                        >
+                          +
+                        </div>
+                      )}
+                      {isSel && <div className="absolute top-1.5 right-1.5 w-[19px] h-[19px] rounded-full bg-brand-600 text-white text-[11px] flex items-center justify-center shadow z-10">✓</div>}
                       {isFolder && (
                         <button
                           onPointerDown={(e) => e.stopPropagation()}
                           onClick={(e) => { e.stopPropagation(); if (button.child_tab_id) { setCurrentTabId(button.child_tab_id); setSelected(new Set()) } }}
-                          className="absolute top-1.5 right-1.5 w-[23px] h-[23px] rounded-md bg-black/10 hover:bg-brand-600 hover:text-white flex items-center justify-center text-[12px] text-gray-600"
+                          className="absolute top-1.5 right-1.5 w-[23px] h-[23px] rounded-md bg-black/10 hover:bg-brand-600 hover:text-white flex items-center justify-center text-[12px] text-gray-600 z-10"
                           title="Open tab"
                         >
                           ⤢
@@ -1405,7 +1438,7 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
                       {isSel && (
                         <div
                           onPointerDown={(e) => handleResizeStart(e, button)}
-                          className="absolute bottom-0.5 right-0.5 w-4 h-4 cursor-nwse-resize flex items-end justify-end opacity-70 text-[12px]"
+                          className="absolute bottom-0.5 right-0.5 w-4 h-4 cursor-nwse-resize flex items-end justify-end opacity-70 text-[12px] z-10"
                         >
                           ⟌
                         </div>
@@ -1558,18 +1591,34 @@ function Inspector({
 }) {
   const isFolder = button.kind === 'folder'
   const base = button.color ?? (isFolder ? '#5A5550' : button.category_color ?? '#5A5550')
+  const photoUrl = !isFolder ? button.product_photo_url : null
+  const fg = photoUrl ? '#ffffff' : isFolder ? undefined : textColorOn(base)
 
   return (
     <div className="w-72 shrink-0 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 p-4 overflow-auto flex flex-col gap-4">
       <div>
         <div className="text-[10.5px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-2">Preview</div>
         <div
-          className="rounded-xl px-3 py-2.5 flex flex-col justify-between"
-          style={{ height: 74, background: isFolder ? undefined : base, color: isFolder ? undefined : textColorOn(base) }}
+          className="relative rounded-2xl px-3.5 py-3 flex flex-col justify-between overflow-hidden"
+          style={{ height: 74, background: isFolder || photoUrl ? undefined : base, color: fg }}
         >
-          {isFolder && <div className="h-1.5 rounded-sm w-8" style={{ background: button.color ?? '#A82040' }} />}
-          <div className="font-semibold text-[13.5px]">{isFolder ? button.child_tab_name : button.product_name ?? button.product_ref}</div>
-          {!isFolder && button.price_cents !== null && <span className="font-mono text-[11.5px]">{centsToDisplay(button.price_cents)}</span>}
+          {photoUrl && (
+            <>
+              <img src={photoUrl} alt="" draggable={false} className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-black/40" />
+            </>
+          )}
+          <div className="relative flex-1 flex flex-col justify-between min-h-0">
+            {isFolder && <div className="h-1.5 rounded-sm w-8" style={{ background: button.color ?? '#A82040' }} />}
+            <div className="font-bold text-[14.5px]" style={photoUrl ? { textShadow: '0 1px 3px rgba(0,0,0,0.55)' } : undefined}>
+              {isFolder ? button.child_tab_name : button.product_name ?? button.product_ref}
+            </div>
+            {!isFolder && button.price_cents !== null && (
+              <span className="font-bold text-[13px]" style={photoUrl ? { textShadow: '0 1px 3px rgba(0,0,0,0.55)' } : { opacity: 0.9 }}>
+                {centsToDisplay(button.price_cents)}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
