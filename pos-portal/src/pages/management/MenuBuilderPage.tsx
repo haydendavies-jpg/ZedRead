@@ -548,20 +548,82 @@ function parseDropAttr(attr: string | null): DropTarget | null {
   return null
 }
 
-// A button's effective grid cell: its explicit grid_col/grid_row when set,
-// else the same running width×height offset the empty-"+"-slot padding uses
-// (see the render loop below) — accurate whenever tiles tessellate cleanly,
-// same documented caveat as that computation.
-function computeCellForButton(buttons: MenuButton[], buttonId: string): { col: number; row: number } {
-  let offset = 0
-  for (const b of buttons) {
-    if (b.id === buttonId) {
-      if (b.grid_col !== null && b.grid_row !== null) return { col: b.grid_col, row: b.grid_row }
-      return { col: offset % 6, row: Math.floor(offset / 6) }
-    }
-    offset += b.width * b.height
+// Single source of truth for every tile's grid cell — both rendering and drop
+// targeting (data-drop coordinates, swap positions, empty-cell placement) read
+// from this same computation, so what's drawn on screen and what a drop
+// actually targets can never disagree.
+//
+// Previously each concern computed its own approximate coordinate (a running
+// width×height offset assuming buttons pack with no gaps), while the browser
+// rendered unpinned tiles via CSS grid-auto-flow: dense independently. Those
+// two only agreed when no button had an explicit grid_col/grid_row yet; once
+// any button was pinned (leaving a real gap), the approximation silently
+// pointed at the wrong cell — sometimes one already occupied by another
+// button (a real overlap, not just a visual one: both buttons truly share
+// that grid_col/grid_row in the database, one painted over the other), and a
+// dropped tile could land somewhere the user never saw highlighted.
+//
+// This function replaces both the CSS auto-flow rendering AND the ad hoc
+// offset math with one explicit, deterministic pack: pinned (grid_col/
+// grid_row set) buttons keep their cell; every other button and the empty
+// "+" slots are assigned row-major, first-available-gap (mirroring what
+// dense auto-flow used to produce for the unpinned subset) around them.
+interface GridLayout {
+  positions: Map<string, { col: number; row: number }>
+  emptyCells: { col: number; row: number }[]
+}
+
+function computeGridLayout(buttons: MenuButton[], extraRows: number, cols = 6): GridLayout {
+  const occupied = new Set<string>()
+  const key = (col: number, row: number) => `${col},${row}`
+  const markOccupied = (col: number, row: number, w: number, h: number) => {
+    for (let dr = 0; dr < h; dr++) for (let dc = 0; dc < w; dc++) occupied.add(key(col + dc, row + dr))
   }
-  return { col: 0, row: 0 }
+  const fits = (col: number, row: number, w: number, h: number) => {
+    if (col + w > cols) return false
+    for (let dr = 0; dr < h; dr++) for (let dc = 0; dc < w; dc++) if (occupied.has(key(col + dc, row + dr))) return false
+    return true
+  }
+
+  const positions = new Map<string, { col: number; row: number }>()
+
+  // Pass 1: explicit placements first, so auto-packed buttons flow around them.
+  for (const b of buttons) {
+    if (b.grid_col !== null && b.grid_row !== null) {
+      positions.set(b.id, { col: b.grid_col, row: b.grid_row })
+      markOccupied(b.grid_col, b.grid_row, b.width, b.height)
+    }
+  }
+  // Pass 2: auto-flow the rest, row-major, first gap that fits.
+  for (const b of buttons) {
+    if (b.grid_col !== null && b.grid_row !== null) continue
+    for (let row = 0; ; row++) {
+      let placed = false
+      for (let col = 0; col <= cols - b.width; col++) {
+        if (fits(col, row, b.width, b.height)) {
+          positions.set(b.id, { col, row })
+          markOccupied(col, row, b.width, b.height)
+          placed = true
+          break
+        }
+      }
+      if (placed) break
+    }
+  }
+
+  let maxRowUsed = -1
+  for (const b of buttons) {
+    const pos = positions.get(b.id)
+    if (pos) maxRowUsed = Math.max(maxRowUsed, pos.row + b.height - 1)
+  }
+  const rows = Math.max(1, maxRowUsed + 1) + extraRows
+  const emptyCells: { col: number; row: number }[] = []
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      if (!occupied.has(key(col, row))) emptyCells.push({ col, row })
+    }
+  }
+  return { positions, emptyCells }
 }
 
 function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: string; onBack: () => void }) {
@@ -643,6 +705,14 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
   const effectiveTabId = currentTabId && tabsById.has(currentTabId) ? currentTabId : topLevelTabs[0]?.id ?? null
   const currentTab = effectiveTabId ? tabsById.get(effectiveTabId) ?? null : null
 
+  // Single source of truth for this tab's grid — see computeGridLayout's
+  // docstring for why rendering and drop-targeting both read from here
+  // instead of each computing their own (previously divergent) coordinate.
+  const gridLayout = useMemo(
+    () => computeGridLayout(currentTab?.buttons ?? [], currentTab ? extraRowsByTab[currentTab.id] ?? 0 : 0),
+    [currentTab, extraRowsByTab],
+  )
+
   const breadcrumb = useMemo(() => {
     const chain: MenuTab[] = []
     let node = currentTab
@@ -699,6 +769,18 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
     onSuccess: (resp) => {
       qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) => (old ? { ...old, tabs: [...old.tabs, resp.data] } : old))
       setCurrentTabId(resp.data.id)
+      setSelected(new Set())
+    },
+    onError: onMutErr,
+  })
+  const deleteTab = useMutation({
+    mutationFn: (tabId: string) => api.delete(`/menu-layouts/${layoutId}/tabs/${tabId}`, { params }),
+    // 204 No Content — remove the tab (and, per the backend's cascade, every
+    // descendant tab) from the cache locally rather than refetching.
+    onSuccess: (_resp, tabId) => {
+      qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) =>
+        old ? { ...old, tabs: removeTabAndDescendants(old.tabs, tabId) } : old,
+      )
       setSelected(new Set())
     },
     onError: onMutErr,
@@ -1073,8 +1155,9 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
       setSelected(new Set())
       return
     }
-    const draggedCell = computeCellForButton(currentTab.buttons, draggedId)
-    const targetCell = computeCellForButton(currentTab.buttons, targetButtonId)
+    const draggedCell = gridLayout.positions.get(draggedId)
+    const targetCell = gridLayout.positions.get(targetButtonId)
+    if (!draggedCell || !targetCell) return
     placeButton.mutate({ buttonId: draggedId, tabId, gridCol: targetCell.col, gridRow: targetCell.row })
     placeButton.mutate({ buttonId: targetButtonId, tabId, gridCol: draggedCell.col, gridRow: draggedCell.row })
     setSelected(new Set())
@@ -1186,6 +1269,18 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
               <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: tab.color ?? '#5A5550' }} />
               <span className="truncate flex-1">{tab.name}</span>
               <span className="text-[11px] text-gray-400 dark:text-gray-500">{tab.buttons.length}</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (window.confirm(`Delete tab "${tab.name}"? Its buttons and any nested tabs are deleted too.`)) {
+                    deleteTab.mutate(tab.id)
+                  }
+                }}
+                className="shrink-0 w-4 h-4 rounded flex items-center justify-center text-gray-400 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                title="Delete tab"
+              >
+                ×
+              </button>
             </div>
           ))}
           <button
@@ -1264,15 +1359,20 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
                       } ${isFolder && dragOverTarget?.kind === 'tab' && dragOverTarget.tabId === button.child_tab_id ? 'ring-2 ring-brand-400' : ''} ${
                         !isFolder && dragOverTarget?.kind === 'button' && dragOverTarget.buttonId === button.id ? 'ring-2 ring-brand-400' : ''
                       }`}
-                      style={{
-                        // grid_col/grid_row (drag-to-any-cell placement) pin the
-                        // tile to an explicit cell; null falls back to dense
-                        // auto-flow packing via display_order, same as before.
-                        gridColumn: button.grid_col !== null ? `${button.grid_col + 1} / span ${button.width}` : `span ${button.width}`,
-                        gridRow: button.grid_row !== null ? `${button.grid_row + 1} / span ${button.height}` : `span ${button.height}`,
-                        background: isFolder ? undefined : base,
-                        color: isFolder ? undefined : textColorOn(base),
-                      }}
+                      style={(() => {
+                        // Every tile's cell comes from gridLayout — the same
+                        // computation the empty-"+"-slot and drop-target
+                        // coordinates use, so rendering can never disagree
+                        // with what a drop actually targets (see
+                        // computeGridLayout's docstring).
+                        const cell = gridLayout.positions.get(button.id)
+                        return {
+                          gridColumn: cell ? `${cell.col + 1} / span ${button.width}` : `span ${button.width}`,
+                          gridRow: cell ? `${cell.row + 1} / span ${button.height}` : `span ${button.height}`,
+                          background: isFolder ? undefined : base,
+                          color: isFolder ? undefined : textColorOn(base),
+                        }
+                      })()}
                     >
                       {/* Insertion bar: dropping here repositions the dragged button(s) beside this tile */}
                       {dropIndex === tileIdx && (
@@ -1313,48 +1413,34 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
                     </div>
                   )
                 })}
-                {(() => {
-                  // Pad the grid with dashed "+" slots to full rows of 6:
-                  // an empty tab shows one full row, and "+ Row" adds 6 more.
-                  // Cells are approximated as width×height per button — with
-                  // grid-auto-flow:dense the browser packs around spans, so
-                  // this is the same arithmetic the packing works out to
-                  // whenever tiles tessellate cleanly. Each empty slot's own
-                  // grid_col/grid_row (for drag/click placement) is derived
-                  // from the same running cell offset — accurate whenever
-                  // tiles tessellate cleanly, same caveat as the count above;
-                  // an explicitly-placed button sitting at a discontinuous
-                  // cell can make an empty tile's computed coordinate overlap
-                  // it visually, which this approximation doesn't detect.
-                  const cellsUsed = currentTab.buttons.reduce((sum, b) => sum + b.width * b.height, 0)
-                  const rows = Math.max(1, Math.ceil(cellsUsed / 6)) + (extraRowsByTab[currentTab.id] ?? 0)
-                  const emptyCount = Math.max(0, rows * 6 - cellsUsed)
-                  return Array.from({ length: emptyCount }, (_, i) => {
-                    const offset = cellsUsed + i
-                    const col = offset % 6
-                    const row = Math.floor(offset / 6)
-                    const isDragOver =
-                      dragOverTarget?.kind === 'cell' &&
-                      dragOverTarget.tabId === currentTab.id &&
-                      dragOverTarget.gridCol === col &&
-                      dragOverTarget.gridRow === row
-                    return (
-                      <button
-                        key={`empty-${i}`}
-                        data-drop={`cell:${currentTab.id}:${col}:${row}`}
-                        onClick={() => { setPendingCell({ col, row }); setShowProductPicker(true) }}
-                        className={`border-[1.5px] border-dashed rounded-xl flex items-center justify-center text-2xl ${
-                          isDragOver
-                            ? 'border-brand-500 ring-2 ring-brand-400 text-brand-500'
-                            : 'border-gray-300 dark:border-gray-600 text-gray-300 dark:text-gray-600 hover:border-brand-500 hover:text-brand-600'
-                        }`}
-                        style={{ gridColumn: 'span 1', gridRow: 'span 1' }}
-                      >
-                        +
-                      </button>
-                    )
-                  })
-                })()}
+                {/* Pad the grid with dashed "+" slots for every truly-empty cell
+                    gridLayout found (a full row when the tab is empty; "+ Row"
+                    extends it). These coordinates come from the same packer
+                    that positions every button, so a slot shown here is
+                    guaranteed unoccupied — never a cell some button already
+                    holds. */}
+                {gridLayout.emptyCells.map(({ col, row }) => {
+                  const isDragOver =
+                    dragOverTarget?.kind === 'cell' &&
+                    dragOverTarget.tabId === currentTab.id &&
+                    dragOverTarget.gridCol === col &&
+                    dragOverTarget.gridRow === row
+                  return (
+                    <button
+                      key={`empty-${col}-${row}`}
+                      data-drop={`cell:${currentTab.id}:${col}:${row}`}
+                      onClick={() => { setPendingCell({ col, row }); setShowProductPicker(true) }}
+                      className={`border-[1.5px] border-dashed rounded-xl flex items-center justify-center text-2xl ${
+                        isDragOver
+                          ? 'border-brand-500 ring-2 ring-brand-400 text-brand-500'
+                          : 'border-gray-300 dark:border-gray-600 text-gray-300 dark:text-gray-600 hover:border-brand-500 hover:text-brand-600'
+                      }`}
+                      style={{ gridColumn: `${col + 1} / span 1`, gridRow: `${row + 1} / span 1` }}
+                    >
+                      +
+                    </button>
+                  )
+                })}
               </div>
             )}
 

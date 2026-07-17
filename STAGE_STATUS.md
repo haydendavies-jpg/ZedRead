@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-17 (Menu Studio — feedback round 3 follow-up: swap-onto-tile + place/reorder latency)
+Last updated: 2026-07-17 (Menu Studio — grid coordinate correctness fix + tab delete)
 
 ---
 
@@ -885,6 +885,45 @@ Two issues reported after the round-3 merge, on the same POS Layout grid editor:
 - [x] **Dropping a button onto an occupied tile still only "slotted between" buttons, never onto the tile itself.** Root cause: `handlePointerDownTile`'s hover detection treated *any* position over a non-folder tile as an insertion target (`!isFolderTile || relX < 0.25 || relX > 0.75` was always true for a product tile, since `!isFolderTile` alone satisfies it) — there was no code path that ever resolved to "drop directly onto this tile," only "insert beside it." Fixed by scoping insertion to the tile's outer 25% edges for *every* tile kind, and giving the center 50% of a non-folder tile a new `'button'` drop-target kind: dropping there now swaps the dragged button and the tile's occupant into each other's exact grid cells via two `PATCH .../place` calls (`swapOntoButton()`, `computeCellForButton()` — the latter reuses the same running width×height offset already used to compute empty "+" slot coordinates when a button has no explicit `grid_col`/`grid_row` yet). Both gestures — slot-between (edges) and drop-onto/swap (center) — are now reachable on the same tile.
 - [x] **Still-slow moves.** `reorder_menu_buttons()` and `place_menu_button()` — both fired on every single drag — carried avoidable extra round trips: `reorder_menu_buttons` re-fetched the destination tab and re-selected its buttons from the database *after* already committing the very same (in-memory, now-committed) rows moments earlier, instead of just reusing them; `place_menu_button` called `db.refresh(button)` even though every field `MenuButtonOut` reads was already assigned in Python before the commit and none of them are server-generated. Removed both redundant round trips — under this project's already-documented RTT-bound deployment (Railway US-West / Supabase Seoul, not yet co-located per the earlier "request latency optimization" round's deployment follow-up), each avoided round trip is a full network hop, so this directly compounds with that known, still-outstanding regional-latency gap rather than being a separate bug.
 - [x] Tests: full backend suite (746 tests) green; portal typecheck (`tsc -p tsconfig.app.json --noEmit`) clean. Not covered: no browser-driven verification of the drag gestures was performed this session.
+
+---
+
+### Menu Studio — grid coordinate correctness fix + tab delete ✅
+
+A screen recording of the previous follow-up's swap-onto-tile fix surfaced the actual root cause
+behind three symptoms the user reported as one thing ("movement is finicky"): tiles landing in the
+wrong place after a drop, a tile ending up "on top of" (painted over, not deleted — confirmed by
+frame-by-frame review) another tile, and a persistently-highlighted drop target with no visible
+progress. All three traced to one bug:
+
+- [x] **The coordinate a drop used and the coordinate a tile actually rendered at could disagree.**
+  Empty "+" slot coordinates (and `computeCellForButton()`'s fallback for an unpinned button, added
+  in the prior follow-up) were both approximated as a running width×height offset assuming buttons
+  pack with no gaps — while the browser rendered any *unpinned* button via CSS
+  `grid-auto-flow: dense` independently. Those two only ever agreed when nothing in the tab had an
+  explicit `grid_col`/`grid_row` yet. The moment one button was pinned (which every drag-to-a-cell
+  action does), it left a real gap the offset arithmetic didn't know about, so a "+"-slot's computed
+  coordinate could point at a cell some other button already explicitly occupied — a real, in-the-
+  database overlap, not just a rendering artifact, matching the observed "tile on top of the group."
+  Recorded video showed a product tile's PATCH `/place` call landing at a coordinate that then
+  rendered directly under an already-pinned folder tile, visually erasing it (still present, just
+  painted underneath — confirmed by dragging the covering tile away and seeing the folder reappear).
+- [x] Replaced both the CSS auto-flow rendering path and the ad hoc offset math with one
+  deterministic packer, `computeGridLayout()`: pinned buttons keep their explicit cell; every other
+  button and every empty "+" slot are assigned row-major, first-available-gap, computed once per
+  render and shared by everything that needs a coordinate — the tile's own `gridColumn`/`gridRow`
+  style, the "+" slot's `data-drop` coordinate, and `swapOntoButton()`'s before/after cell lookup all
+  now read from the same `gridLayout.positions`/`gridLayout.emptyCells`, so what's drawn on screen
+  and what a drop targets can no longer diverge. `computeCellForButton()` is gone; nothing computes
+  its own coordinate anymore.
+- [x] **No option to delete a tab** — `DELETE /menu-layouts/{id}/tabs/{tab_id}` (cascade-deletes
+  nested tabs and their buttons) has existed since Stage 23; the portal never wired it to anything.
+  Added a `deleteTab` mutation and a hover "×" per tab in the rail (confirm dialog, since it cascades
+  buttons and nested tabs) — `effectiveTabId`'s existing "fall back to the first remaining top-level
+  tab" logic already covers deleting the currently-open tab correctly, no other UI change needed.
+- [x] Tests: portal typecheck (`tsc -p tsconfig.app.json --noEmit`) and ESLint clean on the changed
+  file. Not covered: no browser-driven re-verification of the fixed drag gestures was performed this
+  session (the bug was diagnosed from a user-supplied screen recording, not reproduced live).
 
 ---
 
