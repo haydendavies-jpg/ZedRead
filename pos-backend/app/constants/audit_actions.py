@@ -71,6 +71,7 @@ USER_INVITED = "user.invited"
 USER_INVITE_ACCEPTED = "user.invite.accepted"
 USER_PIN_ADMIN_SET = "user.pin.admin_set"  # Portal admin sets a PIN on behalf of a POS user
 USER_BACKEND_ROLE_UPDATED = "user.backend_role.updated"
+USER_PASSWORD_ADMIN_SET = "user.password.admin_set"  # Portal admin sets a password on behalf of a POS user
 
 # ── Phase 2 / Stage 8 — Product Catalog ──────────────────────────────────────
 PRODUCT_CREATED = "product.created"
