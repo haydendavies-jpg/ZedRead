@@ -235,6 +235,21 @@ lag (a page-specific full-tree `invalidateQueries` on every mutation, distinct f
 general request-latency round) is fixed by patching the `['menu-layout', id]` cache directly from
 each mutation's own (now-broadened) response instead of refetching.
 
+**Menu Studio — POS Layout tile style redesign (post-feedback-round-3, complete).** Restyled the
+grid editor's product/folder tiles from a reference POS mockup — larger rounded corners, a bolder/
+larger product name and price (price switched from the table-numeral `font-mono` convention to a
+bold sans figure, since these tiles model an actual POS button rather than a data table), and a
+decorative round "+" quick-add badge on every unselected product tile. `MenuButtonOut` gained
+`product_photo_url` (resolved from the linked product's existing `photo_url` — no migration, that
+column and its upload route have existed since Stage 8/24) so a tile can show the linked product's
+photo as a full-bleed background with a legibility scrim instead of a flat colour, falling back to
+the flat colour tile when the product has none (true for virtually every product today — there's no
+photo-upload control on `ProductsPage.tsx` yet, an existing gap this didn't take on). The rail of
+top-level tabs was deliberately left untouched — out of scope for this pass. See `STAGE_STATUS.md`
+"POS Layout tile style redesign" for the full before/after and how it was verified (a static,
+class-accurate mockup screenshot — this environment has no reachable Postgres to drive the real
+editor end-to-end).
+
 ## Folder structure (backend)
 ```
 pos-backend/

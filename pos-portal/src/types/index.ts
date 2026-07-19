@@ -433,6 +433,8 @@ export interface MenuButton {
   is_active: boolean | null
   /** The linked product's category default colour — powers the inspector's "Category default" reset. */
   category_color: string | null
+  /** The linked product's photo, if it has one — renders as the tile's background image. */
+  product_photo_url: string | null
   /** Set only when kind='folder' — the nested tab this button opens. */
   child_tab_name: string | null
   child_tab_button_count: number | null

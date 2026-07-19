@@ -179,6 +179,7 @@ def _build_button_out(
         price_cents=product.base_price_cents if product else None,
         is_active=product.is_active if product else None,
         category_color=category_color,
+        product_photo_url=product.photo_url if product else None,
     )
 
 
