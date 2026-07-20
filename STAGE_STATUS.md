@@ -1056,6 +1056,39 @@ Three issues from actually exercising the tab rail redesign against a live layou
 
 ---
 
+### Standalone auth pages — dark theme consolidation + theme toggle ✅
+
+User-reported: the login page's dark theme didn't match the logged-in app's. Root cause —
+`LoginPage.tsx`, `ForgotPasswordPage.tsx`, and `ResetPasswordPage.tsx` don't render inside
+`Layout.tsx` (no session yet, so no sidebar), and each independently hard-coded its own full-screen
+`bg-gray-50 dark:bg-gray-900` — a plain Tailwind grey, not `--zr-bg`, the warm cream/near-black
+canvas every authenticated page actually sits on via `Layout.tsx`'s `<main>`. The wordmark
+(`text-brand-800`) also had no dark-mode colour at all, reading as illegibly dark-on-dark once the
+card itself went dark. Three separate copies of the same page shell meant this had already drifted
+once and could easily drift again.
+
+- [x] New `AuthPageShell.tsx` consolidates all three pages onto one shell: the
+  `bg-[var(--zr-bg)]` full-screen canvas (now identical to every authenticated page's background in
+  both themes), the `bg-white dark:bg-gray-800` card (kept — same convention `Modal.tsx` and every
+  other card in the app already use, so this deliberately does *not* switch to the `--zr-surface`
+  token, which would make the auth pages' cards look different from every other card instead of
+  matching them), and the wordmark recoloured to `text-[var(--zr-accent-text)]` (the design guide's
+  token for accent-toned text on a normal, non-solid-accent surface — legible in both themes, unlike
+  the old hard-coded brand-800). `LoginPage.tsx` (all three of its views — the main form, the
+  identity selector, and the grant selector), `ForgotPasswordPage.tsx`, and `ResetPasswordPage.tsx`
+  now just supply their own form/heading content as `<AuthPageShell>` children.
+- [x] **Theme toggle added** — none of these three pages render inside the sidebar, the toggle's
+  only previous home, so a user landing on `/login` (or arriving fresh via a password-reset email
+  link) had no way to switch themes before authenticating. `AuthPageShell` renders the same
+  `useTheme()`/`☀`/`☾` toggle pattern as `Layout.tsx`'s sidebar footer, pinned to the card's
+  top-right corner.
+- [x] Verified visually via `vite build` + `vite preview` (this environment has no reachable
+  Postgres, but these three pages render fully client-side with no API calls until form submit) and
+  Playwright screenshots of `/login`, `/forgot-password`, and `/reset-password` in both themes —
+  confirmed the same warm canvas colour as the rest of the app and a legible wordmark in dark mode.
+
+---
+
 ## Phase 9 — Product Model Extensions
 
 ### Stage 24 — Product Extensions ✅

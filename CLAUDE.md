@@ -273,6 +273,19 @@ rounding per row, `ring-inset` on the active/drag-over ring so it doesn't bleed 
 touching neighbour) rather than a list of separated rounded cards, matching the reference's stacked
 square-cornered blocks.
 
+**Standalone auth pages — dark theme consolidation + theme toggle (post-rail-testing-fixes,
+complete).** User-reported: the login page's dark theme didn't match the logged-in app's. Root
+cause — `LoginPage.tsx`/`ForgotPasswordPage.tsx`/`ResetPasswordPage.tsx` render outside
+`Layout.tsx` (no session yet, so no sidebar) and each hard-coded its own `bg-gray-50
+dark:bg-gray-900` canvas instead of `--zr-bg`, the warm cream/near-black token every authenticated
+page actually sits on; the wordmark also had no dark-mode colour at all. New `AuthPageShell.tsx`
+consolidates all three pages onto one shell (`bg-[var(--zr-bg)]` canvas, `text-[var(--zr-accent-
+text)]` wordmark; the card itself stays `bg-white dark:bg-gray-800`, deliberately matching
+`Modal.tsx`'s existing convention rather than switching to a different token) and adds a theme
+toggle — none of these pages had one before, since the only prior toggle lived in the sidebar these
+pages don't render. See `pos-portal/CLAUDE.md`'s "Standalone auth pages" section and
+`STAGE_STATUS.md` "Standalone auth pages — dark theme consolidation + theme toggle".
+
 ## Folder structure (backend)
 ```
 pos-backend/
