@@ -1089,6 +1089,29 @@ once and could easily drift again.
 
 ---
 
+### Menus tab removal (redundant with Menu Studio's POS Layout) ✅
+
+User-reported: the standalone "Menus" nav tab (`MenusPage.tsx`, `/management/menus`) looked
+redundant against Menu Studio. Investigation confirmed it: the `menus` table/router/service
+(migration `0041`) was a saved, schedulable configuration distinct from a `menu_layouts` row, but
+nothing ever consumed it — the POS read contract (`GET /pos/menu-layout`) only ever reads
+`menu_layouts`, never `menus`, and Phase 2 (migration `0042`) had already added the identical
+draft/schedule/publish lifecycle directly onto `menu_layouts` (`is_published`, `published_at`,
+`scheduled_publish_at`), which Menu Studio's POS Layout editor already exposes. Nothing in Menu
+Studio (`MenuBuilderPage.tsx`, `menu_builder_service.py`, `menu_layouts.py`) imported or depended on
+the `menus` entity — only `MenusPage.tsx` itself did.
+
+- [x] Removed: `routes/menus.py`, `services/menu_service.py`, `schemas/menu.py`, `models/menu.py`,
+  `tests/integration/test_menu_routes.py`; the six `MENU_*` audit action constants; the `menus`
+  page key from `PAGE_CATALOG` (`app/constants/pages.py`) and the pro-tier license gate
+  (`app/constants/license_plans.py`) — see updated `ROLE_MODEL.md` §6 (19 pages, down from 20).
+- [x] Migration `0048` drops the `menus` table and `menus_ref_seq` sequence (reversible downgrade
+  recreates both, matching migration `0041`'s original definition).
+- [x] Portal: deleted `MenusPage.tsx`; removed its route (`/management/menus`) and nav entry
+  (`MGMT_NAV` in `Layout.tsx`) and the `Menu` TypeScript interface (`types/index.ts`).
+
+---
+
 ## Phase 9 — Product Model Extensions
 
 ### Stage 24 — Product Extensions ✅

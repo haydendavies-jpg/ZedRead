@@ -34,7 +34,6 @@ PRO_PLAN_PAGES: frozenset[str] = frozenset(
         "categories",
         "reporting_groups",
         "menu_builder",
-        "menus",
         "site_settings",
         "devices",
         "tax_settings",

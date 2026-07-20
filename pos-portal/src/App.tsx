@@ -3,7 +3,7 @@
  *
  * Routes are split by user type:
  *   SuperAdmin routes  (/groups, /brands, /sites, /licenses, /superadmins, /users)
- *   Management routes  (/management/menu-studio, /menus, /tax, /reports, /users, /access-profiles)
+ *   Management routes  (/management/menu-studio, /tax, /reports, /users, /access-profiles)
  *
  * The Layout sidebar adapts based on JWT type (portal_access vs mgmt_access).
  * PrivateRoute enforces authentication; requireSuperAdmin guards admin-only routes.
@@ -31,7 +31,6 @@ import { ModifiersPage } from './pages/management/ModifiersPage'
 import { CategoriesPage } from './pages/management/CategoriesPage'
 import { MenuBuilderPage } from './pages/management/MenuBuilderPage'
 import { MenuStudioPage } from './pages/management/MenuStudioPage'
-import { MenusPage } from './pages/management/MenusPage'
 import { ReportsPage } from './pages/management/ReportsPage'
 import { InvoicesPage } from './pages/management/InvoicesPage'
 import { InvoiceDetailPage } from './pages/management/InvoiceDetailPage'
@@ -165,7 +164,6 @@ export default function App() {
               {/* Management routes — available to both SuperAdmin and management users */}
               <Route path="management" element={<Navigate to="/management/menu-studio" replace />} />
               <Route path="management/menu-studio" element={<MenuStudioPage />} />
-              <Route path="management/menus" element={<MenusPage />} />
               <Route path="management/products" element={<ProductsPage />} />
               <Route path="management/modifiers" element={<ModifiersPage />} />
               <Route path="management/categories" element={<CategoriesPage />} />
