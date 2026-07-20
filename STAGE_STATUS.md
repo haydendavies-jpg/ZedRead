@@ -1120,9 +1120,16 @@ chip rather than a useful preview (unlike `ColorSwatchPicker`'s other use on `Ca
 where the swatch sits on a neutral card row and a colour preview makes sense there).
 
 - [x] `ColorSwatchPicker` gained a `trigger?: 'swatch' | 'icon'` prop (default `'swatch'`, so
-  `CategoriesPage.tsx`'s usage is unchanged). `trigger="icon"` renders a small neutral white
-  edit-pencil badge instead of a `value`-filled square — used only by the tab rail's colour picker,
-  since that's the one trigger that sits on a surface already filled with its own `value`.
+  `CategoriesPage.tsx`'s usage is unchanged). `trigger="icon"` renders a small edit-pencil glyph
+  instead of a `value`-filled square — used only by the tab rail's colour picker, since that's the
+  one trigger that sits on a surface already filled with its own `value`.
+- [x] **Immediate follow-up** — the first pass rendered the pencil in an opaque white rounded
+  badge (`bg-white/90 shadow-sm`), which the user flagged as still not matching the reference: they
+  wanted it to read as a plain glyph with no background of its own, at the same small scale as the
+  adjacent delete "×" button. Changed to `w-5 h-5 rounded hover:bg-black/15` with no background/
+  text-colour classes at all, so it inherits `color` from the tab row's own `style={{ color: tabFg
+  }}` via normal CSS cascade — identical sizing and "just a hover highlight" styling to the delete
+  button beside it, rather than a separate opaque chip.
 - [x] Verified via the same static mockup-screenshot technique as the prior rail rounds.
 
 ---

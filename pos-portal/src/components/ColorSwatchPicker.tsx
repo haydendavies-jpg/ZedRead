@@ -10,10 +10,11 @@ interface ColorSwatchPickerProps {
   title?: string
   /**
    * 'swatch' (default) previews `value` as the trigger's own fill — reads fine on a neutral
-   * surface (e.g. Categories' card row). 'icon' renders a small neutral edit-pencil button
-   * instead, for triggers that already sit on a surface filled with `value` itself (e.g. a
-   * Menu Builder tab tile) — there, a same-coloured swatch reads as a redundant chip that
-   * blends into its own background rather than as a colour preview.
+   * surface (e.g. Categories' card row). 'icon' renders a small edit-pencil glyph instead, with
+   * no background of its own (matching the plain, currentColor-inheriting style of an adjacent
+   * delete "×" button) — for triggers that already sit on a surface filled with `value` itself
+   * (e.g. a Menu Builder tab tile), where a same-coloured swatch or an opaque badge both read as
+   * an odd chip rather than a colour preview.
    */
   trigger?: 'swatch' | 'icon'
 }
@@ -68,7 +69,7 @@ export function ColorSwatchPicker({ value, onChange, title, trigger = 'swatch' }
           type="button"
           title={title ?? 'Colour'}
           onClick={(e) => { e.stopPropagation(); handleToggle() }}
-          className="w-6 h-6 rounded-md bg-white/90 hover:bg-white text-gray-700 shadow-sm flex items-center justify-center text-[11px] shrink-0"
+          className="w-5 h-5 rounded flex items-center justify-center hover:bg-black/15 text-[11px] opacity-80 shrink-0"
         >
           ✎
         </button>
