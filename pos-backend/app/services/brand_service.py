@@ -37,6 +37,7 @@ from app.services import branding_service
 from app.services.access_profile_service import seed_system_profiles
 from app.services.audit_service import log_action
 from app.services.branding_service import ResolvedValue
+from app.utils.dependencies import ManagementAccess, _actor_from_mgmt
 from app.utils.security import hash_password
 from app.utils.storage import ALLOWED_LOGO_TYPES, MAX_LOGO_BYTES, extension_for_content_type, upload_image
 
@@ -196,6 +197,82 @@ async def _get_or_404(db: AsyncSession, brand_id: uuid.UUID, actor: SuperAdmin) 
     return brand
 
 
+def _authorize_management(brand_id: uuid.UUID, mgmt: ManagementAccess, *, write: bool) -> None:
+    """
+    Verify a management-portal caller may access this Brand, for the
+    tenant-facing Company Profile page.
+
+    Read access extends to the caller's own Brand scope plus, for a
+    Site-scoped caller, their ancestor Brand (needed to display the
+    inherited logo/billing-email on the Site profile form). Write access is
+    restricted to an exact Brand-scope match — a Site-scoped caller may view
+    but never edit their ancestor Brand's profile.
+
+    Args:
+        brand_id: The UUID of the brand being accessed.
+        mgmt: The authenticated management-portal caller.
+        write: True to apply the stricter write-scope check.
+
+    Raises:
+        HTTPException: 404 if the brand is outside the caller's scope (matches
+            _get_or_404's "treat as not found" convention for out-of-scope IDs).
+    """
+    if mgmt.scope == "brand" and mgmt.brand and mgmt.brand.id == brand_id:
+        return
+    if not write and mgmt.scope == "site" and mgmt.brand and mgmt.brand.id == brand_id:
+        return
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Brand not found")
+
+
+async def _fetch_for_management(db: AsyncSession, brand_id: uuid.UUID, mgmt: ManagementAccess, *, write: bool) -> Brand:
+    """
+    Fetch a Brand for a management-portal caller, enforcing scope.
+
+    Args:
+        db: Active database session.
+        brand_id: The UUID of the brand to fetch.
+        mgmt: The authenticated management-portal caller.
+        write: True to apply the stricter write-scope check.
+
+    Returns:
+        Brand: The found brand.
+
+    Raises:
+        HTTPException: 404 if the brand is outside the caller's scope, or does not exist.
+    """
+    _authorize_management(brand_id, mgmt, write=write)
+    result = await db.execute(select(Brand).where(Brand.id == brand_id))
+    brand = result.scalar_one_or_none()
+    if brand is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Brand not found")
+    return brand
+
+
+async def _resolve_for_write(
+    db: AsyncSession, brand_id: uuid.UUID, actor: SuperAdmin | ManagementAccess
+) -> tuple[Brand, dict]:
+    """
+    Fetch a Brand for a write action and resolve its log_action() actor kwargs.
+
+    Args:
+        db: Active database session.
+        brand_id: The UUID of the brand to fetch.
+        actor: The authenticated SuperAdmin or management-portal caller.
+
+    Returns:
+        tuple[Brand, dict]: The brand and keyword arguments ready to splat
+            into log_action() (actor_id/actor_email/actor_name).
+
+    Raises:
+        HTTPException: 404 if the brand is outside the actor's scope.
+    """
+    if isinstance(actor, SuperAdmin):
+        brand = await _get_or_404(db, brand_id, actor)
+        return brand, {"actor_id": actor.id, "actor_email": actor.email, "actor_name": actor.name}
+    brand = await _fetch_for_management(db, brand_id, actor, write=True)
+    return brand, _actor_from_mgmt(actor)
+
+
 async def list_brands(
     db: AsyncSession,
     actor: SuperAdmin,
@@ -236,14 +313,15 @@ async def list_brands(
     return list(result.scalars().all())
 
 
-async def get_brand(db: AsyncSession, brand_id: uuid.UUID, actor: SuperAdmin) -> Brand:
+async def get_brand(db: AsyncSession, brand_id: uuid.UUID, actor: SuperAdmin | ManagementAccess) -> Brand:
     """
-    Fetch a single brand by ID, scoped to the actor's own accounts if Reseller Staff.
+    Fetch a single brand by ID, scoped to the actor's own accounts if Reseller
+    Staff, or to a management-portal caller's own scope (see _authorize_management).
 
     Args:
         db: Active database session.
         brand_id: The UUID of the brand.
-        actor: The authenticated SuperAdmin performing the action.
+        actor: The authenticated SuperAdmin or management-portal caller.
 
     Returns:
         Brand: The found brand.
@@ -251,7 +329,9 @@ async def get_brand(db: AsyncSession, brand_id: uuid.UUID, actor: SuperAdmin) ->
     Raises:
         HTTPException: 404 if the brand does not exist within the actor's scope.
     """
-    return await _get_or_404(db, brand_id, actor)
+    if isinstance(actor, SuperAdmin):
+        return await _get_or_404(db, brand_id, actor)
+    return await _fetch_for_management(db, brand_id, actor, write=False)
 
 
 async def create_brand(
@@ -367,7 +447,7 @@ async def update_brand(
     db: AsyncSession,
     brand_id: uuid.UUID,
     payload: BrandUpdate,
-    actor: SuperAdmin,
+    actor: SuperAdmin | ManagementAccess,
 ) -> Brand:
     """
     Update a Brand's mutable fields and write an audit log row.
@@ -376,15 +456,15 @@ async def update_brand(
         db: Active database session.
         brand_id: The UUID of the brand to update.
         payload: The fields to update (all optional).
-        actor: The authenticated portal user performing the action.
+        actor: The authenticated SuperAdmin or management-portal caller.
 
     Returns:
         Brand: The updated brand.
 
     Raises:
-        HTTPException: 404 if the brand does not exist.
+        HTTPException: 404 if the brand does not exist within the actor's scope.
     """
-    brand = await _get_or_404(db, brand_id, actor)
+    brand, actor_kwargs = await _resolve_for_write(db, brand_id, actor)
 
     before = {
         "name": brand.name,
@@ -420,9 +500,7 @@ async def update_brand(
         action=BRAND_UPDATED,
         entity_type="brand",
         entity_id=str(brand.id),
-        actor_id=actor.id,
-        actor_email=actor.email,
-        actor_name=actor.name,
+        **actor_kwargs,
         before_state=before,
         after_state=after,
     )
@@ -480,7 +558,7 @@ async def upload_logo(
     db: AsyncSession,
     brand_id: uuid.UUID,
     file: UploadFile,
-    actor: SuperAdmin,
+    actor: SuperAdmin | ManagementAccess,
 ) -> Brand:
     """
     Upload or replace a Brand's logo and write an audit log row.
@@ -492,7 +570,7 @@ async def upload_logo(
         db: Active database session.
         brand_id: UUID of the brand to attach the logo to.
         file: The uploaded image file.
-        actor: The authenticated portal user performing the action.
+        actor: The authenticated SuperAdmin or management-portal caller.
 
     Returns:
         Brand: The brand with updated logo_url.
@@ -502,7 +580,7 @@ async def upload_logo(
         HTTPException: 413 if the file exceeds 1 MB.
         HTTPException: 415 if the content type is not an accepted image type.
     """
-    brand = await _get_or_404(db, brand_id, actor)
+    brand, actor_kwargs = await _resolve_for_write(db, brand_id, actor)
 
     contents = await file.read()
     ext = extension_for_content_type(file.content_type or "")
@@ -523,9 +601,7 @@ async def upload_logo(
         action=BRAND_LOGO_UPDATED,
         entity_type="brand",
         entity_id=str(brand.id),
-        actor_id=actor.id,
-        actor_email=actor.email,
-        actor_name=actor.name,
+        **actor_kwargs,
         before_state={"logo_url": old_url},
         after_state={"logo_url": logo_url},
     )
@@ -539,7 +615,7 @@ async def upload_logo(
 async def request_billing_info(
     db: AsyncSession,
     brand_id: uuid.UUID,
-    actor: SuperAdmin,
+    actor: SuperAdmin | ManagementAccess,
 ) -> ResolvedValue:
     """
     Send a billing-info-request email to the brand's effective billing contact.
@@ -547,7 +623,7 @@ async def request_billing_info(
     Args:
         db: Active database session.
         brand_id: The UUID of the brand to request billing info for.
-        actor: The authenticated portal user performing the action.
+        actor: The authenticated SuperAdmin or management-portal caller.
 
     Returns:
         ResolvedValue: The billing email sent to and which hierarchy level it came from.
@@ -556,7 +632,10 @@ async def request_billing_info(
         HTTPException: 404 if the brand does not exist within the actor's scope.
         HTTPException: 409 if no billing email is set anywhere in the brand's chain.
     """
-    brand = await _get_or_404(db, brand_id, actor)
+    if isinstance(actor, SuperAdmin):
+        brand = await _get_or_404(db, brand_id, actor)
+    else:
+        brand = await _fetch_for_management(db, brand_id, actor, write=True)
     return await branding_service.request_billing_info(db, brand, "brand", actor)
 
 

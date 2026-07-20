@@ -28,6 +28,7 @@ from app.services import branding_service
 from app.services.access_profile_service import seed_group_master_profile
 from app.services.audit_service import log_action
 from app.services.branding_service import ResolvedValue
+from app.utils.dependencies import ManagementAccess, _actor_from_mgmt
 from app.utils.security import hash_password
 from app.utils.storage import ALLOWED_LOGO_TYPES, MAX_LOGO_BYTES, extension_for_content_type, upload_image
 
@@ -77,6 +78,82 @@ async def _get_or_404(db: AsyncSession, group_id: uuid.UUID, actor: SuperAdmin) 
     return group
 
 
+def _authorize_management(group_id: uuid.UUID, mgmt: ManagementAccess, *, write: bool) -> None:
+    """
+    Verify a management-portal caller may access this Group, for the
+    tenant-facing Company Profile page.
+
+    Read access extends to the caller's own Group scope plus, for a
+    Brand/Site-scoped caller, their ancestor Group (needed to display the
+    inherited logo/billing-email on the Brand/Site profile form). Write
+    access is restricted to an exact Group-scope match — a Brand/Site-scoped
+    caller may view but never edit their ancestor Group's profile.
+
+    Args:
+        group_id: The UUID of the group being accessed.
+        mgmt: The authenticated management-portal caller.
+        write: True to apply the stricter write-scope check.
+
+    Raises:
+        HTTPException: 404 if the group is outside the caller's scope (matches
+            _get_or_404's "treat as not found" convention for out-of-scope IDs).
+    """
+    if mgmt.scope == "group" and mgmt.group and mgmt.group.id == group_id:
+        return
+    if not write and mgmt.scope in ("brand", "site") and mgmt.brand and mgmt.brand.group_id == group_id:
+        return
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+
+
+async def _fetch_for_management(db: AsyncSession, group_id: uuid.UUID, mgmt: ManagementAccess, *, write: bool) -> Group:
+    """
+    Fetch a Group for a management-portal caller, enforcing scope.
+
+    Args:
+        db: Active database session.
+        group_id: The UUID of the group to fetch.
+        mgmt: The authenticated management-portal caller.
+        write: True to apply the stricter write-scope check.
+
+    Returns:
+        Group: The found group.
+
+    Raises:
+        HTTPException: 404 if the group is outside the caller's scope, or does not exist.
+    """
+    _authorize_management(group_id, mgmt, write=write)
+    result = await db.execute(select(Group).where(Group.id == group_id))
+    group = result.scalar_one_or_none()
+    if group is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    return group
+
+
+async def _resolve_for_write(
+    db: AsyncSession, group_id: uuid.UUID, actor: SuperAdmin | ManagementAccess
+) -> tuple[Group, dict]:
+    """
+    Fetch a Group for a write action and resolve its log_action() actor kwargs.
+
+    Args:
+        db: Active database session.
+        group_id: The UUID of the group to fetch.
+        actor: The authenticated SuperAdmin or management-portal caller.
+
+    Returns:
+        tuple[Group, dict]: The group and keyword arguments ready to splat
+            into log_action() (actor_id/actor_email/actor_name).
+
+    Raises:
+        HTTPException: 404 if the group is outside the actor's scope.
+    """
+    if isinstance(actor, SuperAdmin):
+        group = await _get_or_404(db, group_id, actor)
+        return group, {"actor_id": actor.id, "actor_email": actor.email, "actor_name": actor.name}
+    group = await _fetch_for_management(db, group_id, actor, write=True)
+    return group, _actor_from_mgmt(actor)
+
+
 async def list_groups(
     db: AsyncSession,
     actor: SuperAdmin,
@@ -116,14 +193,15 @@ async def list_groups(
     return list(result.scalars().all())
 
 
-async def get_group(db: AsyncSession, group_id: uuid.UUID, actor: SuperAdmin) -> Group:
+async def get_group(db: AsyncSession, group_id: uuid.UUID, actor: SuperAdmin | ManagementAccess) -> Group:
     """
-    Fetch a single group by ID, scoped to the actor's own accounts if Reseller Staff.
+    Fetch a single group by ID, scoped to the actor's own accounts if Reseller
+    Staff, or to a management-portal caller's own scope (see _authorize_management).
 
     Args:
         db: Active database session.
         group_id: The UUID of the group.
-        actor: The authenticated SuperAdmin performing the action.
+        actor: The authenticated SuperAdmin or management-portal caller.
 
     Returns:
         Group: The found group.
@@ -131,7 +209,9 @@ async def get_group(db: AsyncSession, group_id: uuid.UUID, actor: SuperAdmin) ->
     Raises:
         HTTPException: 404 if the group does not exist within the actor's scope.
     """
-    return await _get_or_404(db, group_id, actor)
+    if isinstance(actor, SuperAdmin):
+        return await _get_or_404(db, group_id, actor)
+    return await _fetch_for_management(db, group_id, actor, write=False)
 
 
 async def _create_group_master_user(
@@ -315,7 +395,7 @@ async def update_group(
     db: AsyncSession,
     group_id: uuid.UUID,
     payload: GroupUpdate,
-    actor: SuperAdmin,
+    actor: SuperAdmin | ManagementAccess,
 ) -> Group:
     """
     Update a Group's mutable fields and write an audit log row.
@@ -324,7 +404,7 @@ async def update_group(
         db: Active database session.
         group_id: The UUID of the group to update.
         payload: The fields to update (all optional).
-        actor: The authenticated portal user performing the action.
+        actor: The authenticated SuperAdmin or management-portal caller.
 
     Returns:
         Group: The updated group.
@@ -332,7 +412,7 @@ async def update_group(
     Raises:
         HTTPException: 404 if the group does not exist within the actor's scope.
     """
-    group = await _get_or_404(db, group_id, actor)
+    group, actor_kwargs = await _resolve_for_write(db, group_id, actor)
 
     before = {
         "name": group.name,
@@ -368,9 +448,7 @@ async def update_group(
         action=GROUP_UPDATED,
         entity_type="group",
         entity_id=str(group.id),
-        actor_id=actor.id,
-        actor_email=actor.email,
-        actor_name=actor.name,
+        **actor_kwargs,
         before_state=before,
         after_state=after,
     )
@@ -428,7 +506,7 @@ async def upload_logo(
     db: AsyncSession,
     group_id: uuid.UUID,
     file: UploadFile,
-    actor: SuperAdmin,
+    actor: SuperAdmin | ManagementAccess,
 ) -> Group:
     """
     Upload or replace a Group's logo and write an audit log row.
@@ -440,7 +518,7 @@ async def upload_logo(
         db: Active database session.
         group_id: UUID of the group to attach the logo to.
         file: The uploaded image file.
-        actor: The authenticated portal user performing the action.
+        actor: The authenticated SuperAdmin or management-portal caller.
 
     Returns:
         Group: The group with updated logo_url.
@@ -450,7 +528,7 @@ async def upload_logo(
         HTTPException: 413 if the file exceeds 1 MB.
         HTTPException: 415 if the content type is not an accepted image type.
     """
-    group = await _get_or_404(db, group_id, actor)
+    group, actor_kwargs = await _resolve_for_write(db, group_id, actor)
 
     contents = await file.read()
     ext = extension_for_content_type(file.content_type or "")
@@ -471,9 +549,7 @@ async def upload_logo(
         action=GROUP_LOGO_UPDATED,
         entity_type="group",
         entity_id=str(group.id),
-        actor_id=actor.id,
-        actor_email=actor.email,
-        actor_name=actor.name,
+        **actor_kwargs,
         before_state={"logo_url": old_url},
         after_state={"logo_url": logo_url},
     )
@@ -487,7 +563,7 @@ async def upload_logo(
 async def request_billing_info(
     db: AsyncSession,
     group_id: uuid.UUID,
-    actor: SuperAdmin,
+    actor: SuperAdmin | ManagementAccess,
 ) -> ResolvedValue:
     """
     Send a billing-info-request email to the group's effective billing contact.
@@ -495,7 +571,7 @@ async def request_billing_info(
     Args:
         db: Active database session.
         group_id: The UUID of the group to request billing info for.
-        actor: The authenticated portal user performing the action.
+        actor: The authenticated SuperAdmin or management-portal caller.
 
     Returns:
         ResolvedValue: The billing email sent to and which hierarchy level it came from.
@@ -504,7 +580,10 @@ async def request_billing_info(
         HTTPException: 404 if the group does not exist within the actor's scope.
         HTTPException: 409 if no billing email is set anywhere in the group's chain.
     """
-    group = await _get_or_404(db, group_id, actor)
+    if isinstance(actor, SuperAdmin):
+        group = await _get_or_404(db, group_id, actor)
+    else:
+        group = await _fetch_for_management(db, group_id, actor, write=True)
     return await branding_service.request_billing_info(db, group, "group", actor)
 
 

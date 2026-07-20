@@ -702,6 +702,39 @@ async def resolve_management_access(
     )
 
 
+async def resolve_portal_or_management(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+    db: AsyncSession = Depends(get_db),
+) -> "SuperAdmin | ManagementAccess":
+    """
+    Accept either a SuperAdmin portal token or a management-portal token.
+
+    Backs Group/Brand/Site company-profile routes, which both the SuperAdmin
+    portal (full CRUD) and the tenant-facing Company Profile page (read/edit
+    the caller's own scope entity) read from — those two portals otherwise
+    authenticate with disjoint token types (get_current_superadmin only
+    accepts 'access'; resolve_management_access only accepts 'mgmt_access').
+    Callers must authorize the specific entity_id themselves — this
+    dependency only establishes identity, not per-entity scope.
+
+    Args:
+        credentials: Bearer token from the Authorization header.
+        db: The active database session.
+
+    Returns:
+        SuperAdmin | ManagementAccess: whichever token type decoded.
+
+    Raises:
+        HTTPException: 401 if neither token type is valid.
+        HTTPException: 403 if the resolved identity is inactive or unauthorized.
+    """
+    try:
+        decode_token(credentials.credentials, expected_type="access")
+    except JWTError:
+        return await resolve_management_access(credentials, db)
+    return await get_current_superadmin(credentials, db)
+
+
 async def resolve_catalog_access(
     credentials: HTTPAuthorizationCredentials = Depends(_bearer),
     db: AsyncSession = Depends(get_db),

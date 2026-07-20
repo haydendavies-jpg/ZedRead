@@ -24,9 +24,12 @@ from app.constants.audit_actions import (
 from app.constants.statuses import GrantScope, SystemAccessProfile
 from app.models.access_profile import AccessProfile
 from app.models.audit_log import AuditLog
+from app.models.brand import Brand
 from app.models.category import Category
+from app.models.group import Group
 from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
+from app.utils.security import create_mgmt_access_token
 
 # Patch target for upload_logo tests so no real Supabase call goes out
 _UPLOAD_IMAGE_PATH = "app.services.brand_service.upload_image"
@@ -475,3 +478,116 @@ async def test_request_brand_billing_info_writes_audit_log(
     )
     row = result.scalar_one()
     assert row.after_state["sent_to"] == "billing@brand.test"
+
+
+# ── Management portal access (tenant-facing Company Profile page) ────────────
+
+
+async def test_get_brand_by_ancestor_site_scope_returns_200(client, mgmt_auth_headers, test_brand):
+    """A Site-scoped management caller can read their ancestor Brand's profile."""
+    response = await client.get(f"/brands/{test_brand.id}", headers=mgmt_auth_headers)
+    assert response.status_code == 200
+    assert response.json()["id"] == str(test_brand.id)
+
+
+async def test_update_brand_by_ancestor_site_scope_returns_404(client, mgmt_auth_headers, test_brand):
+    """A Site-scoped management caller cannot edit their ancestor Brand's profile (write is exact-scope only)."""
+    response = await client.patch(
+        f"/brands/{test_brand.id}", json={"name": "Should not apply"}, headers=mgmt_auth_headers
+    )
+    assert response.status_code == 404
+
+
+async def test_get_brand_unrelated_scope_returns_404(client, mgmt_auth_headers, db):
+    """A management caller cannot read a Brand outside their own ancestor chain."""
+    other_group = Group(
+        id=uuid.uuid4(), name="Other Group", is_active=True, timezone="Australia/Sydney", currency="AUD", country="AU"
+    )
+    db.add(other_group)
+    await db.flush()
+    other_brand = Brand(
+        id=uuid.uuid4(),
+        group_id=other_group.id,
+        name="Other Brand",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+    )
+    db.add(other_brand)
+    await db.commit()
+
+    response = await client.get(f"/brands/{other_brand.id}", headers=mgmt_auth_headers)
+    assert response.status_code == 404
+
+
+def _brand_scope_headers(test_user, test_brand_grant) -> dict[str, str]:
+    """Mint a mgmt_access token for the Brand-scope test_brand_grant fixture."""
+    token = create_mgmt_access_token(
+        user_id=str(test_user.id),
+        scope="brand",
+        grant_id=str(test_brand_grant.id),
+        site_id=None,
+        brand_id=str(test_brand_grant.brand_id),
+        group_id=None,
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def test_update_brand_by_brand_scope_returns_200(client, test_user, test_brand_grant):
+    """A Brand-scoped management caller can edit their own Brand's profile."""
+    headers = _brand_scope_headers(test_user, test_brand_grant)
+
+    response = await client.patch(
+        f"/brands/{test_brand_grant.brand_id}",
+        json={"name": "Updated By Management"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["name"] == "Updated By Management"
+
+
+async def test_update_brand_by_brand_scope_writes_audit_log_with_mgmt_actor(
+    client, db, test_user, test_brand_grant
+):
+    """PATCH /brands/{id} by a management caller attributes the audit row to that user."""
+    headers = _brand_scope_headers(test_user, test_brand_grant)
+
+    await client.patch(
+        f"/brands/{test_brand_grant.brand_id}", json={"name": "Mgmt Audit Name"}, headers=headers
+    )
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_brand_grant.brand_id),
+            AuditLog.action == BRAND_UPDATED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.actor_id == test_user.id
+    assert row.after_state["name"] == "Mgmt Audit Name"
+
+
+async def test_upload_brand_logo_by_brand_scope_returns_200(client, db, test_user, test_brand_grant):
+    """POST /brands/{id}/logo by a Brand-scoped management caller succeeds and writes an audit row."""
+    headers = _brand_scope_headers(test_user, test_brand_grant)
+
+    with patch(_UPLOAD_IMAGE_PATH, new_callable=AsyncMock) as mock_upload:
+        mock_upload.return_value = "https://example.test/logos/brand.jpg"
+        response = await client.post(
+            f"/brands/{test_brand_grant.brand_id}/logo",
+            files={"file": ("logo.jpg", io.BytesIO(b"fake-image-bytes"), "image/jpeg")},
+            headers=headers,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["logo_url"] == "https://example.test/logos/brand.jpg"
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_brand_grant.brand_id),
+            AuditLog.action == BRAND_LOGO_UPDATED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.actor_id == test_user.id
