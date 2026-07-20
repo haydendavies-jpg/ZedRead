@@ -15,7 +15,7 @@ from app.database import engine
 from app.logging_config import configure_logging
 from app.middleware.logging import RequestLoggingMiddleware
 from app.utils.security import validate_secret_key
-from app.routes import access_grants, admin_impersonation, admin_tax_templates, brands, categories, combos, email_templates, groups, invoice_reports, invoices, license_invoices, licenses, menu_layouts, modifiers, portal_auth, reference_data, register_sessions, reporting_groups, superadmins, pos_auth, pos_devices, users, products, reports, sites, tax, user_invites, variants
+from app.routes import access_grants, admin_impersonation, admin_tax_templates, brands, categories, combos, email_templates, groups, invoice_reports, invoices, license_invoices, licenses, menu_layouts, modifiers, portal_auth, reference_data, register_session_reports, register_sessions, reporting_groups, superadmins, pos_auth, pos_devices, users, products, reports, sites, tax, user_invites, variants
 from app.routes.access_grants import profiles_router
 
 # Configure structlog before the app starts accepting requests
@@ -95,6 +95,7 @@ app.include_router(licenses.router)
 app.include_router(license_invoices.router)
 app.include_router(pos_devices.router)
 app.include_router(register_sessions.router)
+app.include_router(register_session_reports.router)
 app.include_router(user_invites.router)
 app.include_router(users.router)
 app.include_router(tax.router)

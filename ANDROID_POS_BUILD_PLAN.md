@@ -8,7 +8,7 @@ here in a new session — read the Status section first, then the phase you're o
 | Phase | Area | State |
 |---|---|---|
 | 1 | Backend — two-step login, device pairing, license gating, register (till) sessions | ✅ Merged — [PR #92](https://github.com/haydendavies-jpg/ZedRead/pull/92) |
-| 1 | Backend — register-session portal report route | 🔲 Not started |
+| 1 | Backend — register-session portal report route | ✅ Done |
 | 1 | Portal — "POS - Site Assignment" toggle on Users edit page | 🔲 Not started |
 | 1 | Portal — Register Sessions report page | 🔲 Not started |
 | 1 | Android — project wiring (Retrofit/Hilt/Room/Nav) | 🔲 Not started |
@@ -21,9 +21,9 @@ here in a new session — read the Status section first, then the phase you're o
 | 3 | Menu Studio → POS integration depth (recurring scheduling, menu selector) | 🔲 Not started |
 | 4 | Table maps & floor service | 🔲 Not started |
 
-**Next up:** the remaining Phase 1 items — portal register-session report page, the Users-page toggle,
-then the Android app itself (auth/PIN/site-selector screens first, since everything else depends on
-having a working login).
+**Next up:** the remaining Phase 1 items — the portal Register Sessions report *page* (the backend
+report route is done), the Users-page toggle, then the Android app itself (auth/PIN/site-selector
+screens first, since everything else depends on having a working login).
 
 **What Phase 1's merged backend slice actually shipped** (PR #92, on top of migration `0049` —
 renumbered from `0048` during a merge-conflict resolution with main's concurrent `0048_drop_menus_table`):
@@ -102,11 +102,16 @@ takes payment — matching the design file exactly wherever it defines one.
   `closed_by_user_id`/`closed_by_name` (full-name snapshot at the time, same convention as audit rows'
   `actor_name`). `Invoice` gets a `register_session_id` FK; invoice creation is blocked until an open
   session exists for that device.
-- 🔲 **Still open:** Register-session **portal report** — new read route + page (alongside
-  `InvoicesPage`/`ReportsPage`) listing sessions per site/device with opening/closing cash, takings,
-  variance, and who opened/closed each one. The backend data model supports this already
-  (`opened_by_name`/`closed_by_name`/`variance_cents` etc. all exist on `register_sessions`) — this is
-  a pure read route + portal page, no new backend logic.
+- ✅ Register-session **portal report** — `GET /register-session-reports` (new
+  `register_session_report_service.py` / `routes/register_session_reports.py`, mirroring the
+  `invoice_service.py`/`invoice_report_service.py` transactional-vs-reporting split): filtered
+  (site/device/status/date-range), paginated list joined to `pos_devices`/`sites` for
+  `device_name`/`site_name`, with opening/closing cash, computed `cash_takings_cents`
+  (`expected_cash_cents - opening_cash_cents`), variance, and who opened/closed each session. Uses
+  the same `CatalogAccess`/`effective_brand_id`/site-scope-guard pattern `invoice_reports.py`
+  established, so POS terminals, site-scope management users, brand/group-scope, and portal admin
+  callers are all scoped correctly. **Still open:** the portal report *page* — no new backend logic
+  needed, `RegisterSessionReportRow` already shapes everything `InvoicesPage`'s table pattern needs.
 
 **Android** (none of this started yet)
 - Project wiring: Retrofit client, Hilt DI modules, Room DB, Compose nav graph (existing Stage 25
@@ -144,6 +149,9 @@ takes payment — matching the design file exactly wherever it defines one.
   computed `expected_cash_cents`/`variance_cents`.
 - `POST /invoices` — now requires an open register session for the device (400 otherwise); response
   includes `register_session_id`.
+- `GET /register-session-reports` — portal/management report: filtered, paginated register-session
+  list (see above). Not an Android-consumed endpoint — listed here since it completes the till
+  round-trip Phase 1 needs before the report *page* can be built.
 
 ---
 
