@@ -286,6 +286,15 @@ toggle — none of these pages had one before, since the only prior toggle lived
 pages don't render. See `pos-portal/CLAUDE.md`'s "Standalone auth pages" section and
 `STAGE_STATUS.md` "Standalone auth pages — dark theme consolidation + theme toggle".
 
+**Menus tab removal (post-auth-pages, complete).** The standalone "Menus" nav tab
+(`MenusPage.tsx`/`/management/menus`, its own `menus` table/router/service from the Menu Studio
+redesign) was removed as redundant: it duplicated the draft/schedule/publish lifecycle Phase 2
+already added directly onto `menu_layouts`, nothing in Menu Studio depended on it, and the POS read
+contract (`GET /pos/menu-layout`) never consulted it in the first place. Removed the backend
+router/service/schema/model, its six `MENU_*` audit actions, its `menus` `PAGE_CATALOG`/license-gate
+entry (migration `0048` drops the table), and the portal page/route/nav entry/TypeScript type. See
+`STAGE_STATUS.md` "Menus tab removal" and the updated `ROLE_MODEL.md` §6.
+
 ## Folder structure (backend)
 ```
 pos-backend/
