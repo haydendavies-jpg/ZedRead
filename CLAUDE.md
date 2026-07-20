@@ -251,15 +251,40 @@ and how it was verified (a static, class-accurate mockup screenshot — this env
 reachable Postgres to drive the real editor end-to-end).
 
 **Menu Studio — POS Layout tab rail style redesign (post-tile-redesign, complete).** The rail of
-top-level tabs now renders as solid `tab.color`-filled rounded blocks (bold name + button count),
-matching the tile redesign's reference mockup's category sidebar, instead of a small colour dot on
-a neutral list row. The active tab gets a dark/light `ring` border (the mockup's black outline,
-adapted to the portal's themes); a drag-over target gets a white ring so the two states stay
-distinct against an arbitrary tab colour. New tabs auto-cycle through `MENU_STUDIO_PALETTE` so they
-start distinctly coloured rather than an unstyled grey; a `ColorSwatchPicker` (the same component
-already used for layouts/buttons/categories) on each row lets that be changed afterward, backed by
-a new `updateTabColor` mutation against `MenuTabUpdate.color` — a field the schema already accepted
-but nothing in the portal exposed yet. See `STAGE_STATUS.md` "POS Layout tab rail style redesign".
+top-level tabs now renders as solid `tab.color`-filled blocks (bold name + button count), matching
+the tile redesign's reference mockup's category sidebar, instead of a small colour dot on a neutral
+list row. The active tab gets a dark/light `ring` border (the mockup's black outline, adapted to
+the portal's themes); a drag-over target gets a white ring so the two states stay distinct against
+an arbitrary tab colour. New tabs auto-cycle through `MENU_STUDIO_PALETTE` so they start distinctly
+coloured rather than an unstyled grey; a `ColorSwatchPicker` (the same component already used for
+layouts/buttons/categories) on each row lets that be changed afterward, backed by a new
+`updateTabColor` mutation against `MenuTabUpdate.color` — a field the schema already accepted but
+nothing in the portal exposed yet. See `STAGE_STATUS.md` "POS Layout tab rail style redesign".
+
+**Menu Studio — POS Layout tab rail testing fixes (post-rail-redesign, complete).** Three issues
+found exercising the rail redesign against a live layout, all fixed — see `STAGE_STATUS.md` "POS
+Layout tab rail testing fixes". Notables: `ColorSwatchPicker` (shared by Categories, button
+recolouring, and the tab rail) now portals its popover into `document.body` at a `position: fixed`
+coordinate instead of a plain `position: absolute` child of the trigger, so it's never clipped by a
+narrow/scrollable ancestor (the rail is exactly that); its selected-swatch indicator is now a small
+white checkmark badge instead of a border, which used to blend into an already-dark or
+already-light palette colour; and the rail itself is now flush edge-to-edge (no padding/gap/
+rounding per row, `ring-inset` on the active/drag-over ring so it doesn't bleed into the now-
+touching neighbour) rather than a list of separated rounded cards, matching the reference's stacked
+square-cornered blocks.
+
+**Standalone auth pages — dark theme consolidation + theme toggle (post-rail-testing-fixes,
+complete).** User-reported: the login page's dark theme didn't match the logged-in app's. Root
+cause — `LoginPage.tsx`/`ForgotPasswordPage.tsx`/`ResetPasswordPage.tsx` render outside
+`Layout.tsx` (no session yet, so no sidebar) and each hard-coded its own `bg-gray-50
+dark:bg-gray-900` canvas instead of `--zr-bg`, the warm cream/near-black token every authenticated
+page actually sits on; the wordmark also had no dark-mode colour at all. New `AuthPageShell.tsx`
+consolidates all three pages onto one shell (`bg-[var(--zr-bg)]` canvas, `text-[var(--zr-accent-
+text)]` wordmark; the card itself stays `bg-white dark:bg-gray-800`, deliberately matching
+`Modal.tsx`'s existing convention rather than switching to a different token) and adds a theme
+toggle — none of these pages had one before, since the only prior toggle lived in the sidebar these
+pages don't render. See `pos-portal/CLAUDE.md`'s "Standalone auth pages" section and
+`STAGE_STATUS.md` "Standalone auth pages — dark theme consolidation + theme toggle".
 
 ## Folder structure (backend)
 ```

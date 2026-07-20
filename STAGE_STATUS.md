@@ -1001,13 +1001,14 @@ what the screenshot doesn't show, not an instruction to leave the rail alone. Re
 top-level tabs to match the mockup's category sidebar: solid colour-blocked rows instead of a
 small colour dot on a neutral list.
 
-- [x] Each rail tab (`MenuBuilderPage.tsx`) now renders as a solid `tab.color`-filled, rounded-xl
-  block (bold name, button count, up from a `w-2.5 h-2.5` dot + `bg-brand-50` highlight on a
-  neutral row). The active tab gets a `ring-[3px]` dark/light border (adapting the reference's
+- [x] Each rail tab (`MenuBuilderPage.tsx`) now renders as a solid `tab.color`-filled block
+  (bold name, button count, up from a `w-2.5 h-2.5` dot + `bg-brand-50` highlight on a neutral
+  row). The active tab gets a `ring-[3px]` dark/light border (adapting the reference's
   black-outlined "Coffee" tab to the portal's light/dark themes) instead of the previous
   brand-tinted background; a drag-over target gets a white ring instead, so the two states stay
   visually distinct against an arbitrary tab colour. Text/icon colour on each row is resolved via
-  the existing `textColorOn()` helper, same as button tiles.
+  the existing `textColorOn()` helper, same as button tiles. (Corner radius/spacing corrected in
+  the follow-up below to actually match the reference — see there.)
 - [x] **New tabs get a colour automatically** — `addTab`'s payload gained `color`, cycling through
   `MENU_STUDIO_PALETTE` by the rail's current tab count (mirrors how a new layout already defaults
   its own colour), so a freshly-added tab is never an unstyled fallback grey. A new
@@ -1019,6 +1020,72 @@ small colour dot on a neutral list.
   differently-coloured tabs, one active with the black ring, rendered alongside product tiles) —
   same no-reachable-Postgres constraint as before, so this was a layout/contrast check, not a
   live-editor session.
+
+---
+
+### Menu Studio — POS Layout tab rail testing fixes ✅
+
+Three issues from actually exercising the tab rail redesign against a live layout:
+
+- [x] **Colour popover clipped by the rail.** `ColorSwatchPicker` (shared by Categories, button
+  recolouring, and now the tab rail) rendered its popover as a plain `position: absolute` child of
+  the trigger button — invisible past the edge of any scrollable/narrow ancestor, which the rail
+  (`w-52`, `overflow-auto`) is exactly narrow and scrollable enough to trigger. Fixed at the
+  component level (not just for the rail) by portaling the popover into `document.body` via
+  `createPortal`, positioned with `position: fixed` from the trigger button's own
+  `getBoundingClientRect()` (flipped left if it would overflow the right edge of the viewport,
+  closed on scroll since its position isn't re-measured live) — it now always renders on top of
+  everything, regardless of which ancestor is clipping/scrolling.
+- [x] **Selected-swatch border blended into the swatch itself.** The 2px "you're here" border used
+  `border-gray-900`/`border-gray-100`, which is nearly invisible against an already-dark or
+  already-light palette colour. Replaced with a small white circular checkmark badge overlaid on
+  the corner of the selected swatch — legible against every palette colour, not just lighter ones.
+- [x] **Rail didn't match the reference's flush, edge-to-edge blocks.** The rail previously kept
+  the container's own padding, a `gap-2` between rows, and `rounded-xl`/`shadow-sm` per tab — a
+  list of separated rounded cards, not the reference's stacked, touching, square-cornered blocks
+  filling the sidebar's full width. Removed the rail's own padding/gap (`p-3 flex flex-col gap-2` →
+  bare `flex flex-col`, with padding reapplied only to the "Tabs" label, "+ Add tab" button, and
+  help text individually) and each tab row's `rounded-xl`/`shadow-sm`, and switched the active/
+  drag-over ring to `ring-inset` so it draws inward instead of bleeding into the now-touching
+  neighbour above/below. The outer editor panel's own `rounded-xl overflow-hidden` still clips the
+  rail's top/bottom-left corners, so only the individual rows are square — matching the reference,
+  where only the overall sidebar (not each tile) has any rounding.
+- [x] Verified via the same static mockup-screenshot technique as the two prior rounds (rail tabs
+  now flush with no gaps, colour popover rendered fully outside the narrow rail column with a
+  visible checkmark on a dark-on-dark swatch) — same no-reachable-Postgres constraint as before.
+
+---
+
+### Standalone auth pages — dark theme consolidation + theme toggle ✅
+
+User-reported: the login page's dark theme didn't match the logged-in app's. Root cause —
+`LoginPage.tsx`, `ForgotPasswordPage.tsx`, and `ResetPasswordPage.tsx` don't render inside
+`Layout.tsx` (no session yet, so no sidebar), and each independently hard-coded its own full-screen
+`bg-gray-50 dark:bg-gray-900` — a plain Tailwind grey, not `--zr-bg`, the warm cream/near-black
+canvas every authenticated page actually sits on via `Layout.tsx`'s `<main>`. The wordmark
+(`text-brand-800`) also had no dark-mode colour at all, reading as illegibly dark-on-dark once the
+card itself went dark. Three separate copies of the same page shell meant this had already drifted
+once and could easily drift again.
+
+- [x] New `AuthPageShell.tsx` consolidates all three pages onto one shell: the
+  `bg-[var(--zr-bg)]` full-screen canvas (now identical to every authenticated page's background in
+  both themes), the `bg-white dark:bg-gray-800` card (kept — same convention `Modal.tsx` and every
+  other card in the app already use, so this deliberately does *not* switch to the `--zr-surface`
+  token, which would make the auth pages' cards look different from every other card instead of
+  matching them), and the wordmark recoloured to `text-[var(--zr-accent-text)]` (the design guide's
+  token for accent-toned text on a normal, non-solid-accent surface — legible in both themes, unlike
+  the old hard-coded brand-800). `LoginPage.tsx` (all three of its views — the main form, the
+  identity selector, and the grant selector), `ForgotPasswordPage.tsx`, and `ResetPasswordPage.tsx`
+  now just supply their own form/heading content as `<AuthPageShell>` children.
+- [x] **Theme toggle added** — none of these three pages render inside the sidebar, the toggle's
+  only previous home, so a user landing on `/login` (or arriving fresh via a password-reset email
+  link) had no way to switch themes before authenticating. `AuthPageShell` renders the same
+  `useTheme()`/`☀`/`☾` toggle pattern as `Layout.tsx`'s sidebar footer, pinned to the card's
+  top-right corner.
+- [x] Verified visually via `vite build` + `vite preview` (this environment has no reachable
+  Postgres, but these three pages render fully client-side with no API calls until form submit) and
+  Playwright screenshots of `/login`, `/forgot-password`, and `/reset-password` in both themes —
+  confirmed the same warm canvas colour as the rest of the app and a legible wordmark in dark mode.
 
 ---
 
