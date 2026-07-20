@@ -117,14 +117,6 @@ PRODUCT_MODIFIERS_REORDERED = "product.modifiers.reordered"  # Whole-list attach
 # ── Products/Modifiers bulk operations (post-Menu-Studio catalog tooling) ───
 PRODUCT_BULK_UPDATED = "product.bulk_updated"  # One row per product actually changed by POST /products/bulk
 
-# ── Menu Studio redesign — Menus entity (distinct from a MenuLayout) ────────
-MENU_CREATED = "menu.created"
-MENU_UPDATED = "menu.updated"
-MENU_DUPLICATED = "menu.duplicated"
-MENU_SCHEDULED = "menu.scheduled"
-MENU_SCHEDULE_CANCELLED = "menu.schedule_cancelled"
-MENU_PUBLISHED = "menu.published"
-
 COMBO_GROUP_CREATED = "combo_group.created"
 COMBO_GROUP_UPDATED = "combo_group.updated"
 COMBO_GROUP_DEACTIVATED = "combo_group.deactivated"

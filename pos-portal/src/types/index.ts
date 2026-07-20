@@ -349,24 +349,6 @@ export interface ModifierGroupProductItem {
   is_active: boolean
 }
 
-// ── Menus (distinct from a POS MenuLayout) ──────────────────────────────────────
-
-export interface Menu {
-  id: string
-  ref: string
-  brand_id: string
-  site_id: string | null
-  scope: 'brand' | 'site'
-  menu_layout_id: string | null
-  name: string
-  note: string | null
-  status: 'draft' | 'scheduled' | 'published'
-  scheduled_at: string | null
-  published_at: string | null
-  created_at: string
-  updated_at: string
-}
-
 // ── Variants & Combos (Stage 22) ────────────────────────────────────────────────
 
 export interface AttributeAssignment {

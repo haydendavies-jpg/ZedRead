@@ -165,11 +165,11 @@ on the Brand/Site's license plan, regardless of role. This is a second, independ
 
 ## 6. Page catalog (resolved)
 
-20 pages across the 5 categories, defined in `app/constants/pages.py`:
+19 pages across the 5 categories, defined in `app/constants/pages.py`:
 
 | Category | Pages |
 |---|---|
-| Product & Menus | products, variants_modifiers, combos, categories, reporting_groups, menu_builder, menus |
+| Product & Menus | products, variants_modifiers, combos, categories, reporting_groups, menu_builder |
 | App Configuration | site_settings, devices, tax_settings, license_billing |
 | Reports | daily_sales, tax_collected, invoices, audit_log |
 | User Management | users, access_grants, access_profiles |
@@ -178,18 +178,21 @@ on the Brand/Site's license plan, regardless of role. This is a second, independ
 `reporting_groups` (Stage 16) was added to the Product & Menus category in the same commit that
 shipped the Reporting Groups portal page, per the Stage 18 standing rule that every new portal page
 adds its `page_key` here. `menu_builder` (Stage 23) was added the same way alongside the Menu
-Builder portal page. `menus` (Menu Studio redesign, post-Stage-23) was added the same way alongside
-the new Menus portal page — a saved, schedulable configuration distinct from a `menu_builder`
-layout. The redesign's other new portal page, Modifiers (option-set/comboing management), reuses
-the existing `variants_modifiers` page key rather than adding a new one — it's the same
-Product & Menus concept the key's label already covers, just split into its own page in the portal.
+Builder portal page. The redesign's other new portal page, Modifiers (option-set/comboing
+management), reuses the existing `variants_modifiers` page key rather than adding a new one — it's
+the same Product & Menus concept the key's label already covers, just split into its own page in the
+portal. A `menus` page key (Menu Studio redesign, post-Stage-23) existed briefly for a standalone
+Menus portal page — a saved, schedulable configuration distinct from a `menu_builder` layout — but
+was removed: nothing ever consumed it (the POS read contract only ever read `menu_builder`'s
+`menu_layouts`), and `menu_builder` gained the same draft/schedule/publish lifecycle natively, so
+the page was pure duplication and both the key and the portal page were deleted.
 
 Default role grants seeded by `seed_system_profiles()`:
 
 | Role | Default pages |
 |---|---|
-| Master User | All 20 |
-| Admin | All 20 |
+| Master User | All 19 |
+| Admin | All 19 |
 | Reporting Only | Reports category only (daily_sales, tax_collected, invoices, audit_log) |
 | Manager | All except users, access_grants, access_profiles, license_billing |
 | Staff | products, categories, reporting_groups, customers |
@@ -200,5 +203,5 @@ business sign-off; flag for review if the user wants different tier boundaries:
 | Plan | Pages unlocked |
 |---|---|
 | starter | products, categories, reporting_groups, site_settings, daily_sales, invoices, users, customers |
-| pro | All starter pages plus variants_modifiers, combos, menu_builder, menus, devices, tax_settings, license_billing, tax_collected, audit_log, access_grants, loyalty_programs |
+| pro | All starter pages plus variants_modifiers, combos, menu_builder, devices, tax_settings, license_billing, tax_collected, audit_log, access_grants, loyalty_programs |
 | enterprise (and any unrecognised plan_name, including null) | Full catalog |
