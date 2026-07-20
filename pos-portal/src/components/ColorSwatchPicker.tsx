@@ -8,11 +8,19 @@ interface ColorSwatchPickerProps {
   value: string
   onChange: (color: string) => void
   title?: string
+  /**
+   * 'swatch' (default) previews `value` as the trigger's own fill — reads fine on a neutral
+   * surface (e.g. Categories' card row). 'icon' renders a small neutral edit-pencil button
+   * instead, for triggers that already sit on a surface filled with `value` itself (e.g. a
+   * Menu Builder tab tile) — there, a same-coloured swatch reads as a redundant chip that
+   * blends into its own background rather than as a colour preview.
+   */
+  trigger?: 'swatch' | 'icon'
 }
 
 const POPOVER_WIDTH = 224 // w-56
 
-export function ColorSwatchPicker({ value, onChange, title }: ColorSwatchPickerProps) {
+export function ColorSwatchPicker({ value, onChange, title, trigger = 'swatch' }: ColorSwatchPickerProps) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState({ top: 0, left: 0 })
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -54,14 +62,26 @@ export function ColorSwatchPicker({ value, onChange, title }: ColorSwatchPickerP
 
   return (
     <>
-      <button
-        ref={btnRef}
-        type="button"
-        title={title ?? 'Colour'}
-        onClick={(e) => { e.stopPropagation(); handleToggle() }}
-        className="w-6 h-6 rounded-md border border-black/20 dark:border-white/30 shrink-0"
-        style={{ background: value }}
-      />
+      {trigger === 'icon' ? (
+        <button
+          ref={btnRef}
+          type="button"
+          title={title ?? 'Colour'}
+          onClick={(e) => { e.stopPropagation(); handleToggle() }}
+          className="w-6 h-6 rounded-md bg-white/90 hover:bg-white text-gray-700 shadow-sm flex items-center justify-center text-[11px] shrink-0"
+        >
+          ✎
+        </button>
+      ) : (
+        <button
+          ref={btnRef}
+          type="button"
+          title={title ?? 'Colour'}
+          onClick={(e) => { e.stopPropagation(); handleToggle() }}
+          className="w-6 h-6 rounded-md border border-black/20 dark:border-white/30 shrink-0"
+          style={{ background: value }}
+        />
+      )}
       {open &&
         createPortal(
           <div

@@ -286,6 +286,14 @@ toggle — none of these pages had one before, since the only prior toggle lived
 pages don't render. See `pos-portal/CLAUDE.md`'s "Standalone auth pages" section and
 `STAGE_STATUS.md` "Standalone auth pages — dark theme consolidation + theme toggle".
 
+**Menu Studio — tab rail colour trigger follow-up (post-auth-pages, complete).** User feedback: the
+tab rail's colour-swatch trigger — a small square filled with the tab's own colour, sitting on a
+tile already filled with that same colour — read as a redundant, oddly-blended chip rather than a
+useful preview. `ColorSwatchPicker` gained a `trigger?: 'swatch' | 'icon'` prop (default `'swatch'`,
+so `CategoriesPage.tsx`'s existing usage — a neutral card row, where a colour preview does make
+sense — is unchanged); `trigger="icon"` renders a small neutral white edit-pencil badge instead,
+used only by the tab rail. See `STAGE_STATUS.md` "tab rail colour trigger follow-up".
+
 ## Folder structure (backend)
 ```
 pos-backend/

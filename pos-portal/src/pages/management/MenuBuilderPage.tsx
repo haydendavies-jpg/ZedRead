@@ -1299,7 +1299,12 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
                   <span className="truncate flex-1">{tab.name}</span>
                   <span className="text-[11px] font-semibold shrink-0" style={{ opacity: 0.8 }}>{tab.buttons.length}</span>
                   <span onClick={(e) => e.stopPropagation()}>
-                    <ColorSwatchPicker value={tabColor} onChange={(color) => updateTabColor.mutate({ tabId: tab.id, color })} title="Tab colour" />
+                    <ColorSwatchPicker
+                      value={tabColor}
+                      onChange={(color) => updateTabColor.mutate({ tabId: tab.id, color })}
+                      title="Tab colour"
+                      trigger="icon"
+                    />
                   </span>
                   <button
                     onClick={(e) => {
