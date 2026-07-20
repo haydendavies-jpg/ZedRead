@@ -10,7 +10,7 @@ from app.models.superadmin import SuperAdmin
 from app.schemas.billing_info_request import BillingInfoRequestResponse
 from app.schemas.site import SiteCreate, SiteResponse, SiteUpdate
 from app.services import site_service
-from app.utils.dependencies import get_current_superadmin
+from app.utils.dependencies import ManagementAccess, get_current_superadmin, resolve_portal_or_management
 
 router = APIRouter(prefix="/sites", tags=["sites"])
 
@@ -35,9 +35,9 @@ async def list_sites(
 async def get_site(
     site_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: SuperAdmin | ManagementAccess = Depends(resolve_portal_or_management),
 ) -> SiteResponse:
-    """Fetch a single site by ID, scoped to the actor's accounts."""
+    """Fetch a single site by ID, scoped to the actor's accounts (or a management caller's own scope)."""
     return await site_service.get_site(db, site_id, actor)
 
 
@@ -56,9 +56,9 @@ async def update_site(
     site_id: uuid.UUID,
     payload: SiteUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: SuperAdmin | ManagementAccess = Depends(resolve_portal_or_management),
 ) -> SiteResponse:
-    """Update a site's name."""
+    """Update a site's company profile fields."""
     return await site_service.update_site(db, site_id, payload, actor)
 
 
@@ -87,7 +87,7 @@ async def upload_site_logo(
     site_id: uuid.UUID,
     file: UploadFile,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: SuperAdmin | ManagementAccess = Depends(resolve_portal_or_management),
 ) -> SiteResponse:
     """Upload or replace the site's logo (JPEG/PNG/WebP, up to 1 MB)."""
     return await site_service.upload_logo(db, site_id, file, actor)
@@ -97,7 +97,7 @@ async def upload_site_logo(
 async def request_site_billing_info(
     site_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: SuperAdmin | ManagementAccess = Depends(resolve_portal_or_management),
 ) -> BillingInfoRequestResponse:
     """Email the site's effective billing contact the billing_info_request template."""
     resolved = await site_service.request_billing_info(db, site_id, actor)
