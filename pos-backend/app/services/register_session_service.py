@@ -204,7 +204,10 @@ async def close_register_session(
             Payment.method == PaymentMethod.CASH.value,
         )
     )
-    cash_takings_cents = cash_result.scalar_one()
+    # SUM() over a BigInteger column comes back as a Decimal via
+    # asyncpg/Postgres NUMERIC — cast back to int so downstream arithmetic
+    # and the after_state audit dict stay JSON-serializable
+    cash_takings_cents = int(cash_result.scalar_one())
 
     expected_cents = session.opening_cash_cents + cash_takings_cents
     variance_cents = payload.closing_cash_cents - expected_cents
