@@ -43,6 +43,13 @@ class UserPOSSession(Base):
         index=True,
         comment="The site (terminal) where the session is running",
     )
+    device_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("pos_devices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="The terminal this session was opened from — nullable for pre-existing rows",
+    )
     # jti from the JWT payload — used for future token revocation support
     token_jti: Mapped[str] = mapped_column(
         String(36),

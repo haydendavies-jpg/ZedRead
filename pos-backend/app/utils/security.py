@@ -200,18 +200,24 @@ def create_access_token(user_id: str, role: str, token_version: int = 0) -> str:
     )
 
 
-def create_pos_access_token(user_id: str, site_id: str, jti: str) -> str:
+def create_pos_access_token(
+    user_id: str, site_id: str, jti: str, device_id: str | None = None
+) -> str:
     """
     Create a short-lived access JWT for an authenticated POS terminal user.
 
-    Embeds site_id and jti so the token is self-contained — the dependency
-    can verify site access without an extra query parameter.
+    Embeds site_id, device_id, and jti so the token is self-contained — the
+    dependency can verify site/device access without an extra query parameter.
 
     Args:
         user_id: The POS user's UUID as a string.
         site_id: The site UUID the user authenticated against.
         jti: Pre-generated UUID string used as the token ID (matches the
              user_pos_sessions.token_jti column for revocation support).
+        device_id: The PosDevice UUID the session was opened from, or None
+            when the caller has no device context (e.g. a PIN-verify switch
+            that didn't supply a device_token) — register-session-gated
+            routes reject a token with no device_id.
 
     Returns:
         str: A signed POS access JWT.
@@ -221,7 +227,7 @@ def create_pos_access_token(user_id: str, site_id: str, jti: str) -> str:
         token_type="pos_access",
         expires_delta=timedelta(minutes=_ACCESS_TOKEN_MINUTES),
         # jti is passed explicitly so it matches the session row written to DB
-        extra_claims={"site_id": site_id, "jti": jti},
+        extra_claims={"site_id": site_id, "device_id": device_id, "jti": jti},
     )
 
 

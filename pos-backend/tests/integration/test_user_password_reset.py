@@ -85,7 +85,7 @@ async def test_send_password_reset_writes_audit_log(client, db, test_superadmin,
 
 
 async def test_reset_password_consumes_user_token_and_changes_password(
-    client, db, test_superadmin, test_user, test_site, test_access_grant
+    client, db, test_superadmin, test_user, test_site, test_access_grant, test_device
 ):
     """The emailed token resets the User's password via /auth/portal/reset-password,
     and the new password can then be used to log into the POS terminal."""
@@ -108,7 +108,7 @@ async def test_reset_password_consumes_user_token_and_changes_password(
         json={
             "email": "posuser@test.com",
             "password": "BrandNewUserPassword123!",
-            "site_id": str(test_site.id),
+            "device_token": test_device.device_token,
         },
     )
     assert login_resp.status_code == 200

@@ -32,6 +32,7 @@ from app.models.product_combo_option import ProductComboOption
 from app.models.product_modifier_group_link import ProductModifierGroupLink
 from app.models.product_variant import ProductVariant
 from app.models.product_variant_attribute import ProductVariantAttribute
+from app.models.register_session import RegisterSession
 from app.models.reporting_group import ReportingGroup
 from app.models.site import Site
 from app.models.tax_category import TaxCategory
@@ -76,6 +77,7 @@ __all__ = [
     "ProductModifierGroupLink",
     "ProductVariant",
     "ProductVariantAttribute",
+    "RegisterSession",
     "ReportingGroup",
     "Site",
     "TaxCategory",

@@ -97,6 +97,17 @@ class Invoice(Base):
         default=0,
         comment="Final amount owed: subtotal + exclusive_tax - discount (inclusive tax already in subtotal)",
     )
+    register_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("register_sessions.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+        comment=(
+            "The till session this sale was rung up under. Nullable only for rows "
+            "predating register sessions — creation is rejected without one, see "
+            "register_session_service.get_open_session_or_404()."
+        ),
+    )
     refund_of_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("invoices.id", ondelete="SET NULL"),

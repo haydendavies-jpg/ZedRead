@@ -55,6 +55,7 @@ LICENSE_INVOICE_PAID = "license_invoice.paid"
 
 DEVICE_REGISTERED = "device.registered"
 DEVICE_DEREGISTERED = "device.deregistered"
+DEVICE_REPAIRED = "device.repaired"
 
 # ── Phase 2 / Stage 7 — POS Authentication ───────────────────────────────────
 POS_LOGIN_SUCCESS = "pos_auth.login.success"
@@ -195,3 +196,7 @@ MENU_BUTTON_BULK_REMOVED = "menu_button.bulk_removed"
 # Explicit grid-cell placement (drag-to-any-cell) — distinct from
 # MENU_BUTTON_REORDERED, which resequences a whole tab's button list.
 MENU_BUTTON_MOVED = "menu_button.moved"
+
+# ── Android POS Phase 1 — register (till) sessions ───────────────────────────
+REGISTER_SESSION_OPENED = "register_session.opened"
+REGISTER_SESSION_CLOSED = "register_session.closed"

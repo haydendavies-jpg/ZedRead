@@ -24,6 +24,7 @@ from app.services.invoice_service import (
     pay_invoice,
     void_invoice,
 )
+from app.services.register_session_service import get_open_session_or_400
 from app.utils.dependencies import POSAccess, resolve_access
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
@@ -60,14 +61,23 @@ async def create_site_invoice(
     """
     Create a draft invoice for the authenticated user's site.
 
+    Requires an open register session for this terminal — see
+    register_session_service.get_open_session_or_400().
+
     Args:
         access: Resolved POS access.
         db: Active database session.
 
     Returns:
         InvoiceResponse: The newly created draft invoice.
+
+    Raises:
+        HTTPException: 400 if no register session is open for this device.
     """
-    invoice = await create_invoice(db, access.user.brand_id, access.site.id, access.user)
+    session = await get_open_session_or_400(db, access.device)
+    invoice = await create_invoice(
+        db, access.user.brand_id, access.site.id, access.user, session.id
+    )
     return InvoiceResponse.model_validate(invoice)
 
 
@@ -257,6 +267,12 @@ async def refund_site_invoice(
 
     Returns:
         InvoiceResponse: The newly created refund invoice.
+
+    Raises:
+        HTTPException: 400 if no register session is open for this device.
     """
-    refund = await create_refund(db, access.user.brand_id, invoice_id, payload, access.user)
+    session = await get_open_session_or_400(db, access.device)
+    refund = await create_refund(
+        db, access.user.brand_id, invoice_id, payload, access.user, session.id
+    )
     return InvoiceResponse.model_validate(refund)

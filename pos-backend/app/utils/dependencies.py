@@ -21,6 +21,7 @@ from app.database import get_db
 from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.group import Group
+from app.models.pos_device import PosDevice
 from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.site import Site
@@ -56,6 +57,7 @@ class POSAccess:
     user: User
     site: Site
     access_profile: AccessProfile
+    device: PosDevice | None = None
 
 
 @dataclass
@@ -189,7 +191,11 @@ _bearer = HTTPBearer()
 
 
 async def _load_pos_context(
-    db: AsyncSession, user_id: uuid.UUID, site_id: uuid.UUID, jti: str
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    site_id: uuid.UUID,
+    jti: str,
+    device_id: uuid.UUID | None,
 ) -> Row | None:
     """
     Load every entity a POS token resolution needs in ONE database round trip.
@@ -209,12 +215,18 @@ async def _load_pos_context(
         user_id: The ``sub`` claim from the decoded POS token.
         site_id: The ``site_id`` claim from the decoded POS token.
         jti: The ``jti`` claim (may be empty — the session column comes back NULL).
+        device_id: The ``device_id`` claim, or None for a token with no device
+            context (e.g. a PIN-verify switch that didn't supply device_token).
 
     Returns:
-        Row | None: (User, Site, UserAccessGrant, AccessProfile, UserPOSSession)
-            with NULLs for any piece that did not resolve, or None when the
-            user itself does not exist.
+        Row | None: (User, Site, UserAccessGrant, AccessProfile, UserPOSSession,
+            PosDevice) with NULLs for any piece that did not resolve, or None
+            when the user itself does not exist.
     """
+    # device_on joins on `false()` when the token carries no device_id, so the
+    # PosDevice column comes back NULL rather than matching an unrelated row
+    device_on = PosDevice.id == device_id if device_id is not None else false()
+
     # Explicit join chain (not method-chained .outerjoin on the select) — the
     # Site and UserPOSSession ON clauses reference only token claims, so
     # SQLAlchemy cannot infer their left side and needs it spelled out
@@ -239,9 +251,10 @@ async def _load_pos_context(
                 UserPOSSession.ended_at.is_(None),  # active sessions only
             ),
         )
+        .outerjoin(PosDevice, device_on)
     )
     stmt = (
-        select(User, Site, UserAccessGrant, AccessProfile, UserPOSSession)
+        select(User, Site, UserAccessGrant, AccessProfile, UserPOSSession, PosDevice)
         .select_from(joins)
         .where(User.id == user_id)
     )
@@ -509,9 +522,12 @@ async def resolve_access(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    device_id_str: str | None = payload.get("device_id") or None
+
     try:
         user_id = uuid.UUID(user_id_str)
         site_id = uuid.UUID(site_id_str)
+        device_id = uuid.UUID(device_id_str) if device_id_str else None
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -519,16 +535,16 @@ async def resolve_access(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # One round trip loads user, site, grant, profile, and session together;
-    # the checks below preserve the old sequential error order and messages
-    row = await _load_pos_context(db, user_id, site_id, payload.get("jti", ""))
+    # One round trip loads user, site, grant, profile, session, and device
+    # together; the checks below preserve the old sequential error order
+    row = await _load_pos_context(db, user_id, site_id, payload.get("jti", ""), device_id)
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="POS user not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    user, site, grant, access_profile, pos_session = row
+    user, site, grant, access_profile, pos_session, device = row
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -563,7 +579,7 @@ async def resolve_access(
     # Reject tokens whose session has been revoked via logout
     _check_pos_session_row(payload.get("jti", ""), pos_session)
 
-    return POSAccess(user=user, site=site, access_profile=access_profile)
+    return POSAccess(user=user, site=site, access_profile=access_profile, device=device)
 
 
 async def resolve_management_access(
@@ -794,9 +810,11 @@ async def resolve_catalog_access(
         payload = decode_token(token_str, expected_type="pos_access")
         user_id = uuid.UUID(payload.get("sub", ""))
         site_id = uuid.UUID(payload.get("site_id", ""))
+        device_id_str = payload.get("device_id") or None
+        device_id = uuid.UUID(device_id_str) if device_id_str else None
 
-        # One round trip loads user, site, grant, profile, and session together
-        row = await _load_pos_context(db, user_id, site_id, payload.get("jti", ""))
+        # One round trip loads user, site, grant, profile, session, and device
+        row = await _load_pos_context(db, user_id, site_id, payload.get("jti", ""), device_id)
         user = row.User if row is not None else None
         if not user or not user.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="POS user inactive")
@@ -821,7 +839,7 @@ async def resolve_catalog_access(
         # Reject tokens whose session has been revoked via logout
         _check_pos_session_row(payload.get("jti", ""), row.UserPOSSession)
 
-        pos_access = POSAccess(user=user, site=site, access_profile=access_profile)
+        pos_access = POSAccess(user=user, site=site, access_profile=access_profile, device=row.PosDevice)
         return CatalogAccess(pos_access=pos_access, mgmt_access=None, portal_access=None)
 
     except JWTError:
