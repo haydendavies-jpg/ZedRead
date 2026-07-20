@@ -249,6 +249,11 @@ price-limited.
 
 **Goal:** Deliver the complete Android POS application using the fully-built backend. This is the commercially shippable end product.
 
+**Superseded by a 4-phase build plan:** the stage table below (25/26) is the original outline.
+Active work now follows [`ANDROID_POS_BUILD_PLAN.md`](ANDROID_POS_BUILD_PLAN.md), built directly from
+a supplied high-fidelity design bundle and expanded with register/till sessions, settings, offline
+sync, menu-scheduling depth, and table maps — read that file for current status and next steps.
+
 | Stage | Summary | Key outcome |
 |-------|---------|-------------|
 | **25** | **Auth & Catalog** | Login, PIN, site selector, product grid, cart |
