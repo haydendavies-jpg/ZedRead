@@ -1268,62 +1268,67 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
       )}
 
       <div className="flex border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden" style={{ minHeight: 520 }}>
-        {/* Rail — solid colour-blocked tabs, mirroring the reference POS mockup's category
-            sidebar (the mockup itself only ever shows one level of these, but that's a
-            limitation of the screenshot, not a constraint on this editor — nested tabs opened
-            via a folder button are unaffected and still reached through the breadcrumb above
-            the grid). New tabs auto-cycle through MENU_STUDIO_PALETTE so they start distinct
-            without the user having to pick a colour immediately; the swatch lets them change it
-            after. */}
-        <div className="w-52 shrink-0 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 p-3 flex flex-col gap-2 overflow-auto">
-          <div className="text-[10.5px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 px-1 pb-1">Tabs</div>
-          {topLevelTabs.map((tab) => {
-            const tabColor = tab.color ?? '#5A5550'
-            const tabFg = textColorOn(tabColor)
-            const isActive = tab.id === effectiveTabId
-            const isDragOver = dragOverTarget?.kind === 'tab' && dragOverTarget.tabId === tab.id
-            return (
-              <div
-                key={tab.id}
-                data-drop={`tab:${tab.id}`}
-                onClick={() => { setCurrentTabId(tab.id); setSelected(new Set()) }}
-                className={`flex items-center gap-2 px-3.5 py-3.5 rounded-xl text-sm font-bold cursor-pointer shadow-sm ${
-                  isDragOver ? 'ring-[3px] ring-white' : isActive ? 'ring-[3px] ring-gray-900 dark:ring-gray-100' : ''
-                }`}
-                style={{ background: tabColor, color: tabFg }}
-              >
-                <span className="truncate flex-1">{tab.name}</span>
-                <span className="text-[11px] font-semibold shrink-0" style={{ opacity: 0.8 }}>{tab.buttons.length}</span>
-                <span onClick={(e) => e.stopPropagation()}>
-                  <ColorSwatchPicker value={tabColor} onChange={(color) => updateTabColor.mutate({ tabId: tab.id, color })} title="Tab colour" />
-                </span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    if (window.confirm(`Delete tab "${tab.name}"? Its buttons and any nested tabs are deleted too.`)) {
-                      deleteTab.mutate(tab.id)
-                    }
-                  }}
-                  className="shrink-0 w-5 h-5 rounded flex items-center justify-center hover:bg-black/15"
-                  style={{ color: tabFg, opacity: 0.8 }}
-                  title="Delete tab"
+        {/* Rail — solid colour-blocked tabs stacked flush (no gap, no radius, no side
+            margin — filling the rail edge-to-edge), mirroring the reference POS mockup's
+            category sidebar (the mockup itself only ever shows one level of these, but
+            that's a limitation of the screenshot, not a constraint on this editor — nested
+            tabs opened via a folder button are unaffected and still reached through the
+            breadcrumb above the grid). The rounded corners on the outer editor panel still
+            clip the rail's own top/bottom-left corners, so only the individual tab rows are
+            square. New tabs auto-cycle through MENU_STUDIO_PALETTE so they start distinct
+            without the user having to pick a colour immediately; the swatch lets them change
+            it after. */}
+        <div className="w-52 shrink-0 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col overflow-auto">
+          <div className="text-[10.5px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 px-3 pt-3 pb-2">Tabs</div>
+          <div className="flex flex-col">
+            {topLevelTabs.map((tab) => {
+              const tabColor = tab.color ?? '#5A5550'
+              const tabFg = textColorOn(tabColor)
+              const isActive = tab.id === effectiveTabId
+              const isDragOver = dragOverTarget?.kind === 'tab' && dragOverTarget.tabId === tab.id
+              return (
+                <div
+                  key={tab.id}
+                  data-drop={`tab:${tab.id}`}
+                  onClick={() => { setCurrentTabId(tab.id); setSelected(new Set()) }}
+                  className={`flex items-center gap-2 px-3.5 py-3.5 text-sm font-bold cursor-pointer ${
+                    isDragOver ? 'ring-[3px] ring-inset ring-white' : isActive ? 'ring-[3px] ring-inset ring-gray-900 dark:ring-gray-100' : ''
+                  }`}
+                  style={{ background: tabColor, color: tabFg }}
                 >
-                  ×
-                </button>
-              </div>
-            )
-          })}
+                  <span className="truncate flex-1">{tab.name}</span>
+                  <span className="text-[11px] font-semibold shrink-0" style={{ opacity: 0.8 }}>{tab.buttons.length}</span>
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <ColorSwatchPicker value={tabColor} onChange={(color) => updateTabColor.mutate({ tabId: tab.id, color })} title="Tab colour" />
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (window.confirm(`Delete tab "${tab.name}"? Its buttons and any nested tabs are deleted too.`)) {
+                        deleteTab.mutate(tab.id)
+                      }
+                    }}
+                    className="shrink-0 w-5 h-5 rounded flex items-center justify-center hover:bg-black/15"
+                    style={{ color: tabFg, opacity: 0.8 }}
+                    title="Delete tab"
+                  >
+                    ×
+                  </button>
+                </div>
+              )
+            })}
+          </div>
           <button
             onClick={() => {
               const name = prompt('New tab name')
               if (name) addTab.mutate({ name, color: MENU_STUDIO_PALETTE[topLevelTabs.length % MENU_STUDIO_PALETTE.length] })
             }}
-            className="mt-1 text-xs px-2.5 py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 text-center"
+            className="mx-3 mt-2 text-xs px-2.5 py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 text-center"
           >
             + Add tab
           </button>
           <div className="flex-1" />
-          <p className="text-[11px] text-gray-400 dark:text-gray-500 px-1 leading-relaxed">
+          <p className="text-[11px] text-gray-400 dark:text-gray-500 px-3 pb-3 leading-relaxed">
             Click a button to select. Shift-click adds more. Drag onto a tab or folder to move.
           </p>
         </div>

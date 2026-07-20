@@ -251,15 +251,27 @@ and how it was verified (a static, class-accurate mockup screenshot — this env
 reachable Postgres to drive the real editor end-to-end).
 
 **Menu Studio — POS Layout tab rail style redesign (post-tile-redesign, complete).** The rail of
-top-level tabs now renders as solid `tab.color`-filled rounded blocks (bold name + button count),
-matching the tile redesign's reference mockup's category sidebar, instead of a small colour dot on
-a neutral list row. The active tab gets a dark/light `ring` border (the mockup's black outline,
-adapted to the portal's themes); a drag-over target gets a white ring so the two states stay
-distinct against an arbitrary tab colour. New tabs auto-cycle through `MENU_STUDIO_PALETTE` so they
-start distinctly coloured rather than an unstyled grey; a `ColorSwatchPicker` (the same component
-already used for layouts/buttons/categories) on each row lets that be changed afterward, backed by
-a new `updateTabColor` mutation against `MenuTabUpdate.color` — a field the schema already accepted
-but nothing in the portal exposed yet. See `STAGE_STATUS.md` "POS Layout tab rail style redesign".
+top-level tabs now renders as solid `tab.color`-filled blocks (bold name + button count), matching
+the tile redesign's reference mockup's category sidebar, instead of a small colour dot on a neutral
+list row. The active tab gets a dark/light `ring` border (the mockup's black outline, adapted to
+the portal's themes); a drag-over target gets a white ring so the two states stay distinct against
+an arbitrary tab colour. New tabs auto-cycle through `MENU_STUDIO_PALETTE` so they start distinctly
+coloured rather than an unstyled grey; a `ColorSwatchPicker` (the same component already used for
+layouts/buttons/categories) on each row lets that be changed afterward, backed by a new
+`updateTabColor` mutation against `MenuTabUpdate.color` — a field the schema already accepted but
+nothing in the portal exposed yet. See `STAGE_STATUS.md` "POS Layout tab rail style redesign".
+
+**Menu Studio — POS Layout tab rail testing fixes (post-rail-redesign, complete).** Three issues
+found exercising the rail redesign against a live layout, all fixed — see `STAGE_STATUS.md` "POS
+Layout tab rail testing fixes". Notables: `ColorSwatchPicker` (shared by Categories, button
+recolouring, and the tab rail) now portals its popover into `document.body` at a `position: fixed`
+coordinate instead of a plain `position: absolute` child of the trigger, so it's never clipped by a
+narrow/scrollable ancestor (the rail is exactly that); its selected-swatch indicator is now a small
+white checkmark badge instead of a border, which used to blend into an already-dark or
+already-light palette colour; and the rail itself is now flush edge-to-edge (no padding/gap/
+rounding per row, `ring-inset` on the active/drag-over ring so it doesn't bleed into the now-
+touching neighbour) rather than a list of separated rounded cards, matching the reference's stacked
+square-cornered blocks.
 
 ## Folder structure (backend)
 ```
