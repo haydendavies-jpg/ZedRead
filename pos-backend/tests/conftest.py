@@ -53,6 +53,7 @@ from app.models import (  # noqa: F401
     ProductModifierGroupLink,
     ProductVariant,
     ProductVariantAttribute,
+    RegisterSession,
     ReportingGroup,
     Site,
     TaxCategory,
@@ -549,32 +550,54 @@ async def pos_auth_headers(
     test_user: User,
     test_site: Site,
     test_access_grant: UserAccessGrant,
+    test_device: PosDevice,
 ) -> dict[str, str]:
     """
     Authorization header dict carrying a valid POS access token for test_user.
 
     Also ensures the access grant exists (depends on test_access_grant) and
-    persists a matching user_pos_sessions row so resolve_access — which now
-    checks the token's jti against an active session — succeeds.
+    persists a matching user_pos_sessions row (with device context, so
+    resolve_access populates POSAccess.device) so resolve_access — which now
+    checks the token's jti against an active session — succeeds. Also opens
+    a register session for test_device so tests that create invoices don't
+    each need to open one manually (invoice creation requires an open
+    session as of the Android POS Phase 1 till-accountability work).
 
     Returns:
         dict[str, str]: {"Authorization": "Bearer <pos_access_token>"}
     """
     import uuid as _uuid
+    from datetime import datetime, timezone as _tz
+
     jti = str(_uuid.uuid4())
     # Persist the active session the resolved token is validated against
     session = UserPOSSession(
         id=_uuid.uuid4(),
         user_id=test_user.id,
         site_id=test_site.id,
+        device_id=test_device.id,
         token_jti=jti,
     )
     db.add(session)
+
+    register_session = RegisterSession(
+        id=_uuid.uuid4(),
+        device_id=test_device.id,
+        site_id=test_site.id,
+        status="open",
+        opened_at=datetime.now(tz=_tz.utc),
+        opening_cash_cents=10000,
+        opened_by_user_id=test_user.id,
+        opened_by_name=test_user.name,
+    )
+    db.add(register_session)
+
     await db.commit()
     token = create_pos_access_token(
         user_id=str(test_user.id),
         site_id=str(test_site.id),
         jti=jti,
+        device_id=str(test_device.id),
     )
     return {"Authorization": f"Bearer {token}"}
 

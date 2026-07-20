@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
+    DEVICE_REPAIRED,
     POS_LOGIN_FAILED,
     POS_LOGIN_SUCCESS,
     POS_LOGOUT,
@@ -18,6 +19,8 @@ from app.constants.audit_actions import (
 )
 from app.constants.statuses import ActorType
 from app.models.access_profile import AccessProfile
+from app.models.license import License
+from app.models.pos_device import PosDevice
 from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
@@ -29,6 +32,8 @@ from app.schemas.pos_auth import (
     PINVerifyResponse,
     POSLoginRequest,
     POSLoginResponse,
+    POSSiteTokenRequest,
+    SiteOption,
 )
 from app.services.audit_service import log_action
 from app.utils.rate_limit import check_rate_limit
@@ -101,69 +106,146 @@ async def _get_active_grant_with_profile(
     return grant, profile
 
 
-async def login(db: AsyncSession, payload: POSLoginRequest) -> POSLoginResponse:
+async def _get_user_site_grants(
+    db: AsyncSession, user_id: uuid.UUID
+) -> list[tuple[UserAccessGrant, Site]]:
     """
-    Authenticate a POS user with email+password for a specific site.
+    Fetch every active site-scoped grant for a user, joined to its site.
 
-    Validates credentials, checks that the user has an active grant for the
-    requested site, creates a session row, and issues a POS access JWT.
-
-    Writes an audit log row on both success and failure. The failure message
-    is intentionally vague to avoid leaking whether the email or site exists.
+    Only scope='site' grants are considered — brand/group-scoped grants are
+    not resolved down to individual sites for POS login, matching the
+    existing single-site lookup in _get_active_grant_with_profile().
 
     Args:
         db: Active database session.
-        payload: Login credentials (email, password, site_id).
+        user_id: The POS user UUID.
 
     Returns:
-        POSLoginResponse: Access token, user info, site info, and profile name.
+        list[tuple[UserAccessGrant, Site]]: One pair per active site grant.
+    """
+    result = await db.execute(
+        select(UserAccessGrant, Site)
+        .join(Site, Site.id == UserAccessGrant.site_id)
+        .where(
+            UserAccessGrant.user_id == user_id,
+            UserAccessGrant.scope == "site",
+            UserAccessGrant.is_active == True,  # noqa: E712
+        )
+    )
+    return list(result.all())
+
+
+async def _get_device_by_token(db: AsyncSession, device_token: str) -> PosDevice | None:
+    """
+    Fetch an active PosDevice by its terminal token.
+
+    Args:
+        db: Active database session.
+        device_token: The token presented by the terminal.
+
+    Returns:
+        PosDevice | None: The matching device, or None if unknown/deregistered.
+    """
+    result = await db.execute(
+        select(PosDevice).where(
+            PosDevice.device_token == device_token,
+            PosDevice.is_active == True,  # noqa: E712
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def _get_active_license(db: AsyncSession, site_id: uuid.UUID) -> License | None:
+    """
+    Fetch the active License for a site, if any.
+
+    Args:
+        db: Active database session.
+        site_id: The site UUID to check.
+
+    Returns:
+        License | None: The active license, or None if missing/expired/disabled.
+    """
+    result = await db.execute(
+        select(License).where(License.site_id == site_id, License.status == "active")
+    )
+    return result.scalar_one_or_none()
+
+
+async def _authenticate_or_401(db: AsyncSession, email: str, password: str) -> User:
+    """
+    Verify email+password and return the user, raising 401 on any failure.
+
+    Checks all conditions before deciding (rather than short-circuiting) to
+    avoid timing attacks that could reveal whether an email exists.
+
+    Args:
+        db: Active database session.
+        email: Login email.
+        password: Plaintext password to verify.
+
+    Returns:
+        User: The authenticated, active user.
 
     Raises:
-        HTTPException: 401 if credentials are invalid, user is inactive,
-                       the site does not exist, or the user has no grant.
+        HTTPException: 401 with a generic message if credentials are invalid
+            or the user is inactive. Writes a POS_LOGIN_FAILED audit row first.
     """
-    log.info("pos_auth.login.attempt", email=payload.email, site_id=str(payload.site_id))
-
-    # Throttle repeated login attempts against a single account (review S3)
-    check_rate_limit(
-        f"pos_login:{payload.email.lower()}",
-        max_attempts=_LOGIN_MAX_ATTEMPTS,
-        window_seconds=_LOGIN_WINDOW_SECONDS,
-    )
-
-    user = await _get_user_by_email(db, payload.email)
-
-    # Check all conditions before deciding to avoid timing attacks that could
-    # reveal whether an email exists in the system
+    user = await _get_user_by_email(db, email)
     credentials_valid = (
         user is not None
-        and await verify_password_async(payload.password, user.password_hash)
+        and await verify_password_async(password, user.password_hash)
         and user.is_active
     )
+    if credentials_valid:
+        return user  # type: ignore[return-value]
 
-    if not credentials_valid:
-        entity_id = str(user.id) if user else payload.email
-        await log_action(
-            db=db,
-            action=POS_LOGIN_FAILED,
-            entity_type="user",
-            entity_id=entity_id,
-            actor_type=ActorType.USER,
-            actor_id=None,
-            actor_email=payload.email,
-            actor_name=None,
-            after_state={"site_id": str(payload.site_id), "reason": "invalid_credentials"},
-        )
-        await db.commit()
-        log.warning("pos_auth.login.failed", email=payload.email)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    entity_id = str(user.id) if user else email
+    await log_action(
+        db=db,
+        action=POS_LOGIN_FAILED,
+        entity_type="user",
+        entity_id=entity_id,
+        actor_type=ActorType.USER,
+        actor_id=None,
+        actor_email=email,
+        actor_name=None,
+        after_state={"reason": "invalid_credentials"},
+    )
+    await db.commit()
+    log.warning("pos_auth.login.failed", email=email)
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
-    # Verify the site exists
-    site_result = await db.execute(select(Site).where(Site.id == payload.site_id))
+
+async def _finalize_login(
+    db: AsyncSession, *, user: User, site_id: uuid.UUID, device: PosDevice
+) -> POSLoginResponse:
+    """
+    Resolve a chosen site into an issued POS access token.
+
+    Verifies the user holds an active grant for site_id and that its
+    License is active, re-pairs the device to site_id if it differs from
+    the device's current pairing (writing a DEVICE_REPAIRED audit row),
+    creates a session row, and issues the token.
+
+    Args:
+        db: Active database session.
+        user: The already-credential-verified user.
+        site_id: The site being logged into.
+        device: The calling terminal's PosDevice row.
+
+    Returns:
+        POSLoginResponse: Access token and terminal context.
+
+    Raises:
+        HTTPException: 401 unknown site; 403 no active grant or inactive
+            license for that site.
+    """
+    site_result = await db.execute(select(Site).where(Site.id == site_id))
     site = site_result.scalar_one_or_none()
     if site is None:
         await log_action(
@@ -175,7 +257,7 @@ async def login(db: AsyncSession, payload: POSLoginRequest) -> POSLoginResponse:
             actor_id=user.id,
             actor_email=user.email,
             actor_name=user.name,
-            after_state={"site_id": str(payload.site_id), "reason": "site_not_found"},
+            after_state={"site_id": str(site_id), "reason": "site_not_found"},
         )
         await db.commit()
         raise HTTPException(
@@ -184,8 +266,7 @@ async def login(db: AsyncSession, payload: POSLoginRequest) -> POSLoginResponse:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Verify the user has an active grant for this site
-    grant_and_profile = await _get_active_grant_with_profile(db, user.id, payload.site_id)
+    grant_and_profile = await _get_active_grant_with_profile(db, user.id, site_id)
     if grant_and_profile is None:
         await log_action(
             db=db,
@@ -196,32 +277,64 @@ async def login(db: AsyncSession, payload: POSLoginRequest) -> POSLoginResponse:
             actor_id=user.id,
             actor_email=user.email,
             actor_name=user.name,
-            after_state={"site_id": str(payload.site_id), "reason": "no_active_grant"},
+            after_state={"site_id": str(site_id), "reason": "no_active_grant"},
         )
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No active access grant for this site",
         )
-
     _grant, access_profile = grant_and_profile
 
-    # Determine whether this user has a PIN set and if reset is required
+    license_row = await _get_active_license(db, site_id)
+    if license_row is None:
+        await log_action(
+            db=db,
+            action=POS_LOGIN_FAILED,
+            entity_type="user",
+            entity_id=str(user.id),
+            actor_type=ActorType.USER,
+            actor_id=user.id,
+            actor_email=user.email,
+            actor_name=user.name,
+            after_state={"site_id": str(site_id), "reason": "license_inactive"},
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This device's license is inactive",
+        )
+
+    # Re-pair the device only when the resolved site differs from its current
+    # pairing — a Master/roaming user overriding it for this session, per the
+    # locked-in "device stays pinned unless explicitly re-paired" decision.
+    if device.site_id != site_id:
+        previous_site_id = device.site_id
+        device.site_id = site_id
+        await log_action(
+            db=db,
+            action=DEVICE_REPAIRED,
+            entity_type="pos_device",
+            entity_id=str(device.id),
+            actor_type=ActorType.USER,
+            actor_id=user.id,
+            actor_email=user.email,
+            actor_name=user.name,
+            before_state={"site_id": str(previous_site_id)},
+            after_state={"site_id": str(site_id)},
+        )
+
     pin_result = await db.execute(select(UserPIN).where(UserPIN.user_id == user.id))
     pin_record = pin_result.scalar_one_or_none()
     is_pin_reset_required = pin_record.is_pin_reset_required if pin_record else True
 
-    # Create a session row with a fresh jti so the token can be revoked later
     jti = str(uuid.uuid4())
     session = UserPOSSession(
-        id=uuid.uuid4(),
-        user_id=user.id,
-        site_id=payload.site_id,
-        token_jti=jti,
+        id=uuid.uuid4(), user_id=user.id, site_id=site_id, device_id=device.id, token_jti=jti
     )
     db.add(session)
 
-    access_token = create_pos_access_token(str(user.id), str(payload.site_id), jti)
+    access_token = create_pos_access_token(str(user.id), str(site_id), jti, str(device.id))
 
     await log_action(
         db=db,
@@ -233,23 +346,123 @@ async def login(db: AsyncSession, payload: POSLoginRequest) -> POSLoginResponse:
         actor_email=user.email,
         actor_name=user.name,
         after_state={
-            "site_id": str(payload.site_id),
+            "site_id": str(site_id),
             "access_profile": access_profile.name,
             "session_jti": jti,
         },
     )
     await db.commit()
 
-    log.info("pos_auth.login.success", user_id=str(user.id), site_id=str(payload.site_id))
+    log.info("pos_auth.login.success", user_id=str(user.id), site_id=str(site_id))
     return POSLoginResponse(
         access_token=access_token,
         user_id=user.id,
         user_name=user.name,
-        site_id=payload.site_id,
+        site_id=site_id,
         site_name=site.name,
         access_profile_name=access_profile.name,
         is_pin_reset_required=is_pin_reset_required,
     )
+
+
+async def login(db: AsyncSession, payload: POSLoginRequest) -> POSLoginResponse:
+    """
+    Authenticate a POS user with email+password against this terminal.
+
+    The caller never supplies a site_id — the site is resolved from the
+    device's own pairing (device_token) and the user's active grants. When
+    the user's is_pos_multi_site_enabled flag is set and they hold grants on
+    more than one site, returns available_sites instead of a token; the
+    caller finalizes the choice via select_site().
+
+    Args:
+        db: Active database session.
+        payload: Login credentials and the terminal's device_token.
+
+    Returns:
+        POSLoginResponse: Either a full token, or available_sites to choose from.
+
+    Raises:
+        HTTPException: 401 invalid credentials/unknown site; 404 unknown or
+            deregistered device; 403 no active grant or inactive license.
+    """
+    log.info("pos_auth.login.attempt", email=payload.email)
+
+    # Throttle repeated login attempts against a single account (review S3)
+    check_rate_limit(
+        f"pos_login:{payload.email.lower()}",
+        max_attempts=_LOGIN_MAX_ATTEMPTS,
+        window_seconds=_LOGIN_WINDOW_SECONDS,
+    )
+
+    user = await _authenticate_or_401(db, payload.email, payload.password)
+
+    device = await _get_device_by_token(db, payload.device_token)
+    if device is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Device not registered"
+        )
+
+    if not user.is_pos_multi_site_enabled:
+        return await _finalize_login(db, user=user, site_id=device.site_id, device=device)
+
+    site_grants = await _get_user_site_grants(db, user.id)
+    if len(site_grants) <= 1:
+        # Nothing to choose between — resolve to the device's paired site if
+        # the user has a grant there, else their one granted site (if any).
+        paired_site_granted = any(site.id == device.site_id for _grant, site in site_grants)
+        if paired_site_granted or not site_grants:
+            target_site_id = device.site_id
+        else:
+            target_site_id = site_grants[0][1].id
+        return await _finalize_login(db, user=user, site_id=target_site_id, device=device)
+
+    log.info("pos_auth.login.site_selection", user_id=str(user.id), site_count=len(site_grants))
+    return POSLoginResponse(
+        user_id=user.id,
+        user_name=user.name,
+        available_sites=[
+            SiteOption(site_id=site.id, site_name=site.name) for _grant, site in site_grants
+        ],
+    )
+
+
+async def select_site(db: AsyncSession, payload: POSSiteTokenRequest) -> POSLoginResponse:
+    """
+    Finalize a multi-site POS login by choosing one of the offered sites.
+
+    Re-verifies credentials rather than trusting a bare site_id, since no
+    intermediate token is issued between login() and this call — mirrors the
+    portal's management-token re-verification pattern.
+
+    Args:
+        db: Active database session.
+        payload: Credentials, device_token, and the chosen site_id.
+
+    Returns:
+        POSLoginResponse: Access token and terminal context.
+
+    Raises:
+        HTTPException: 401 invalid credentials; 404 unknown device; 403 no
+            active grant or inactive license for the chosen site.
+    """
+    log.info("pos_auth.login.select_site.attempt", email=payload.email, site_id=str(payload.site_id))
+
+    check_rate_limit(
+        f"pos_login:{payload.email.lower()}",
+        max_attempts=_LOGIN_MAX_ATTEMPTS,
+        window_seconds=_LOGIN_WINDOW_SECONDS,
+    )
+
+    user = await _authenticate_or_401(db, payload.email, payload.password)
+
+    device = await _get_device_by_token(db, payload.device_token)
+    if device is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Device not registered"
+        )
+
+    return await _finalize_login(db, user=user, site_id=payload.site_id, device=device)
 
 
 async def logout(db: AsyncSession, user: User, jti: str) -> None:
@@ -431,17 +644,25 @@ async def verify_pin(
 
     _grant, access_profile = grant_and_profile
 
+    # Carry device context forward when the caller supplies it, so a
+    # switched-in user's session still gates on the terminal's register
+    # session — see PINVerifyRequest.device_token docstring
+    device = await _get_device_by_token(db, payload.device_token) if payload.device_token else None
+
     # Create a new session row for the incoming user's switch-user token
     jti = str(uuid.uuid4())
     session = UserPOSSession(
         id=uuid.uuid4(),
         user_id=user.id,
         site_id=payload.site_id,
+        device_id=device.id if device else None,
         token_jti=jti,
     )
     db.add(session)
 
-    access_token = create_pos_access_token(str(user.id), str(payload.site_id), jti)
+    access_token = create_pos_access_token(
+        str(user.id), str(payload.site_id), jti, str(device.id) if device else None
+    )
 
     await log_action(
         db=db,

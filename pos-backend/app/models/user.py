@@ -115,6 +115,17 @@ class User(Base):
         server_default="0",
         comment="Monotonic counter; a token whose 'tv' claim != this is revoked",
     )
+    is_pos_multi_site_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment=(
+            "'POS - Site Assignment' — when true and the user has active grants "
+            "on more than one site, POS login presents a site selector instead "
+            "of resolving straight to the device's paired site."
+        ),
+    )
     is_master_user: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

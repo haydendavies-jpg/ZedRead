@@ -12,6 +12,7 @@ from app.schemas.pos_auth import (
     POSLoginRequest,
     POSLoginResponse,
     POSLogoutResponse,
+    POSSiteTokenRequest,
 )
 from app.services import pos_auth_service
 from app.utils.dependencies import POSAccess, resolve_access
@@ -29,19 +30,43 @@ async def pos_login(
     db: AsyncSession = Depends(get_db),
 ) -> POSLoginResponse:
     """
-    Authenticate a POS user with email + password for a specific site.
+    Authenticate a POS user with email + password against this terminal.
 
-    Returns a POS access JWT and contextual information the terminal needs
-    to display (user name, site name, access profile).
+    The site is resolved from the terminal's own device pairing and the
+    user's grants — no site_id in the payload. Returns a POS access JWT
+    directly, or available_sites for a user with grants on more than one
+    site to choose from via POST /auth/pos/site-token.
 
     Args:
-        payload: Login credentials and target site.
+        payload: Login credentials and the terminal's device_token.
+        db: Active database session.
+
+    Returns:
+        POSLoginResponse: Token and terminal context, or available_sites.
+    """
+    return await pos_auth_service.login(db, payload)
+
+
+@router.post("/site-token", response_model=POSLoginResponse, status_code=status.HTTP_200_OK)
+async def pos_select_site(
+    payload: POSSiteTokenRequest,
+    db: AsyncSession = Depends(get_db),
+) -> POSLoginResponse:
+    """
+    Finalize a multi-site POS login by choosing one of the offered sites.
+
+    Called after POST /auth/pos/login returns available_sites. Re-verifies
+    credentials and, if the chosen site differs from the terminal's current
+    pairing, re-pairs the device to it for this session.
+
+    Args:
+        payload: Credentials, device_token, and the chosen site_id.
         db: Active database session.
 
     Returns:
         POSLoginResponse: Token and terminal context.
     """
-    return await pos_auth_service.login(db, payload)
+    return await pos_auth_service.select_site(db, payload)
 
 
 @router.post("/pin/set", response_model=None, status_code=status.HTTP_204_NO_CONTENT)

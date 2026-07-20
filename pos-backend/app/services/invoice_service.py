@@ -58,6 +58,7 @@ class InvoiceResponse(BaseModel):
     brand_id: uuid.UUID
     site_id: uuid.UUID
     created_by_id: uuid.UUID | None
+    register_session_id: uuid.UUID | None
     invoice_type: str
     status: str
     subtotal_cents: int
@@ -231,6 +232,7 @@ async def create_invoice(
     brand_id: uuid.UUID,
     site_id: uuid.UUID,
     actor: User,
+    register_session_id: uuid.UUID,
 ) -> Invoice:
     """
     Create a DRAFT invoice for a site.
@@ -240,6 +242,10 @@ async def create_invoice(
         brand_id: Brand scope.
         site_id: Site the invoice belongs to.
         actor: The authenticated POS user.
+        register_session_id: The device's open till session this sale is
+            rung up under — callers resolve this via
+            register_session_service.get_open_session_or_400() before
+            calling create_invoice(), so a sale is never orphaned from a shift.
 
     Returns:
         Invoice: The newly created draft invoice.
@@ -249,6 +255,7 @@ async def create_invoice(
         brand_id=brand_id,
         site_id=site_id,
         created_by_id=actor.id,
+        register_session_id=register_session_id,
         invoice_type=InvoiceType.SALE.value,
         status=InvoiceStatus.DRAFT.value,
     )
@@ -263,7 +270,11 @@ async def create_invoice(
         actor_id=actor.id,
         actor_email=actor.email,
         actor_name=actor.name,
-        after_state={"site_id": str(site_id), "status": InvoiceStatus.DRAFT.value},
+        after_state={
+            "site_id": str(site_id),
+            "status": InvoiceStatus.DRAFT.value,
+            "register_session_id": str(register_session_id),
+        },
     )
 
     await db.commit()
@@ -686,6 +697,7 @@ async def create_refund(
     invoice_id: uuid.UUID,
     payload: RefundRequest,
     actor: User,
+    register_session_id: uuid.UUID,
 ) -> Invoice:
     """
     Create a refund invoice for a paid invoice.
@@ -699,6 +711,9 @@ async def create_refund(
         invoice_id: The original paid invoice to refund.
         payload: Optional reason.
         actor: The authenticated POS user.
+        register_session_id: The device's currently open till session — a
+            refund is attributed to whichever shift processes it, not the
+            original sale's session (that may be a different day entirely).
 
     Returns:
         Invoice: The newly created refund invoice.
@@ -727,6 +742,7 @@ async def create_refund(
         brand_id=brand_id,
         site_id=original.site_id,
         created_by_id=actor.id,
+        register_session_id=register_session_id,
         invoice_type=InvoiceType.REFUND.value,
         status=InvoiceStatus.PAID.value,
         subtotal_cents=-original.subtotal_cents,
