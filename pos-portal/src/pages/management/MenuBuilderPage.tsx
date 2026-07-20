@@ -17,6 +17,7 @@ import { api, fetchAll } from '../../api/axios'
 import { useAuth, isMgmtUser } from '../../context/AuthContext'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { Modal } from '../../components/Modal'
+import { ColorSwatchPicker } from '../../components/ColorSwatchPicker'
 import { MENU_STUDIO_PALETTE, textColorOn, centsToDisplay } from '../../utils/menuStudio'
 import { apiErrorMessage } from '../../utils/apiError'
 import type { MenuButton, MenuLayout, MenuLayoutDetail, MenuTab, ProductListItem, PublishResult, PublishWarning } from '../../types'
@@ -765,7 +766,8 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
   }
 
   const addTab = useMutation({
-    mutationFn: (name: string) => api.post<MenuTab>(`/menu-layouts/${layoutId}/tabs`, { name }, { params }),
+    mutationFn: ({ name, color }: { name: string; color: string }) =>
+      api.post<MenuTab>(`/menu-layouts/${layoutId}/tabs`, { name, color }, { params }),
     onSuccess: (resp) => {
       qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) => (old ? { ...old, tabs: [...old.tabs, resp.data] } : old))
       setCurrentTabId(resp.data.id)
@@ -892,6 +894,18 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
     mutationFn: ({ tabId, name }: { tabId: string; name: string }) =>
       api.patch<MenuTab>(`/menu-layouts/${layoutId}/tabs/${tabId}`, { name }, { params }),
     // Response is the full resolved tab (route re-reads it via get_menu_layout_detail) — replace wholesale.
+    onSuccess: (resp) => {
+      qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) =>
+        old ? { ...old, tabs: old.tabs.map((t) => (t.id === resp.data.id ? resp.data : t)) } : old,
+      )
+    },
+    onError: onMutErr,
+  })
+  // Powers the rail's per-tab colour swatch — same PATCH endpoint as renameTab, kept as its own
+  // mutation so each stays a single-field, single-purpose call site.
+  const updateTabColor = useMutation({
+    mutationFn: ({ tabId, color }: { tabId: string; color: string }) =>
+      api.patch<MenuTab>(`/menu-layouts/${layoutId}/tabs/${tabId}`, { color }, { params }),
     onSuccess: (resp) => {
       qc.setQueryData<MenuLayoutDetail>(['menu-layout', layoutId], (old) =>
         old ? { ...old, tabs: old.tabs.map((t) => (t.id === resp.data.id ? resp.data : t)) } : old,
@@ -1254,37 +1268,56 @@ function GridEditor({ brandId, layoutId, onBack }: { brandId: string; layoutId: 
       )}
 
       <div className="flex border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden" style={{ minHeight: 520 }}>
-        {/* Rail */}
-        <div className="w-48 shrink-0 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 p-3 flex flex-col gap-1 overflow-auto">
+        {/* Rail — solid colour-blocked tabs, mirroring the reference POS mockup's category
+            sidebar (the mockup itself only ever shows one level of these, but that's a
+            limitation of the screenshot, not a constraint on this editor — nested tabs opened
+            via a folder button are unaffected and still reached through the breadcrumb above
+            the grid). New tabs auto-cycle through MENU_STUDIO_PALETTE so they start distinct
+            without the user having to pick a colour immediately; the swatch lets them change it
+            after. */}
+        <div className="w-52 shrink-0 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 p-3 flex flex-col gap-2 overflow-auto">
           <div className="text-[10.5px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 px-1 pb-1">Tabs</div>
-          {topLevelTabs.map((tab) => (
-            <div
-              key={tab.id}
-              data-drop={`tab:${tab.id}`}
-              onClick={() => { setCurrentTabId(tab.id); setSelected(new Set()) }}
-              className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm cursor-pointer ${
-                tab.id === effectiveTabId ? 'bg-brand-50 dark:bg-brand-950/40 text-brand-800 dark:text-brand-300 font-medium' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
-              } ${dragOverTarget?.kind === 'tab' && dragOverTarget.tabId === tab.id ? 'ring-2 ring-brand-500' : ''}`}
-            >
-              <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: tab.color ?? '#5A5550' }} />
-              <span className="truncate flex-1">{tab.name}</span>
-              <span className="text-[11px] text-gray-400 dark:text-gray-500">{tab.buttons.length}</span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (window.confirm(`Delete tab "${tab.name}"? Its buttons and any nested tabs are deleted too.`)) {
-                    deleteTab.mutate(tab.id)
-                  }
-                }}
-                className="shrink-0 w-4 h-4 rounded flex items-center justify-center text-gray-400 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-                title="Delete tab"
+          {topLevelTabs.map((tab) => {
+            const tabColor = tab.color ?? '#5A5550'
+            const tabFg = textColorOn(tabColor)
+            const isActive = tab.id === effectiveTabId
+            const isDragOver = dragOverTarget?.kind === 'tab' && dragOverTarget.tabId === tab.id
+            return (
+              <div
+                key={tab.id}
+                data-drop={`tab:${tab.id}`}
+                onClick={() => { setCurrentTabId(tab.id); setSelected(new Set()) }}
+                className={`flex items-center gap-2 px-3.5 py-3.5 rounded-xl text-sm font-bold cursor-pointer shadow-sm ${
+                  isDragOver ? 'ring-[3px] ring-white' : isActive ? 'ring-[3px] ring-gray-900 dark:ring-gray-100' : ''
+                }`}
+                style={{ background: tabColor, color: tabFg }}
               >
-                ×
-              </button>
-            </div>
-          ))}
+                <span className="truncate flex-1">{tab.name}</span>
+                <span className="text-[11px] font-semibold shrink-0" style={{ opacity: 0.8 }}>{tab.buttons.length}</span>
+                <span onClick={(e) => e.stopPropagation()}>
+                  <ColorSwatchPicker value={tabColor} onChange={(color) => updateTabColor.mutate({ tabId: tab.id, color })} title="Tab colour" />
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (window.confirm(`Delete tab "${tab.name}"? Its buttons and any nested tabs are deleted too.`)) {
+                      deleteTab.mutate(tab.id)
+                    }
+                  }}
+                  className="shrink-0 w-5 h-5 rounded flex items-center justify-center hover:bg-black/15"
+                  style={{ color: tabFg, opacity: 0.8 }}
+                  title="Delete tab"
+                >
+                  ×
+                </button>
+              </div>
+            )
+          })}
           <button
-            onClick={() => { const name = prompt('New tab name'); if (name) addTab.mutate(name) }}
+            onClick={() => {
+              const name = prompt('New tab name')
+              if (name) addTab.mutate({ name, color: MENU_STUDIO_PALETTE[topLevelTabs.length % MENU_STUDIO_PALETTE.length] })
+            }}
             className="mt-1 text-xs px-2.5 py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 text-center"
           >
             + Add tab

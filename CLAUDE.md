@@ -245,10 +245,21 @@ column and its upload route have existed since Stage 8/24) so a tile can show th
 photo as a full-bleed background with a legibility scrim instead of a flat colour, falling back to
 the flat colour tile when the product has none (true for virtually every product today — there's no
 photo-upload control on `ProductsPage.tsx` yet, an existing gap this didn't take on). The rail of
-top-level tabs was deliberately left untouched — out of scope for this pass. See `STAGE_STATUS.md`
-"POS Layout tile style redesign" for the full before/after and how it was verified (a static,
-class-accurate mockup screenshot — this environment has no reachable Postgres to drive the real
-editor end-to-end).
+top-level tabs was initially left untouched on a since-corrected reading of the request — see the
+follow-up below. See `STAGE_STATUS.md` "POS Layout tile style redesign" for the full before/after
+and how it was verified (a static, class-accurate mockup screenshot — this environment has no
+reachable Postgres to drive the real editor end-to-end).
+
+**Menu Studio — POS Layout tab rail style redesign (post-tile-redesign, complete).** The rail of
+top-level tabs now renders as solid `tab.color`-filled rounded blocks (bold name + button count),
+matching the tile redesign's reference mockup's category sidebar, instead of a small colour dot on
+a neutral list row. The active tab gets a dark/light `ring` border (the mockup's black outline,
+adapted to the portal's themes); a drag-over target gets a white ring so the two states stay
+distinct against an arbitrary tab colour. New tabs auto-cycle through `MENU_STUDIO_PALETTE` so they
+start distinctly coloured rather than an unstyled grey; a `ColorSwatchPicker` (the same component
+already used for layouts/buttons/categories) on each row lets that be changed afterward, backed by
+a new `updateTabColor` mutation against `MenuTabUpdate.color` — a field the schema already accepted
+but nothing in the portal exposed yet. See `STAGE_STATUS.md` "POS Layout tab rail style redesign".
 
 ## Folder structure (backend)
 ```

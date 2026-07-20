@@ -963,8 +963,9 @@ Follow-up sweep from a codebase efficiency review; five deliverables:
 Restyled the grid editor's product/folder tiles to match a reference POS mockup showing large
 colour-blocked buttons (bold white product name top-left, price bottom-left, a small round "+"
 quick-add badge top-right, generous rounded corners), one tile shown with a product photo filling
-the tile instead of a flat colour. The rail of top-level tabs on the left was explicitly left
-unchanged — the reference's own sidebar list wasn't the object of the redesign.
+the tile instead of a flat colour. The rail of top-level tabs on the left was initially left
+unchanged in this pass, on a since-corrected reading of the request — see the follow-up below,
+which restyles the rail too.
 
 - [x] `MenuBuilderPage.tsx` grid tiles: `rounded-xl` → `rounded-2xl`, bumped padding, bolder/larger
   product name (`font-semibold` → `font-bold`, 13.5px → 14.5px), price switched from
@@ -989,6 +990,35 @@ unchanged — the reference's own sidebar list wasn't the object of the redesign
   states side by side — this environment has no reachable Postgres instance to run the full
   app/backend against real catalog data, so this was a layout/contrast check of the exact classes
   landed in `MenuBuilderPage.tsx`, not an end-to-end browser session against the live editor.
+
+---
+
+### Menu Studio — POS Layout tab rail style redesign ✅
+
+Follow-up to the tile redesign above: the user clarified that leaving the rail unstyled was a
+misreading — the reference mockup's lack of a nested "tab inside a tab" example was a note about
+what the screenshot doesn't show, not an instruction to leave the rail alone. Restyled the rail of
+top-level tabs to match the mockup's category sidebar: solid colour-blocked rows instead of a
+small colour dot on a neutral list.
+
+- [x] Each rail tab (`MenuBuilderPage.tsx`) now renders as a solid `tab.color`-filled, rounded-xl
+  block (bold name, button count, up from a `w-2.5 h-2.5` dot + `bg-brand-50` highlight on a
+  neutral row). The active tab gets a `ring-[3px]` dark/light border (adapting the reference's
+  black-outlined "Coffee" tab to the portal's light/dark themes) instead of the previous
+  brand-tinted background; a drag-over target gets a white ring instead, so the two states stay
+  visually distinct against an arbitrary tab colour. Text/icon colour on each row is resolved via
+  the existing `textColorOn()` helper, same as button tiles.
+- [x] **New tabs get a colour automatically** — `addTab`'s payload gained `color`, cycling through
+  `MENU_STUDIO_PALETTE` by the rail's current tab count (mirrors how a new layout already defaults
+  its own colour), so a freshly-added tab is never an unstyled fallback grey. A new
+  `updateTabColor` mutation (`PATCH .../tabs/{tabId}`, a field the schema already accepted —
+  `MenuTabUpdate.color` — just not exposed anywhere in the portal yet) backs a `ColorSwatchPicker`
+  on each rail row so the auto-assigned colour can be changed afterward, the same picker component
+  already used for layouts/buttons/categories.
+- [x] Verified via the same static class-accurate mockup technique as the tile redesign (six
+  differently-coloured tabs, one active with the black ring, rendered alongside product tiles) —
+  same no-reachable-Postgres constraint as before, so this was a layout/contrast check, not a
+  live-editor session.
 
 ---
 
