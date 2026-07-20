@@ -111,10 +111,12 @@ class UserCreate(BaseModel):
 
 class EmailCheckOut(BaseModel):
     """
-    Whether an email is already registered, for the create-user form.
+    Whether an email is already registered, for the create-user and
+    create-superadmin forms.
 
     Lets the portal detect an existing identity as the admin types and skip
-    the password field (the new User will share the existing password).
+    the password field (the new User/SuperAdmin will share the existing
+    password).
     """
 
     exists: bool
@@ -335,14 +337,16 @@ async def check_email(
     actor=Depends(get_current_superadmin),
 ) -> EmailCheckOut:
     """
-    Report whether an email is already registered, for the create-user form.
+    Report whether an email is already registered, for the create-user and
+    create-superadmin forms.
 
     Lets the portal skip the password field when the email already belongs to
-    a SuperAdmin or another User — the new User then shares that identity's
-    sign-in password (ROLE_MODEL.md §3). Requires portal JWT.
+    a SuperAdmin or another User — the new identity then shares that existing
+    identity's sign-in password (ROLE_MODEL.md §3). Requires portal JWT.
 
     Args:
-        email: The email being typed into the create-user form.
+        email: The email being typed into the create-user or
+            create-superadmin form.
 
     Returns:
         EmailCheckOut: Existence flag plus the matching identity's type/name

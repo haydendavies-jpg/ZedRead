@@ -4,7 +4,7 @@ import uuid
 
 import structlog
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
@@ -16,6 +16,7 @@ from app.constants.audit_actions import (
 from app.models.superadmin import SuperAdmin
 from app.schemas.superadmin import SuperAdminCreate, SuperAdminUpdate
 from app.services.audit_service import log_action
+from app.services.user_service import find_email_owner
 from app.utils.security import hash_password, normalize_email
 
 log = structlog.get_logger(__name__)
@@ -113,26 +114,53 @@ async def create_superadmin(
         SuperAdmin: The newly created portal user.
 
     Raises:
-        HTTPException: 409 if the email address is already taken.
+        HTTPException: 409 if the email address already belongs to another
+            SuperAdmin, or if a password is supplied for an email that
+            already links to an existing identity's sign-in password.
+        HTTPException: 422 if no password is supplied for a brand-new email.
     """
     # Emails are case-insensitive for login — normalize before storing/comparing
     # so "Jane@x.com" and "jane@x.com" are always the same account.
     email = normalize_email(payload.email)
 
-    # Check for duplicate email before hashing the password (cheaper failure path)
-    existing = await db.execute(select(SuperAdmin).where(func.lower(SuperAdmin.email) == email))
-    if existing.scalar_one_or_none() is not None:
+    # Cross-identity email lookup (ROLE_MODEL.md §3): a shared email links this
+    # SuperAdmin to whichever existing SuperAdmin/User row already owns it —
+    # mirroring create_user()/create_managed_user() on the User side. Without
+    # this check, a User and a same-email SuperAdmin created independently
+    # would end up with two unrelated passwords and never resolve to the
+    # cross-identity disambiguation flow in management_auth_service.login().
+    existing_source = await find_email_owner(db, email)
+    if isinstance(existing_source, SuperAdmin):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A portal user with this email already exists",
         )
+
+    if existing_source is not None and existing_source.password_hash is not None:
+        # Linked identity — reuse the existing password; reject a new one so
+        # the shared email never ends up with two different passwords.
+        if payload.password is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This email already has an account — leave the password blank; the new portal user shares the existing sign-in password.",
+            )
+        password_hash = existing_source.password_hash
+    else:
+        # Brand-new email (or an existing one whose owner has no password
+        # yet) — a password is required to make this login usable.
+        if payload.password is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="A password is required for a new email.",
+            )
+        password_hash = hash_password(payload.password)
 
     log.info("superadmin.creating", email=email, role=payload.role)
 
     user = SuperAdmin(
         id=uuid.uuid4(),
         email=email,
-        password_hash=hash_password(payload.password),
+        password_hash=password_hash,
         name=payload.name,
         role=payload.role,
         is_active=True,
