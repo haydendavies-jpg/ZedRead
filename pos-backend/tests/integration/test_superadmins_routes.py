@@ -163,10 +163,20 @@ async def test_create_superadmin_missing_email_returns_422(client, portal_auth_h
 
 
 async def test_create_superadmin_short_password_returns_422(client, portal_auth_headers):
-    """POST /portal-users with a password shorter than 12 chars returns 422."""
+    """POST /portal-users with a password shorter than 6 chars returns 422."""
     response = await client.post(
         "/portal-users/",
-        json={"email": "short@test.com", "name": "Short", "password": "tooshort", "role": "admin"},
+        json={"email": "short@test.com", "name": "Short", "password": "abc", "role": "admin"},
+        headers=portal_auth_headers,
+    )
+    assert response.status_code == 422
+
+
+async def test_create_superadmin_no_password_new_email_returns_422(client, portal_auth_headers):
+    """POST /portal-users with no password for a brand-new email returns 422."""
+    response = await client.post(
+        "/portal-users/",
+        json={"email": "nopassword@test.com", "name": "No Password", "role": "admin"},
         headers=portal_auth_headers,
     )
     assert response.status_code == 422
@@ -200,6 +210,47 @@ async def test_create_superadmin_duplicate_email_returns_409(
             "email": test_superadmin.email,
             "name": "Duplicate",
             "password": "SecurePassword123!",
+            "role": "admin",
+        },
+        headers=portal_auth_headers,
+    )
+    assert response.status_code == 409
+
+
+# ── Cross-identity email mapping (ROLE_MODEL.md §3 shared-email flow) ──────────
+
+
+async def test_create_superadmin_shared_email_links_existing_user_password(
+    client, db, portal_auth_headers, test_user
+):
+    """A new SuperAdmin on an email already owned by a User reuses that User's password."""
+    response = await client.post(
+        "/portal-users/",
+        json={
+            "email": test_user.email,  # already a POS User's email
+            "name": "Shared Identity",
+            "role": "admin",
+        },
+        headers=portal_auth_headers,
+    )
+    assert response.status_code == 201
+    new_id = response.json()["id"]
+
+    row = (await db.execute(select(SuperAdmin).where(SuperAdmin.id == new_id))).scalar_one()
+    # Same credential as the existing User — no competing password created.
+    assert row.password_hash == test_user.password_hash
+
+
+async def test_create_superadmin_shared_email_rejects_new_password(
+    client, portal_auth_headers, test_user
+):
+    """Supplying a fresh password for an email already owned by a User is rejected (409)."""
+    response = await client.post(
+        "/portal-users/",
+        json={
+            "email": test_user.email,
+            "name": "Shared Identity",
+            "password": "DifferentPass123!",
             "role": "admin",
         },
         headers=portal_auth_headers,

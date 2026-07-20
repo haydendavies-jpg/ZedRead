@@ -1,6 +1,6 @@
 /** SuperAdmins management page — Admin-role SuperAdmin only. */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, fetchAll } from '../api/axios'
 import { useAuth } from '../context/AuthContext'
@@ -17,6 +17,21 @@ const ROLES = [
   { value: 'admin', label: 'Admin' },
   { value: 'reseller_staff', label: 'Reseller' },
 ] as const
+
+/** Result of GET /users/email-check — whether the typed email already exists (User or SuperAdmin). */
+interface EmailCheckResult {
+  exists: boolean
+  identity_type?: 'superadmin' | 'user'
+  display_name?: string
+  has_password?: boolean
+}
+
+interface CreateSuperAdminPayload {
+  email: string
+  name: string
+  password?: string
+  role: string
+}
 
 export function SuperAdminsPage() {
   const { user: me } = useAuth()
@@ -37,8 +52,32 @@ export function SuperAdminsPage() {
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['superadmins'] })
 
+  // Detect an already-registered email (User or SuperAdmin) while the admin
+  // types, so the form can skip the password step: a shared email links the
+  // new SuperAdmin to the existing identity's sign-in password, and the
+  // person picks which platform to open at login (ROLE_MODEL.md §3).
+  const [debouncedEmail, setDebouncedEmail] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedEmail(form.email), 350)
+    return () => clearTimeout(t)
+  }, [form.email])
+  const emailLooksValid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(debouncedEmail)
+  const { data: emailCheck } = useQuery<EmailCheckResult>({
+    queryKey: ['email-check', debouncedEmail],
+    queryFn: () => api.get('/users/email-check', { params: { email: debouncedEmail } }).then((r) => r.data),
+    enabled: showCreate && emailLooksValid,
+    staleTime: 30_000,
+  })
+  // "Linked" = reuse the existing password (only possible when that account
+  // actually has one); otherwise the password field stays required. Only a
+  // User's email can be linked this way — a SuperAdmin row is itself a full
+  // sign-in identity, so a second SuperAdmin sharing another SuperAdmin's
+  // email is a straight duplicate, not a linkable cross-identity match.
+  const linkedEmail = !!(emailCheck?.exists && emailCheck.has_password && emailCheck.identity_type === 'user')
+  const duplicateSuperAdminEmail = !!(emailCheck?.exists && emailCheck.identity_type === 'superadmin')
+
   const createMutation = useMutation({
-    mutationFn: (payload: typeof form) => api.post('/portal-users/', payload),
+    mutationFn: (payload: CreateSuperAdminPayload) => api.post('/portal-users/', payload),
     onSuccess: () => {
       invalidate()
       setShowCreate(false)
@@ -46,6 +85,7 @@ export function SuperAdminsPage() {
     },
 
     onError: (e: unknown) => {
+      invalidate()
       const msg = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
       setFormError(msg ?? 'Failed to create user.')
     },
@@ -88,7 +128,12 @@ export function SuperAdminsPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
-    createMutation.mutate(form)
+    // Omit the password for a linked email — the backend reuses the existing
+    // identity's sign-in password and rejects a competing one.
+    const payload: CreateSuperAdminPayload = linkedEmail
+      ? { email: form.email, name: form.name, role: form.role }
+      : form
+    createMutation.mutate(payload)
   }
 
   const filtered = users.filter((u) => {
@@ -280,17 +325,36 @@ export function SuperAdminsPage() {
                 placeholder="jane@example.com"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password (min 12 chars)</label>
-              <input
-                type="password"
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                required
-                minLength={12}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-              />
-            </div>
+            {duplicateSuperAdminEmail ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-900 px-3 py-2.5">
+                <p className="text-sm text-red-800 dark:text-red-300">
+                  This email already belongs to a SuperAdmin{emailCheck?.display_name ? ` (${emailCheck.display_name})` : ''}
+                  — choose a different email.
+                </p>
+              </div>
+            ) : linkedEmail ? (
+              <div className="rounded-lg border border-brand-200 bg-brand-50 dark:bg-brand-950/30 dark:border-brand-900 px-3 py-2.5">
+                <p className="text-sm text-brand-800 dark:text-brand-300">
+                  This email already has an account{emailCheck?.display_name ? ` (${emailCheck.display_name})` : ''}.
+                </p>
+                <p className="text-xs text-brand-700 dark:text-brand-400 mt-1">
+                  No new password needed — the user signs in with the existing password and chooses which
+                  account to open at login.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password (min 6 chars)</label>
+                <input
+                  type="password"
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  required
+                  minLength={6}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
               <select
@@ -306,7 +370,7 @@ export function SuperAdminsPage() {
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800">Cancel</button>
-              <button type="submit" disabled={createMutation.isPending} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">Create</button>
+              <button type="submit" disabled={createMutation.isPending || duplicateSuperAdminEmail} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">Create</button>
             </div>
           </form>
         </Modal>
