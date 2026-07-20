@@ -20,9 +20,8 @@ from app.constants.statuses import ActorType, GrantScope, SuperAdminRole, System
 from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.group import Group
-from app.models.superadmin import SuperAdmin
-from app.models.site import Site
 from app.models.user import User
+from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
 from app.models.user_pin import UserPIN
 from app.schemas.site import SiteCreate, SiteUpdate
@@ -35,7 +34,7 @@ from app.utils.storage import ALLOWED_LOGO_TYPES, MAX_LOGO_BYTES, extension_for_
 log = structlog.get_logger(__name__)
 
 
-def _scope_to_own_accounts(conditions: list, actor: SuperAdmin) -> None:
+def _scope_to_own_accounts(conditions: list, actor: User) -> None:
     """
     Restrict a Site query's conditions to groups the actor created, for Reseller Staff.
 
@@ -45,9 +44,9 @@ def _scope_to_own_accounts(conditions: list, actor: SuperAdmin) -> None:
 
     Args:
         conditions: The list of SQLAlchemy filter conditions to extend in place.
-        actor: The authenticated SuperAdmin performing the action.
+        actor: The authenticated portal admin (User) performing the action.
     """
-    if actor.role == SuperAdminRole.RESELLER_STAFF.value:
+    if actor.superadmin_role == SuperAdminRole.RESELLER_STAFF.value:
         conditions.append(
             Site.brand_id.in_(
                 select(Brand.id).where(
@@ -60,7 +59,7 @@ def _scope_to_own_accounts(conditions: list, actor: SuperAdmin) -> None:
 async def _create_master_user(
     db: AsyncSession,
     site: Site,
-    actor: SuperAdmin,
+    actor: User,
     master_email: str,
     master_password: str,
 ) -> User:
@@ -173,7 +172,7 @@ async def _create_master_user(
     return master_user
 
 
-async def _get_or_404(db: AsyncSession, site_id: uuid.UUID, actor: SuperAdmin) -> Site:
+async def _get_or_404(db: AsyncSession, site_id: uuid.UUID, actor: User) -> Site:
     """
     Fetch a Site by ID or raise HTTP 404.
 
@@ -183,7 +182,7 @@ async def _get_or_404(db: AsyncSession, site_id: uuid.UUID, actor: SuperAdmin) -
     Args:
         db: Active database session.
         site_id: The UUID of the site to fetch.
-        actor: The authenticated SuperAdmin performing the action.
+        actor: The authenticated portal admin (User) performing the action.
 
     Returns:
         Site: The found site instance.
@@ -202,7 +201,7 @@ async def _get_or_404(db: AsyncSession, site_id: uuid.UUID, actor: SuperAdmin) -
 
 async def list_sites(
     db: AsyncSession,
-    actor: SuperAdmin,
+    actor: User,
     skip: int = 0,
     limit: int = 50,
     name: str | None = None,
@@ -214,7 +213,7 @@ async def list_sites(
 
     Args:
         db: Active database session.
-        actor: The authenticated SuperAdmin performing the action.
+        actor: The authenticated portal admin (User) performing the action.
         skip: Number of records to skip (offset).
         limit: Maximum number of records to return.
         name: Optional substring filter on Site.name (case-insensitive).
@@ -240,14 +239,14 @@ async def list_sites(
     return list(result.scalars().all())
 
 
-async def get_site(db: AsyncSession, site_id: uuid.UUID, actor: SuperAdmin) -> Site:
+async def get_site(db: AsyncSession, site_id: uuid.UUID, actor: User) -> Site:
     """
     Fetch a single site by ID, scoped to the actor's own accounts if Reseller Staff.
 
     Args:
         db: Active database session.
         site_id: The UUID of the site.
-        actor: The authenticated SuperAdmin performing the action.
+        actor: The authenticated portal admin (User) performing the action.
 
     Returns:
         Site: The found site.
@@ -261,7 +260,7 @@ async def get_site(db: AsyncSession, site_id: uuid.UUID, actor: SuperAdmin) -> S
 async def create_site(
     db: AsyncSession,
     payload: SiteCreate,
-    actor: SuperAdmin,
+    actor: User,
 ) -> Site:
     """
     Create a new Site and write an audit log row in the same transaction.
@@ -278,7 +277,7 @@ async def create_site(
         HTTPException: 404 if the referenced brand does not exist within the actor's scope.
     """
     brand_conditions = [Brand.id == payload.brand_id]
-    if actor.role == SuperAdminRole.RESELLER_STAFF.value:
+    if actor.superadmin_role == SuperAdminRole.RESELLER_STAFF.value:
         brand_conditions.append(
             Brand.group_id.in_(select(Group.id).where(Group.created_by_id == actor.id))
         )
@@ -342,7 +341,7 @@ async def update_site(
     db: AsyncSession,
     site_id: uuid.UUID,
     payload: SiteUpdate,
-    actor: SuperAdmin,
+    actor: User,
 ) -> Site:
     """
     Update a Site's mutable fields and write an audit log row.
@@ -422,7 +421,7 @@ async def update_site(
 async def suspend_site(
     db: AsyncSession,
     site_id: uuid.UUID,
-    actor: SuperAdmin,
+    actor: User,
 ) -> Site:
     """
     Suspend a site (set is_active = False) and write an audit log row.
@@ -467,7 +466,7 @@ async def upload_logo(
     db: AsyncSession,
     site_id: uuid.UUID,
     file: UploadFile,
-    actor: SuperAdmin,
+    actor: User,
 ) -> Site:
     """
     Upload or replace a Site's logo and write an audit log row.
@@ -526,7 +525,7 @@ async def upload_logo(
 async def request_billing_info(
     db: AsyncSession,
     site_id: uuid.UUID,
-    actor: SuperAdmin,
+    actor: User,
 ) -> ResolvedValue:
     """
     Send a billing-info-request email to the site's effective billing contact.
@@ -550,7 +549,7 @@ async def request_billing_info(
 async def activate_site(
     db: AsyncSession,
     site_id: uuid.UUID,
-    actor: SuperAdmin,
+    actor: User,
 ) -> Site:
     """
     Activate a site (set is_active = True) and write an audit log row.

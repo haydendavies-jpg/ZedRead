@@ -1,4 +1,4 @@
-"""Business logic for creating and managing POS users from the management portal or SuperAdmin portal."""
+"""Business logic for creating and managing POS users from the management portal or admin portal."""
 
 import secrets
 import uuid
@@ -14,7 +14,6 @@ from app.constants.statuses import GrantScope
 from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.site import Site
-from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
 from app.schemas.access_grant import AccessGrantCreate
@@ -28,38 +27,36 @@ from app.utils.security import hash_password, normalize_email
 log = structlog.get_logger(__name__)
 
 
-async def find_email_owner(db: AsyncSession, email: str) -> SuperAdmin | User | None:
+async def find_email_owner(db: AsyncSession, email: str) -> User | None:
     """
-    Return an existing identity that already holds this email, if any.
+    Return an existing User row that already holds this email, if any.
 
-    Checks SuperAdmins first, then Users, so a shared email resolves to a
-    single existing sign-in credential to link a new User against. Returns
-    None when the email is not yet registered anywhere. Compares
-    case-insensitively — login and every other identity lookup treat email
-    as case-insensitive (see auth_service modules), so the same email typed
-    with different casing must resolve to the same owner here too.
+    users.email is non-unique (migration 0031) — the same email may belong to
+    several rows (e.g. a Master User at more than one entity, or a tenant row
+    plus a separate portal-admin row). Returns the first match, which is all
+    the callers here need (linking a new row's sign-in password to whatever
+    the email already resolves to). Compares case-insensitively — login and
+    every other identity lookup treat email as case-insensitive (see
+    auth_service modules), so the same email typed with different casing
+    must resolve to the same owner here too.
 
     Args:
         db: Active session.
         email: The email to look up.
 
     Returns:
-        SuperAdmin | User | None: The first identity owning the email, or None.
+        User | None: The first row owning the email, or None if unregistered.
     """
     normalized = normalize_email(email)
-    sa_r = await db.execute(select(SuperAdmin).where(func.lower(SuperAdmin.email) == normalized))
-    superadmin = sa_r.scalar_one_or_none()
-    if superadmin is not None:
-        return superadmin
-    user_r = await db.execute(select(User).where(func.lower(User.email) == normalized))
-    return user_r.scalar_one_or_none()
+    result = await db.execute(select(User).where(func.lower(User.email) == normalized))
+    return result.scalars().first()
 
 
 async def create_managed_user(
     db: AsyncSession,
     payload: ManagedUserCreate,
     management_access: ManagementAccess | None,
-    superadmin: SuperAdmin | None,
+    superadmin: User | None,
 ) -> tuple[User, UserAccessGrant]:
     """
     Create a new User plus its initial access grant in one step.
@@ -67,7 +64,7 @@ async def create_managed_user(
     Backs the management portal's Users page "Add User" action — until now,
     a management caller could only grant additional access to an *existing*
     user (found via search); there was no way to onboard a brand-new one
-    without going through the SuperAdmin-only POST /users route. Scope and
+    without going through the portal-admin-only POST /users route. Scope and
     role-ceiling authority are checked *before* the User row is created (the
     same checks create_grant() applies), so a caller outside their authority
     never leaves an orphaned userless row behind.
@@ -194,16 +191,15 @@ async def request_user_password_reset(
     db: AsyncSession,
     user_id: uuid.UUID,
     management_access: ManagementAccess | None,
-    superadmin: SuperAdmin | None,
+    superadmin: User | None,
 ) -> None:
     """
     Generate a password-reset token for a User and email it to their address.
 
     Admin-triggered from the Users page edit panel — distinct from the public
     self-service /auth/portal/forgot-password flow (which only covers
-    SuperAdmin accounts today). The emailed link is consumed by the same
-    /auth/portal/reset-password endpoint SuperAdmin resets use; that endpoint
-    now checks both tables for a matching token.
+    portal-admin accounts today). The emailed link is consumed by the same
+    /auth/portal/reset-password endpoint portal-admin resets use.
 
     Args:
         db: Active session.

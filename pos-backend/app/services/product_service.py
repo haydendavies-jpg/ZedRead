@@ -36,7 +36,6 @@ from app.models.menu_tab import MenuTab
 from app.models.modifier_group import ModifierGroup
 from app.models.product_modifier_group_link import ProductModifierGroupLink
 from app.models.reporting_group import ReportingGroup
-from app.models.superadmin import SuperAdmin
 from app.models.tax_category import TaxCategory
 from app.models.user import User
 from app.models.product import Product
@@ -321,7 +320,7 @@ async def create_product(
     db: AsyncSession,
     brand_id: uuid.UUID,
     payload: ProductCreate,
-    actor: User | SuperAdmin,
+    actor: User,
     import_id: uuid.UUID | None = None,
 ) -> Product:
     """
@@ -399,7 +398,7 @@ async def update_product(
     brand_id: uuid.UUID,
     product_id: uuid.UUID,
     payload: ProductUpdate,
-    actor: User | SuperAdmin,
+    actor: User,
     import_id: uuid.UUID | None = None,
 ) -> Product:
     """
@@ -480,7 +479,7 @@ async def deactivate_product(
     db: AsyncSession,
     brand_id: uuid.UUID,
     product_id: uuid.UUID,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> Product:
     """
     Soft-delete a product by setting is_active=False.
@@ -531,7 +530,7 @@ async def set_product_active_state(
     brand_id: uuid.UUID,
     product_id: uuid.UUID,
     is_active: bool,
-    actor: User | SuperAdmin,
+    actor: User,
     import_id: uuid.UUID | None = None,
 ) -> Product:
     """
@@ -592,7 +591,7 @@ async def upload_photo(
     brand_id: uuid.UUID,
     product_id: uuid.UUID,
     file: UploadFile,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> Product:
     """
     Upload a product photo to Supabase Storage and save the URL on the product.
@@ -661,7 +660,7 @@ async def _bulk_attach_modifier_group(
     db: AsyncSession,
     product_ids: list[uuid.UUID],
     modifier_group_id: uuid.UUID,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> set[uuid.UUID]:
     """
     Attach modifier_group_id to every product in product_ids missing it.
@@ -804,7 +803,7 @@ async def bulk_update_products(
     db: AsyncSession,
     brand_id: uuid.UUID,
     payload: ProductBulkUpdate,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> ProductBulkUpdateResult:
     """
     Apply one or more field changes to a set of products in one transaction.

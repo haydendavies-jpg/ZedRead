@@ -43,7 +43,6 @@ from app.models import (  # noqa: F401
     ModifierOption,
     Payment,
     User,
-    SuperAdmin,
     PosDevice,
     Product,
     ProductAttributeType,
@@ -204,7 +203,6 @@ _ALL_TABLES = [
     "sites",
     "brands",
     "groups",
-    "superadmins",
 ]
 
 
@@ -384,21 +382,24 @@ async def test_site(db: AsyncSession, test_brand: Brand) -> Site:
 
 
 @pytest_asyncio.fixture()
-async def test_superadmin(db: AsyncSession) -> SuperAdmin:
+async def test_superadmin(db: AsyncSession) -> User:
     """
-    A persisted Admin-role SuperAdmin row for use in auth-dependent tests.
+    A persisted Admin-role portal admin (a User row with superadmin_role='admin',
+    no tenant scope) for use in auth-dependent tests.
 
     The password is 'TestPassword123!' — use portal_auth_headers to get a token.
 
     Returns:
-        SuperAdmin: A saved, active Admin-role portal user.
+        User: A saved, active Admin-role portal admin row.
     """
-    user = SuperAdmin(
+    user = User(
         id=uuid.uuid4(),
+        group_id=None,
+        brand_id=None,
         email="admin@test.com",
         password_hash=hash_password("TestPassword123!"),
         name="Test Admin",
-        role="admin",
+        superadmin_role="admin",
         is_active=True,
     )
     db.add(user)
@@ -408,14 +409,14 @@ async def test_superadmin(db: AsyncSession) -> SuperAdmin:
 
 
 @pytest_asyncio.fixture()
-async def portal_auth_headers(test_superadmin: SuperAdmin) -> dict[str, str]:
+async def portal_auth_headers(test_superadmin: User) -> dict[str, str]:
     """
     Authorization header dict carrying a valid access token for test_superadmin.
 
     Returns:
         dict[str, str]: {"Authorization": "Bearer <token>"}
     """
-    token = create_access_token(str(test_superadmin.id), test_superadmin.role)
+    token = create_access_token(str(test_superadmin.id), test_superadmin.superadmin_role)
     return {"Authorization": f"Bearer {token}"}
 
 

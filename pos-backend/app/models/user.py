@@ -15,10 +15,12 @@ class User(Base):
     A User is a member of staff who logs into the Android POS terminal.
 
     Always has POS access; backend/portal access is optional and granted
-    per scope via UserAccessGrant. Every User belongs to a Group; brand_id
-    is additionally set for brand- and site-scoped users and is NULL for a
-    Group-level Master User. They authenticate via email+password for
-    initial login and via PIN for quick session switching at the terminal.
+    per scope via UserAccessGrant. A tenant-scoped User belongs to a Group
+    (group_id set); brand_id is additionally set for brand- and site-scoped
+    users and is NULL for a Group-level Master User. A pure ZedRead/reseller
+    admin-portal row (superadmin_role set, no tenant) has group_id NULL too.
+    They authenticate via email+password for initial login and via PIN for
+    quick session switching at the terminal.
 
     Exactly one User per site, per brand, and per group is the immutable
     Master User (is_master_user=True), auto-created alongside its entity —
@@ -30,6 +32,15 @@ class User(Base):
     name, see site_service._create_master_user()). email/password_hash are
     nullable here and only required at the point a grant is given a
     backend_role — see access_grant_service.update_grant().
+
+    `superadmin_role` is an orthogonal axis to tenant scope/grants (ROLE_MODEL.md
+    §1): a User with this set can log into the admin portal with ZedRead/reseller
+    staff authority, independent of — and possibly alongside — any Group/Brand/Site
+    grants the same row also holds. A pure ZedRead/reseller-staff row (no tenant
+    at all) has `group_id=NULL`; a hybrid row (both a tenant identity and portal
+    admin) keeps its `group_id` set. This column replaced the standalone
+    `SuperAdmin` model/`superadmins` table (see migration 0050) — SuperAdmin
+    access is now just a role on User, not a separate identity type.
     """
 
     __tablename__ = "users"
@@ -40,12 +51,12 @@ class User(Base):
         default=uuid.uuid4,
         comment="Primary key — UUID generated at insert time",
     )
-    group_id: Mapped[uuid.UUID] = mapped_column(
+    group_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("groups.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
         index=True,
-        comment="Parent group — every user belongs to a group; brand_id is additionally set for brand- and site-scoped users",
+        comment="Parent group for a tenant-scoped user; brand_id is additionally set for brand- and site-scoped users. NULL for a pure ZedRead/reseller-staff row (superadmin_role set, no tenant scope).",
     )
     brand_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -99,6 +110,13 @@ class User(Base):
         nullable=True,
         comment="Backend/portal access level. NULL means no backend access.",
     )
+    # ZedRead/reseller admin-portal role — orthogonal to group_id/backend_role/grants.
+    # Values from SuperAdminRole ('admin' | 'reseller_staff'); NULL = not a portal admin.
+    superadmin_role: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Admin-portal role ('admin'|'reseller_staff'). NULL means this User has no SuperAdmin-tier portal access.",
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -149,7 +167,6 @@ class User(Base):
         onupdate=func.now(),
     )
     # Single-use token for the forgot-password flow; NULL when no reset is pending.
-    # Mirrors SuperAdmin.password_reset_token — same mechanism, separate table.
     password_reset_token: Mapped[str | None] = mapped_column(
         String(255), unique=True, nullable=True
     )

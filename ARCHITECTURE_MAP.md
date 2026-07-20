@@ -36,7 +36,8 @@ not taxable → exclusive; no rate math at sale) → modifiers → discount → 
 
 ## Auth (stateless JWT, no server sessions)
 
-1. **Portal Access JWT** (`type=access`) — SuperAdmin. Issued by `portal_auth_service`.
+1. **Portal Access JWT** (`type=access`) — a `User` row with `superadmin_role` set (SuperAdmin is a
+   role on User, not a separate table — see `ROLE_MODEL.md` §1). Issued by `management_auth_service`.
 2. **Management JWT** (`type=mgmt_access`) — User with a `backend_role` on an active grant; issued
    after a scope-selection step (`/auth/portal/management-token`) when the user has multiple grants.
    Admin impersonation (`POST /admin/impersonate`) issues the same token type with `imp_*` claims
@@ -52,7 +53,7 @@ Tokens stored in localStorage (portal; impersonation tokens per-tab in sessionSt
   `resolve_access`/`resolve_catalog_access` reject a token whose session has ended, and
   `POST /auth/pos/logout` ends the session.
 - **Portal and management** tokens carry a `tv` (token_version) claim matched to
-  `superadmins.token_version` / `users.token_version`; a mismatch is rejected. The counter is bumped
+  `users.token_version`; a mismatch is rejected. The counter is bumped
   by password change, password reset, and `POST /auth/portal/logout` (logout-everywhere), invalidating
   all outstanding tokens for that identity.
 
@@ -67,11 +68,11 @@ Tokens stored in localStorage (portal; impersonation tokens per-tab in sessionSt
 | categories.py | list/create/update (system categories protected), bulk XLSX export/template/import (Stage 19) |
 | invoices.py | create, line-items, modifiers, discount, pay, void, refund |
 | tax.py | brand tax category CRUD (taxability classes only — rates come from admin templates) |
-| admin_tax_templates.py | SuperAdmin-only jurisdiction tax templates + rates; invoice engine resolves site rates from these |
+| admin_tax_templates.py | Portal-admin-only jurisdiction tax templates + rates; invoice engine resolves site rates from these |
 | licenses.py | CRUD, disable/enable |
-| users.py / superadmins.py | CRUD, suspend/activate, PIN admin set, grants |
+| users.py | CRUD, deactivate/reactivate, PIN admin set, grants, superadmin_role grant/revoke (Admin-role only) — folds in what used to be a separate /portal-users route set |
 | access_grants.py (+ profiles_router) | grant CRUD, permission tiers, page permissions |
-| admin_impersonation.py | SuperAdmin "session into" an entity's master-user grant |
+| admin_impersonation.py | Portal admin "session into" an entity's master-user grant |
 | email_templates.py / reference_data.py | admin-editable email templates; countries/timezones/tax-id labels |
 | reports.py | daily-sales, product-revenue, payment-methods, tax-collected |
 | modifiers.py / combos.py / variants.py | catalog extras management; combos.py/variants.py each also expose a brand-wide `list_router` (`GET /combos`, `GET /variants`, joined to parent product) plus bulk XLSX export/template/import (Stage 22). modifiers.py also covers Menu Studio "comboing": `GET /modifier-groups/detailed` (nested groups→options→linked groups), `POST/DELETE /modifier-options/{id}/links[/{group_id}]`, group/option soft-delete, group duplicate |
@@ -103,9 +104,12 @@ the ORM/schema in Stage 19, joining the already-wired `products.ref` and `report
 (admin-owned, jurisdiction-scoped country→state→county→city) supply the country rate used to derive
 a product's exclusive price at save time. `tax_categories`/`tax_rates` are legacy (retained, not used
 for invoice tax).
-Identity: `users` (brand- or group-scoped staff), `superadmins` (portal admin, no scope),
-`user_access_grants` (site|brand|group scope + access_profile_id + backend_role + is_default),
-`access_profiles` (permission tiers, JSON perms), `access_profile_page_permissions`, `user_pins`.
+Identity: `users` — brand-/group-scoped tenant staff, pure admin-portal rows (`group_id IS NULL`,
+`superadmin_role` set), or hybrid rows carrying both at once (`superadmin_role` is an axis orthogonal
+to tenant scope/grants — see `ROLE_MODEL.md` §1; the standalone `superadmins` table was merged into
+`users` by migration `0050`). `user_access_grants` (site|brand|group scope + access_profile_id +
+backend_role + is_default), `access_profiles` (permission tiers, JSON perms),
+`access_profile_page_permissions`, `user_pins`.
 Transactions: `invoices`, `invoice_line_items` (snapshotted name/price), `invoice_line_modifiers`,
 `invoice_tax_breakdowns`, `payments`.
 Billing: `licenses` (site_id, one per site), `license_invoices`.
@@ -130,8 +134,8 @@ one layout may be `is_published` at once (per-site/day-part menus).
 | Group | Top-level tenant, no parent |
 | Brand | Business under a Group; owns catalog, staff, access profiles |
 | Site | Location under a Brand; one license, one Android terminal |
-| User | Staff (model `User`, table `users`); logs into terminal; granted access to sites. Renamed from "POS User" per `ROLE_MODEL.md` |
-| SuperAdmin | Portal admin (model `SuperAdmin`, table `superadmins`); unrelated to Brand/Site scoping. Renamed from "Portal User" per `ROLE_MODEL.md` |
+| User | The single identity model/table (`User`/`users`) covering tenant staff (logs into terminal, granted access to sites) and/or admin-portal access — see SuperAdmin below. |
+| SuperAdmin | Not a separate model/table — `users.superadmin_role` ('admin'\|'reseller_staff'), an axis orthogonal to a User's tenant scope/grants. A pure admin-portal row has `group_id IS NULL`; a hybrid row carries both tenant scope and `superadmin_role`. See `ROLE_MODEL.md` §1. |
 | Access Grant | Join record: user + scope (site/brand/group) + Access Profile |
 | Access Profile | Named permission tier (JSON perms) belonging to a Brand |
 | Management JWT | Issued to a POS user with portal access after they pick a scope/grant |
@@ -146,10 +150,10 @@ one layout may be `is_published` at once (per-site/day-part menus).
 - Portal has no backend logic of its own — pure static SPA REST client.
 - Live code already covers invoices/modifiers/combos/reports (Phase 3 territory per CLAUDE.md rollout
   table) — if a summary claims an earlier active stage, reconcile against actual route/model inventory above.
-- The `ROLE_MODEL.md` redesign is **partially implemented**: the rename is live (models
-  `SuperAdmin`/`User`, tables `superadmins`/`users`, routes `superadmins.py`/`users.py`) and
-  `access_profile_page_permissions` exists, but grants still reference `access_profiles` and the
+- The `ROLE_MODEL.md` redesign is **mostly implemented**: the rename is live, `SuperAdmin`/`User` are
+  merged into one `users` table (`superadmin_role` column, migration `0050` — see `ROLE_MODEL.md` §1),
+  and `access_profile_page_permissions` exists, but grants still reference `access_profiles` and the
   `backend_role` enum — the full 5-role model is not complete. Verify against code before assuming
   either the old or the target model.
 
-*Last mapped: 2026-07-10. Re-verify against code if it has changed significantly since.*
+*Last mapped: 2026-07-20 (SuperAdmin/User table merge). Re-verify against code if it has changed significantly since.*

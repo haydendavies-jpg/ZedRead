@@ -1,9 +1,9 @@
 """Integration tests for the POS User password-reset email flow.
 
 Covers:
-1. Happy path — SuperAdmin/management trigger sends a reset email and sets
+1. Happy path — portal admin/management trigger sends a reset email and sets
    a token; the emailed token resets the password via the existing
-   /auth/portal/reset-password endpoint (shared with SuperAdmin resets).
+   /auth/portal/reset-password endpoint (shared with portal-admin resets).
 2. Auth failure — POS terminal JWT cannot trigger a reset.
 3. Business rules — user has no email (409), management caller outside
    scope (403), unknown user (404).
@@ -30,7 +30,7 @@ _SEND_RESET_EMAIL_PATH = "app.services.user_service.send_password_reset_email"
 
 def _portal_headers(superadmin) -> dict[str, str]:
     """Return portal JWT headers."""
-    token = create_access_token(str(superadmin.id), superadmin.role)
+    token = create_access_token(str(superadmin.id), superadmin.superadmin_role)
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -53,7 +53,7 @@ def _mgmt_headers(user, grant) -> dict[str, str]:
 async def test_send_password_reset_superadmin_sends_email_and_sets_token(
     client, db, test_superadmin, test_user
 ):
-    """A SuperAdmin can trigger a reset email for any User; a token is generated."""
+    """A portal admin can trigger a reset email for any User; a token is generated."""
     with patch(_SEND_RESET_EMAIL_PATH, new_callable=AsyncMock) as mock_send:
         response = await client.post(
             f"/users/{test_user.id}/send-password-reset", headers=_portal_headers(test_superadmin)

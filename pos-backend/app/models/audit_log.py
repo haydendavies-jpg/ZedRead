@@ -86,7 +86,7 @@ class AuditLog(Base):
     impersonator_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         nullable=True,
-        comment="SuperAdmin UUID when this action was taken under impersonation",
+        comment="Portal admin (User) UUID when this action was taken under impersonation",
     )
     impersonator_email: Mapped[str | None] = mapped_column(
         String(255),

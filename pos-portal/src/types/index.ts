@@ -13,8 +13,9 @@ export interface GrantSummary {
 }
 
 /**
- * One selectable identity when an email is shared by a SuperAdmin and a
- * portal-capable User (ROLE_MODEL.md §3 cross-identity disambiguation).
+ * One selectable capability when a User row (or rows sharing an email) offers
+ * more than one login capability — e.g. a "hybrid" row with both an
+ * admin-portal role and a management grant (ROLE_MODEL.md §1/§3).
  */
 export interface IdentitySummary {
   identity_type: 'superadmin' | 'user'
@@ -177,17 +178,6 @@ export interface LicenseInvoice {
   period_end: string
   paid_at: string | null
   created_at: string
-}
-
-export interface SuperAdmin {
-  id: string
-  ref: string
-  email: string
-  name: string
-  role: 'admin' | 'reseller_staff'
-  is_active: boolean
-  created_at: string
-  updated_at: string
 }
 
 export interface AuthTokens {
@@ -480,15 +470,40 @@ export interface AccessProfile {
   can_access_portal: boolean
 }
 
+/** One active site-scope grant, embedded in User for the portal UI. */
+export interface SiteGrantSummary {
+  grant_id: string
+  site_id: string
+  site_name: string
+  is_default: boolean
+  access_profile_name: string
+  can_access_portal: boolean
+}
+
+/**
+ * A User row — the single identity type covering both tenant staff and
+ * admin-portal admins. `superadmin_role` is an orthogonal axis (null = no
+ * admin-portal access); a "hybrid" row can have tenant grants AND a
+ * superadmin_role at once (ROLE_MODEL.md §1).
+ */
 export interface User {
   id: string
   ref: string
-  brand_id: string
+  /** Null for a group-scoped Master User and for a pure admin-portal row with no tenant scope. */
+  brand_id: string | null
+  brand_name: string
+  group_name: string
   name: string
-  email: string
+  /** Null for Master Users, whose `name` is the site's name rather than a person's. */
+  first_name: string | null
+  last_name: string | null
+  email: string | null
+  backend_role: string | null
+  /** 'admin' | 'reseller_staff' | null — admin-portal role, grantable only from the admin portal. */
+  superadmin_role: 'admin' | 'reseller_staff' | null
   is_active: boolean
+  site_grants: SiteGrantSummary[]
   has_portal_access: boolean
-  created_at: string
 }
 
 export interface AccessGrant {

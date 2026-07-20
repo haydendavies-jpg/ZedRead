@@ -33,7 +33,6 @@ from app.models.product import Product
 from app.models.product_combo_group import ProductComboGroup
 from app.models.product_variant import ProductVariant
 from app.models.reporting_group import ReportingGroup
-from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.schemas.category import CategoryCreate, CategoryUpdate
 from app.schemas.combo import ComboGroupCreate, ComboGroupUpdate
@@ -213,7 +212,7 @@ async def import_products(
     db: AsyncSession,
     brand_id: uuid.UUID,
     file_bytes: bytes,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> ImportSummary:
     """
     Bulk import Products from an uploaded XLSX sheet (see PRODUCT_COLUMNS in export_service.py).
@@ -308,7 +307,7 @@ async def import_categories(
     db: AsyncSession,
     brand_id: uuid.UUID,
     file_bytes: bytes,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> ImportSummary:
     """
     Bulk import Categories from an uploaded XLSX sheet (see CATEGORY_COLUMNS in export_service.py).
@@ -388,7 +387,7 @@ async def import_reporting_groups(
     db: AsyncSession,
     brand_id: uuid.UUID,
     file_bytes: bytes,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> ImportSummary:
     """
     Bulk import Reporting Groups from an uploaded XLSX sheet (REPORTING_GROUP_COLUMNS).
@@ -445,7 +444,7 @@ async def import_variants(
     db: AsyncSession,
     brand_id: uuid.UUID,
     file_bytes: bytes,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> ImportSummary:
     """
     Bulk update Variants from an uploaded XLSX sheet (see VARIANT_COLUMNS in export_service.py).
@@ -506,7 +505,7 @@ async def import_combos(
     db: AsyncSession,
     brand_id: uuid.UUID,
     file_bytes: bytes,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> ImportSummary:
     """
     Bulk import Combos from an uploaded XLSX sheet (see COMBO_COLUMNS in export_service.py).

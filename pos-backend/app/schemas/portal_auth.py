@@ -38,10 +38,11 @@ class GrantSummary(BaseModel):
 
 class IdentitySummary(BaseModel):
     """
-    Describes one available identity during cross-identity login disambiguation.
+    Describes one available capability during login disambiguation.
 
-    Returned when an email is shared by both a SuperAdmin and a User account
-    with at least one portal-capable grant (ROLE_MODEL.md §3). The client
+    Returned when a matching User row (or rows sharing an email) offers more
+    than one capability — e.g. a "hybrid" row with both superadmin_role and
+    at least one portal-capable grant (ROLE_MODEL.md §1/§3). The client
     presents these as a selection screen and calls POST /auth/portal/identity-token
     with the chosen identity_type to continue.
     """
@@ -52,23 +53,24 @@ class IdentitySummary(BaseModel):
 
 class UnifiedLoginResponse(BaseModel):
     """
-    Unified login response covering SuperAdmins and POS manager Users.
+    Unified login response covering every User capability: admin-portal role and POS-manager grants.
 
-    For SuperAdmins: access_token and refresh_token are populated; all other
-    fields are None (backward-compatible with the existing TokenResponse shape).
+    For a bare superadmin_role row: access_token and refresh_token are
+    populated; all other fields are None (backward-compatible with the
+    existing TokenResponse shape).
 
-    For Users with one portal-capable grant: access_token and refresh_token are
+    For a row with one portal-capable grant: access_token and refresh_token are
     populated alongside user_id and user_name.
 
-    For Users with multiple portal-capable grants: access_token and refresh_token
+    For a row with multiple portal-capable grants: access_token and refresh_token
     are None and available_grants lists the options. The client selects one and
     calls POST /auth/portal/management-token to obtain a token.
 
-    For an email shared by both a SuperAdmin and a User: access_token and
-    refresh_token are None and available_identities lists the two identity
+    For a row (or rows sharing an email) offering more than one capability:
+    access_token and refresh_token are None and available_identities lists the
     options. The client selects one and calls POST /auth/portal/identity-token
-    to continue (which may itself return available_grants if the chosen User
-    identity has multiple portal-capable grants).
+    to continue (which may itself return available_grants if the chosen
+    capability has multiple portal-capable grants).
     """
 
     token_type: str = "bearer"
@@ -84,8 +86,8 @@ class IdentityTokenRequest(BaseModel):
     """
     Payload for POST /auth/portal/identity-token.
 
-    Used by the frontend identity-selector when an email is shared by both a
-    SuperAdmin and a portal-capable User. The password is re-verified for the
+    Used by the frontend identity-selector when a matching row (or rows)
+    offers more than one capability. The password is re-verified for the
     chosen identity_type to prevent identity enumeration.
     """
 

@@ -2,12 +2,13 @@
 
 Extends the portal login flow to also accept POS user credentials. Portal
 access for a User is gated on backend_role (per-grant), not on the POS
-access profile. If an email matches only a superadmin, the portal JWT is
-issued; if it matches only a portal-capable user, a management JWT is
-issued (directly, via default grant, or via grant selection). If an email
-matches both a superadmin and a portal-capable user, the caller is shown
-both identities (ROLE_MODEL.md §3) and must select one via
-POST /auth/portal/identity-token before either token type is issued.
+access profile. superadmin_role and grant-based backend access are two
+independent capabilities a single `users` row may hold (ROLE_MODEL.md §1) —
+a "hybrid" row can have both. If a row matches only one capability, the
+matching token is issued directly. If a row (or several rows sharing an
+email — users.email is non-unique) together offer more than one capability,
+the caller is shown the available identities (ROLE_MODEL.md §3) and must
+select one via POST /auth/portal/identity-token before any token is issued.
 """
 
 import os
@@ -30,7 +31,6 @@ from app.constants.statuses import ActorType, GrantScope
 from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.group import Group
-from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
@@ -62,16 +62,47 @@ _LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_RATE_LIMIT", "10"))
 _LOGIN_WINDOW_SECONDS = int(os.getenv("LOGIN_RATE_WINDOW_SECONDS", "300"))
 
 
-async def _load_superadmin(db: AsyncSession, email: str) -> SuperAdmin | None:
-    """Fetch a superadmin by email, case-insensitively."""
-    result = await db.execute(select(SuperAdmin).where(func.lower(SuperAdmin.email) == normalize_email(email)))
-    return result.scalar_one_or_none()
-
-
-async def _load_users(db: AsyncSession, email: str) -> list[User]:
-    """Fetch all users with the given email, case-insensitively (multiple allowed — same person can manage several entities)."""
+async def _load_users_by_email(db: AsyncSession, email: str) -> list[User]:
+    """Fetch all users with the given email, case-insensitively (multiple allowed — same person can manage several entities, or hold a separate portal-admin row)."""
     result = await db.execute(select(User).where(func.lower(User.email) == normalize_email(email)))
     return list(result.scalars().all())
+
+
+async def _authenticate_candidates(
+    db: AsyncSession, email: str, password: str
+) -> tuple[list[User], list[User], list[tuple[User, list[UserAccessGrant]]], bool]:
+    """
+    Verify credentials against every `users` row matching the email and split by capability.
+
+    A single row can offer both capabilities at once (a hybrid account) —
+    both lists may include the same row.
+
+    Args:
+        db: Active session.
+        email: The login email.
+        password: The plaintext password to verify.
+
+    Returns:
+        tuple: (all matching rows, superadmin-capable rows, (user, grants)
+        pairs for rows with at least one portal-capable grant, whether any
+        row's credentials were valid at all).
+    """
+    candidates = await _load_users_by_email(db, email)
+    superadmin_rows: list[User] = []
+    user_grant_pairs: list[tuple[User, list[UserAccessGrant]]] = []
+    any_creds_valid = False
+
+    for candidate in candidates:
+        if not candidate.is_active or not await verify_password_async(password, candidate.password_hash):
+            continue
+        any_creds_valid = True
+        if candidate.superadmin_role is not None:
+            superadmin_rows.append(candidate)
+        grants = await _portal_capable_grants(db, candidate.id)
+        if grants:
+            user_grant_pairs.append((candidate, grants))
+
+    return candidates, superadmin_rows, user_grant_pairs, any_creds_valid
 
 
 async def _portal_capable_grants(
@@ -183,25 +214,25 @@ async def _build_mgmt_token(db: AsyncSession, user: User, grant: UserAccessGrant
     return access, refresh
 
 
-async def _issue_superadmin_tokens(db: AsyncSession, superadmin: SuperAdmin) -> UnifiedLoginResponse:
+async def _issue_superadmin_tokens(db: AsyncSession, superadmin: User) -> UnifiedLoginResponse:
     """
-    Issue portal access + refresh tokens for an authenticated superadmin.
+    Issue portal access + refresh tokens for an authenticated portal admin.
 
     Writes the AUTH_LOGIN_SUCCESS audit row and commits the transaction.
 
     Args:
         db: Active database session.
-        superadmin: The authenticated superadmin.
+        superadmin: The authenticated User row (superadmin_role set).
 
     Returns:
         UnifiedLoginResponse: Portal token pair, no user_id/grant fields.
     """
-    access_token = create_access_token(str(superadmin.id), superadmin.role, superadmin.token_version)
+    access_token = create_access_token(str(superadmin.id), superadmin.superadmin_role, superadmin.token_version)
     refresh_token = create_refresh_token(str(superadmin.id), superadmin.token_version)
     await log_action(
         db=db,
         action=AUTH_LOGIN_SUCCESS,
-        entity_type="superadmin",
+        entity_type="user",
         entity_id=str(superadmin.id),
         actor_type=ActorType.USER,
         actor_id=superadmin.id,
@@ -315,17 +346,18 @@ async def _resolve_user_login(db: AsyncSession, user: User) -> UnifiedLoginRespo
 
 async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse:
     """
-    Unified portal login, disambiguating across superadmins and users.
+    Unified portal login, disambiguating across a row's available capabilities.
 
-    Loads both a candidate superadmin and a candidate user by email. If both
-    have valid credentials (the user additionally needing at least one
-    portal-capable grant), neither token is issued yet — instead the caller
-    is shown both identities (ROLE_MODEL.md §3) and must call
-    POST /auth/portal/identity-token with the chosen identity_type. If only
-    one candidate is valid, behaviour is unchanged from before disambiguation
-    existed: superadmin → portal tokens; user → management tokens or a grant
-    list for selection. If neither is valid → consistent 401 (no information
-    about which table was checked).
+    Loads every `users` row matching the email (there may be more than one —
+    email is non-unique) and verifies credentials independently per row. If
+    exactly one capability matches across all valid rows (a bare superadmin
+    row, or a single portal-capable grant), the matching token is issued
+    directly. If more than one capability matches — a hybrid row with both
+    superadmin_role and grants, or several rows sharing an email — neither
+    token is issued yet: the caller is shown the available identities
+    (ROLE_MODEL.md §3) and must call POST /auth/portal/identity-token with
+    the chosen identity_type. If no row matches → consistent 401 (no
+    information about whether the email exists at all).
 
     Args:
         db: Active database session.
@@ -336,8 +368,8 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
         depending on what matches the supplied email.
 
     Raises:
-        HTTPException: 401 for invalid credentials; 403 if a user matches
-            but has no portal-capable grants.
+        HTTPException: 401 for invalid credentials; 403 if a row matches
+            but has no portal-capable grants or superadmin_role.
     """
     log.info("auth.portal.login.attempt", email=payload.email)
 
@@ -349,47 +381,32 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
         window_seconds=_LOGIN_WINDOW_SECONDS,
     )
 
-    superadmin = await _load_superadmin(db, payload.email)
-    superadmin_valid = (
-        superadmin is not None
-        and await verify_password_async(payload.password, superadmin.password_hash)
-        and superadmin.is_active
+    candidates, superadmin_rows, user_grant_pairs, any_creds_valid = await _authenticate_candidates(
+        db, payload.email, payload.password
     )
+    superadmin_valid = bool(superadmin_rows)
+    user_valid = bool(user_grant_pairs)
 
-    # Support shared emails — same operator may have master-user accounts at multiple entities.
-    # Collect all users with this email, validate each independently, merge their grants.
-    all_users = await _load_users(db, payload.email)
-    authenticated_user_grants: list[tuple[User, list[UserAccessGrant]]] = []
-    any_user_creds_valid = False
-    for candidate in all_users:
-        if not candidate.is_active or not await verify_password_async(payload.password, candidate.password_hash):
-            continue
-        any_user_creds_valid = True
-        grants = await _portal_capable_grants(db, candidate.id)
-        if grants:
-            authenticated_user_grants.append((candidate, grants))
-    user_valid = bool(authenticated_user_grants)
-
-    # ── Both identities valid for this email → disambiguate, issue no tokens yet ──
+    # ── Both capabilities valid → disambiguate, issue no tokens yet ──
     if superadmin_valid and user_valid:
         log.info("auth.portal.login.identity_selection", email=payload.email)
-        first_user = authenticated_user_grants[0][0]
+        first_user = user_grant_pairs[0][0]
         return UnifiedLoginResponse(
             available_identities=[
-                IdentitySummary(identity_type="superadmin", display_name=superadmin.name),
+                IdentitySummary(identity_type="superadmin", display_name=superadmin_rows[0].name),
                 IdentitySummary(identity_type="user", display_name=first_user.name),
             ]
         )
 
-    # ── Only superadmin valid ────────────────────────────────────────────
+    # ── Only superadmin capability valid ────────────────────────────────
     if superadmin_valid:
-        return await _issue_superadmin_tokens(db, superadmin)
+        return await _issue_superadmin_tokens(db, superadmin_rows[0])
 
-    # ── One or more users valid with grants ──────────────────────────────
+    # ── One or more rows valid with grants ──────────────────────────────
     if user_valid:
-        # Flatten all (user, grant) pairs across all authenticated users
+        # Flatten all (user, grant) pairs across all authenticated rows
         flat: list[tuple[User, UserAccessGrant]] = [
-            (u, g) for u, grants in authenticated_user_grants for g in grants
+            (u, g) for u, grants in user_grant_pairs for g in grants
         ]
         if len(flat) == 1:
             user, grant = flat[0]
@@ -413,7 +430,7 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
                 user_name=user.name,
             )
 
-        # Multiple grants across one or more users → show picker; caller selects via management-token
+        # Multiple grants across one or more rows → show picker; caller selects via management-token
         summaries: list[GrantSummary] = []
         for u, g in flat:
             name = await _scope_name(db, g)
@@ -430,7 +447,7 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
                     access_profile_name=profile.name if profile else "",
                 )
             )
-        first_user = authenticated_user_grants[0][0]
+        first_user = user_grant_pairs[0][0]
         log.info("auth.portal.mgmt.login.grant_selection", grant_count=len(summaries))
         return UnifiedLoginResponse(
             user_id=first_user.id,
@@ -438,10 +455,10 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
             available_grants=summaries,
         )
 
-    # ── User(s) matched credentials but none have portal-capable grants ──
-    if any_user_creds_valid:
-        # Log against the first matched user for audit trail
-        failed_user = all_users[0]
+    # ── Row(s) matched credentials but none offer a capability ──
+    if any_creds_valid:
+        # Log against the first matched row for audit trail
+        failed_user = next(c for c in candidates if c.is_active)
         await log_action(
             db=db,
             action=MGMT_LOGIN_FAILED,
@@ -458,30 +475,18 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
             detail="No portal-capable access grants for this account",
         )
 
-    # ── Neither table matched — consistent 401, never reveal which was checked ──
-    if superadmin is not None:
-        await log_action(
-            db=db,
-            action=AUTH_LOGIN_FAILED,
-            entity_type="superadmin",
-            entity_id=str(superadmin.id),
-            actor_type=ActorType.USER,
-            actor_id=None,
-            actor_email=payload.email,
-            actor_name=None,
-        )
-    else:
-        entity_id = str(all_users[0].id) if all_users else payload.email
-        await log_action(
-            db=db,
-            action=MGMT_LOGIN_FAILED,
-            entity_type="user",
-            entity_id=entity_id,
-            actor_type=ActorType.USER,
-            actor_id=None,
-            actor_email=payload.email,
-            actor_name=None,
-        )
+    # ── No row matched — consistent 401, never reveal whether the email exists ──
+    entity_id = str(candidates[0].id) if candidates else payload.email
+    await log_action(
+        db=db,
+        action=AUTH_LOGIN_FAILED,
+        entity_type="user",
+        entity_id=entity_id,
+        actor_type=ActorType.USER,
+        actor_id=None,
+        actor_email=payload.email,
+        actor_name=None,
+    )
     await db.commit()
     log.warning("auth.portal.login.failed", email=payload.email, reason="not_found_or_bad_pw")
     raise HTTPException(
@@ -513,41 +518,28 @@ async def issue_identity_token(
         HTTPException: 401 for invalid credentials or an unrecognised
             identity_type; 403 if the user has no portal-capable grants.
     """
+    candidates, superadmin_rows, user_grant_pairs, any_creds_valid = await _authenticate_candidates(
+        db, payload.email, payload.password
+    )
+
     if payload.identity_type == "superadmin":
-        superadmin = await _load_superadmin(db, payload.email)
-        if (
-            superadmin is None
-            or not await verify_password_async(payload.password, superadmin.password_hash)
-            or not superadmin.is_active
-        ):
+        if not superadmin_rows:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        return await _issue_superadmin_tokens(db, superadmin)
+        return await _issue_superadmin_tokens(db, superadmin_rows[0])
 
     if payload.identity_type == "user":
-        # Same multi-user logic as login() — same email may belong to multiple Users
-        all_users = await _load_users(db, payload.email)
-        authenticated_user_grants: list[tuple[User, list[UserAccessGrant]]] = []
-        any_creds_valid = False
-        for candidate in all_users:
-            if not candidate.is_active or not await verify_password_async(payload.password, candidate.password_hash):
-                continue
-            any_creds_valid = True
-            grants = await _portal_capable_grants(db, candidate.id)
-            if grants:
-                authenticated_user_grants.append((candidate, grants))
-
         if not any_creds_valid:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        if not authenticated_user_grants:
-            failed_user = all_users[0]
+        if not user_grant_pairs:
+            failed_user = next(c for c in candidates if c.is_active)
             await log_action(
                 db=db,
                 action=MGMT_LOGIN_FAILED,
@@ -563,12 +555,12 @@ async def issue_identity_token(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No portal-capable access grants for this account",
             )
-        # Single user → use existing _resolve_user_login path
-        if len(authenticated_user_grants) == 1:
-            return await _resolve_user_login(db, authenticated_user_grants[0][0])
-        # Multiple users → show combined picker
+        # Single row with grants → use existing _resolve_user_login path
+        if len(user_grant_pairs) == 1:
+            return await _resolve_user_login(db, user_grant_pairs[0][0])
+        # Multiple rows with grants → show combined picker
         flat: list[tuple[User, UserAccessGrant]] = [
-            (u, g) for u, grants in authenticated_user_grants for g in grants
+            (u, g) for u, grants in user_grant_pairs for g in grants
         ]
         summaries: list[GrantSummary] = []
         for u, g in flat:
@@ -586,7 +578,7 @@ async def issue_identity_token(
                     access_profile_name=profile.name if profile else "",
                 )
             )
-        first_user = authenticated_user_grants[0][0]
+        first_user = user_grant_pairs[0][0]
         return UnifiedLoginResponse(user_id=first_user.id, user_name=first_user.name, available_grants=summaries)
 
     raise HTTPException(

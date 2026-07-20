@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.superadmin import SuperAdmin
+from app.models.user import User
 from app.schemas.billing_info_request import BillingInfoRequestResponse
 from app.schemas.site import SiteCreate, SiteResponse, SiteUpdate
 from app.services import site_service
@@ -23,7 +23,7 @@ async def list_sites(
     brand_id: uuid.UUID | None = Query(default=None, description="Filter by parent brand ID"),
     is_active: bool | None = Query(default=None, description="Filter by active/inactive status"),
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> list[SiteResponse]:
     """List sites with pagination and optional filters, scoped to the actor's accounts."""
     return await site_service.list_sites(
@@ -35,7 +35,7 @@ async def list_sites(
 async def get_site(
     site_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> SiteResponse:
     """Fetch a single site by ID, scoped to the actor's accounts."""
     return await site_service.get_site(db, site_id, actor)
@@ -45,7 +45,7 @@ async def get_site(
 async def create_site(
     payload: SiteCreate,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> SiteResponse:
     """Create a new site under a brand."""
     return await site_service.create_site(db, payload, actor)
@@ -56,7 +56,7 @@ async def update_site(
     site_id: uuid.UUID,
     payload: SiteUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> SiteResponse:
     """Update a site's name."""
     return await site_service.update_site(db, site_id, payload, actor)
@@ -66,7 +66,7 @@ async def update_site(
 async def suspend_site(
     site_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> SiteResponse:
     """Suspend a site (set is_active = False)."""
     return await site_service.suspend_site(db, site_id, actor)
@@ -76,7 +76,7 @@ async def suspend_site(
 async def activate_site(
     site_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> SiteResponse:
     """Activate a previously suspended site."""
     return await site_service.activate_site(db, site_id, actor)
@@ -87,7 +87,7 @@ async def upload_site_logo(
     site_id: uuid.UUID,
     file: UploadFile,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> SiteResponse:
     """Upload or replace the site's logo (JPEG/PNG/WebP, up to 1 MB)."""
     return await site_service.upload_logo(db, site_id, file, actor)
@@ -97,7 +97,7 @@ async def upload_site_logo(
 async def request_site_billing_info(
     site_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> BillingInfoRequestResponse:
     """Email the site's effective billing contact the billing_info_request template."""
     resolved = await site_service.request_billing_info(db, site_id, actor)

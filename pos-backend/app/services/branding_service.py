@@ -18,7 +18,7 @@ from app.constants.audit_actions import BILLING_INFO_REQUESTED
 from app.models.brand import Brand
 from app.models.group import Group
 from app.models.site import Site
-from app.models.superadmin import SuperAdmin
+from app.models.user import User
 from app.services.audit_service import log_action
 from app.services.email_template_service import get_template_by_key
 from app.utils.email import send_billing_info_request_email
@@ -134,7 +134,7 @@ async def request_billing_info(
     db: AsyncSession,
     entity: Site | Brand | Group,
     entity_type: EntityLevel,
-    actor: SuperAdmin,
+    actor: User,
 ) -> ResolvedValue:
     """
     Resolve the effective billing email for a Site/Brand/Group, send the
@@ -145,7 +145,7 @@ async def request_billing_info(
         entity: The Site, Brand, or Group to request billing info for.
         entity_type: "site", "brand", or "group" — used for the audit row's
             entity_type and the email template's $entity_type placeholder.
-        actor: The authenticated SuperAdmin performing the action.
+        actor: The authenticated portal admin performing the action.
 
     Returns:
         ResolvedValue: The billing email sent to and which hierarchy level it came from.

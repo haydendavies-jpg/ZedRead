@@ -303,6 +303,29 @@ so `CategoriesPage.tsx`'s existing usage — a neutral card row, where a colour 
 sense — is unchanged); `trigger="icon"` renders a small neutral white edit-pencil badge instead,
 used only by the tab rail. See `STAGE_STATUS.md` "tab rail colour trigger follow-up".
 
+**SuperAdmin/User table merge (post-tab-rail-follow-up, complete).** SuperAdmin condensed from a
+separate `superadmins` table/model into a role on `User`: `users.superadmin_role` (nullable,
+`admin`|`reseller_staff`, migration `0050`) is an axis orthogonal to a User's tenant scope/grants — a
+pure ZedRead/reseller-staff row has `group_id`/`brand_id` both NULL, and a "hybrid" row can carry a
+tenant scope *and* `superadmin_role` at once (the same person, one row, one password). `users.group_id`
+became nullable to support this. `routes/superadmins.py`/`services/superadmin_service.py`/
+`schemas/superadmin.py` were deleted and folded into `routes/users.py`/`schemas/user.py` (which also
+picked up a `POST /users/{id}/reactivate` for parity with the old suspend/activate pair, and the
+previously-inline schemas moved out of the routes file per the project's schemas-live-in-schemas/
+convention); granting/changing `superadmin_role` requires the actor to already be Admin-role
+(`_require_admin_role()`), mirroring the old Admin-only restriction on managing other SuperAdmins. The
+login flow (`management_auth_service.login()`/`issue_identity_token()`) now resolves every `users` row
+matching the email in one query (`_authenticate_candidates()`) and splits by capability instead of
+querying two tables — the `available_identities`/`identity-token` wire contract this powers is
+unchanged, so the portal's existing disambiguation UI needed no changes. The former
+`_PASSWORD_SET_ALLOWED_EMAIL` single-account trial gate on admin-set passwords was removed in the same
+pass (any portal admin may now set another user's password, matching the role-based restriction it was
+standing in for). Portal: `SuperAdminsPage.tsx` and the SuperAdmin-only `pages/UsersPage.tsx` condensed
+into one page (kept at `pages/UsersPage.tsx`/`/users`) with a "Portal Role" column/filter/select and
+`FilterBar` adoption; the brand-scoped `pages/management/UsersPage.tsx` (delegated grant management) is
+unchanged and still has no Admin/Reseller option, per "only grantable from the admin portal." See
+`STAGE_STATUS.md` "SuperAdmin/User table merge" for full deliverables.
+
 ## Folder structure (backend)
 ```
 pos-backend/

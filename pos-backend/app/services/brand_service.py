@@ -28,7 +28,6 @@ from app.models.category import Category
 from app.models.group import Group
 from app.models.reporting_group import ReportingGroup
 from app.models.tax_category import TaxCategory
-from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
 from app.models.user_pin import UserPIN
@@ -46,7 +45,7 @@ log = structlog.get_logger(__name__)
 async def _create_brand_master_user(
     db: AsyncSession,
     brand: Brand,
-    actor: SuperAdmin,
+    actor: User,
     master_email: str,
     master_password: str,
 ) -> User:
@@ -152,7 +151,7 @@ async def _create_brand_master_user(
     return master_user
 
 
-def _scope_to_own_accounts(conditions: list, actor: SuperAdmin) -> None:
+def _scope_to_own_accounts(conditions: list, actor: User) -> None:
     """
     Restrict a Brand query's conditions to groups the actor created, for Reseller Staff.
 
@@ -161,15 +160,15 @@ def _scope_to_own_accounts(conditions: list, actor: SuperAdmin) -> None:
 
     Args:
         conditions: The list of SQLAlchemy filter conditions to extend in place.
-        actor: The authenticated SuperAdmin performing the action.
+        actor: The authenticated portal admin (User) performing the action.
     """
-    if actor.role == SuperAdminRole.RESELLER_STAFF.value:
+    if actor.superadmin_role == SuperAdminRole.RESELLER_STAFF.value:
         conditions.append(
             Brand.group_id.in_(select(Group.id).where(Group.created_by_id == actor.id))
         )
 
 
-async def _get_or_404(db: AsyncSession, brand_id: uuid.UUID, actor: SuperAdmin) -> Brand:
+async def _get_or_404(db: AsyncSession, brand_id: uuid.UUID, actor: User) -> Brand:
     """
     Fetch a Brand by ID or raise HTTP 404.
 
@@ -179,7 +178,7 @@ async def _get_or_404(db: AsyncSession, brand_id: uuid.UUID, actor: SuperAdmin) 
     Args:
         db: Active database session.
         brand_id: The UUID of the brand to fetch.
-        actor: The authenticated SuperAdmin performing the action.
+        actor: The authenticated portal admin (User) performing the action.
 
     Returns:
         Brand: The found brand instance.
@@ -198,7 +197,7 @@ async def _get_or_404(db: AsyncSession, brand_id: uuid.UUID, actor: SuperAdmin) 
 
 async def list_brands(
     db: AsyncSession,
-    actor: SuperAdmin,
+    actor: User,
     skip: int = 0,
     limit: int = 50,
     name: str | None = None,
@@ -210,7 +209,7 @@ async def list_brands(
 
     Args:
         db: Active database session.
-        actor: The authenticated SuperAdmin performing the action.
+        actor: The authenticated portal admin (User) performing the action.
         skip: Number of records to skip (offset).
         limit: Maximum number of records to return.
         name: Optional substring filter on Brand.name (case-insensitive).
@@ -236,14 +235,14 @@ async def list_brands(
     return list(result.scalars().all())
 
 
-async def get_brand(db: AsyncSession, brand_id: uuid.UUID, actor: SuperAdmin) -> Brand:
+async def get_brand(db: AsyncSession, brand_id: uuid.UUID, actor: User) -> Brand:
     """
     Fetch a single brand by ID, scoped to the actor's own accounts if Reseller Staff.
 
     Args:
         db: Active database session.
         brand_id: The UUID of the brand.
-        actor: The authenticated SuperAdmin performing the action.
+        actor: The authenticated portal admin (User) performing the action.
 
     Returns:
         Brand: The found brand.
@@ -257,7 +256,7 @@ async def get_brand(db: AsyncSession, brand_id: uuid.UUID, actor: SuperAdmin) ->
 async def create_brand(
     db: AsyncSession,
     payload: BrandCreate,
-    actor: SuperAdmin,
+    actor: User,
 ) -> Brand:
     """
     Create a Brand and auto-create its 'Uncategorised' system category.
@@ -278,7 +277,7 @@ async def create_brand(
     """
     # Verify parent group exists, and is within the actor's scope if Reseller Staff
     group_conditions = [Group.id == payload.group_id]
-    if actor.role == SuperAdminRole.RESELLER_STAFF.value:
+    if actor.superadmin_role == SuperAdminRole.RESELLER_STAFF.value:
         group_conditions.append(Group.created_by_id == actor.id)
     group_result = await db.execute(select(Group).where(*group_conditions))
     if group_result.scalar_one_or_none() is None:
@@ -367,7 +366,7 @@ async def update_brand(
     db: AsyncSession,
     brand_id: uuid.UUID,
     payload: BrandUpdate,
-    actor: SuperAdmin,
+    actor: User,
 ) -> Brand:
     """
     Update a Brand's mutable fields and write an audit log row.
@@ -435,7 +434,7 @@ async def update_brand(
 async def suspend_brand(
     db: AsyncSession,
     brand_id: uuid.UUID,
-    actor: SuperAdmin,
+    actor: User,
 ) -> Brand:
     """
     Suspend a brand (set is_active = False) and write an audit log row.
@@ -480,7 +479,7 @@ async def upload_logo(
     db: AsyncSession,
     brand_id: uuid.UUID,
     file: UploadFile,
-    actor: SuperAdmin,
+    actor: User,
 ) -> Brand:
     """
     Upload or replace a Brand's logo and write an audit log row.
@@ -539,7 +538,7 @@ async def upload_logo(
 async def request_billing_info(
     db: AsyncSession,
     brand_id: uuid.UUID,
-    actor: SuperAdmin,
+    actor: User,
 ) -> ResolvedValue:
     """
     Send a billing-info-request email to the brand's effective billing contact.
@@ -563,7 +562,7 @@ async def request_billing_info(
 async def activate_brand(
     db: AsyncSession,
     brand_id: uuid.UUID,
-    actor: SuperAdmin,
+    actor: User,
 ) -> Brand:
     """
     Activate a brand (set is_active = True) and write an audit log row.

@@ -15,7 +15,6 @@ const SUPER_ADMIN_NAV = [
 ]
 
 const SUPER_ADMIN_ONLY_NAV = [
-  { to: '/superadmins', label: 'SuperAdmins' },
   { to: '/users', label: 'Users' },
   { to: '/tax-templates', label: 'Tax Templates' },
   { to: '/email-templates', label: 'Email Templates' },
@@ -59,7 +58,7 @@ export function Layout() {
   const ROLE_LABELS: Record<string, string> = { admin: 'Admin', reseller_staff: 'Reseller' }
   const scopeLabel = mgmtUser
     ? `${mgmtUser.scope.charAt(0).toUpperCase() + mgmtUser.scope.slice(1)} scope`
-    : (superAdmin?.role ? ROLE_LABELS[superAdmin.role] ?? superAdmin.role : undefined)
+    : (superAdmin?.superadmin_role ? ROLE_LABELS[superAdmin.superadmin_role] ?? superAdmin.superadmin_role : undefined)
 
   const closeSidebar = () => setSidebarOpen(false)
 
@@ -80,7 +79,7 @@ export function Layout() {
                 {label}
               </NavLink>
             ))}
-            {superAdmin.role === 'admin' && (
+            {superAdmin.superadmin_role === 'admin' && (
               <>
                 <div className="pt-3 pb-1 px-3 text-xs font-medium text-white/40 uppercase tracking-wide">
                   Admin

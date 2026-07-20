@@ -19,7 +19,7 @@ erDiagram
     brands ||--o{ tax_categories : "defines"
     tax_categories ||--o{ tax_rates : "contains"
     brands ||--o{ access_profiles : "defines"
-    pos_users ||--o{ user_access_grants : "holds"
+    users ||--o{ user_access_grants : "holds"
     user_access_grants }o--o| sites : "scoped to"
     user_access_grants }o--o| brands : "scoped to"
     user_access_grants }o--o| groups : "scoped to"
@@ -129,37 +129,33 @@ Recurring billing records for license fees.
 
 ### Portal & POS Authentication
 
-#### `portal_users`
-Administrators who log into the super-admin portal. Separate from POS users.
+#### `users`
+The single identity table covering both POS/tenant staff and admin-portal admins — SuperAdmin is
+`superadmin_role`, an axis orthogonal to tenant scope/grants, not a separate table (migration `0050`
+merged the former standalone `superadmins` table into this one; see `ROLE_MODEL.md` §1).
 
-**Target rename:** becomes the **SuperAdmin** user type (`role` values `admin \| reseller_staff`) — see `ROLE_MODEL.md`. Not yet implemented; columns below are current.
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | UUID PK | |
-| `email` | VARCHAR UNIQUE | Login credential |
-| `password_hash` | VARCHAR | Argon2 hash — never plaintext |
-| `name` | VARCHAR(255) | |
-| `role` | VARCHAR(20) | `super_admin` \| `admin` \| `reseller` |
-| `is_active` | BOOLEAN | |
-| `created_at` | TIMESTAMPTZ | |
-| `updated_at` | TIMESTAMPTZ | |
-
-#### `pos_users`
-Staff who operate POS terminals.
-
-**Target rename:** becomes the **User** type (Master User / Admin / Reporting Only / Manager / Staff roles) — see `ROLE_MODEL.md`. Not yet implemented; columns below are current.
+A tenant-scoped row has `group_id` set (`brand_id` additionally set for brand-/site-scoped staff, NULL
+for a Group-level Master User); a pure admin-portal row has `group_id`/`brand_id` both NULL; a hybrid
+row carries a tenant scope *and* `superadmin_role` at once.
 
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | UUID PK | |
-| `email` | VARCHAR UNIQUE | |
-| `password_hash` | VARCHAR | Argon2 hash |
-| `name` | VARCHAR(255) | |
-| `backend_role` | VARCHAR(20) | NULL \| `admin` \| `users` \| `reporting` |
+| `group_id` | UUID FK → groups, nullable | NULL for a pure admin-portal row |
+| `brand_id` | UUID FK → brands, nullable | NULL for a Group-level Master User or a pure admin-portal row |
+| `ref` | VARCHAR UNIQUE | Human-readable `USR-000001` |
+| `first_name` / `last_name` | VARCHAR, nullable | Required for every row except Master User |
+| `name` | VARCHAR(255) | Derived from first/last, or the site's name for Master User |
+| `email` | VARCHAR, nullable, **not unique** | Same email may span multiple rows (e.g. one person as Master User at several entities) |
+| `password_hash` | VARCHAR, nullable | Argon2 hash — required once email is set for login |
+| `backend_role` | VARCHAR(20), nullable | NULL \| `admin` \| `users` \| `reporting` — portal/config access, per this row (not per-grant; per-grant `backend_role` lives on `user_access_grants`) |
+| `superadmin_role` | VARCHAR(50), nullable | NULL \| `admin` \| `reseller_staff` — admin-portal role, orthogonal to tenant scope; only Admin-role portal admins may grant/change it |
 | `is_active` | BOOLEAN | |
-| `created_at` | TIMESTAMPTZ | |
-| `updated_at` | TIMESTAMPTZ | |
+| `is_master_user` | BOOLEAN | True for the single, immutable per-site identity |
+| `is_pos_multi_site_enabled` | BOOLEAN | POS shows a site selector when true and multiple site grants exist |
+| `token_version` | INTEGER | Bumped on password change/reset/logout to revoke outstanding tokens |
+| `password_reset_token` / `password_reset_token_expires_at` | VARCHAR / TIMESTAMPTZ, nullable | Single-use forgot-password flow |
+| `created_at` / `updated_at` | TIMESTAMPTZ | |
 
 #### `user_pins`
 Short PINs for fast terminal switching. Separate from the full password.
@@ -167,7 +163,7 @@ Short PINs for fast terminal switching. Separate from the full password.
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | UUID PK | |
-| `user_id` | UUID FK → pos_users | |
+| `user_id` | UUID FK → users | |
 | `pin_hash` | VARCHAR | Argon2 hash of 4–6 digit PIN |
 | `created_at` | TIMESTAMPTZ | |
 
@@ -207,13 +203,13 @@ The join table that links a POS user to a scope (site, brand, or group) with a s
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | UUID PK | |
-| `user_id` | UUID FK → pos_users | |
+| `user_id` | UUID FK → users | |
 | `scope` | VARCHAR(10) | `site` \| `brand` \| `group` |
 | `site_id` | UUID FK → sites | Set when `scope='site'`, else NULL |
 | `brand_id` | UUID FK → brands | Set when `scope='brand'`, else NULL |
 | `group_id` | UUID FK → groups | Set when `scope='group'`, else NULL |
 | `access_profile_id` | UUID FK → access_profiles | |
-| `granted_by_id` | UUID FK → pos_users | NULL for system grants |
+| `granted_by_id` | UUID FK → users | NULL for system grants |
 | `backend_role` | VARCHAR(20) | NULL \| `admin` \| `users` \| `reporting` |
 | `is_active` | BOOLEAN | False = revoked (soft delete) |
 | `is_default` | BOOLEAN | True for the user's primary site at login |
@@ -320,7 +316,7 @@ The primary transaction record for a sale or refund.
 | `id` | UUID PK | |
 | `brand_id` | UUID FK → brands | RESTRICT — survives product/brand updates |
 | `site_id` | UUID FK → sites | RESTRICT |
-| `created_by_id` | UUID FK → pos_users | SET NULL if user deleted |
+| `created_by_id` | UUID FK → users | SET NULL if user deleted |
 | `invoice_type` | VARCHAR(20) | `sale` \| `refund` |
 | `status` | VARCHAR(20) | `draft` → `open` → `paid` \| `voided` |
 | `subtotal_cents` | BIGINT | Sum of line subtotals |

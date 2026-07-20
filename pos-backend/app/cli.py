@@ -3,8 +3,9 @@
 Run with: python -m app.cli <command>
 
 Commands:
-  bootstrap-super-admin   Create the initial Admin-role SuperAdmin portal user.
-                          Refuses to run if an Admin-role SuperAdmin already exists.
+  bootstrap-super-admin   Create the initial Admin-role portal admin (a User
+                          with superadmin_role='admin', no tenant scope).
+                          Refuses to run if an Admin-role portal admin already exists.
   wipe-hierarchy          Permanently delete every Group, Brand, and Site, plus
                           everything that depends on them. Irreversible.
 """
@@ -17,13 +18,13 @@ import typer
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.constants.audit_actions import HIERARCHY_WIPED, PORTAL_USER_CREATED
+from app.constants.audit_actions import HIERARCHY_WIPED, USER_CREATED
 from app.constants.statuses import ActorType, SuperAdminRole
 from app.logging_config import configure_logging
 from app.models.brand import Brand
 from app.models.group import Group
 from app.models.site import Site
-from app.models.superadmin import SuperAdmin
+from app.models.user import User
 from app.services.access_profile_service import seed_system_profiles
 from app.services.audit_service import log_action
 from app.utils.security import hash_password
@@ -53,8 +54,9 @@ async def _bootstrap_super_admin_async(non_interactive: bool = False) -> None:
     """
     Core async logic for the bootstrap-super-admin command.
 
-    Creates the first Admin-role SuperAdmin portal user.
-    Exits with an error if an Admin-role SuperAdmin already exists to prevent duplicates.
+    Creates the first Admin-role portal admin (a User row with
+    superadmin_role='admin', no group/brand scope).
+    Exits with an error if an Admin-role portal admin already exists to prevent duplicates.
 
     Args:
         non_interactive: When True, reads BOOTSTRAP_EMAIL, BOOTSTRAP_NAME,
@@ -66,13 +68,13 @@ async def _bootstrap_super_admin_async(non_interactive: bool = False) -> None:
     session_factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
     async with session_factory() as db:
-        # Guard: refuse to run if any Admin-role SuperAdmin already exists
+        # Guard: refuse to run if any Admin-role portal admin already exists
         existing = await db.execute(
-            select(SuperAdmin).where(SuperAdmin.role == SuperAdminRole.ADMIN.value)
+            select(User).where(User.superadmin_role == SuperAdminRole.ADMIN.value)
         )
         if existing.scalar_one_or_none() is not None:
-            log.info("bootstrap.skipped", reason="admin-role superadmin already exists")
-            typer.echo("INFO: An Admin-role SuperAdmin already exists — skipping bootstrap.")
+            log.info("bootstrap.skipped", reason="admin-role portal admin already exists")
+            typer.echo("INFO: An Admin-role portal admin already exists — skipping bootstrap.")
             return  # Not an error when running from startup script
 
         if non_interactive:
@@ -107,12 +109,14 @@ async def _bootstrap_super_admin_async(non_interactive: bool = False) -> None:
 
         import uuid
 
-        user = SuperAdmin(
+        user = User(
             id=uuid.uuid4(),
+            group_id=None,
+            brand_id=None,
             email=email,
             password_hash=hash_password(password),
             name=name,
-            role=SuperAdminRole.ADMIN.value,
+            superadmin_role=SuperAdminRole.ADMIN.value,
             is_active=True,
         )
         db.add(user)
@@ -120,14 +124,14 @@ async def _bootstrap_super_admin_async(non_interactive: bool = False) -> None:
         # Audit the creation — SYSTEM actor because there is no authenticated user yet
         await log_action(
             db=db,
-            action=PORTAL_USER_CREATED,
-            entity_type="superadmin",
+            action=USER_CREATED,
+            entity_type="user",
             entity_id=str(user.id),
             actor_type=ActorType.SYSTEM,
             actor_id=None,
             actor_email=None,
             actor_name="bootstrap-cli",
-            after_state={"email": email, "role": SuperAdminRole.ADMIN.value},
+            after_state={"email": email, "superadmin_role": SuperAdminRole.ADMIN.value},
         )
 
         await db.commit()
@@ -175,12 +179,12 @@ def bootstrap_super_admin(
     ),
 ) -> None:
     """
-    Create the initial Admin-role SuperAdmin portal user.
+    Create the initial Admin-role portal admin.
 
     Interactive mode (default): prompts for email, name, and password.
     Non-interactive mode (--non-interactive): reads BOOTSTRAP_EMAIL,
     BOOTSTRAP_NAME, and BOOTSTRAP_PASSWORD from environment variables.
-    Refuses to run if an Admin-role SuperAdmin already exists.
+    Refuses to run if an Admin-role portal admin already exists.
     """
     asyncio.run(_bootstrap_super_admin_async(non_interactive=non_interactive))
 

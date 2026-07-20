@@ -324,7 +324,7 @@ def create_impersonation_token(
         site_id: Site UUID string (set only when scope='site').
         brand_id: Brand UUID string (set only when scope='brand' or 'site').
         group_id: Group UUID string (set only when scope='group').
-        admin_id: UUID string of the SuperAdmin performing impersonation.
+        admin_id: UUID string of the portal admin (User) performing impersonation.
         admin_email: Snapshotted email of the impersonating admin.
         admin_name: Snapshotted display name of the impersonating admin.
 

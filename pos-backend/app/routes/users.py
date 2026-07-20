@@ -1,11 +1,17 @@
-"""Routes for POS user management — list, create, edit, deactivate, set PIN, list grants."""
+"""Routes for User management — list, create, edit, deactivate/reactivate, set PIN, list grants.
 
-import re
+Folds in what used to be the separate SuperAdmin-only /portal-users routes:
+SuperAdmin access is a role on User (superadmin_role), not a separate
+identity/table, so admin-portal rows are managed through this same route
+set — only granting/changing superadmin_role itself is restricted to an
+Admin-role portal admin (require_super_admin), mirroring the old
+Admin-only restriction on managing other SuperAdmins.
+"""
+
 import uuid
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,17 +21,30 @@ from app.constants.audit_actions import (
     USER_DEACTIVATED,
     USER_PASSWORD_ADMIN_SET,
     USER_PIN_ADMIN_SET,
+    USER_REACTIVATED,
+    USER_SUPERADMIN_ROLE_UPDATED,
     USER_UPDATED,
 )
+from app.constants.statuses import SuperAdminRole
 from app.database import get_db
 from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.group import Group
-from app.models.superadmin import SuperAdmin
-from app.models.user import User
 from app.models.site import Site
+from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
 from app.models.user_pin import UserPIN
+from app.schemas.user import (
+    EmailCheckOut,
+    EnrichedGrantOut,
+    GroupAccessOut,
+    GroupScopeEntry,
+    SetPinRequest,
+    SiteGrantSummary,
+    UserCreate,
+    UserOut,
+    UserUpdate,
+)
 from app.services import user_service
 from app.services.audit_service import log_action
 from app.utils.dependencies import CatalogAccess, get_current_superadmin, resolve_catalog_access
@@ -37,172 +56,30 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 # Valid backend role values — all carry full permissions for now
 _BACKEND_ROLES = {"admin", "users", "reporting"}
-
-# Temporary: admin-set password on edit is being trialled with a single SuperAdmin
-# before it's opened up to the rest of the admin/reseller_staff roles.
-_PASSWORD_SET_ALLOWED_EMAIL = "hayden_davies@live.com.au"
+# Valid admin-portal role values — mirrors SuperAdminRole
+_SUPERADMIN_ROLES = {role.value for role in SuperAdminRole}
 
 
-class SiteGrantSummary(BaseModel):
-    """Minimal site grant info embedded in UserOut for the portal UI."""
-
-    grant_id: uuid.UUID
-    site_id: uuid.UUID
-    site_name: str
-    is_default: bool
-    access_profile_name: str
-    can_access_portal: bool
-
-
-class UserOut(BaseModel):
-    """POS user response schema — includes active site grants, brand/group info, and portal access flag."""
-
-    id: uuid.UUID
-    ref: str
-    # None for group-scoped master users (brand_id is NULL for them)
-    brand_id: uuid.UUID | None = None
-    brand_name: str = ""
-    group_name: str = ""
-    name: str
-    # None for Master Users, whose `name` is the site's name rather than a person's
-    first_name: str | None = None
-    last_name: str | None = None
-    email: str | None = None
-    backend_role: str | None = None
-    is_active: bool
-    # Active site-scope grants with grant ID, site info, and default flag
-    site_grants: list[SiteGrantSummary] = []
-    # True when at least one active grant uses a portal-capable access profile
-    has_portal_access: bool = False
-
-    model_config = {"from_attributes": True}
-
-
-class UserCreate(BaseModel):
+def _require_admin_role(actor: User) -> None:
     """
-    Request body for creating a POS user.
+    Raise 403 unless the actor is an Admin-role portal admin.
 
-    email/password are optional at creation (ROLE_MODEL.md §2 — only
-    required once the user is granted backend access). A password is
-    meaningless without an email, so it may never be supplied alone.
+    Granting/changing superadmin_role is an admin-portal-only, Admin-only
+    action — a Reseller Staff portal admin may manage tenant Users freely
+    but may not create or promote other portal admins, mirroring the old
+    require_super_admin restriction on the standalone SuperAdmin routes.
 
-    Email-without-password is permitted specifically to support the
-    cross-identity flow (ROLE_MODEL.md §3): when the email already belongs
-    to another identity (a SuperAdmin or another User), the new User is
-    linked to that existing sign-in password rather than being given a new
-    one — the person then picks which platform to open at login. The route
-    (create_user) enforces the DB-dependent side of this: a brand-new email
-    still requires a password, and a matching email must NOT carry one.
+    Args:
+        actor: The authenticated portal admin performing the action.
+
+    Raises:
+        HTTPException: 403 if the actor is not Admin-role.
     """
-
-    brand_id: str
-    first_name: str
-    last_name: str
-    email: EmailStr | None = None
-    password: str | None = None
-
-    @model_validator(mode="after")
-    def _password_requires_email(self) -> "UserCreate":
-        """A password is meaningless without a login email to attach it to."""
-        if self.password is not None and self.email is None:
-            raise ValueError("password requires an email")
-        return self
-
-
-class EmailCheckOut(BaseModel):
-    """
-    Whether an email is already registered, for the create-user form.
-
-    Lets the portal detect an existing identity as the admin types and skip
-    the password field (the new User will share the existing password).
-    """
-
-    exists: bool
-    # 'superadmin' or 'user' — which kind of identity already holds the email.
-    identity_type: str | None = None
-    display_name: str | None = None
-    # False when the matching identity has no password set (a passwordless POS
-    # user) — the form must then still collect one.
-    has_password: bool = False
-
-
-class UserUpdate(BaseModel):
-    """
-    Request body for editing a POS user — all fields optional.
-
-    password is write-only (never echoed back on UserOut) and, for now, may
-    only be supplied by a single SuperAdmin — see _PASSWORD_SET_ALLOWED_EMAIL.
-    """
-
-    first_name: str | None = None
-    last_name: str | None = None
-    email: EmailStr | None = None
-    backend_role: str | None = None  # Use sentinel to distinguish "not supplied" from "clear"
-    password: str | None = Field(default=None, min_length=8)
-
-    model_config = {"from_attributes": True}
-
-
-class SetPinRequest(BaseModel):
-    """Request body for an admin setting a POS user's PIN."""
-
-    pin: str
-
-    @field_validator("pin")
-    @classmethod
-    def validate_pin(cls, v: str) -> str:
-        """Enforce 4–6 digit numeric PIN."""
-        if not re.fullmatch(r"\d{4,6}", v):
-            raise ValueError("PIN must be 4–6 digits")
-        return v
-
-
-class EnrichedGrantOut(BaseModel):
-    """Full grant row enriched with scope entity names, for the edit-user panel."""
-
-    grant_id: uuid.UUID
-    scope: str
-    # Site scope fields
-    site_id: uuid.UUID | None = None
-    site_name: str | None = None
-    # Brand scope fields (present for site- and brand-scope grants)
-    brand_id: uuid.UUID | None = None
-    brand_name: str | None = None
-    # Group scope fields (present for all grants)
-    group_id: uuid.UUID | None = None
-    group_name: str | None = None
-    # Access profile
-    access_profile_id: uuid.UUID
-    access_profile_name: str
-    can_access_portal: bool
-    is_default: bool
-    is_active: bool
-
-
-class GroupScopeEntry(BaseModel):
-    """One row in the group-access overview: group, brand, or site with current grant state."""
-
-    scope: str  # 'group', 'brand', or 'site'
-    # NULL for group-scope rows; set for brand and site rows
-    brand_id: uuid.UUID | None = None
-    brand_name: str | None = None
-    site_id: uuid.UUID | None = None
-    site_name: str | None = None
-    # NULL means no active grant for this scope/entity
-    grant_id: uuid.UUID | None = None
-    access_profile_id: uuid.UUID | None = None
-    access_profile_name: str | None = None
-    can_access_portal: bool = False
-    is_default: bool = False
-    backend_role: str | None = None
-
-
-class GroupAccessOut(BaseModel):
-    """All brands and sites in the user's group with their current access state."""
-
-    group_id: uuid.UUID
-    group_name: str
-    entries: list[GroupScopeEntry]
+    if actor.superadmin_role != SuperAdminRole.ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only an Admin-role portal admin may grant or change the admin-portal role",
+        )
 
 
 async def _attach_sites(
@@ -226,7 +103,7 @@ async def _attach_sites(
         return []
 
     user_ids = [u.id for u in users]
-    # Exclude None — group-scoped master users have brand_id=NULL
+    # Exclude None — group-scoped master users and admin-portal-only rows have brand_id=NULL
     brand_ids = list({u.brand_id for u in users if u.brand_id is not None})
 
     # Brand and group names — batch query so the portal table can show them
@@ -262,7 +139,7 @@ async def _attach_sites(
     )
     grants_result = await db.execute(grants_q)
     grants_by_user: dict[uuid.UUID, list[SiteGrantSummary]] = {}
-    superadmins: set[uuid.UUID] = set()
+    portal_capable: set[uuid.UUID] = set()
     for (user_id, grant_id, site_id, is_default, site_name, profile_name, cap) in grants_result:
         grants_by_user.setdefault(user_id, []).append(
             SiteGrantSummary(
@@ -275,7 +152,7 @@ async def _attach_sites(
             )
         )
         if cap:
-            superadmins.add(user_id)
+            portal_capable.add(user_id)
 
     return [
         UserOut(
@@ -289,9 +166,10 @@ async def _attach_sites(
             last_name=u.last_name,
             email=u.email,
             backend_role=u.backend_role,
+            superadmin_role=u.superadmin_role,
             is_active=u.is_active,
             site_grants=grants_by_user.get(u.id, []),
-            has_portal_access=u.id in superadmins,
+            has_portal_access=u.id in portal_capable,
         )
         for u in users
     ]
@@ -301,12 +179,13 @@ async def _attach_sites(
 async def list_users(
     brand_id: str | None = None,
     site_id: str | None = None,
+    superadmin_role: str | None = None,
     skip: int = 0,
     limit: int = 200,
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ):
-    """List POS users, optionally filtered by brand. Portal admin only. Omit brand_id to see all users."""
+    """List Users, optionally filtered by brand/site/admin-portal role. Portal admin only. Omit filters to see everyone."""
     q = select(User)
     if brand_id:
         q = q.where(User.brand_id == brand_id)
@@ -322,6 +201,9 @@ async def list_users(
             )
         )
 
+    if superadmin_role:
+        q = q.where(User.superadmin_role == superadmin_role)
+
     q = q.offset(skip).limit(limit).order_by(User.name)
     result = await db.execute(q)
     users = list(result.scalars().all())
@@ -330,52 +212,82 @@ async def list_users(
 
 @router.get("/email-check", response_model=EmailCheckOut)
 async def check_email(
-    email: EmailStr,
+    email: str,
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> EmailCheckOut:
     """
     Report whether an email is already registered, for the create-user form.
 
     Lets the portal skip the password field when the email already belongs to
-    a SuperAdmin or another User — the new User then shares that identity's
-    sign-in password (ROLE_MODEL.md §3). Requires portal JWT.
+    another row — the new row then shares that identity's sign-in password.
+    Requires portal JWT.
 
     Args:
         email: The email being typed into the create-user form.
 
     Returns:
-        EmailCheckOut: Existence flag plus the matching identity's type/name
-        and whether it has a usable password.
+        EmailCheckOut: Existence flag plus the matching row's name and
+        whether it has a usable password.
     """
     owner = await user_service.find_email_owner(db, email)
     if owner is None:
         return EmailCheckOut(exists=False)
-    identity_type = "superadmin" if isinstance(owner, SuperAdmin) else "user"
     return EmailCheckOut(
         exists=True,
-        identity_type=identity_type,
         display_name=owner.name,
         has_password=owner.password_hash is not None,
     )
+
+
+@router.get("/{user_id}", response_model=UserOut)
+async def get_user(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(get_current_superadmin),
+):
+    """
+    Fetch a single User by ID. Requires portal JWT.
+
+    Used by the portal to resolve "who am I" after a portal login (the JWT's
+    `sub` claim) as well as to fetch any other row for the admin-portal Users page.
+
+    Args:
+        user_id: UUID of the User.
+
+    Returns:
+        UserOut: The requested user, enriched with site grants.
+    """
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    result_list = await _attach_sites(db, [user])
+    return result_list[0]
 
 
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def create_user(
     body: UserCreate,
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ):
     """
-    Create a new POS user. Requires portal JWT.
+    Create a new User. Requires portal JWT.
 
-    Email handling (ROLE_MODEL.md §3): a brand-new email requires a password.
-    An email that already belongs to another identity (a SuperAdmin or another
-    User) does NOT create a competing password — the new User is linked to the
-    existing sign-in password, so the person picks which platform to open at
-    login. Supplying a fresh password for an already-registered email is
-    rejected, to avoid two different passwords for the same login email.
+    Email handling: a brand-new email requires a password. An email that
+    already belongs to another row does NOT create a competing password —
+    the new row is linked to the existing sign-in password, so the person
+    picks which platform to open at login. Supplying a fresh password for
+    an already-registered email is rejected, to avoid two different
+    passwords for the same login email.
+
+    Setting superadmin_role additionally requires the caller to be
+    Admin-role (see _require_admin_role).
     """
+    if body.superadmin_role is not None:
+        _require_admin_role(actor)
+
     # Emails are case-insensitive for login — normalize before storing/comparing.
     email = normalize_email(body.email) if body.email is not None else None
 
@@ -402,19 +314,23 @@ async def create_user(
                 )
             password_hash = hash_password(body.password)
 
-    brand_r = await db.execute(select(Brand).where(Brand.id == body.brand_id))
-    brand = brand_r.scalar_one_or_none()
-    if not brand:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Brand not found")
+    group_id: uuid.UUID | None = None
+    if body.brand_id is not None:
+        brand_r = await db.execute(select(Brand).where(Brand.id == body.brand_id))
+        brand = brand_r.scalar_one_or_none()
+        if not brand:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Brand not found")
+        group_id = brand.group_id
 
     user = User(
-        group_id=brand.group_id,
+        group_id=group_id,
         brand_id=body.brand_id,
         first_name=body.first_name,
         last_name=body.last_name,
         name=f"{body.first_name} {body.last_name}",
         email=email,
         password_hash=password_hash,
+        superadmin_role=body.superadmin_role,
     )
     db.add(user)
     await db.flush()
@@ -427,7 +343,12 @@ async def create_user(
         action=USER_CREATED,
         entity_type="user",
         entity_id=str(user.id),
-        after_state={"name": user.name, "email": user.email, "brand_id": str(user.brand_id)},
+        after_state={
+            "name": user.name,
+            "email": user.email,
+            "brand_id": str(user.brand_id) if user.brand_id else None,
+            "superadmin_role": user.superadmin_role,
+        },
     )
 
     await db.commit()
@@ -441,6 +362,7 @@ async def create_user(
         last_name=user.last_name,
         email=user.email,
         backend_role=user.backend_role,
+        superadmin_role=user.superadmin_role,
         is_active=user.is_active,
         site_grants=[],
         has_portal_access=False,
@@ -451,16 +373,16 @@ async def create_user(
 async def list_user_grants(
     user_id: str,
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ):
     """
-    List all active access grants for a POS user, enriched with scope entity names.
+    List all active access grants for a User, enriched with scope entity names.
 
     Returns site, brand, and group grants with human-readable names so the
     edit-user panel can display a rich grants table without extra lookups.
 
     Args:
-        user_id: UUID of the POS user.
+        user_id: UUID of the User.
 
     Returns:
         list[EnrichedGrantOut]: All active grants enriched with entity names.
@@ -580,18 +502,18 @@ async def list_user_grants(
 async def get_user_group_access(
     user_id: str,
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ):
     """
     Return all brands and sites in the user's group with their current grant state.
 
-    Every POS user belongs to exactly one group via User.group_id. Each entry
-    shows the current POS access profile, or null if no access is granted yet —
-    so the portal can render the full access matrix rather than just the rows
-    that already have grants.
+    Every tenant-scoped User belongs to exactly one group via User.group_id.
+    Each entry shows the current POS access profile, or null if no access is
+    granted yet — so the portal can render the full access matrix rather
+    than just the rows that already have grants.
 
     Args:
-        user_id: UUID of the POS user.
+        user_id: UUID of the User.
 
     Returns:
         GroupAccessOut: Group info plus one entry per brand and per site.
@@ -600,9 +522,12 @@ async def get_user_group_access(
     user = user_r.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if user.group_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This row has no tenant scope (admin-portal-only user)",
+        )
 
-    # Resolve group directly — User.group_id is set for every user, including
-    # a Group-level Master User (brand_id NULL)
     group_r = await db.execute(select(Group).where(Group.id == user.group_id))
     group = group_r.scalar_one_or_none()
     if not group:
@@ -702,9 +627,9 @@ async def update_user(
     user_id: str,
     body: UserUpdate,
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ):
-    """Edit a POS user's name, email, backend_role, and/or password. Requires portal JWT."""
+    """Edit a User's name, email, backend_role, superadmin_role, and/or password. Requires portal JWT."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -735,13 +660,6 @@ async def update_user(
         user.email = new_email
 
     if body.password is not None:
-        # Temporary rollout gate: only one SuperAdmin may admin-set a user's
-        # password while this capability is being trialled.
-        if actor.email.lower() != _PASSWORD_SET_ALLOWED_EMAIL.lower():
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions",
-            )
         if user.email is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -787,6 +705,35 @@ async def update_user(
             )
         user.backend_role = body.backend_role
 
+    # superadmin_role uses the same sentinel pattern — only Admin-role portal
+    # admins may grant/change it (ROLE_MODEL.md §1: "only grantable from the
+    # admin portal", and here specifically Admin-role, not Reseller Staff).
+    if "superadmin_role" in body.model_fields_set:
+        if body.superadmin_role is not None and body.superadmin_role not in _SUPERADMIN_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"superadmin_role must be one of: {sorted(_SUPERADMIN_ROLES)} or null",
+            )
+        if user.superadmin_role != body.superadmin_role:
+            _require_admin_role(actor)
+            if body.superadmin_role is not None and (user.email is None or user.password_hash is None):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="User must have an email and password before being granted admin-portal access",
+                )
+            await log_action(
+                db=db,
+                actor_id=actor.id,
+                actor_email=actor.email,
+                actor_name=actor.name,
+                action=USER_SUPERADMIN_ROLE_UPDATED,
+                entity_type="user",
+                entity_id=str(user.id),
+                before_state={"superadmin_role": user.superadmin_role},
+                after_state={"superadmin_role": body.superadmin_role},
+            )
+        user.superadmin_role = body.superadmin_role
+
     await log_action(
         db=db,
         actor_id=actor.id,
@@ -810,7 +757,7 @@ async def set_pin_for_user(
     user_id: str,
     body: SetPinRequest,
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ):
     """
     Admin endpoint: set or reset a POS user's PIN.
@@ -865,12 +812,12 @@ async def send_password_reset(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """
-    Trigger a password-reset email for a POS user.
+    Trigger a password-reset email for a User.
 
-    Reachable by a SuperAdmin or a management caller within their scope (see
-    user_service.request_user_password_reset()). The user clicks the emailed
-    link to /reset-password, consumed by the same endpoint SuperAdmin resets
-    use (POST /auth/portal/reset-password).
+    Reachable by a portal admin or a management caller within their scope
+    (see user_service.request_user_password_reset()). The user clicks the
+    emailed link to /reset-password, consumed by the same endpoint
+    portal-admin resets use (POST /auth/portal/reset-password).
 
     Args:
         user_id: The target User.
@@ -894,9 +841,15 @@ async def send_password_reset(
 async def deactivate_user(
     user_id: str,
     db: AsyncSession = Depends(get_db),
-    actor=Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ):
-    """Deactivate a POS user. Requires portal JWT."""
+    """Deactivate a User. Requires portal JWT. Cannot deactivate your own row."""
+    if user_id == str(actor.id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot deactivate your own account",
+        )
+
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -917,6 +870,40 @@ async def deactivate_user(
         entity_type="user",
         entity_id=str(user.id),
         after_state={"is_active": False},
+    )
+
+    await db.commit()
+    await db.refresh(user)
+    result_list = await _attach_sites(db, [user])
+    return result_list[0]
+
+
+@router.post("/{user_id}/reactivate", response_model=UserOut)
+async def reactivate_user(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(get_current_superadmin),
+):
+    """Reactivate a previously deactivated User. Requires portal JWT."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if user.is_active:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already active")
+
+    user.is_active = True
+    await log_action(
+        db=db,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        action=USER_REACTIVATED,
+        entity_type="user",
+        entity_id=str(user.id),
+        before_state={"is_active": False},
+        after_state={"is_active": True},
     )
 
     await db.commit()

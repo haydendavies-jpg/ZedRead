@@ -20,7 +20,6 @@ from app.constants.audit_actions import (
 )
 from app.models.category import Category
 from app.models.reporting_group import ReportingGroup
-from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.schemas.reporting_group import ReportingGroupCreate, ReportingGroupUpdate
 from app.services.audit_service import log_action
@@ -120,7 +119,7 @@ async def create_reporting_group(
     db: AsyncSession,
     brand_id: uuid.UUID,
     payload: ReportingGroupCreate,
-    actor: User | SuperAdmin,
+    actor: User,
     import_id: uuid.UUID | None = None,
 ) -> ReportingGroup:
     """
@@ -172,7 +171,7 @@ async def update_reporting_group(
     brand_id: uuid.UUID,
     reporting_group_id: uuid.UUID,
     payload: ReportingGroupUpdate,
-    actor: User | SuperAdmin,
+    actor: User,
     import_id: uuid.UUID | None = None,
 ) -> ReportingGroup:
     """
@@ -230,7 +229,7 @@ async def delete_reporting_group(
     db: AsyncSession,
     brand_id: uuid.UUID,
     reporting_group_id: uuid.UUID,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> None:
     """
     Delete a reporting group. Blocked for the default group or one still in use.

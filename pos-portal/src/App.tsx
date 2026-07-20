@@ -2,7 +2,7 @@
  * Root application component — router + providers.
  *
  * Routes are split by user type:
- *   SuperAdmin routes  (/groups, /brands, /sites, /licenses, /superadmins, /users)
+ *   Admin-portal routes (/groups, /brands, /sites, /licenses, /users)
  *   Management routes  (/management/menu-studio, /tax, /reports, /users, /access-profiles)
  *
  * The Layout sidebar adapts based on JWT type (portal_access vs mgmt_access).
@@ -22,7 +22,6 @@ import { GroupsPage } from './pages/GroupsPage'
 import { BrandsPage } from './pages/BrandsPage'
 import { SitesPage } from './pages/SitesPage'
 import { LicensesPage } from './pages/LicensesPage'
-import { SuperAdminsPage } from './pages/SuperAdminsPage'
 import { BrandDetailPage } from './pages/brands/BrandDetailPage'
 import { GroupDetailPage } from './pages/groups/GroupDetailPage'
 import { SiteDetailPage } from './pages/sites/SiteDetailPage'
@@ -125,14 +124,6 @@ export default function App() {
                 element={
                   <PrivateRoute requireSuperAdmin>
                     <LicensesPage />
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="superadmins"
-                element={
-                  <PrivateRoute requireSuperAdmin>
-                    <SuperAdminsPage />
                   </PrivateRoute>
                 }
               />

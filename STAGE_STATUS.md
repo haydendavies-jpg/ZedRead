@@ -1127,6 +1127,98 @@ where the swatch sits on a neutral card row and a colour preview makes sense the
 
 ---
 
+### SuperAdmin/User table merge ✅
+
+User request: condense the separate `superadmins` table/portal-page into a role on `User`, and
+condense the SuperAdmins/Users admin-portal pages into one page.
+
+**Deliverables:**
+- [x] Migration `0050`: `users.superadmin_role` (nullable, `admin`|`reseller_staff`); `users.group_id`
+  made nullable (pure admin-portal rows have no tenant scope); existing `superadmins` rows migrated
+  into `users` as new rows preserving `id` (so `groups.created_by_id` keeps resolving) and their
+  historical `PTL-xxxxxx` ref string; `groups.created_by_id` FK re-pointed from `superadmins.id` to
+  `users.id`; `superadmins` table + `superadmins_ref_seq` dropped. Full `downgrade()` provided
+  (recreates `superadmins`, copies `superadmin_role` rows back out, restores `group_id NOT NULL`).
+- [x] `app/models/superadmin.py` deleted; `app/models/user.py` gained the `superadmin_role` column.
+- [x] `app/utils/dependencies.py`: `get_current_superadmin()`/`require_super_admin()` now query `users`
+  filtered by `superadmin_role IS NOT NULL` instead of a separate `superadmins` table;
+  `CatalogAccess.portal_access` is now `User | None`.
+- [x] Service layer: ~20 files mechanically collapsed `SuperAdmin`/`User | SuperAdmin` actor types to
+  plain `User` (`access_grant_service.py`, `access_profile_service.py`, `menu_builder_service.py`,
+  `tax_template_service.py`, catalog services, etc.); `group_service.py`/`brand_service.py`/
+  `site_service.py`'s Reseller Staff "own accounts only" scoping now reads `actor.superadmin_role`
+  instead of a separate `SuperAdmin.role`; `access_grant_service.create_grant()`'s `granted_by_id` is
+  now always attributable (previously NULL for a portal-admin actor, since `SuperAdmin` wasn't itself a
+  `users.id` row).
+  - `user_service.find_email_owner()` simplified to one `users` query (was: check `SuperAdmin` then
+    `User`).
+  - `portal_auth_service.py`: dead `login()` deleted (no route called it — only `refresh()` was
+    wired); `reset_password()` collapsed from a two-table check to one `users` lookup by
+    `password_reset_token`.
+  - `management_auth_service.py` (the core rewrite): `_load_superadmin()`/`_load_users()` replaced by
+    one `_load_users_by_email()` + `_authenticate_candidates()` helper shared by `login()` and
+    `issue_identity_token()`, splitting every matching row's verified credentials into
+    superadmin-capable / grant-capable buckets. The `available_identities`/`identity-token` wire
+    contract is unchanged — a hybrid row (both capabilities on one row) or several rows sharing an
+    email both flatten into the same response shape the old two-table design used, so the portal's
+    disambiguation UI needed no changes.
+- [x] Routes: `routes/superadmins.py` deleted; its list/get/create/update/suspend/activate endpoints
+  folded into `routes/users.py` (`GET /users/{id}` added — previously only sub-resource GETs existed;
+  `POST /users/{id}/reactivate` added for suspend/activate parity; `superadmin_role` added to
+  create/update payloads and list filters, gated by a new `_require_admin_role()` check — a Reseller
+  Staff portal admin can manage tenant Users freely but cannot create/promote other portal admins).
+  `routes/users.py`'s previously-inline schemas (`UserOut`, `UserCreate`, etc.) moved into
+  `schemas/user.py` alongside the former `schemas/superadmin.py` contents, per the project's
+  schemas-live-in-schemas convention. The `_PASSWORD_SET_ALLOWED_EMAIL` single-trial-account gate on
+  admin-set passwords was removed — any portal admin may now set another user's password. 9 other
+  route files (`brands.py`, `groups.py`, `sites.py`, `licenses.py`, `license_invoices.py`,
+  `email_templates.py`, `admin_tax_templates.py`, `pos_devices.py`, `admin_impersonation.py`,
+  `reference_data.py`) mechanically switched their `Depends(require_super_admin)`/
+  `Depends(get_current_superadmin)` type hints from `SuperAdmin` to `User`.
+- [x] `app/cli.py`'s `bootstrap-super-admin` now creates a `users` row (`group_id`/`brand_id` NULL,
+  `superadmin_role='admin'`) instead of a `superadmins` row.
+- [x] `app/constants/audit_actions.py`: added `USER_REACTIVATED`, `USER_SUPERADMIN_ROLE_UPDATED`;
+  removed the now-unused `PORTAL_USER_CREATED`/`UPDATED`/`SUSPENDED`/`ACTIVATED` (the CLI bootstrap
+  command's create action moved to the existing `USER_CREATED`).
+- [x] Portal: `SuperAdminsPage.tsx` deleted; `pages/UsersPage.tsx` (the SuperAdmin-portal-only one)
+  rewritten as the merged page — same route (`/users`), row-per-user with the existing embedded grant
+  editor, plus a new "Portal Role" column/badge and filter, a "Portal Role" select in the create/edit
+  modals (Admin/Reseller/none, editable only by an Admin-role portal admin), and adoption of the shared
+  `FilterBar` component (replacing both former pages' hand-rolled filter bars). `Layout.tsx`'s
+  `SUPER_ADMIN_ONLY_NAV` collapsed from two entries ("SuperAdmins", "Users") to one ("Users");
+  `App.tsx`'s `/superadmins` route removed. `types/index.ts`'s separate `SuperAdmin` interface and
+  the barely-used minimal `User` interface were merged into one exported `User` type matching the
+  backend's `UserOut` (fixing the pre-existing drift where the real shape lived in a page-local
+  `AppUser` type instead); `AuthContext.tsx`'s `isSuperAdmin()` now checks `superadmin_role` instead of
+  a `role` field, and its session-restore fetch moved from the deleted `GET /portal-users/{id}` to the
+  new `GET /users/{id}`. `LoginPage.tsx`/`AuthContext.tsx`'s identity/grant selector views needed no
+  changes — the wire contract they consume was kept stable by design.
+  `pages/management/UsersPage.tsx` (brand-scoped delegated grant management) is unchanged and still
+  has no Admin/Reseller option.
+- [x] Tests: `test_superadmins_routes.py` deleted, its create/list/get/update/suspend+reactivate
+  coverage folded into `test_users_routes.py` alongside new `superadmin_role`-specific cases (Admin-
+  only grant/change, email+password prerequisite, invalid role value, self-deactivate guard).
+  `conftest.py`'s `test_superadmin` fixture now builds a `User(group_id=None, superadmin_role="admin")`
+  row instead of a `SuperAdmin` row (fixture name kept — `portal_auth_headers` and every existing test
+  already depend on it). `test_portal_auth_routes.py`/`test_management_auth_routes.py`'s "shared email"
+  disambiguation tests updated to construct a second `User` row instead of a `SuperAdmin` row, plus new
+  cases for the previously-impossible single-row hybrid scenario (one row with both `superadmin_role`
+  and a portal-capable grant). `test_access_grants.py`/`test_email_template_routes.py`/
+  `test_user_password_reset.py` updated their local portal-admin fixtures/helpers to the same pattern.
+- [x] Docs: `ROLE_MODEL.md` §1/§3 rewritten to describe the merged model as implemented (superseding
+  the Stage-15 separate-table design); `ARCHITECTURE_MAP.md`'s Identity/Terminology/routes-inventory/
+  Auth sections and `DATA_MODEL.md`'s stale `portal_users`/`pos_users` section updated to match;
+  `CLAUDE.md` gained this stage's changelog entry.
+
+**Known limitations:** no reachable Postgres in this environment to run the integration test suite or
+exercise the merged portal page end-to-end in a browser — verified instead via `python -m py_compile`
+across the whole backend+tests tree, an actual `from app.main import app` import (confirms no
+ImportError/circular-import regressions), `alembic heads` (confirms a single valid migration head),
+`pytest --collect-only` (791 tests collect with no fixture/import errors), and the portal's `tsc --noEmit`
++ `npm run build` (both clean). See a future session for a live-DB pass if one becomes available.
+
+---
+
 ## Phase 9 — Product Model Extensions
 
 ### Stage 24 — Product Extensions ✅

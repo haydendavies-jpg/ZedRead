@@ -26,7 +26,6 @@ from app.constants.audit_actions import (
     COMBO_OPTION_REMOVED,
 )
 from app.constants.statuses import ActorType
-from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.product import Product
 from app.models.product_combo_group import ProductComboGroup
@@ -238,7 +237,7 @@ async def create_combo_group(
     brand_id: uuid.UUID,
     product_id: uuid.UUID,
     payload: ComboGroupCreate,
-    actor: User | SuperAdmin,
+    actor: User,
     import_id: uuid.UUID | None = None,
 ) -> ProductComboGroup:
     """
@@ -305,7 +304,7 @@ async def update_combo_group(
     brand_id: uuid.UUID,
     group_id: uuid.UUID,
     payload: ComboGroupUpdate,
-    actor: User | SuperAdmin,
+    actor: User,
     import_id: uuid.UUID | None = None,
 ) -> ProductComboGroup:
     """
@@ -360,7 +359,7 @@ async def deactivate_combo_group(
     db: AsyncSession,
     brand_id: uuid.UUID,
     group_id: uuid.UUID,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> ProductComboGroup:
     """
     Soft-delete a combo group (set is_active=False).
@@ -411,7 +410,7 @@ async def set_combo_group_active_state(
     brand_id: uuid.UUID,
     group_id: uuid.UUID,
     is_active: bool,
-    actor: User | SuperAdmin,
+    actor: User,
     import_id: uuid.UUID | None = None,
 ) -> ProductComboGroup:
     """
@@ -486,7 +485,7 @@ async def add_combo_option(
     brand_id: uuid.UUID,
     combo_group_id: uuid.UUID,
     payload: ComboOptionCreate,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> ProductComboOption:
     """
     Add a product as an option to a combo group.
@@ -585,7 +584,7 @@ async def remove_combo_option(
     db: AsyncSession,
     brand_id: uuid.UUID,
     option_id: uuid.UUID,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> None:
     """
     Remove a combo option.

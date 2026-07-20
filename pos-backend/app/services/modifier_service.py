@@ -26,7 +26,6 @@ from app.constants.statuses import ActorType
 from app.models.modifier_group import ModifierGroup
 from app.models.modifier_option import ModifierOption
 from app.models.modifier_option_group_link import ModifierOptionGroupLink
-from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.product import Product
 from app.models.product_modifier_group_link import ProductModifierGroupLink
@@ -250,7 +249,7 @@ async def create_modifier_group(
     db: AsyncSession,
     brand_id: uuid.UUID,
     payload: ModifierGroupCreate,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> ModifierGroup:
     """Create a modifier group for a brand and write an audit row."""
     group = ModifierGroup(
@@ -286,7 +285,7 @@ async def update_modifier_group(
     brand_id: uuid.UUID,
     group_id: uuid.UUID,
     payload: ModifierGroupUpdate,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> ModifierGroup:
     """Update a modifier group's mutable fields."""
     group = await _get_group_or_404(db, brand_id, group_id)
@@ -360,7 +359,7 @@ async def create_modifier_option(
     brand_id: uuid.UUID,
     group_id: uuid.UUID,
     payload: ModifierOptionCreate,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> ModifierOption:
     """Create a modifier option and write an audit row."""
     await _get_group_or_404(db, brand_id, group_id)
@@ -401,7 +400,7 @@ async def update_modifier_option(
     brand_id: uuid.UUID,
     option_id: uuid.UUID,
     payload: ModifierOptionUpdate,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> ModifierOption:
     """Update a modifier option's mutable fields."""
     option = await _get_option_or_404(db, brand_id, option_id)
@@ -441,7 +440,7 @@ async def link_modifier_group(
     product_id: uuid.UUID,
     group_id: uuid.UUID,
     display_order: int,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> ProductModifierGroupLink:
     """
     Attach a modifier group to a product.
@@ -513,7 +512,7 @@ async def unlink_modifier_group(
     brand_id: uuid.UUID,
     product_id: uuid.UUID,
     group_id: uuid.UUID,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> None:
     """Remove a modifier group link from a product."""
     result = await db.execute(
@@ -687,7 +686,7 @@ async def sync_product_modifier_groups(
     brand_id: uuid.UUID,
     product_id: uuid.UUID,
     modifier_group_ids: list[uuid.UUID],
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> ProductModifiersOut:
     """
     Reconcile a product's attached modifier groups to exactly modifier_group_ids
@@ -788,7 +787,7 @@ async def sync_product_modifier_groups(
 
 
 async def deactivate_modifier_group(
-    db: AsyncSession, brand_id: uuid.UUID, group_id: uuid.UUID, actor: User | SuperAdmin
+    db: AsyncSession, brand_id: uuid.UUID, group_id: uuid.UUID, actor: User
 ) -> ModifierGroup:
     """Soft-delete a modifier group (excluded from the POS and the Modifiers tab)."""
     group = await _get_group_or_404(db, brand_id, group_id)
@@ -813,7 +812,7 @@ async def deactivate_modifier_group(
 
 
 async def deactivate_modifier_option(
-    db: AsyncSession, brand_id: uuid.UUID, option_id: uuid.UUID, actor: User | SuperAdmin
+    db: AsyncSession, brand_id: uuid.UUID, option_id: uuid.UUID, actor: User
 ) -> ModifierOption:
     """Soft-delete a modifier option."""
     option = await _get_option_or_404(db, brand_id, option_id)
@@ -838,7 +837,7 @@ async def deactivate_modifier_option(
 
 
 async def duplicate_modifier_group(
-    db: AsyncSession, brand_id: uuid.UUID, group_id: uuid.UUID, actor: User | SuperAdmin
+    db: AsyncSession, brand_id: uuid.UUID, group_id: uuid.UUID, actor: User
 ) -> ModifierGroup:
     """
     Duplicate a modifier group and its active options (name suffixed "(copy)").
@@ -901,7 +900,7 @@ async def link_option_group(
     brand_id: uuid.UUID,
     option_id: uuid.UUID,
     payload: ModifierOptionLinkCreate,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> ModifierOptionGroupLink:
     """
     Link a modifier option to another modifier group it expands into ("comboing").
@@ -969,7 +968,7 @@ async def unlink_option_group(
     brand_id: uuid.UUID,
     option_id: uuid.UUID,
     linked_group_id: uuid.UUID,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> None:
     """Remove a comboing link between an option and a linked group."""
     await _get_option_or_404(db, brand_id, option_id)

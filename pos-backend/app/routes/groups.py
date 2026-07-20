@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.superadmin import SuperAdmin
+from app.models.user import User
 from app.schemas.billing_info_request import BillingInfoRequestResponse
 from app.schemas.group import GroupCreate, GroupResponse, GroupUpdate
 from app.services import group_service
@@ -22,7 +22,7 @@ async def list_groups(
     name: str | None = Query(default=None, description="Case-insensitive substring filter on group name"),
     is_active: bool | None = Query(default=None, description="Filter by active/inactive status"),
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> list[GroupResponse]:
     """List groups with pagination and optional filters, scoped to the actor's accounts."""
     return await group_service.list_groups(
@@ -34,7 +34,7 @@ async def list_groups(
 async def get_group(
     group_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> GroupResponse:
     """Fetch a single group by ID, scoped to the actor's accounts."""
     return await group_service.get_group(db, group_id, actor)
@@ -44,7 +44,7 @@ async def get_group(
 async def create_group(
     payload: GroupCreate,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> GroupResponse:
     """Create a new group."""
     return await group_service.create_group(db, payload, actor)
@@ -55,7 +55,7 @@ async def update_group(
     group_id: uuid.UUID,
     payload: GroupUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> GroupResponse:
     """Update a group's name."""
     return await group_service.update_group(db, group_id, payload, actor)
@@ -65,7 +65,7 @@ async def update_group(
 async def suspend_group(
     group_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> GroupResponse:
     """Suspend a group (set is_active = False)."""
     return await group_service.suspend_group(db, group_id, actor)
@@ -75,7 +75,7 @@ async def suspend_group(
 async def activate_group(
     group_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> GroupResponse:
     """Activate a previously suspended group."""
     return await group_service.activate_group(db, group_id, actor)
@@ -86,7 +86,7 @@ async def upload_group_logo(
     group_id: uuid.UUID,
     file: UploadFile,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> GroupResponse:
     """Upload or replace the group's logo (JPEG/PNG/WebP, up to 1 MB)."""
     return await group_service.upload_logo(db, group_id, file, actor)
@@ -96,7 +96,7 @@ async def upload_group_logo(
 async def request_group_billing_info(
     group_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> BillingInfoRequestResponse:
     """Email the group's effective billing contact the billing_info_request template."""
     resolved = await group_service.request_billing_info(db, group_id, actor)
