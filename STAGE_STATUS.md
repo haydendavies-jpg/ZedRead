@@ -958,6 +958,160 @@ Follow-up sweep from a codebase efficiency review; five deliverables:
 
 ---
 
+### Menu Studio — POS Layout tile style redesign ✅
+
+Restyled the grid editor's product/folder tiles to match a reference POS mockup showing large
+colour-blocked buttons (bold white product name top-left, price bottom-left, a small round "+"
+quick-add badge top-right, generous rounded corners), one tile shown with a product photo filling
+the tile instead of a flat colour. The rail of top-level tabs on the left was initially left
+unchanged in this pass, on a since-corrected reading of the request — see the follow-up below,
+which restyles the rail too.
+
+- [x] `MenuBuilderPage.tsx` grid tiles: `rounded-xl` → `rounded-2xl`, bumped padding, bolder/larger
+  product name (`font-semibold` → `font-bold`, 13.5px → 14.5px), price switched from
+  `font-mono`/11.5px to a bolder 13px sans figure to read as a POS price tag rather than a table
+  numeral, and a decorative round "+" badge (top-right, `rgba(255,255,255,0.28)` fill) on every
+  unselected product tile — mirrors the mockup's per-tile add affordance; hidden when a tile is
+  selected so it doesn't collide with the existing checkmark badge. Folder tiles keep their
+  existing neutral (non-colour-filled) look, just with the same corner radius for visual
+  consistency with product tiles in the same grid.
+- [x] **Photo tiles**: `MenuButtonOut` gained `product_photo_url` (resolved from the linked
+  product's existing `photo_url` column — no migration needed, the field and its upload
+  route/service have existed since Stage 8/24, just not yet surfaced anywhere in the portal). When
+  set, the tile renders the photo as a full-bleed background (its own `rounded-2xl overflow-hidden`
+  wrapper, separate from the tile's own edges, so the drag-reorder insertion bars' `-7px` offset
+  isn't clipped) under a bottom-weighted dark gradient scrim, with a text-shadow on the name/price
+  so both stay legible over an arbitrary photo. Falls back to the flat colour tile when the linked
+  product has no photo — most products still will, since there's no photo-upload control on
+  `ProductsPage.tsx` yet (existing gap, out of scope here). The inspector's single-button preview
+  card got the same treatment for consistency.
+- [x] Verified via a static Tailwind-class-accurate mockup screenshot (rendered with the
+  pre-installed Playwright/Chromium) reproducing the flat-colour, photo, selected, and folder tile
+  states side by side — this environment has no reachable Postgres instance to run the full
+  app/backend against real catalog data, so this was a layout/contrast check of the exact classes
+  landed in `MenuBuilderPage.tsx`, not an end-to-end browser session against the live editor.
+
+---
+
+### Menu Studio — POS Layout tab rail style redesign ✅
+
+Follow-up to the tile redesign above: the user clarified that leaving the rail unstyled was a
+misreading — the reference mockup's lack of a nested "tab inside a tab" example was a note about
+what the screenshot doesn't show, not an instruction to leave the rail alone. Restyled the rail of
+top-level tabs to match the mockup's category sidebar: solid colour-blocked rows instead of a
+small colour dot on a neutral list.
+
+- [x] Each rail tab (`MenuBuilderPage.tsx`) now renders as a solid `tab.color`-filled block
+  (bold name, button count, up from a `w-2.5 h-2.5` dot + `bg-brand-50` highlight on a neutral
+  row). The active tab gets a `ring-[3px]` dark/light border (adapting the reference's
+  black-outlined "Coffee" tab to the portal's light/dark themes) instead of the previous
+  brand-tinted background; a drag-over target gets a white ring instead, so the two states stay
+  visually distinct against an arbitrary tab colour. Text/icon colour on each row is resolved via
+  the existing `textColorOn()` helper, same as button tiles. (Corner radius/spacing corrected in
+  the follow-up below to actually match the reference — see there.)
+- [x] **New tabs get a colour automatically** — `addTab`'s payload gained `color`, cycling through
+  `MENU_STUDIO_PALETTE` by the rail's current tab count (mirrors how a new layout already defaults
+  its own colour), so a freshly-added tab is never an unstyled fallback grey. A new
+  `updateTabColor` mutation (`PATCH .../tabs/{tabId}`, a field the schema already accepted —
+  `MenuTabUpdate.color` — just not exposed anywhere in the portal yet) backs a `ColorSwatchPicker`
+  on each rail row so the auto-assigned colour can be changed afterward, the same picker component
+  already used for layouts/buttons/categories.
+- [x] Verified via the same static class-accurate mockup technique as the tile redesign (six
+  differently-coloured tabs, one active with the black ring, rendered alongside product tiles) —
+  same no-reachable-Postgres constraint as before, so this was a layout/contrast check, not a
+  live-editor session.
+
+---
+
+### Menu Studio — POS Layout tab rail testing fixes ✅
+
+Three issues from actually exercising the tab rail redesign against a live layout:
+
+- [x] **Colour popover clipped by the rail.** `ColorSwatchPicker` (shared by Categories, button
+  recolouring, and now the tab rail) rendered its popover as a plain `position: absolute` child of
+  the trigger button — invisible past the edge of any scrollable/narrow ancestor, which the rail
+  (`w-52`, `overflow-auto`) is exactly narrow and scrollable enough to trigger. Fixed at the
+  component level (not just for the rail) by portaling the popover into `document.body` via
+  `createPortal`, positioned with `position: fixed` from the trigger button's own
+  `getBoundingClientRect()` (flipped left if it would overflow the right edge of the viewport,
+  closed on scroll since its position isn't re-measured live) — it now always renders on top of
+  everything, regardless of which ancestor is clipping/scrolling.
+- [x] **Selected-swatch border blended into the swatch itself.** The 2px "you're here" border used
+  `border-gray-900`/`border-gray-100`, which is nearly invisible against an already-dark or
+  already-light palette colour. Replaced with a small white circular checkmark badge overlaid on
+  the corner of the selected swatch — legible against every palette colour, not just lighter ones.
+- [x] **Rail didn't match the reference's flush, edge-to-edge blocks.** The rail previously kept
+  the container's own padding, a `gap-2` between rows, and `rounded-xl`/`shadow-sm` per tab — a
+  list of separated rounded cards, not the reference's stacked, touching, square-cornered blocks
+  filling the sidebar's full width. Removed the rail's own padding/gap (`p-3 flex flex-col gap-2` →
+  bare `flex flex-col`, with padding reapplied only to the "Tabs" label, "+ Add tab" button, and
+  help text individually) and each tab row's `rounded-xl`/`shadow-sm`, and switched the active/
+  drag-over ring to `ring-inset` so it draws inward instead of bleeding into the now-touching
+  neighbour above/below. The outer editor panel's own `rounded-xl overflow-hidden` still clips the
+  rail's top/bottom-left corners, so only the individual rows are square — matching the reference,
+  where only the overall sidebar (not each tile) has any rounding.
+- [x] Verified via the same static mockup-screenshot technique as the two prior rounds (rail tabs
+  now flush with no gaps, colour popover rendered fully outside the narrow rail column with a
+  visible checkmark on a dark-on-dark swatch) — same no-reachable-Postgres constraint as before.
+
+---
+
+### Standalone auth pages — dark theme consolidation + theme toggle ✅
+
+User-reported: the login page's dark theme didn't match the logged-in app's. Root cause —
+`LoginPage.tsx`, `ForgotPasswordPage.tsx`, and `ResetPasswordPage.tsx` don't render inside
+`Layout.tsx` (no session yet, so no sidebar), and each independently hard-coded its own full-screen
+`bg-gray-50 dark:bg-gray-900` — a plain Tailwind grey, not `--zr-bg`, the warm cream/near-black
+canvas every authenticated page actually sits on via `Layout.tsx`'s `<main>`. The wordmark
+(`text-brand-800`) also had no dark-mode colour at all, reading as illegibly dark-on-dark once the
+card itself went dark. Three separate copies of the same page shell meant this had already drifted
+once and could easily drift again.
+
+- [x] New `AuthPageShell.tsx` consolidates all three pages onto one shell: the
+  `bg-[var(--zr-bg)]` full-screen canvas (now identical to every authenticated page's background in
+  both themes), the `bg-white dark:bg-gray-800` card (kept — same convention `Modal.tsx` and every
+  other card in the app already use, so this deliberately does *not* switch to the `--zr-surface`
+  token, which would make the auth pages' cards look different from every other card instead of
+  matching them), and the wordmark recoloured to `text-[var(--zr-accent-text)]` (the design guide's
+  token for accent-toned text on a normal, non-solid-accent surface — legible in both themes, unlike
+  the old hard-coded brand-800). `LoginPage.tsx` (all three of its views — the main form, the
+  identity selector, and the grant selector), `ForgotPasswordPage.tsx`, and `ResetPasswordPage.tsx`
+  now just supply their own form/heading content as `<AuthPageShell>` children.
+- [x] **Theme toggle added** — none of these three pages render inside the sidebar, the toggle's
+  only previous home, so a user landing on `/login` (or arriving fresh via a password-reset email
+  link) had no way to switch themes before authenticating. `AuthPageShell` renders the same
+  `useTheme()`/`☀`/`☾` toggle pattern as `Layout.tsx`'s sidebar footer, pinned to the card's
+  top-right corner.
+- [x] Verified visually via `vite build` + `vite preview` (this environment has no reachable
+  Postgres, but these three pages render fully client-side with no API calls until form submit) and
+  Playwright screenshots of `/login`, `/forgot-password`, and `/reset-password` in both themes —
+  confirmed the same warm canvas colour as the rest of the app and a legible wordmark in dark mode.
+
+---
+
+### Menus tab removal (redundant with Menu Studio's POS Layout) ✅
+
+User-reported: the standalone "Menus" nav tab (`MenusPage.tsx`, `/management/menus`) looked
+redundant against Menu Studio. Investigation confirmed it: the `menus` table/router/service
+(migration `0041`) was a saved, schedulable configuration distinct from a `menu_layouts` row, but
+nothing ever consumed it — the POS read contract (`GET /pos/menu-layout`) only ever reads
+`menu_layouts`, never `menus`, and Phase 2 (migration `0042`) had already added the identical
+draft/schedule/publish lifecycle directly onto `menu_layouts` (`is_published`, `published_at`,
+`scheduled_publish_at`), which Menu Studio's POS Layout editor already exposes. Nothing in Menu
+Studio (`MenuBuilderPage.tsx`, `menu_builder_service.py`, `menu_layouts.py`) imported or depended on
+the `menus` entity — only `MenusPage.tsx` itself did.
+
+- [x] Removed: `routes/menus.py`, `services/menu_service.py`, `schemas/menu.py`, `models/menu.py`,
+  `tests/integration/test_menu_routes.py`; the six `MENU_*` audit action constants; the `menus`
+  page key from `PAGE_CATALOG` (`app/constants/pages.py`) and the pro-tier license gate
+  (`app/constants/license_plans.py`) — see updated `ROLE_MODEL.md` §6 (19 pages, down from 20).
+- [x] Migration `0048` drops the `menus` table and `menus_ref_seq` sequence (reversible downgrade
+  recreates both, matching migration `0041`'s original definition).
+- [x] Portal: deleted `MenusPage.tsx`; removed its route (`/management/menus`) and nav entry
+  (`MGMT_NAV` in `Layout.tsx`) and the `Menu` TypeScript interface (`types/index.ts`).
+
+---
+
 ## Phase 9 — Product Model Extensions
 
 ### Stage 24 — Product Extensions ✅

@@ -235,6 +235,66 @@ lag (a page-specific full-tree `invalidateQueries` on every mutation, distinct f
 general request-latency round) is fixed by patching the `['menu-layout', id]` cache directly from
 each mutation's own (now-broadened) response instead of refetching.
 
+**Menu Studio — POS Layout tile style redesign (post-feedback-round-3, complete).** Restyled the
+grid editor's product/folder tiles from a reference POS mockup — larger rounded corners, a bolder/
+larger product name and price (price switched from the table-numeral `font-mono` convention to a
+bold sans figure, since these tiles model an actual POS button rather than a data table), and a
+decorative round "+" quick-add badge on every unselected product tile. `MenuButtonOut` gained
+`product_photo_url` (resolved from the linked product's existing `photo_url` — no migration, that
+column and its upload route have existed since Stage 8/24) so a tile can show the linked product's
+photo as a full-bleed background with a legibility scrim instead of a flat colour, falling back to
+the flat colour tile when the product has none (true for virtually every product today — there's no
+photo-upload control on `ProductsPage.tsx` yet, an existing gap this didn't take on). The rail of
+top-level tabs was initially left untouched on a since-corrected reading of the request — see the
+follow-up below. See `STAGE_STATUS.md` "POS Layout tile style redesign" for the full before/after
+and how it was verified (a static, class-accurate mockup screenshot — this environment has no
+reachable Postgres to drive the real editor end-to-end).
+
+**Menu Studio — POS Layout tab rail style redesign (post-tile-redesign, complete).** The rail of
+top-level tabs now renders as solid `tab.color`-filled blocks (bold name + button count), matching
+the tile redesign's reference mockup's category sidebar, instead of a small colour dot on a neutral
+list row. The active tab gets a dark/light `ring` border (the mockup's black outline, adapted to
+the portal's themes); a drag-over target gets a white ring so the two states stay distinct against
+an arbitrary tab colour. New tabs auto-cycle through `MENU_STUDIO_PALETTE` so they start distinctly
+coloured rather than an unstyled grey; a `ColorSwatchPicker` (the same component already used for
+layouts/buttons/categories) on each row lets that be changed afterward, backed by a new
+`updateTabColor` mutation against `MenuTabUpdate.color` — a field the schema already accepted but
+nothing in the portal exposed yet. See `STAGE_STATUS.md` "POS Layout tab rail style redesign".
+
+**Menu Studio — POS Layout tab rail testing fixes (post-rail-redesign, complete).** Three issues
+found exercising the rail redesign against a live layout, all fixed — see `STAGE_STATUS.md` "POS
+Layout tab rail testing fixes". Notables: `ColorSwatchPicker` (shared by Categories, button
+recolouring, and the tab rail) now portals its popover into `document.body` at a `position: fixed`
+coordinate instead of a plain `position: absolute` child of the trigger, so it's never clipped by a
+narrow/scrollable ancestor (the rail is exactly that); its selected-swatch indicator is now a small
+white checkmark badge instead of a border, which used to blend into an already-dark or
+already-light palette colour; and the rail itself is now flush edge-to-edge (no padding/gap/
+rounding per row, `ring-inset` on the active/drag-over ring so it doesn't bleed into the now-
+touching neighbour) rather than a list of separated rounded cards, matching the reference's stacked
+square-cornered blocks.
+
+**Standalone auth pages — dark theme consolidation + theme toggle (post-rail-testing-fixes,
+complete).** User-reported: the login page's dark theme didn't match the logged-in app's. Root
+cause — `LoginPage.tsx`/`ForgotPasswordPage.tsx`/`ResetPasswordPage.tsx` render outside
+`Layout.tsx` (no session yet, so no sidebar) and each hard-coded its own `bg-gray-50
+dark:bg-gray-900` canvas instead of `--zr-bg`, the warm cream/near-black token every authenticated
+page actually sits on; the wordmark also had no dark-mode colour at all. New `AuthPageShell.tsx`
+consolidates all three pages onto one shell (`bg-[var(--zr-bg)]` canvas, `text-[var(--zr-accent-
+text)]` wordmark; the card itself stays `bg-white dark:bg-gray-800`, deliberately matching
+`Modal.tsx`'s existing convention rather than switching to a different token) and adds a theme
+toggle — none of these pages had one before, since the only prior toggle lived in the sidebar these
+pages don't render. See `pos-portal/CLAUDE.md`'s "Standalone auth pages" section and
+`STAGE_STATUS.md` "Standalone auth pages — dark theme consolidation + theme toggle".
+
+**Menus tab removal (post-auth-pages, complete).** The standalone "Menus" nav tab
+(`MenusPage.tsx`/`/management/menus`, its own `menus` table/router/service from the Menu Studio
+redesign) was removed as redundant: it duplicated the draft/schedule/publish lifecycle Phase 2
+already added directly onto `menu_layouts`, nothing in Menu Studio depended on it, and the POS read
+contract (`GET /pos/menu-layout`) never consulted it in the first place. Removed the backend
+router/service/schema/model, its six `MENU_*` audit actions, its `menus` `PAGE_CATALOG`/license-gate
+entry (migration `0048` drops the table), and the portal page/route/nav entry/TypeScript type. See
+`STAGE_STATUS.md` "Menus tab removal" and the updated `ROLE_MODEL.md` §6.
+
 ## Folder structure (backend)
 ```
 pos-backend/

@@ -77,7 +77,6 @@ Tokens stored in localStorage (portal; impersonation tokens per-tab in sessionSt
 | modifiers.py / combos.py / variants.py | catalog extras management; combos.py/variants.py each also expose a brand-wide `list_router` (`GET /combos`, `GET /variants`, joined to parent product) plus bulk XLSX export/template/import (Stage 22). modifiers.py also covers Menu Studio "comboing": `GET /modifier-groups/detailed` (nested groups→options→linked groups), `POST/DELETE /modifier-options/{id}/links[/{group_id}]`, group/option soft-delete, group duplicate |
 | reporting_groups.py | Reporting Group CRUD (Stage 16), bulk XLSX export/template/import (Stage 19) |
 | menu_layouts.py | POS Menu Builder (Stage 23; grid editor Phase 2): layout/tab/button CRUD, reorder, publish/unpublish, duplicate, schedule/cancel-schedule-publish, button bulk-recolor/bulk-delete/group-into-tab (management JWT); `pos_router` exposes `GET /pos/menu-layout?site_id=`, the read contract for Android |
-| menus.py | Menus (Menu Studio redesign) — distinct from a `menu_layouts` layout: CRUD, duplicate, schedule/cancel-schedule/publish (management/portal JWT only) |
 | pos_devices.py | terminal device registration |
 | user_invites.py / license_invoices.py | onboarding invites, recurring license billing |
 
@@ -88,9 +87,7 @@ Catalog: `categories` (carries `default_color`, the POS button colour its produc
 Menu Studio redesign), `products` (base_price_cents BIGINT), `product_variants`, `product_combo_groups/options`,
 `modifier_groups/options`, `product_modifier_group_links` (M:N), `modifier_option_group_links`
 (M:N, self-referential through `modifier_groups` — an option "comboing" into another group, Menu
-Studio redesign), `reporting_groups` (Stage 16, one level above Category), `menus` (Menu Studio
-redesign — a saved, schedulable configuration distinct from a `menu_layouts` row, with an optional
-`menu_layout_id` FK and the same brand/site `scope` pattern). `product_variants` and `product_combo_groups` each carry a `ref`
+Studio redesign), `reporting_groups` (Stage 16, one level above Category). `product_variants` and `product_combo_groups` each carry a `ref`
 (`VAR-000001` / `CMB-000001`) and nullable `display_name` (Stage 22) — there is no separate `Combo`
 table; a "combo product" is a `Product` that owns `product_combo_groups` rows, so
 `ProductComboGroup` is the entity the Stage 22 portal page surfaces as "Combo". Products carry `base_price_cents`

@@ -349,24 +349,6 @@ export interface ModifierGroupProductItem {
   is_active: boolean
 }
 
-// ── Menus (distinct from a POS MenuLayout) ──────────────────────────────────────
-
-export interface Menu {
-  id: string
-  ref: string
-  brand_id: string
-  site_id: string | null
-  scope: 'brand' | 'site'
-  menu_layout_id: string | null
-  name: string
-  note: string | null
-  status: 'draft' | 'scheduled' | 'published'
-  scheduled_at: string | null
-  published_at: string | null
-  created_at: string
-  updated_at: string
-}
-
 // ── Variants & Combos (Stage 22) ────────────────────────────────────────────────
 
 export interface AttributeAssignment {
@@ -433,6 +415,8 @@ export interface MenuButton {
   is_active: boolean | null
   /** The linked product's category default colour — powers the inspector's "Category default" reset. */
   category_color: string | null
+  /** The linked product's photo, if it has one — renders as the tile's background image. */
+  product_photo_url: string | null
   /** Set only when kind='folder' — the nested tab this button opens. */
   child_tab_name: string | null
   child_tab_button_count: number | null

@@ -17,8 +17,8 @@ context) lets every POS-authenticated request resolve which terminal it
 came from, which register_session_service needs to gate invoice creation
 on a per-device open till session.
 
-Revision ID: 0048
-Revises: 0047
+Revision ID: 0049
+Revises: 0048
 Create Date: 2026-07-20
 """
 
@@ -26,8 +26,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "0048"
-down_revision = "0047"
+revision = "0049"
+down_revision = "0048"
 branch_labels = None
 depends_on = None
 

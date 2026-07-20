@@ -97,16 +97,43 @@ All three families are loaded via non-blocking `<link>` tags in `index.html`.
 
 ### Logo usage
 
-The login page and sidebar both display the wordmark + tagline. Use this exact pattern:
+The standalone auth pages (login, forgot/reset password) and the sidebar both display the
+wordmark + tagline, but in different contexts with different colour needs:
+
+- **Sidebar** (`Layout.tsx`) — sits on the solid `--zr-sidebar` accent surface in both themes, so
+  it's plain white text (`text-white`), never `dark:`-paired.
+- **Auth pages** — sit on a `bg-white dark:bg-gray-800` card (see `AuthPageShell.tsx`, §"Standalone
+  auth pages" below), so `text-brand-800` (no dark-mode variant) is wrong: it reads near-invisible,
+  dark-brown-on-dark-grey, once the card goes dark. Use `text-[var(--zr-accent-text)]` instead —
+  the token pair the design guide defines expressly for accent-toned text on a normal (non-solid-
+  accent) surface, light and dark:
 
 ```tsx
-<span className="text-brand-800" style={{ fontFamily: "'Lora', serif", fontSize: '2rem', fontWeight: 700 }}>
+<span className="text-[var(--zr-accent-text)]" style={{ fontFamily: "'Lora', serif", fontSize: '2rem', fontWeight: 700 }}>
   ZedRead
 </span>
-<p className="text-gray-400 tracking-widest uppercase" style={{ fontSize: '0.6rem' }}>
+<p className="text-gray-400 dark:text-gray-500 tracking-widest uppercase" style={{ fontSize: '0.6rem' }}>
   POS You Can Count On
 </p>
 ```
+
+### Standalone auth pages (login, forgot/reset password)
+
+`LoginPage.tsx`, `ForgotPasswordPage.tsx`, and `ResetPasswordPage.tsx` don't render inside
+`Layout.tsx` (no sidebar, no session yet), so each used to hard-code its own page-canvas
+background and had no theme toggle of its own. That let them drift from the rest of the app: they
+sat on a plain `bg-gray-50 dark:bg-gray-900` (a cool Tailwind grey) instead of `--zr-bg` (the warm
+cream/near-black canvas every authenticated page sits on via `Layout.tsx`'s `<main>`), and the
+wordmark had no dark-mode colour at all — the exact "doesn't match the logged-in theme" bug.
+
+All three now share `<AuthPageShell>` (`src/components/AuthPageShell.tsx`): the full-screen
+`bg-[var(--zr-bg)]` canvas, the centred `bg-white dark:bg-gray-800` card (same convention as
+`Modal.tsx`, so it still matches every other card/modal in the app), and a theme toggle in the
+card's top-right corner (same `useTheme()`/`☀`/`☾` pattern as the sidebar's, since these pages have
+no sidebar to host one). Pass `subtitle` for the wordmark+tagline+subtitle header (login's main
+form, forgot/reset password); omit it for a page that renders its own heading instead (login's
+grant/identity selector views). Never re-introduce a page-local `bg-gray-50 dark:bg-gray-900`
+wrapper on a new standalone page — extend `AuthPageShell` instead.
 
 ---
 
