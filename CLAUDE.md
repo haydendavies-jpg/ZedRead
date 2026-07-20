@@ -295,6 +295,14 @@ router/service/schema/model, its six `MENU_*` audit actions, its `menus` `PAGE_C
 entry (migration `0048` drops the table), and the portal page/route/nav entry/TypeScript type. See
 `STAGE_STATUS.md` "Menus tab removal" and the updated `ROLE_MODEL.md` §6.
 
+**Menu Studio — tab rail colour trigger follow-up (post-menus-removal, complete).** User feedback:
+the tab rail's colour-swatch trigger — a small square filled with the tab's own colour, sitting on a
+tile already filled with that same colour — read as a redundant, oddly-blended chip rather than a
+useful preview. `ColorSwatchPicker` gained a `trigger?: 'swatch' | 'icon'` prop (default `'swatch'`,
+so `CategoriesPage.tsx`'s existing usage — a neutral card row, where a colour preview does make
+sense — is unchanged); `trigger="icon"` renders a small neutral white edit-pencil badge instead,
+used only by the tab rail. See `STAGE_STATUS.md` "tab rail colour trigger follow-up".
+
 ## Folder structure (backend)
 ```
 pos-backend/

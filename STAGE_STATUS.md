@@ -1112,6 +1112,21 @@ the `menus` entity — only `MenusPage.tsx` itself did.
 
 ---
 
+### Menu Studio — tab rail colour trigger follow-up ✅
+
+User feedback on the tab rail redesign's own colour-swatch trigger: a small square filled with the
+tab's own colour, sitting on a tile already filled with that same colour, read as an odd redundant
+chip rather than a useful preview (unlike `ColorSwatchPicker`'s other use on `CategoriesPage.tsx`,
+where the swatch sits on a neutral card row and a colour preview makes sense there).
+
+- [x] `ColorSwatchPicker` gained a `trigger?: 'swatch' | 'icon'` prop (default `'swatch'`, so
+  `CategoriesPage.tsx`'s usage is unchanged). `trigger="icon"` renders a small neutral white
+  edit-pencil badge instead of a `value`-filled square — used only by the tab rail's colour picker,
+  since that's the one trigger that sits on a surface already filled with its own `value`.
+- [x] Verified via the same static mockup-screenshot technique as the prior rail rounds.
+
+---
+
 ## Phase 9 — Product Model Extensions
 
 ### Stage 24 — Product Extensions ✅
