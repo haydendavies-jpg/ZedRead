@@ -48,10 +48,17 @@ class CatalogRepository @Inject constructor(
                 photoUrl = dto.photoUrl,
                 displayOrder = dto.displayOrder,
                 isActive = dto.isActive,
+                categoryColor = dto.categoryColor,
+                modifierNames = dto.modifierNames,
             )
         }
         val categories = api.getCategories(bearer, siteId).map { dto ->
-            CategoryEntity(id = dto.id, name = dto.name, displayOrder = dto.displayOrder)
+            CategoryEntity(
+                id = dto.id,
+                name = dto.name,
+                displayOrder = dto.displayOrder,
+                defaultColor = dto.defaultColor,
+            )
         }
 
         productDao.replaceAll(products)

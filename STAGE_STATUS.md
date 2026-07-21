@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-21 (Android end-of-day cash-up screen — see ANDROID_POS_BUILD_PLAN.md)
+Last updated: 2026-07-21 (Android exact-match Register screen + invoice line-item update/remove — see ANDROID_POS_BUILD_PLAN.md)
 
 ---
 
@@ -1297,9 +1297,12 @@ first when picking this phase back up.
       admin to issue a `device_token` first. `DeviceSetupScreen.kt`/`DeviceViewModel.kt` are deleted.
       See `ANDROID_POS_BUILD_PLAN.md`'s "What the self-service license-seat auth rework shipped" for
       full backend/portal/Android detail.
-- [x] Product grid screen (category tabs + product tiles) — functional, generic UI; exact-match to the
-      design bundle's Register screen is still pending
-- [x] Cart screen (line items, modifiers, quantity) — functional, generic UI, same caveat as above
+- [x] Register (order-entry) screen — `OrderEntryScreen.kt`, exact match to
+      `design_handoff_zedread/ZedRead Register.dc.html`'s header/category-rail/product-grid/order-pane
+      layout, replacing the earlier generic `CatalogScreen`/`CartScreen` pair (the design has no
+      separate cart screen). Qty stepper backed by new `PATCH`/`DELETE .../line-items/{id}` routes.
+      Modifier customise sheet and Payment flow exact-match styling are still pending — see
+      `ANDROID_POS_BUILD_PLAN.md`.
 - [x] Retrofit API client wired to backend endpoints
 - [ ] Room local cache for catalog (offline-capable browsing) — Phase 2 of the build plan
 - [x] Hilt DI modules for network, database, repositories

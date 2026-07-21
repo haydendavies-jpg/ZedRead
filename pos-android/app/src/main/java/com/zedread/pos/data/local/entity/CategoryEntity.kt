@@ -10,4 +10,5 @@ data class CategoryEntity(
     @PrimaryKey val id: String,
     val name: String,
     @ColumnInfo(name = "display_order") val displayOrder: Int,
+    @ColumnInfo(name = "default_color") val defaultColor: String,
 )

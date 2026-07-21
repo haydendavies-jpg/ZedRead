@@ -15,4 +15,6 @@ data class ProductEntity(
     @ColumnInfo(name = "photo_url") val photoUrl: String?,
     @ColumnInfo(name = "display_order") val displayOrder: Int,
     @ColumnInfo(name = "is_active") val isActive: Boolean,
+    @ColumnInfo(name = "category_color") val categoryColor: String,
+    @ColumnInfo(name = "modifier_names") val modifierNames: String?,
 )

@@ -148,6 +148,11 @@ data class ProductDto(
     @Json(name = "photo_url") val photoUrl: String?,
     @Json(name = "display_order") val displayOrder: Int,
     @Json(name = "is_active") val isActive: Boolean,
+    // ProductListItem's joined fields — the Register screen's tile colour and
+    // its "has modifiers" "+" badge (comma-joined active modifier group names;
+    // null/blank means the product has none).
+    @Json(name = "category_color") val categoryColor: String,
+    @Json(name = "modifier_names") val modifierNames: String?,
 )
 
 @JsonClass(generateAdapter = true)
@@ -155,6 +160,7 @@ data class CategoryDto(
     val id: String,
     val name: String,
     @Json(name = "display_order") val displayOrder: Int,
+    @Json(name = "default_color") val defaultColor: String,
 )
 
 // ── Invoices ──────────────────────────────────────────────────────────────
@@ -190,9 +196,16 @@ data class AddLineItemRequest(
     val quantity: Int,
 )
 
+/** PATCH /invoices/{id}/line-items/{lineItemId} request — the Register screen's qty stepper. */
+@JsonClass(generateAdapter = true)
+data class UpdateLineItemQuantityRequest(
+    val quantity: Int,
+)
+
 @JsonClass(generateAdapter = true)
 data class LineItemDto(
     val id: String,
+    @Json(name = "product_id") val productId: String?,
     @Json(name = "product_name") val productName: String,
     val quantity: Int,
     @Json(name = "unit_price_cents") val unitPriceCents: Long,

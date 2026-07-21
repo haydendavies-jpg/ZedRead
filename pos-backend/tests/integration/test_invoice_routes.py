@@ -231,6 +231,174 @@ async def test_add_line_item_with_modifier(
 
 
 @pytest.mark.asyncio
+async def test_update_line_item_quantity_rescales_subtotal_and_tax(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    db: AsyncSession,
+) -> None:
+    """PATCH a line item's quantity rescales subtotal/tax/line_total from the snapshotted unit price."""
+    # inc 1100, ex 1000 → embedded GST of 100/unit
+    await _set_product_prices(db, test_product.id, inc_cents=1100, ex_cents=1000, is_taxable=True)
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    line = await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id), quantity=1)
+
+    resp = await client.patch(
+        f"/invoices/{invoice_id}/line-items/{line['id']}",
+        json={"quantity": 3},
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["quantity"] == 3
+    assert data["subtotal_cents"] == 3300
+    assert data["tax_cents"] == 300
+    assert data["line_total_cents"] == 3300
+
+    invoice_resp = await client.get(f"/invoices/{invoice_id}", headers=pos_auth_headers)
+    assert invoice_resp.json()["total_cents"] == 3300
+
+
+@pytest.mark.asyncio
+async def test_update_line_item_quantity_writes_audit_log(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    db: AsyncSession,
+) -> None:
+    """Changing a line item's quantity writes an 'invoice.line_item.quantity_updated' audit row."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    line = await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id), quantity=1)
+
+    await client.patch(
+        f"/invoices/{invoice_id}/line-items/{line['id']}",
+        json={"quantity": 2},
+        headers=pos_auth_headers,
+    )
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == line["id"],
+            AuditLog.action == "invoice.line_item.quantity_updated",
+        )
+    )
+    assert result.scalar_one_or_none() is not None
+
+
+@pytest.mark.asyncio
+async def test_update_line_item_quantity_unknown_line_returns_404(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+) -> None:
+    """PATCHing a non-existent line item returns 404."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    resp = await client.patch(
+        f"/invoices/{invoice_id}/line-items/{uuid.uuid4()}",
+        json={"quantity": 2},
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_line_item_quantity_on_paid_invoice_returns_409(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+) -> None:
+    """A paid invoice's line items can no longer be edited."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    line = await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id), quantity=1)
+    invoice_resp = await client.get(f"/invoices/{invoice_id}", headers=pos_auth_headers)
+    total = invoice_resp.json()["total_cents"]
+    await client.post(
+        f"/invoices/{invoice_id}/pay",
+        json={"method": "cash", "amount_cents": total},
+        headers=pos_auth_headers,
+    )
+
+    resp = await client.patch(
+        f"/invoices/{invoice_id}/line-items/{line['id']}",
+        json={"quantity": 2},
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_remove_line_item_recomputes_invoice_totals(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    db: AsyncSession,
+) -> None:
+    """DELETEing a line item drops it from the invoice and recomputes totals."""
+    await _set_product_prices(db, test_product.id, inc_cents=1100, ex_cents=1000, is_taxable=True)
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    line_a = await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id), quantity=1)
+    line_b = await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id), quantity=1)
+
+    resp = await client.delete(
+        f"/invoices/{invoice_id}/line-items/{line_a['id']}",
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 204
+
+    row = await db.execute(select(InvoiceLineItem).where(InvoiceLineItem.invoice_id == uuid.UUID(invoice_id)))
+    remaining = row.scalars().all()
+    assert [str(item.id) for item in remaining] == [line_b["id"]]
+
+    invoice_resp = await client.get(f"/invoices/{invoice_id}", headers=pos_auth_headers)
+    assert invoice_resp.json()["total_cents"] == 1100
+
+
+@pytest.mark.asyncio
+async def test_remove_line_item_writes_audit_log(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    db: AsyncSession,
+) -> None:
+    """Removing a line item writes an 'invoice.line_item.removed' audit row."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    line = await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id), quantity=1)
+
+    await client.delete(f"/invoices/{invoice_id}/line-items/{line['id']}", headers=pos_auth_headers)
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == line["id"],
+            AuditLog.action == "invoice.line_item.removed",
+        )
+    )
+    assert result.scalar_one_or_none() is not None
+
+
+@pytest.mark.asyncio
+async def test_remove_line_item_on_paid_invoice_returns_409(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+) -> None:
+    """A paid invoice's line items can no longer be removed."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    line = await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id), quantity=1)
+    invoice_resp = await client.get(f"/invoices/{invoice_id}", headers=pos_auth_headers)
+    total = invoice_resp.json()["total_cents"]
+    await client.post(
+        f"/invoices/{invoice_id}/pay",
+        json={"method": "cash", "amount_cents": total},
+        headers=pos_auth_headers,
+    )
+
+    resp = await client.delete(
+        f"/invoices/{invoice_id}/line-items/{line['id']}",
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_apply_discount_to_invoice(
     client: AsyncClient,
     pos_auth_headers: dict,

@@ -15,6 +15,7 @@ from app.services.invoice_service import (
     LineModifierResponse,
     PayInvoiceRequest,
     RefundRequest,
+    UpdateLineItemQuantityRequest,
     add_line_item,
     add_line_modifier,
     apply_discount,
@@ -22,6 +23,8 @@ from app.services.invoice_service import (
     create_refund,
     list_invoices,
     pay_invoice,
+    remove_line_item,
+    update_line_item_quantity,
     void_invoice,
 )
 from app.services.register_session_service import get_open_session_or_400
@@ -133,6 +136,60 @@ async def add_invoice_line_item(
     """
     line = await add_line_item(db, access.user.brand_id, invoice_id, payload, access.user)
     return LineItemResponse.model_validate(line)
+
+
+@router.patch(
+    "/{invoice_id}/line-items/{line_item_id}",
+    response_model=LineItemResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def update_invoice_line_item_quantity(
+    invoice_id: uuid.UUID,
+    line_item_id: uuid.UUID,
+    payload: UpdateLineItemQuantityRequest,
+    access: POSAccess = Depends(resolve_access),
+    db: AsyncSession = Depends(get_db),
+) -> LineItemResponse:
+    """
+    Change a line item's quantity — e.g. the Register screen's qty stepper.
+
+    Args:
+        invoice_id: UUID of the parent invoice.
+        line_item_id: UUID of the line item to update.
+        payload: The new quantity.
+        access: Resolved POS access.
+        db: Active database session.
+
+    Returns:
+        LineItemResponse: The updated line item.
+    """
+    line = await update_line_item_quantity(
+        db, access.user.brand_id, invoice_id, line_item_id, payload, access.user
+    )
+    return LineItemResponse.model_validate(line)
+
+
+@router.delete(
+    "/{invoice_id}/line-items/{line_item_id}",
+    response_model=None,
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_invoice_line_item(
+    invoice_id: uuid.UUID,
+    line_item_id: uuid.UUID,
+    access: POSAccess = Depends(resolve_access),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Remove a line item from an invoice — e.g. the Register screen's remove-item action.
+
+    Args:
+        invoice_id: UUID of the parent invoice.
+        line_item_id: UUID of the line item to remove.
+        access: Resolved POS access.
+        db: Active database session.
+    """
+    await remove_line_item(db, access.user.brand_id, invoice_id, line_item_id, access.user)
 
 
 @router.post(
