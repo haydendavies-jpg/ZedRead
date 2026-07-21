@@ -10,7 +10,7 @@ from app.models.user import User
 from app.schemas.billing_info_request import BillingInfoRequestResponse
 from app.schemas.brand import BrandCreate, BrandResponse, BrandUpdate
 from app.services import brand_service
-from app.utils.dependencies import get_current_superadmin
+from app.utils.dependencies import ManagementAccess, get_current_superadmin, resolve_portal_or_management
 
 router = APIRouter(prefix="/brands", tags=["brands"])
 
@@ -35,9 +35,9 @@ async def list_brands(
 async def get_brand(
     brand_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: User = Depends(get_current_superadmin),
+    actor: User | ManagementAccess = Depends(resolve_portal_or_management),
 ) -> BrandResponse:
-    """Fetch a single brand by ID, scoped to the actor's accounts."""
+    """Fetch a single brand by ID, scoped to the actor's accounts (or a management caller's own scope)."""
     return await brand_service.get_brand(db, brand_id, actor)
 
 
@@ -56,9 +56,9 @@ async def update_brand(
     brand_id: uuid.UUID,
     payload: BrandUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: User = Depends(get_current_superadmin),
+    actor: User | ManagementAccess = Depends(resolve_portal_or_management),
 ) -> BrandResponse:
-    """Update a brand's name."""
+    """Update a brand's company profile fields."""
     return await brand_service.update_brand(db, brand_id, payload, actor)
 
 
@@ -87,7 +87,7 @@ async def upload_brand_logo(
     brand_id: uuid.UUID,
     file: UploadFile,
     db: AsyncSession = Depends(get_db),
-    actor: User = Depends(get_current_superadmin),
+    actor: User | ManagementAccess = Depends(resolve_portal_or_management),
 ) -> BrandResponse:
     """Upload or replace the brand's logo (JPEG/PNG/WebP, up to 1 MB)."""
     return await brand_service.upload_logo(db, brand_id, file, actor)
@@ -97,7 +97,7 @@ async def upload_brand_logo(
 async def request_brand_billing_info(
     brand_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: User = Depends(get_current_superadmin),
+    actor: User | ManagementAccess = Depends(resolve_portal_or_management),
 ) -> BillingInfoRequestResponse:
     """Email the brand's effective billing contact the billing_info_request template."""
     resolved = await brand_service.request_billing_info(db, brand_id, actor)

@@ -217,14 +217,16 @@ async def check_email(
     actor: User = Depends(get_current_superadmin),
 ) -> EmailCheckOut:
     """
-    Report whether an email is already registered, for the create-user form.
+    Report whether an email is already registered, for the create-user and
+    create-superadmin forms.
 
     Lets the portal skip the password field when the email already belongs to
-    another row — the new row then shares that identity's sign-in password.
-    Requires portal JWT.
+    another row — the new row then shares that identity's sign-in password
+    (ROLE_MODEL.md §3). Requires portal JWT.
 
     Args:
-        email: The email being typed into the create-user form.
+        email: The email being typed into the create-user or
+            create-superadmin form.
 
     Returns:
         EmailCheckOut: Existence flag plus the matching row's name and

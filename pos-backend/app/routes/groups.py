@@ -10,7 +10,7 @@ from app.models.user import User
 from app.schemas.billing_info_request import BillingInfoRequestResponse
 from app.schemas.group import GroupCreate, GroupResponse, GroupUpdate
 from app.services import group_service
-from app.utils.dependencies import get_current_superadmin
+from app.utils.dependencies import ManagementAccess, get_current_superadmin, resolve_portal_or_management
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
@@ -34,9 +34,9 @@ async def list_groups(
 async def get_group(
     group_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: User = Depends(get_current_superadmin),
+    actor: User | ManagementAccess = Depends(resolve_portal_or_management),
 ) -> GroupResponse:
-    """Fetch a single group by ID, scoped to the actor's accounts."""
+    """Fetch a single group by ID, scoped to the actor's accounts (or a management caller's own scope)."""
     return await group_service.get_group(db, group_id, actor)
 
 
@@ -55,9 +55,9 @@ async def update_group(
     group_id: uuid.UUID,
     payload: GroupUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: User = Depends(get_current_superadmin),
+    actor: User | ManagementAccess = Depends(resolve_portal_or_management),
 ) -> GroupResponse:
-    """Update a group's name."""
+    """Update a group's company profile fields."""
     return await group_service.update_group(db, group_id, payload, actor)
 
 
@@ -86,7 +86,7 @@ async def upload_group_logo(
     group_id: uuid.UUID,
     file: UploadFile,
     db: AsyncSession = Depends(get_db),
-    actor: User = Depends(get_current_superadmin),
+    actor: User | ManagementAccess = Depends(resolve_portal_or_management),
 ) -> GroupResponse:
     """Upload or replace the group's logo (JPEG/PNG/WebP, up to 1 MB)."""
     return await group_service.upload_logo(db, group_id, file, actor)
@@ -96,7 +96,7 @@ async def upload_group_logo(
 async def request_group_billing_info(
     group_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: User = Depends(get_current_superadmin),
+    actor: User | ManagementAccess = Depends(resolve_portal_or_management),
 ) -> BillingInfoRequestResponse:
     """Email the group's effective billing contact the billing_info_request template."""
     resolved = await group_service.request_billing_info(db, group_id, actor)

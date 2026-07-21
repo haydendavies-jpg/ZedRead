@@ -334,12 +334,9 @@ export function UsersPage() {
     e.preventDefault()
     if (!editUser) return
     setEditError(null)
-    if (canSetPassword && editPassword) {
-      const minLength = editSuperadminRole ? 12 : 8
-      if (editPassword.length < minLength) {
-        setEditError(`Password must be at least ${minLength} characters.`)
-        return
-      }
+    if (canSetPassword && editPassword && editPassword.length < 8) {
+      setEditError('Password must be at least 8 characters.')
+      return
     }
     editMutation.mutate({
       id: editUser.id,
@@ -656,9 +653,9 @@ export function UsersPage() {
             ) : (
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={createSuperadminRole ? 12 : 8}
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={createSuperadminRole ? 6 : 8}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  placeholder={createSuperadminRole ? 'Min 12 characters' : 'Min 8 characters'} />
+                  placeholder={createSuperadminRole ? 'Min 6 characters' : 'Min 8 characters'} />
               </div>
             )}
             {canManageSuperadminRole && (
@@ -745,7 +742,7 @@ export function UsersPage() {
                       placeholder="Leave blank to keep the current password"
                       className="w-full sm:w-1/3 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
                     <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                      At least {editSuperadminRole ? 12 : 8} characters.
+                      At least 8 characters.
                     </p>
                   </div>
                 )}

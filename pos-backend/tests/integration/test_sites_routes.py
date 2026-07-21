@@ -22,7 +22,11 @@ from app.constants.audit_actions import (
     SITE_UPDATED,
 )
 from app.models.audit_log import AuditLog
+from app.models.brand import Brand
+from app.models.group import Group
+from app.models.site import Site
 from app.models.user import User
+from app.utils.security import create_mgmt_access_token
 
 # Patch target for upload_logo tests so no real Supabase call goes out
 _UPLOAD_IMAGE_PATH = "app.services.site_service.upload_image"
@@ -392,3 +396,95 @@ async def test_request_site_billing_info_writes_audit_log(
     )
     row = result.scalar_one()
     assert row.after_state["sent_to"] == "billing@site.test"
+
+
+# ── Management portal access (tenant-facing Company Profile page) ────────────
+
+
+async def test_get_site_by_own_site_scope_returns_200(client, mgmt_auth_headers, test_site):
+    """A Site-scoped management caller can read their own Site's profile."""
+    response = await client.get(f"/sites/{test_site.id}", headers=mgmt_auth_headers)
+    assert response.status_code == 200
+    assert response.json()["id"] == str(test_site.id)
+
+
+async def test_update_site_by_own_site_scope_returns_200(client, mgmt_auth_headers, test_site):
+    """A Site-scoped management caller can edit their own Site's profile."""
+    response = await client.patch(
+        f"/sites/{test_site.id}", json={"name": "Updated By Management"}, headers=mgmt_auth_headers
+    )
+    assert response.status_code == 200
+    assert response.json()["name"] == "Updated By Management"
+
+
+async def test_update_site_by_own_site_scope_writes_audit_log_with_mgmt_actor(
+    client, db, mgmt_auth_headers, test_site, test_user
+):
+    """PATCH /sites/{id} by a management caller attributes the audit row to that user."""
+    await client.patch(
+        f"/sites/{test_site.id}", json={"name": "Mgmt Audit Name"}, headers=mgmt_auth_headers
+    )
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_site.id),
+            AuditLog.action == SITE_UPDATED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.actor_id == test_user.id
+    assert row.after_state["name"] == "Mgmt Audit Name"
+
+
+async def test_get_site_by_ancestor_brand_scope_returns_404(client, test_site, test_brand_grant, test_user):
+    """A Brand-scoped management caller cannot read a descendant Site's profile — Site is the leaf
+    scope in the Company Profile page and has no ancestor-read allowance (unlike Group/Brand)."""
+    token = create_mgmt_access_token(
+        user_id=str(test_user.id),
+        scope="brand",
+        grant_id=str(test_brand_grant.id),
+        site_id=None,
+        brand_id=str(test_brand_grant.brand_id),
+        group_id=None,
+    )
+    response = await client.get(
+        f"/sites/{test_site.id}", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 404
+
+
+async def test_get_site_unrelated_scope_returns_404(client, mgmt_auth_headers, db):
+    """A management caller cannot read a Site outside their own scope."""
+    other_group = Group(
+        id=uuid.uuid4(), name="Other Group", is_active=True, timezone="Australia/Sydney", currency="AUD", country="AU"
+    )
+    db.add(other_group)
+    await db.flush()
+    other_brand = Brand(
+        id=uuid.uuid4(),
+        group_id=other_group.id,
+        name="Other Brand",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+    )
+    db.add(other_brand)
+    await db.flush()
+    other_site = Site(
+        id=uuid.uuid4(),
+        brand_id=other_brand.id,
+        name="Other Site",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+        address_street="1 Other Street",
+        address_state="NSW",
+        address_postcode="2000",
+    )
+    db.add(other_site)
+    await db.commit()
+
+    response = await client.get(f"/sites/{other_site.id}", headers=mgmt_auth_headers)
+    assert response.status_code == 404

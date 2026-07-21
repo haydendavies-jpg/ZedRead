@@ -300,8 +300,11 @@ the tab rail's colour-swatch trigger — a small square filled with the tab's ow
 tile already filled with that same colour — read as a redundant, oddly-blended chip rather than a
 useful preview. `ColorSwatchPicker` gained a `trigger?: 'swatch' | 'icon'` prop (default `'swatch'`,
 so `CategoriesPage.tsx`'s existing usage — a neutral card row, where a colour preview does make
-sense — is unchanged); `trigger="icon"` renders a small neutral white edit-pencil badge instead,
-used only by the tab rail. See `STAGE_STATUS.md` "tab rail colour trigger follow-up".
+sense — is unchanged); `trigger="icon"` renders a small edit-pencil glyph instead, used only by the
+tab rail. A same-turn follow-up dropped the icon's own white badge background entirely (`bg-white/90
+shadow-sm` → bare `hover:bg-black/15`, no explicit text colour) so it inherits the tab row's own
+text colour and matches the adjacent delete "×" button's plain, no-background style exactly. See
+`STAGE_STATUS.md` "tab rail colour trigger follow-up".
 
 **SuperAdmin/User table merge (post-tab-rail-follow-up, complete).** SuperAdmin condensed from a
 separate `superadmins` table/model into a role on `User`: `users.superadmin_role` (nullable,

@@ -28,6 +28,7 @@ from app.schemas.site import SiteCreate, SiteUpdate
 from app.services import branding_service
 from app.services.audit_service import log_action
 from app.services.branding_service import ResolvedValue
+from app.utils.dependencies import ManagementAccess, _actor_from_mgmt
 from app.utils.security import hash_password
 from app.utils.storage import ALLOWED_LOGO_TYPES, MAX_LOGO_BYTES, extension_for_content_type, upload_image
 
@@ -199,6 +200,76 @@ async def _get_or_404(db: AsyncSession, site_id: uuid.UUID, actor: User) -> Site
     return site
 
 
+def _authorize_management(site_id: uuid.UUID, mgmt: ManagementAccess) -> None:
+    """
+    Verify a management-portal caller may access this Site, for the
+    tenant-facing Company Profile page.
+
+    Site is the leaf of the Group -> Brand -> Site hierarchy, so unlike
+    Group/Brand there is no ancestor-read case to allow — a Site-scoped
+    caller's own site is both their read and write scope.
+
+    Args:
+        site_id: The UUID of the site being accessed.
+        mgmt: The authenticated management-portal caller.
+
+    Raises:
+        HTTPException: 404 if the site is outside the caller's scope (matches
+            _get_or_404's "treat as not found" convention for out-of-scope IDs).
+    """
+    if mgmt.scope == "site" and mgmt.site and mgmt.site.id == site_id:
+        return
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site not found")
+
+
+async def _fetch_for_management(db: AsyncSession, site_id: uuid.UUID, mgmt: ManagementAccess) -> Site:
+    """
+    Fetch a Site for a management-portal caller, enforcing scope.
+
+    Args:
+        db: Active database session.
+        site_id: The UUID of the site to fetch.
+        mgmt: The authenticated management-portal caller.
+
+    Returns:
+        Site: The found site.
+
+    Raises:
+        HTTPException: 404 if the site is outside the caller's scope, or does not exist.
+    """
+    _authorize_management(site_id, mgmt)
+    result = await db.execute(select(Site).where(Site.id == site_id))
+    site = result.scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site not found")
+    return site
+
+
+async def _resolve_for_write(
+    db: AsyncSession, site_id: uuid.UUID, actor: User | ManagementAccess
+) -> tuple[Site, dict]:
+    """
+    Fetch a Site for a write action and resolve its log_action() actor kwargs.
+
+    Args:
+        db: Active database session.
+        site_id: The UUID of the site to fetch.
+        actor: The authenticated portal admin (User) or management-portal caller.
+
+    Returns:
+        tuple[Site, dict]: The site and keyword arguments ready to splat
+            into log_action() (actor_id/actor_email/actor_name).
+
+    Raises:
+        HTTPException: 404 if the site is outside the actor's scope.
+    """
+    if isinstance(actor, User):
+        site = await _get_or_404(db, site_id, actor)
+        return site, {"actor_id": actor.id, "actor_email": actor.email, "actor_name": actor.name}
+    site = await _fetch_for_management(db, site_id, actor)
+    return site, _actor_from_mgmt(actor)
+
+
 async def list_sites(
     db: AsyncSession,
     actor: User,
@@ -239,14 +310,15 @@ async def list_sites(
     return list(result.scalars().all())
 
 
-async def get_site(db: AsyncSession, site_id: uuid.UUID, actor: User) -> Site:
+async def get_site(db: AsyncSession, site_id: uuid.UUID, actor: User | ManagementAccess) -> Site:
     """
-    Fetch a single site by ID, scoped to the actor's own accounts if Reseller Staff.
+    Fetch a single site by ID, scoped to the actor's own accounts if Reseller
+    Staff, or to a management-portal caller's own scope (see _authorize_management).
 
     Args:
         db: Active database session.
         site_id: The UUID of the site.
-        actor: The authenticated portal admin (User) performing the action.
+        actor: The authenticated User or management-portal caller.
 
     Returns:
         Site: The found site.
@@ -254,7 +326,9 @@ async def get_site(db: AsyncSession, site_id: uuid.UUID, actor: User) -> Site:
     Raises:
         HTTPException: 404 if the site does not exist within the actor's scope.
     """
-    return await _get_or_404(db, site_id, actor)
+    if isinstance(actor, User):
+        return await _get_or_404(db, site_id, actor)
+    return await _fetch_for_management(db, site_id, actor)
 
 
 async def create_site(
@@ -341,7 +415,7 @@ async def update_site(
     db: AsyncSession,
     site_id: uuid.UUID,
     payload: SiteUpdate,
-    actor: User,
+    actor: User | ManagementAccess,
 ) -> Site:
     """
     Update a Site's mutable fields and write an audit log row.
@@ -350,15 +424,15 @@ async def update_site(
         db: Active database session.
         site_id: The UUID of the site to update.
         payload: The fields to update (all optional).
-        actor: The authenticated portal user performing the action.
+        actor: The authenticated portal admin (User) or management-portal caller.
 
     Returns:
         Site: The updated site.
 
     Raises:
-        HTTPException: 404 if the site does not exist.
+        HTTPException: 404 if the site does not exist within the actor's scope.
     """
-    site = await _get_or_404(db, site_id, actor)
+    site, actor_kwargs = await _resolve_for_write(db, site_id, actor)
 
     before = {
         "name": site.name,
@@ -406,9 +480,7 @@ async def update_site(
         action=SITE_UPDATED,
         entity_type="site",
         entity_id=str(site.id),
-        actor_id=actor.id,
-        actor_email=actor.email,
-        actor_name=actor.name,
+        **actor_kwargs,
         before_state=before,
         after_state=after,
     )
@@ -466,7 +538,7 @@ async def upload_logo(
     db: AsyncSession,
     site_id: uuid.UUID,
     file: UploadFile,
-    actor: User,
+    actor: User | ManagementAccess,
 ) -> Site:
     """
     Upload or replace a Site's logo and write an audit log row.
@@ -478,7 +550,7 @@ async def upload_logo(
         db: Active database session.
         site_id: UUID of the site to attach the logo to.
         file: The uploaded image file.
-        actor: The authenticated portal user performing the action.
+        actor: The authenticated portal admin (User) or management-portal caller.
 
     Returns:
         Site: The site with updated logo_url.
@@ -488,7 +560,7 @@ async def upload_logo(
         HTTPException: 413 if the file exceeds 1 MB.
         HTTPException: 415 if the content type is not an accepted image type.
     """
-    site = await _get_or_404(db, site_id, actor)
+    site, actor_kwargs = await _resolve_for_write(db, site_id, actor)
 
     contents = await file.read()
     ext = extension_for_content_type(file.content_type or "")
@@ -509,9 +581,7 @@ async def upload_logo(
         action=SITE_LOGO_UPDATED,
         entity_type="site",
         entity_id=str(site.id),
-        actor_id=actor.id,
-        actor_email=actor.email,
-        actor_name=actor.name,
+        **actor_kwargs,
         before_state={"logo_url": old_url},
         after_state={"logo_url": logo_url},
     )
@@ -525,7 +595,7 @@ async def upload_logo(
 async def request_billing_info(
     db: AsyncSession,
     site_id: uuid.UUID,
-    actor: User,
+    actor: User | ManagementAccess,
 ) -> ResolvedValue:
     """
     Send a billing-info-request email to the site's effective billing contact.
@@ -533,7 +603,7 @@ async def request_billing_info(
     Args:
         db: Active database session.
         site_id: The UUID of the site to request billing info for.
-        actor: The authenticated portal user performing the action.
+        actor: The authenticated portal admin (User) or management-portal caller.
 
     Returns:
         ResolvedValue: The billing email sent to and which hierarchy level it came from.
@@ -542,7 +612,10 @@ async def request_billing_info(
         HTTPException: 404 if the site does not exist within the actor's scope.
         HTTPException: 409 if no billing email is set anywhere in the site's chain.
     """
-    site = await _get_or_404(db, site_id, actor)
+    if isinstance(actor, User):
+        site = await _get_or_404(db, site_id, actor)
+    else:
+        site = await _fetch_for_management(db, site_id, actor)
     return await branding_service.request_billing_info(db, site, "site", actor)
 
 

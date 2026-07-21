@@ -27,6 +27,7 @@ from app.models.audit_log import AuditLog
 from app.models.group import Group
 from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
+from app.utils.security import create_mgmt_access_token
 
 # Patch target for upload_logo tests so no real Supabase call goes out
 _UPLOAD_IMAGE_PATH = "app.services.group_service.upload_image"
@@ -445,3 +446,109 @@ async def test_request_group_billing_info_writes_audit_log(client, db, portal_au
     )
     row = result.scalar_one()
     assert row.after_state["sent_to"] == "billing@group.test"
+
+
+# ── Management portal access (tenant-facing Company Profile page) ────────────
+
+
+async def _group_scope_mgmt_headers(db, test_user, test_group, test_manager_profile) -> dict[str, str]:
+    """Persist a Group-scope UserAccessGrant for test_user and mint its mgmt_access token."""
+    grant = UserAccessGrant(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        scope="group",
+        group_id=test_group.id,
+        access_profile_id=test_manager_profile.id,
+        granted_by_id=None,
+        is_active=True,
+        backend_role="admin",  # backend_role gates portal login
+    )
+    db.add(grant)
+    await db.commit()
+    await db.refresh(grant)
+    token = create_mgmt_access_token(
+        user_id=str(test_user.id),
+        scope="group",
+        grant_id=str(grant.id),
+        site_id=None,
+        brand_id=None,
+        group_id=str(test_group.id),
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def test_get_group_by_ancestor_brand_scope_returns_200(client, db, test_group, test_brand_grant, test_user):
+    """A Brand-scoped management caller can read their ancestor Group's profile."""
+    token = create_mgmt_access_token(
+        user_id=str(test_user.id),
+        scope="brand",
+        grant_id=str(test_brand_grant.id),
+        site_id=None,
+        brand_id=str(test_brand_grant.brand_id),
+        group_id=None,
+    )
+    response = await client.get(
+        f"/groups/{test_group.id}", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+    assert response.json()["id"] == str(test_group.id)
+
+
+async def test_update_group_by_ancestor_brand_scope_returns_404(client, test_group, test_brand_grant, test_user):
+    """A Brand-scoped management caller cannot edit their ancestor Group's profile (write is exact-scope only)."""
+    token = create_mgmt_access_token(
+        user_id=str(test_user.id),
+        scope="brand",
+        grant_id=str(test_brand_grant.id),
+        site_id=None,
+        brand_id=str(test_brand_grant.brand_id),
+        group_id=None,
+    )
+    response = await client.patch(
+        f"/groups/{test_group.id}",
+        json={"name": "Should not apply"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 404
+
+
+async def test_get_group_unrelated_scope_returns_404(client, mgmt_auth_headers, test_group, db):
+    """A management caller cannot read a Group outside their own ancestor chain."""
+    other_group = Group(
+        id=uuid.uuid4(), name="Other Group", is_active=True, timezone="Australia/Sydney", currency="AUD", country="AU"
+    )
+    db.add(other_group)
+    await db.commit()
+
+    response = await client.get(f"/groups/{other_group.id}", headers=mgmt_auth_headers)
+    assert response.status_code == 404
+
+
+async def test_update_group_by_group_scope_returns_200(client, db, test_group, test_user, test_manager_profile):
+    """A Group-scoped management caller can edit their own Group's profile."""
+    headers = await _group_scope_mgmt_headers(db, test_user, test_group, test_manager_profile)
+
+    response = await client.patch(
+        f"/groups/{test_group.id}", json={"name": "Updated By Management"}, headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["name"] == "Updated By Management"
+
+
+async def test_update_group_by_group_scope_writes_audit_log_with_mgmt_actor(
+    client, db, test_group, test_user, test_manager_profile
+):
+    """PATCH /groups/{id} by a management caller attributes the audit row to that user."""
+    headers = await _group_scope_mgmt_headers(db, test_user, test_group, test_manager_profile)
+
+    await client.patch(f"/groups/{test_group.id}", json={"name": "Mgmt Audit Name"}, headers=headers)
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_group.id),
+            AuditLog.action == GROUP_UPDATED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.actor_id == test_user.id
+    assert row.after_state["name"] == "Mgmt Audit Name"

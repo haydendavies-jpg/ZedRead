@@ -21,6 +21,7 @@ from app.models.site import Site
 from app.models.user import User
 from app.services.audit_service import log_action
 from app.services.email_template_service import get_template_by_key
+from app.utils.dependencies import ManagementAccess, _actor_from_mgmt
 from app.utils.email import send_billing_info_request_email
 
 EntityLevel = Literal["site", "brand", "group"]
@@ -134,7 +135,7 @@ async def request_billing_info(
     db: AsyncSession,
     entity: Site | Brand | Group,
     entity_type: EntityLevel,
-    actor: User,
+    actor: User | ManagementAccess,
 ) -> ResolvedValue:
     """
     Resolve the effective billing email for a Site/Brand/Group, send the
@@ -145,7 +146,7 @@ async def request_billing_info(
         entity: The Site, Brand, or Group to request billing info for.
         entity_type: "site", "brand", or "group" — used for the audit row's
             entity_type and the email template's $entity_type placeholder.
-        actor: The authenticated portal admin performing the action.
+        actor: The authenticated User or management-portal caller.
 
     Returns:
         ResolvedValue: The billing email sent to and which hierarchy level it came from.
@@ -176,14 +177,19 @@ async def request_billing_info(
         body_template=template.body,
     )
 
+    # Impersonation must attribute the audit row to the admin, not the entity's
+    # master user — _actor_from_mgmt resolves that; a portal admin User has no such wrinkle.
+    actor_kwargs = (
+        {"actor_id": actor.id, "actor_email": actor.email, "actor_name": actor.name}
+        if isinstance(actor, User)
+        else _actor_from_mgmt(actor)
+    )
     await log_action(
         db=db,
         action=BILLING_INFO_REQUESTED,
         entity_type=entity_type,
         entity_id=str(entity.id),
-        actor_id=actor.id,
-        actor_email=actor.email,
-        actor_name=actor.name,
+        **actor_kwargs,
         after_state={"sent_to": resolved.value, "source_level": resolved.source_level},
     )
     await db.commit()

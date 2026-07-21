@@ -302,7 +302,7 @@ async def test_create_user_superadmin_role_requires_email(client, portal_auth_he
 
 
 async def test_create_user_superadmin_role_short_password_returns_422(client, portal_auth_headers):
-    """A superadmin_role row's password must be at least 12 characters, not just 8."""
+    """A superadmin_role row's password must be at least 6 characters."""
     response = await client.post(
         "/users",
         json={
@@ -310,7 +310,7 @@ async def test_create_user_superadmin_role_short_password_returns_422(client, po
             "first_name": "Short",
             "last_name": "Pass",
             "email": "shortpass-admin@userstest.example",
-            "password": "short8ch",
+            "password": "abc",
             "superadmin_role": "admin",
         },
         headers=portal_auth_headers,

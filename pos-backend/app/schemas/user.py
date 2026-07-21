@@ -103,7 +103,7 @@ class UserCreate(BaseModel):
 
     email/password are optional at creation (ROLE_MODEL.md §2 — only
     required once the user is granted backend access), except when
-    superadmin_role is set, where email (and a 12+ character password,
+    superadmin_role is set, where email (and a 6+ character password,
     unless linking to an existing identity's password) is required —
     admin-portal access has no other login path.
 
@@ -148,9 +148,9 @@ class UserCreate(BaseModel):
 
     @model_validator(mode="after")
     def _superadmin_password_length(self) -> "UserCreate":
-        """A fresh password for a superadmin_role row must meet the stricter admin-portal bar."""
-        if self.superadmin_role is not None and self.password is not None and len(self.password) < 12:
-            raise ValueError("password must be at least 12 characters for a superadmin_role user")
+        """A fresh password for a superadmin_role row must meet the admin-portal bar."""
+        if self.superadmin_role is not None and self.password is not None and len(self.password) < 6:
+            raise ValueError("password must be at least 6 characters for a superadmin_role user")
         return self
 
 
@@ -173,9 +173,9 @@ class UserUpdate(BaseModel):
     """
     Request body for editing a User — all fields optional.
 
-    password is write-only (never echoed back on UserOut) and, for now, may
-    only be supplied by a single portal admin — see _PASSWORD_SET_ALLOWED_EMAIL
-    in routes/users.py.
+    password is write-only (never echoed back on UserOut). Any actor with
+    superadmin_role set may set another user's password (require_super_admin
+    on the route).
     """
 
     first_name: str | None = None
