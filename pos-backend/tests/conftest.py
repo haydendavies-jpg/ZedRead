@@ -19,6 +19,15 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+# Cheap, insecure argon2 params for the test run only — must be set before
+# app.utils.security is imported (its module-level PasswordHasher() reads
+# these at import time). Hundreds of tests hash a password via fixtures like
+# test_user/test_superadmin; the production cost (~50-100ms/hash) dominated
+# CI wall-clock time for no security benefit in a throwaway test DB.
+os.environ.setdefault("ARGON2_TIME_COST", "1")
+os.environ.setdefault("ARGON2_MEMORY_COST", "8")
+os.environ.setdefault("ARGON2_PARALLELISM", "1")
+
 from app.database import Base, get_db
 from app.main import app
 
@@ -209,6 +218,36 @@ _ALL_TABLES = [
 # ── Per-test session ──────────────────────────────────────────────────────────
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _schema_ready() -> None:
+    """
+    Create the test schema (tables + reporting views) once for the whole run.
+
+    The function-scoped `db` fixture used to redo this — a metadata-reflection
+    `create_all` plus 8 view-DDL statements — on every one of the ~800+ tests;
+    CI profiling showed that, together with the old per-test TRUNCATE CASCADE
+    teardown, it was the dominant cost behind a ~15 minute pytest step. Both
+    are schema-shaped, not data-shaped, so they only need to happen once.
+
+    Runs its own throwaway event loop (via asyncio.run) rather than being an
+    async fixture, so the setup engine's connections are always opened and
+    closed within one loop — never touching a test's own function-scoped loop.
+    """
+    import asyncio
+
+    async def _create_schema() -> None:
+        """Create all ORM tables and reporting views against the test DB."""
+        engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            # Views are not detected by create_all — create them explicitly
+            for view_sql in _REPORTING_VIEWS:
+                await conn.execute(text(view_sql.strip()))
+        await engine.dispose()
+
+    asyncio.run(_create_schema())
+
+
 @pytest.fixture(autouse=True)
 def _reset_rate_limiter():
     """Clear the in-process auth rate limiter before/after each test.
@@ -233,6 +272,20 @@ async def db() -> AsyncGenerator[AsyncSession, None]:
     "Future attached to a different loop" error that occurs when a session-scoped
     engine is torn down in a different loop from the one that opened connections.
 
+    Schema/views are not (re)created here — the session-scoped `_schema_ready`
+    fixture builds them once for the whole run (an earlier version of this
+    fixture also swapped the TRUNCATE teardown below for a rolled-back
+    SAVEPOINT, on paper cheaper — full-suite verification caught two real
+    breaks that ruled it out: migration-seeded rows, such as the
+    `billing_info_request` email template from 0029, are committed outside
+    any test's transaction so a rollback never clears them, causing a unique-
+    constraint collision in every test after the first that inserts one; and
+    `db.invalidate()` — used by tests that need to bypass the session's
+    identity-map cache and re-read what the app just committed — discards the
+    connection the session was bound to, which this pattern has no pool to
+    replace it from. TRUNCATE has neither problem, so it stays, just batched
+    into one round trip instead of the ~30 that ran here per test before).
+
     Yields an active AsyncSession for the test to use.
     After the test, all rows in known tables are truncated so the next test
     starts with an empty schema.
@@ -242,13 +295,6 @@ async def db() -> AsyncGenerator[AsyncSession, None]:
     """
     # NullPool — each connection is created and closed inline; no cross-loop sharing
     engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
-
-    # Ensure schema exists (idempotent — skips tables that already exist)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        # Views are not detected by create_all — create them explicitly
-        for view_sql in _REPORTING_VIEWS:
-            await conn.execute(text(view_sql.strip()))
 
     session_factory = async_sessionmaker(
         bind=engine,
@@ -261,10 +307,9 @@ async def db() -> AsyncGenerator[AsyncSession, None]:
     async with session_factory() as session:
         yield session
 
-    # Truncate all tables to isolate the next test
+    # Truncate all tables in one round trip to isolate the next test
     async with engine.begin() as conn:
-        for table in _ALL_TABLES:
-            await conn.execute(text(f"TRUNCATE TABLE {table} CASCADE"))
+        await conn.execute(text(f"TRUNCATE TABLE {', '.join(_ALL_TABLES)} CASCADE"))
 
     await engine.dispose()
 

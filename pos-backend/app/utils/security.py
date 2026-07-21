@@ -12,8 +12,17 @@ from jose import JWTError, jwt
 
 log = structlog.get_logger(__name__)
 
-# Argon2 hasher — default parameters are safe for 2024+ hardware
-_hasher = PasswordHasher()
+# Argon2 hasher — default parameters are safe for 2024+ hardware.
+# Cost params are env-overridable so the test suite can run with a cheap,
+# insecure hasher (hundreds of hash_password() calls across fixtures/tests
+# would otherwise each pay the ~50-100ms production cost). Defaults below
+# match argon2-cffi's own PasswordHasher() defaults, so production/dev
+# behaviour is unchanged when the env vars are unset.
+_hasher = PasswordHasher(
+    time_cost=int(os.getenv("ARGON2_TIME_COST", "3")),
+    memory_cost=int(os.getenv("ARGON2_MEMORY_COST", "65536")),
+    parallelism=int(os.getenv("ARGON2_PARALLELISM", "4")),
+)
 
 # Built-in placeholder — safe for local dev, MUST be overridden in any real
 # deployment. validate_secret_key() refuses to start the server if this value
