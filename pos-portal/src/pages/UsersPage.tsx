@@ -537,7 +537,7 @@ export function UsersPage() {
                 <th>Name</th>
                 <th>Email</th>
                 <th>Sites</th>
-                <th>Backend</th>
+                <th>Management Portal</th>
                 <th>Admin Portal</th>
                 <th>Status</th>
                 <th>Actions</th>
