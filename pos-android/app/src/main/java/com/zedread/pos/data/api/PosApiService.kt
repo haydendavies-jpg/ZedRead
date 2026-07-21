@@ -1,5 +1,6 @@
 package com.zedread.pos.data.api
 
+import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
@@ -37,11 +38,22 @@ interface PosApiService {
 
     // ── Register (till) sessions ───────────────────────────────────────────
 
-    /** GET /register-sessions/current — the open session for this terminal, or null. */
+    /**
+     * GET /register-sessions/current — the open session for this terminal, or null.
+     *
+     * Wrapped in [Response] rather than declared as a nullable suspend return type:
+     * Retrofit's suspend/coroutine adapter picks its `await()` (non-null) vs
+     * `awaitNullable()` path from the compiled Kotlin nullability metadata, which is
+     * unreliable for interface methods — this endpoint's literal `null` 200 body (the
+     * till-is-closed case) was being routed through `await()` and crashing with
+     * "declared as non-null" on every closed till. Unwrapping `body()` ourselves in
+     * [com.zedread.pos.data.repository.RegisterSessionRepository] sidesteps that
+     * detection entirely.
+     */
     @GET("register-sessions/current")
     suspend fun getCurrentRegisterSession(
         @Header("Authorization") bearer: String,
-    ): RegisterSessionDto?
+    ): Response<RegisterSessionDto?>
 
     /** POST /register-sessions/open — start-of-day cash-in. */
     @POST("register-sessions/open")
