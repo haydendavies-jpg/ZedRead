@@ -54,19 +54,75 @@ _PIN_MAX_ATTEMPTS = int(os.getenv("PIN_RATE_LIMIT", "10"))
 _PIN_WINDOW_SECONDS = int(os.getenv("PIN_RATE_WINDOW_SECONDS", "300"))
 
 
-async def _get_user_by_email(db: AsyncSession, email: str) -> User | None:
+async def _get_users_by_email(db: AsyncSession, email: str) -> list[User]:
     """
-    Fetch a POS user by email address, case-insensitively.
+    Fetch every users row matching the email, case-insensitively.
+
+    users.email is intentionally non-unique (migration 0031) — the same
+    email can belong to more than one row (Master User on multiple brands,
+    or a separate pure-SuperAdmin row created with the same email as a
+    POS-capable row per migration 0050's hybrid-account design). A plain
+    `.scalar_one_or_none()` lookup crashes with MultipleResultsFound the
+    moment two rows share an email — mirrors
+    management_auth_service._load_users_by_email's handling of the same
+    non-uniqueness.
 
     Args:
         db: Active database session.
         email: The email address to look up.
 
     Returns:
-        User | None: The matching user, or None if not found.
+        list[User]: Every matching row, usually zero or one.
     """
     result = await db.execute(select(User).where(func.lower(User.email) == normalize_email(email)))
-    return result.scalar_one_or_none()
+    return list(result.scalars().all())
+
+
+async def _has_active_grant(db: AsyncSession, user_id: uuid.UUID) -> bool:
+    """
+    Check whether a user holds at least one active access grant anywhere.
+
+    Args:
+        db: Active database session.
+        user_id: The user to check.
+
+    Returns:
+        bool: True if at least one active UserAccessGrant row exists.
+    """
+    result = await db.execute(
+        select(UserAccessGrant.id)
+        .where(UserAccessGrant.user_id == user_id, UserAccessGrant.is_active == True)  # noqa: E712
+        .limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def _resolve_single_valid_user(db: AsyncSession, valid: list[User]) -> User | None:
+    """
+    Narrow a list of credential-valid users sharing an email down to one.
+
+    The overwhelmingly common case is a single match, returned directly —
+    this preserves every existing single-row behavior downstream (e.g. a
+    grant-less match still proceeds to a 403 there, not a 401 here). Only
+    when credentials validate for more than one row (a genuine email
+    collision) does this break the tie in favor of a row holding at least
+    one active access grant — a pure SuperAdmin-only row can never
+    complete a POS login, so it loses to one that can.
+
+    Args:
+        db: Active database session.
+        valid: Users whose credentials already validated.
+
+    Returns:
+        User | None: The single resolved user, or None if still zero or
+        more than one after the grant-based tiebreak.
+    """
+    if len(valid) == 1:
+        return valid[0]
+    if len(valid) == 0:
+        return None
+    with_grants = [c for c in valid if await _has_active_grant(db, c.id)]
+    return with_grants[0] if len(with_grants) == 1 else None
 
 
 async def _get_active_grant_with_profile(
@@ -174,10 +230,11 @@ async def _get_active_license(db: AsyncSession, site_id: uuid.UUID) -> License |
 
 async def _authenticate_or_401(db: AsyncSession, email: str, password: str) -> User:
     """
-    Verify email+password and return the user, raising 401 on any failure.
+    Verify email+password against every row sharing that email and return
+    the one matching user, raising 401 on any failure.
 
-    Checks all conditions before deciding (rather than short-circuiting) to
-    avoid timing attacks that could reveal whether an email exists.
+    Checks every candidate rather than short-circuiting on the first match,
+    to avoid a timing attack that could reveal whether an email exists.
 
     Args:
         db: Active database session.
@@ -185,22 +242,27 @@ async def _authenticate_or_401(db: AsyncSession, email: str, password: str) -> U
         password: Plaintext password to verify.
 
     Returns:
-        User: The authenticated, active user.
+        User: The single authenticated, active user.
 
     Raises:
-        HTTPException: 401 with a generic message if credentials are invalid
-            or the user is inactive. Writes a POS_LOGIN_FAILED audit row first.
+        HTTPException: 401 with a generic message if credentials are
+            invalid, the user is inactive, or more than one candidate's
+            credentials validate and the grant-based tiebreak in
+            _resolve_single_valid_user still can't narrow it to one —
+            failing closed rather than guessing which one to sign in as.
+            Writes a POS_LOGIN_FAILED audit row first.
     """
-    user = await _get_user_by_email(db, email)
-    credentials_valid = (
-        user is not None
-        and await verify_password_async(password, user.password_hash)
-        and user.is_active
-    )
-    if credentials_valid:
-        return user  # type: ignore[return-value]
+    candidates = await _get_users_by_email(db, email)
+    valid = [
+        c for c in candidates
+        if c.is_active and await verify_password_async(password, c.password_hash)
+    ]
+    user = await _resolve_single_valid_user(db, valid)
+    if user is not None:
+        return user
 
-    entity_id = str(user.id) if user else email
+    entity_id = str(candidates[0].id) if len(candidates) == 1 else email
+    reason = "ambiguous_credentials" if len(valid) > 1 else "invalid_credentials"
     await log_action(
         db=db,
         action=POS_LOGIN_FAILED,
@@ -210,10 +272,10 @@ async def _authenticate_or_401(db: AsyncSession, email: str, password: str) -> U
         actor_id=None,
         actor_email=email,
         actor_name=None,
-        after_state={"reason": "invalid_credentials"},
+        after_state={"reason": reason},
     )
     await db.commit()
-    log.warning("pos_auth.login.failed", email=email)
+    log.warning("pos_auth.login.failed", email=email, reason=reason)
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid credentials",
@@ -598,23 +660,23 @@ async def verify_pin(
         window_seconds=_PIN_WINDOW_SECONDS,
     )
 
-    user = await _get_user_by_email(db, payload.email)
+    # payload.site_id disambiguates directly when more than one row shares
+    # this email (see _get_users_by_email) — first find every candidate
+    # whose own PIN matches, then narrow to the one that also holds an
+    # active grant for this exact site, instead of resolving "the" user by
+    # email alone.
+    candidates = await _get_users_by_email(db, payload.email)
+    pin_matches: list[tuple[User, UserPIN]] = []
+    for candidate in candidates:
+        if not candidate.is_active:
+            continue
+        pin_result = await db.execute(select(UserPIN).where(UserPIN.user_id == candidate.id))
+        candidate_pin = pin_result.scalar_one_or_none()
+        if candidate_pin is not None and await verify_password_async(payload.pin, candidate_pin.pin_hash):
+            pin_matches.append((candidate, candidate_pin))
 
-    # Load the PIN record — no PIN set means verification cannot succeed
-    pin_record: UserPIN | None = None
-    if user is not None:
-        pin_result = await db.execute(select(UserPIN).where(UserPIN.user_id == user.id))
-        pin_record = pin_result.scalar_one_or_none()
-
-    pin_valid = (
-        user is not None
-        and user.is_active
-        and pin_record is not None
-        and await verify_password_async(payload.pin, pin_record.pin_hash)
-    )
-
-    if not pin_valid:
-        entity_id = str(user.id) if user else payload.email
+    if not pin_matches:
+        entity_id = str(candidates[0].id) if len(candidates) == 1 else payload.email
         await log_action(
             db=db,
             action=POS_LOGIN_FAILED,
@@ -634,13 +696,23 @@ async def verify_pin(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Verify active grant for this site
-    grant_and_profile = await _get_active_grant_with_profile(db, user.id, payload.site_id)
-    if grant_and_profile is None:
+    # Narrow the PIN-valid candidates to the one that can access this site.
+    # Zero means none of them can; more than one means the same PIN was
+    # independently set on multiple accounts that can both access it — an
+    # unresolved multi-identity collision, so this fails rather than guesses.
+    site_matches = []
+    for candidate, candidate_pin in pin_matches:
+        candidate_grant = await _get_active_grant_with_profile(db, candidate.id, payload.site_id)
+        if candidate_grant is not None:
+            site_matches.append((candidate, candidate_pin, candidate_grant))
+
+    if len(site_matches) != 1:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No active access grant for this site",
         )
+
+    user, pin_record, grant_and_profile = site_matches[0]
 
     _grant, access_profile = grant_and_profile
 

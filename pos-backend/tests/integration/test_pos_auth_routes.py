@@ -28,6 +28,7 @@ from app.models.audit_log import AuditLog
 from app.models.license import License
 from app.models.pos_device import PosDevice
 from app.models.site import Site
+from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
 from app.models.user_pin import UserPIN
 from app.models.user_pos_session import UserPOSSession
@@ -699,6 +700,38 @@ async def test_pin_verify_writes_audit_log(
     assert row.actor_id == test_user.id
 
 
+async def test_pin_verify_duplicate_email_superadmin_row_resolves_pos_user(
+    client, db, pos_auth_headers, test_user, test_site, test_access_grant
+):
+    """A pure SuperAdmin-only row sharing test_user's email doesn't break PIN verify."""
+    superadmin_row = User(
+        id=uuid.uuid4(),
+        group_id=None,
+        brand_id=None,
+        email=test_user.email,
+        password_hash=hash_password("DifferentPassword456!"),
+        name="Same Email SuperAdmin",
+        superadmin_role="admin",
+        is_active=True,
+    )
+    db.add(superadmin_row)
+    await db.commit()
+
+    await client.post("/auth/pos/pin/set", json={"pin": "1234"}, headers=pos_auth_headers)
+
+    response = await client.post(
+        "/auth/pos/pin/verify",
+        json={
+            "email": test_user.email,
+            "pin": "1234",
+            "site_id": str(test_site.id),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["user_id"] == str(test_user.id)
+
+
 # ── Login missing fields ──────────────────────────────────────────────────────
 
 
@@ -730,3 +763,77 @@ async def test_pos_login_email_case_insensitive(
 
     assert response.status_code == 200
     assert response.json()["user_id"] == str(test_user.id)
+
+
+# ── Duplicate email across a pure-SuperAdmin row and a POS-capable row ─────────
+#
+# users.email is intentionally non-unique (migration 0031/0050) — a pure
+# SuperAdmin-only row (no access grants) can share an email with a separate
+# POS-capable row. A plain single-row lookup crashes with
+# sqlalchemy.exc.MultipleResultsFound the moment both exist; these assert
+# login instead resolves the POS-capable row without ever surfacing that.
+
+
+async def test_pos_login_duplicate_email_superadmin_row_resolves_pos_user(
+    client, db, test_user, test_site, test_access_grant, test_device
+):
+    """A pure SuperAdmin-only row sharing test_user's email doesn't break POS login."""
+    superadmin_row = User(
+        id=uuid.uuid4(),
+        group_id=None,
+        brand_id=None,
+        email=test_user.email,
+        password_hash=hash_password("DifferentPassword456!"),
+        name="Same Email SuperAdmin",
+        superadmin_role="admin",
+        is_active=True,
+    )
+    db.add(superadmin_row)
+    await db.commit()
+
+    response = await client.post(
+        "/auth/pos/login",
+        json={
+            "email": test_user.email,
+            "password": "POSPassword123!",
+            "device_token": test_device.device_token,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["user_id"] == str(test_user.id)
+
+
+async def test_pos_login_duplicate_email_resolves_to_matching_identity_not_pos_user(
+    client, db, test_user, test_device
+):
+    """
+    The superadmin row's own password resolves to *that* identity, not the POS
+    user's — no cross-identity credential leakage from sharing an email.
+
+    It then correctly gets 403 (the superadmin identity itself has no site
+    grant), proving the match landed on the superadmin row and not test_user.
+    """
+    superadmin_row = User(
+        id=uuid.uuid4(),
+        group_id=None,
+        brand_id=None,
+        email=test_user.email,
+        password_hash=hash_password("DifferentPassword456!"),
+        name="Same Email SuperAdmin",
+        superadmin_role="admin",
+        is_active=True,
+    )
+    db.add(superadmin_row)
+    await db.commit()
+
+    response = await client.post(
+        "/auth/pos/login",
+        json={
+            "email": test_user.email,
+            "password": "DifferentPassword456!",
+            "device_token": test_device.device_token,
+        },
+    )
+
+    assert response.status_code == 403
