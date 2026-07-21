@@ -1,5 +1,6 @@
 package com.zedread.pos.data.repository
 
+import android.os.Build
 import com.zedread.pos.data.api.LoginRequest
 import com.zedread.pos.data.api.PinSetRequest
 import com.zedread.pos.data.api.PinVerifyRequest
@@ -13,7 +14,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Handles all authentication operations: device pairing, login, PIN, logout. */
+/** Handles all authentication operations: self-service device claiming, login, PIN, logout. */
 @Singleton
 class AuthRepository @Inject constructor(
     private val api: PosApiService,
@@ -28,32 +29,33 @@ class AuthRepository @Inject constructor(
         data class NeedsSiteSelection(val sites: List<SiteOptionDto>) : LoginOutcome()
     }
 
-    // ── Device pairing ──────────────────────────────────────────────────────
-
-    /** True once this terminal has been paired with a device_token. */
-    suspend fun hasPairedDevice(): Boolean = tokenStore.deviceToken.firstOrNull() != null
-
-    /** Persist the device_token issued by a portal admin for this terminal. */
-    suspend fun pairDevice(deviceToken: String) = tokenStore.pairDevice(deviceToken)
-
     // ── Login ────────────────────────────────────────────────────────────────
 
     /** True once an operator session is persisted (survives app relaunch). */
     suspend fun hasActiveSession(): Boolean = tokenStore.accessToken.firstOrNull() != null
 
-    /** Step 1: authenticate with email/password against this terminal's paired device. */
+    /**
+     * Step 1: authenticate with email/password.
+     *
+     * No device setup required — this terminal sends its own previously
+     * claimed device_token (null on first-ever login) and a device_name
+     * fallback, and the backend claims or re-pairs a device seat inline.
+     */
     suspend fun login(email: String, password: String): LoginOutcome {
-        val deviceToken = requireDeviceToken()
-        val response = api.login(LoginRequest(email, password, deviceToken))
+        val deviceToken = tokenStore.deviceToken.firstOrNull()
+        val response = api.login(LoginRequest(email, password, deviceName(), deviceToken))
         return handleLoginResponse(response, email)
     }
 
     /** Step 2 (multi-site only): finalize login by choosing one of the offered sites. */
     suspend fun selectSite(email: String, password: String, siteId: String): LoginOutcome {
-        val deviceToken = requireDeviceToken()
-        val response = api.selectSite(SiteTokenRequest(email, password, deviceToken, siteId))
+        val deviceToken = tokenStore.deviceToken.firstOrNull()
+        val response = api.selectSite(SiteTokenRequest(email, password, deviceName(), deviceToken, siteId))
         return handleLoginResponse(response, email)
     }
+
+    /** Human-readable fallback name for a brand-new device claim — the model name is good enough. */
+    private fun deviceName(): String = Build.MODEL ?: "Android Terminal"
 
     private suspend fun handleLoginResponse(
         response: PosLoginResponseDto,
@@ -64,6 +66,7 @@ class AuthRepository @Inject constructor(
 
         val accessToken = response.accessToken
             ?: error("Login response carried neither a token nor available_sites")
+        response.deviceToken?.let { tokenStore.saveDeviceToken(it) }
         tokenStore.saveSession(
             accessToken = accessToken,
             siteId = response.siteId ?: error("Login response missing site_id"),
@@ -121,9 +124,6 @@ class AuthRepository @Inject constructor(
         }
         tokenStore.clearSession()
     }
-
-    private suspend fun requireDeviceToken(): String =
-        tokenStore.deviceToken.firstOrNull() ?: error("This terminal is not paired — set up its device token first")
 
     private suspend fun requireAccessToken(): String =
         tokenStore.accessToken.firstOrNull() ?: error("No access token — user is not authenticated")

@@ -5,18 +5,22 @@ import com.squareup.moshi.JsonClass
 
 // ── Auth ──────────────────────────────────────────────────────────────────
 //
-// Mirrors app/schemas/pos_auth.py exactly (backend PR #92's two-step,
-// device-paired login — no site_id on the first call, no refresh-token
-// endpoint). device_token identifies this physical terminal, provisioned
-// once by a portal admin via POST /pos-devices and entered locally through
-// DeviceSetupScreen — it is unrelated to the operator's own credentials.
+// Mirrors app/schemas/pos_auth.py exactly (self-service license-seat device
+// claiming — no site_id on the first call, no refresh-token endpoint).
+// device_token identifies this physical terminal; unlike the old
+// admin-pre-registration flow, it's never entered manually — the terminal
+// sends whatever it has locally stored (null on first-ever login) and the
+// backend claims or re-pairs a device automatically, returning the
+// resulting token in PosLoginResponseDto.deviceToken for the client to
+// persist. device_name is only used if a brand-new device is claimed.
 
 /** POST /auth/pos/login request body. */
 @JsonClass(generateAdapter = true)
 data class LoginRequest(
     val email: String,
     val password: String,
-    @Json(name = "device_token") val deviceToken: String,
+    @Json(name = "device_name") val deviceName: String,
+    @Json(name = "device_token") val deviceToken: String?,
 )
 
 /** POST /auth/pos/site-token request body — finalizes a multi-site login. */
@@ -24,7 +28,8 @@ data class LoginRequest(
 data class SiteTokenRequest(
     val email: String,
     val password: String,
-    @Json(name = "device_token") val deviceToken: String,
+    @Json(name = "device_name") val deviceName: String,
+    @Json(name = "device_token") val deviceToken: String?,
     @Json(name = "site_id") val siteId: String,
 )
 
@@ -51,6 +56,7 @@ data class PosLoginResponseDto(
     @Json(name = "access_profile_name") val accessProfileName: String?,
     @Json(name = "is_pin_reset_required") val isPinResetRequired: Boolean?,
     @Json(name = "available_sites") val availableSites: List<SiteOptionDto>?,
+    @Json(name = "device_token") val deviceToken: String?,
 )
 
 /** POST /auth/pos/pin/set request — the caller's own new PIN (4-6 digits). */
