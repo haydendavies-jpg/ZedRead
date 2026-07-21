@@ -345,6 +345,15 @@ async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
 
 # ── Entity fixtures ───────────────────────────────────────────────────────────
+#
+# These use db.flush() rather than db.commit(): the same `db` fixture instance
+# is bound to route handlers via the `client` fixture's dependency override, so
+# a flush already makes fixture rows visible to both the test body and any HTTP
+# call it makes — a commit isn't needed for visibility, only for durability,
+# which a plain `db.flush()` skips the round-trip/fsync cost of. Whatever a test
+# ends up committing (its own writes, or a route handler's) still commits this
+# whole transaction as normal; the `db` fixture's TRUNCATE teardown cleans up
+# either way, so this is purely a speed change, not a correctness one.
 
 
 @pytest_asyncio.fixture()
@@ -364,7 +373,7 @@ async def test_group(db: AsyncSession) -> Group:
         country="AU",
     )
     db.add(group)
-    await db.commit()
+    await db.flush()
     await db.refresh(group)
     return group
 
@@ -389,14 +398,14 @@ async def test_brand(db: AsyncSession, test_group: Group) -> Brand:
         country="AU",
     )
     db.add(brand)
-    await db.commit()
+    await db.flush()
     await db.refresh(brand)
 
     # Mirrors create_brand()'s real-world invariant: every brand has its
     # system access profiles seeded, including Master User (needed by
     # site_service.create_site() when tests POST /sites/).
     await seed_system_profiles(db, brand.id)
-    await db.commit()
+    await db.flush()
     return brand
 
 
@@ -421,7 +430,7 @@ async def test_site(db: AsyncSession, test_brand: Brand) -> Site:
         address_postcode="2000",
     )
     db.add(site)
-    await db.commit()
+    await db.flush()
     await db.refresh(site)
     return site
 
@@ -448,7 +457,7 @@ async def test_superadmin(db: AsyncSession) -> User:
         is_active=True,
     )
     db.add(user)
-    await db.commit()
+    await db.flush()
     await db.refresh(user)
     return user
 
@@ -486,7 +495,7 @@ async def test_license(db: AsyncSession, test_site: Site) -> License:
         expires_at=datetime.now(tz=timezone.utc) + timedelta(days=365),
     )
     db.add(lic)
-    await db.commit()
+    await db.flush()
     await db.refresh(lic)
     return lic
 
@@ -508,7 +517,7 @@ async def test_device(db: AsyncSession, test_site: Site, test_license: License) 
         is_active=True,
     )
     db.add(device)
-    await db.commit()
+    await db.flush()
     await db.refresh(device)
     return device
 
@@ -532,7 +541,7 @@ async def test_access_profile(db: AsyncSession, test_brand: Brand) -> AccessProf
         is_active=True,
     )
     db.add(profile)
-    await db.commit()
+    await db.flush()
     await db.refresh(profile)
     return profile
 
@@ -557,7 +566,7 @@ async def test_user(db: AsyncSession, test_brand: Brand) -> User:
         is_active=True,
     )
     db.add(user)
-    await db.commit()
+    await db.flush()
     await db.refresh(user)
     return user
 
@@ -585,7 +594,7 @@ async def test_access_grant(
         is_active=True,
     )
     db.add(grant)
-    await db.commit()
+    await db.flush()
     await db.refresh(grant)
     return grant
 
@@ -638,7 +647,7 @@ async def pos_auth_headers(
     )
     db.add(register_session)
 
-    await db.commit()
+    await db.flush()
     token = create_pos_access_token(
         user_id=str(test_user.id),
         site_id=str(test_site.id),
@@ -670,7 +679,7 @@ async def test_manager_profile(db: AsyncSession, test_brand: Brand) -> AccessPro
         can_access_portal=True,
     )
     db.add(profile)
-    await db.commit()
+    await db.flush()
     await db.refresh(profile)
     return profile
 
@@ -704,7 +713,7 @@ async def test_portal_grant(
         backend_role="admin",  # backend_role gates portal login
     )
     db.add(grant)
-    await db.commit()
+    await db.flush()
     await db.refresh(grant)
     return grant
 
@@ -737,7 +746,7 @@ async def test_brand_grant(
         backend_role="admin",  # backend_role gates portal login
     )
     db.add(grant)
-    await db.commit()
+    await db.flush()
     await db.refresh(grant)
     return grant
 
@@ -785,7 +794,7 @@ async def test_tax_category(db: AsyncSession, test_brand: Brand) -> TaxCategory:
         is_active=True,
     )
     db.add(tax_cat)
-    await db.commit()
+    await db.flush()
     await db.refresh(tax_cat)
     return tax_cat
 
@@ -817,7 +826,7 @@ async def test_reporting_group(db: AsyncSession, test_brand: Brand) -> Reporting
             is_system=True,
         )
         db.add(group)
-        await db.commit()
+        await db.flush()
         await db.refresh(group)
     return group
 
@@ -870,7 +879,7 @@ async def test_product(
         is_active=True,
     )
     db.add(product)
-    await db.commit()
+    await db.flush()
     await db.refresh(product)
     return product
 
@@ -897,6 +906,6 @@ async def test_billing_info_template(db: AsyncSession) -> EmailTemplate:
         is_active=True,
     )
     db.add(template)
-    await db.commit()
+    await db.flush()
     await db.refresh(template)
     return template
