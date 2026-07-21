@@ -88,6 +88,36 @@ def upgrade() -> None:
         ["id"],
     )
 
+    # user_access_grants.granted_by_id and user_invites.invited_by_id also FK
+    # to superadmins in the deployed schema — undocumented drift from the
+    # models (which have always declared ForeignKey("users.id", ...)) and
+    # from migration 0005 (which created them against pos_users). Wherever
+    # they actually came from, DROP TABLE superadmins below fails without
+    # re-pointing these too; same id-preservation as groups.created_by_id
+    # above means existing values still resolve once re-pointed.
+    op.execute(
+        "ALTER TABLE user_access_grants DROP CONSTRAINT IF EXISTS user_access_grants_granted_by_id_fkey"
+    )
+    op.create_foreign_key(
+        "user_access_grants_granted_by_id_fkey",
+        "user_access_grants",
+        "users",
+        ["granted_by_id"],
+        ["id"],
+        ondelete="SET NULL",
+    )
+    op.execute(
+        "ALTER TABLE user_invites DROP CONSTRAINT IF EXISTS user_invites_invited_by_id_fkey"
+    )
+    op.create_foreign_key(
+        "user_invites_invited_by_id_fkey",
+        "user_invites",
+        "users",
+        ["invited_by_id"],
+        ["id"],
+        ondelete="SET NULL",
+    )
+
     op.drop_table("superadmins")
     op.execute("DROP SEQUENCE IF EXISTS superadmins_ref_seq")
 
