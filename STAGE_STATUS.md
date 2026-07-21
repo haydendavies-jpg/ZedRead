@@ -1276,6 +1276,10 @@ a live database; a future session with Postgres available should run them.
 
 ## Phase 10 — Android App
 
+**Full narrative, architecture decisions, and per-slice detail live in `ANDROID_POS_BUILD_PLAN.md`** —
+this section is a condensed checklist kept in sync with it, not a duplicate of it. Read the build plan
+first when picking this phase back up.
+
 ### Stage 25 — Android Auth & Catalog 🚧
 
 **Deliverables:**
@@ -1284,25 +1288,33 @@ a live database; a future session with Postgres available should run them.
 - [x] Screen scaffolding exists for: `auth/`, `cart/`, `catalog/`, `payment/`, `switchuser/`
 - [x] `PosNavHost.kt` navigation graph
 - [x] Backend: Migration `0011` adds access grants table extensions for management access
-- [ ] POS login screen (email + password)
-- [ ] PIN entry screen
-- [ ] Site selector screen (for users with multi-site access)
-- [ ] Product grid screen (category tabs + product tiles)
-- [ ] Cart screen (line items, modifiers, quantity)
-- [ ] Retrofit API client wired to backend endpoints
-- [ ] Room local cache for catalog (offline-capable browsing)
-- [ ] Hilt DI modules for network, database, repositories
+- [x] POS login screen (email + password) — functionally wired, not yet styled to the design bundle
+- [x] PIN entry — folded into `SwitchUserScreen` (email + PIN) rather than a separate screen
+- [x] Site selector screen (for users with multi-site access)
+- [x] Self-service license-seat device claiming (migration `0051`, PR #110) — replaced the
+      admin-pre-registration + Device Setup screen flow this stage originally shipped with. A terminal
+      now claims (or re-pairs) a license seat automatically on login instead of requiring a portal
+      admin to issue a `device_token` first. `DeviceSetupScreen.kt`/`DeviceViewModel.kt` are deleted.
+      See `ANDROID_POS_BUILD_PLAN.md`'s "What the self-service license-seat auth rework shipped" for
+      full backend/portal/Android detail.
+- [x] Product grid screen (category tabs + product tiles) — functional, generic UI; exact-match to the
+      design bundle's Register screen is still pending
+- [x] Cart screen (line items, modifiers, quantity) — functional, generic UI, same caveat as above
+- [x] Retrofit API client wired to backend endpoints
+- [ ] Room local cache for catalog (offline-capable browsing) — Phase 2 of the build plan
+- [x] Hilt DI modules for network, database, repositories
 
 ### Stage 26 — Android Payments & Printing 🔜
 
 **Deliverables:**
-- [ ] Payment screen (cash / card / voucher / split)
+- [x] Payment screen (cash / card / split) — functional, generic UI; no Voucher tab yet, exact-match
+      styling still pending
 - [ ] Docket/receipt printing (`printing/` module scaffolded)
-- [ ] Switch user flow (PIN re-entry without full logout)
-- [ ] End-of-day summary screen
+- [x] Switch user flow (PIN re-entry without full logout)
+- [ ] End-of-day summary screen (cash-up) — start-of-day cash-in is done, cash-up is not
 - [ ] Invoice history screen
 - [ ] Error handling + offline sync reconciliation
-- [ ] APK build + signing configuration
+- [ ] APK build + signing configuration — CI produces an unsigned debug APK; release signing not set up
 
 ---
 
