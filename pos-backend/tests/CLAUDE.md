@@ -116,6 +116,32 @@ current list before writing tests — it grows with each stage):
 
 ---
 
+## Fixture performance — new entity fixtures use `db.flush()`, not `db.commit()`
+
+The suite is ~800+ tests deep and per-test fixture overhead used to dominate CI wall-clock time
+(a ~15 minute pytest step). Two changes fixed that — know them before touching `conftest.py`:
+
+- **Schema/reporting views are created once per test session**, not per test (`_schema_ready`,
+  session-scoped `autouse` fixture). Don't add schema-creating code to the `db` fixture itself.
+- **Entity fixtures (`test_group`, `test_brand`, etc.) call `db.flush()` where they used to call
+  `db.commit()`.** The same session is bound to route handlers via the `client` fixture's
+  dependency override, so a flush already makes fixture rows visible everywhere a test needs them
+  — a commit only buys durability, which nothing in fixture setup needs (whatever the test or the
+  route handler it drives ends up committing still commits the whole transaction as normal, and the
+  `db` fixture's TRUNCATE teardown cleans up regardless). **Write new entity fixtures the same
+  way** — `db.flush()` + `db.refresh()`, not `db.commit()` — or you'll quietly reintroduce the
+  per-fixture round-trip/fsync cost this was written to remove.
+- Argon2 hashing cost is env-overridden to the cheapest valid parameters for the whole test run
+  (set in `conftest.py` before `app.utils.security` is imported) — production/dev behaviour is
+  unchanged, this only affects `TEST_DATABASE_URL`-pointed runs.
+- A SAVEPOINT-per-test rollback pattern was tried as a replacement for the TRUNCATE teardown below
+  and reverted: migration-seeded rows (e.g. the `billing_info_request` email template) live outside
+  any test's transaction so a rollback never clears them, and `db.invalidate()` (used by one test)
+  has no connection pool to reconnect from under that pattern. Don't reintroduce it without solving
+  both.
+
+---
+
 ## Test what the system does — not how it does it
 
 Tests must survive a refactor of the internals without being rewritten.
