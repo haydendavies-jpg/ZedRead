@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics="">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;background:#faf7f2;overflow:hidden}
+  ::selection{background:#A82040;color:#fff}
+  a{color:#A82040;text-decoration:none}
+  a:hover{color:#8a1a35}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:rgba(120,110,100,.32);border-radius:6px}
+  ::-webkit-scrollbar-track{background:transparent}
+  @keyframes zrSlideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
+  @keyframes zrFade{from{opacity:0}to{opacity:1}}
+  @keyframes zrPop{from{transform:scale(.94);opacity:0}to{transform:scale(1);opacity:1}}
+  @keyframes zrPulse{0%,100%{opacity:1}50%{opacity:.45}}
+</style>
+</helmet>
+
+<div ref="{{ rootRef }}" style="position:relative;width:100vw;height:100vh;display:flex;flex-direction:column;overflow:hidden;background:var(--bg,#faf7f2);font-family:'IBM Plex Sans',sans-serif">
+
+  <!-- TOP NAV BAR -->
+  <div style="height:64px;flex:none;background:var(--sidebar,#554C44);display:flex;align-items:center;gap:8px;padding:0 18px;z-index:5">
+    <div style="width:40px;height:40px;border-radius:11px;background:rgba(255,255,255,.14);color:#fff;font-family:'Public Sans',sans-serif;font-weight:700;font-size:21px;display:flex;align-items:center;justify-content:center;flex:none">Z</div>
+    <div style="display:flex;align-items:center;gap:5px;margin-left:8px">
+      <div onClick="{{ goRegister }}" style="{{ navRegisterStyle }}" style-hover="background:rgba(255,255,255,.1)">
+        <span style="display:flex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14v18l-2.5-1.6L14 21l-2-1.4L10 21l-2.5-1.6L5 21z"/><path d="M9 8h6M9 12h6"/></svg></span>Register
+      </div>
+      <div onClick="{{ goTables }}" style="{{ navTablesStyle }}" style-hover="background:rgba(255,255,255,.1)">
+        <span style="display:flex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M2 10v4M22 10v4M10 2h4M10 22h4"/></svg></span>Tables
+      </div>
+      <div onClick="{{ goOnline }}" style="{{ navOnlineStyle }}" style-hover="background:rgba(255,255,255,.1)">
+        <span style="display:flex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 3 2.6 15 0 18M12 3c-2.6 3-2.6 15 0 18"/></svg></span>Online
+        <sc-if value="{{ onlineNewCount }}" hint-placeholder-val="{{ true }}"><span style="min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#A82040;color:#fff;font:700 11px 'IBM Plex Sans';display:flex;align-items:center;justify-content:center">{{ onlineNewCount }}</span></sc-if>
+      </div>
+    </div>
+    <div style="flex:1"></div>
+    <div onClick="{{ toggleTheme }}" title="Toggle theme" style="width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;border:1px solid rgba(255,255,255,.28);font-size:18px" style-hover="background:rgba(255,255,255,.1)">{{ themeIcon }}</div>
+    <div style="width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.16);color:#fff;font:600 14px 'IBM Plex Sans';display:flex;align-items:center;justify-content:center;flex:none">M</div>
+  </div>
+
+  <!-- SCREENS -->
+  <div style="flex:1;min-height:0;display:flex;position:relative">
+
+  <!-- ============ REGISTER ============ -->
+  <sc-if value="{{ isRegister }}" hint-placeholder-val="{{ true }}">
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;min-height:0">
+
+    <!-- header -->
+    <div style="display:flex;align-items:center;gap:16px;padding:14px 22px;border-bottom:1px solid var(--border,rgba(36,31,26,.08));background:var(--surface,#fff);flex:none">
+      <div style="flex:none">
+        <div style="font-family:'Public Sans',sans-serif;font-weight:700;font-size:20px;color:var(--text,#241f1a);line-height:1">Register</div>
+        <div style="font:500 10.5px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:var(--faint,#a39a8c);margin-top:3px">Café — All Day · Main</div>
+      </div>
+    </div>
+
+    <!-- body -->
+    <div style="flex:1;min-height:0;display:flex">
+
+      <!-- CATEGORY RAIL -->
+      <div style="width:200px;flex:none;background:var(--surface,#fff);border-right:1px solid var(--border,rgba(36,31,26,.08));overflow:auto;padding:0;display:flex;flex-direction:column;gap:0">
+        <sc-for list="{{ cats }}" as="c" hint-placeholder-count="6">
+          <div onClick="{{ c.pick }}" style="{{ c.railStyle }}" style-hover="filter:brightness(1.06)">
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">{{ c.name }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <!-- PRODUCT GRID -->
+      <div style="flex:1;min-width:0;overflow:auto;padding:18px 20px;background:var(--bg,#faf7f2)">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;align-content:start">
+          <sc-for list="{{ products }}" as="p" hint-placeholder-count="8">
+            <div onClick="{{ p.tap }}" style="{{ p.tileStyle }}" style-hover="filter:brightness(1.06);transform:translateY(-1px)">
+              <sc-if value="{{ p.hasImg }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;gap:6px;padding:9px 11px 8px;flex:none">
+                  <span style="flex:1;min-width:0;font:600 13.5px 'IBM Plex Sans';line-height:1.15;color:{{ p.fg }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.name }}</span>
+                  <span style="flex:none;font:600 12px 'IBM Plex Mono';color:{{ p.fg }};opacity:.85">{{ p.priceLabel }}</span>
+                </div>
+                <div style="position:relative;flex:1;min-height:0">
+                  <img src="{{ p.img }}" alt="{{ p.name }}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" />
+                  <sc-if value="{{ p.hasMods }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;top:8px;right:8px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font:600 15px 'IBM Plex Sans';line-height:1;color:#fff;background:rgba(0,0,0,.4);border-radius:6px">+</div></sc-if>
+                </div>
+              </sc-if>
+              <sc-if value="{{ p.noImg }}" hint-placeholder-val="{{ true }}">
+                <sc-if value="{{ p.hasMods }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;top:8px;right:8px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font:600 15px 'IBM Plex Sans';line-height:1;background:rgba(255,255,255,.22);border-radius:6px">+</div></sc-if>
+                <div style="font:600 14.5px 'IBM Plex Sans';line-height:1.2">{{ p.name }}</div>
+                <div style="font:600 12.5px 'IBM Plex Mono';opacity:.92">{{ p.priceLabel }}</div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- ORDER PANE (left) -->
+      <div style="width:clamp(320px,25vw,380px);flex:none;background:var(--surface,#fff);border-left:1px solid var(--border,rgba(36,31,26,.08));display:flex;flex-direction:column">
+        <div style="padding:16px 18px 14px;border-bottom:1px solid var(--divider,rgba(36,31,26,.06))">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:38px;height:38px;border-radius:10px;background:var(--accent-soft,rgba(168,32,64,.1));color:var(--accent-text,#A82040);font:700 15px 'IBM Plex Mono';display:flex;align-items:center;justify-content:center;flex:none">{{ ticketNum }}</div>
+            <div style="min-width:0">
+              <div style="font-family:'Public Sans',sans-serif;font-weight:700;font-size:16px;color:var(--text,#241f1a);line-height:1.1">{{ orderTitle }}</div>
+              <div style="font:500 11px 'IBM Plex Sans';color:var(--faint,#a39a8c);margin-top:1px">{{ orderSub }}</div>
+            </div>
+            <div style="flex:1"></div>
+            <div onClick="{{ clearOrder }}" title="Clear order" style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--faint,#a39a8c);cursor:pointer;font-size:15px" style-hover="background:var(--surface2,#f0ece3);color:var(--accent-text,#A82040)">✕</div>
+          </div>
+          <div style="display:flex;gap:5px;margin-top:13px;background:var(--surface2,#f0ece3);border-radius:11px;padding:4px">
+            <sc-for list="{{ orderTypes }}" as="ot" hint-placeholder-count="4">
+              <div onClick="{{ ot.pick }}" style="{{ ot.style }}" style-hover="opacity:.85">{{ ot.name }}</div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="flex:1;min-height:0;overflow:auto;padding:8px 10px">
+          <sc-if value="{{ orderEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--faint,#a39a8c);gap:10px;padding:40px 20px;text-align:center">
+              <div style="font-size:40px;opacity:.5">🧾</div>
+              <div style="font:500 13px 'IBM Plex Sans'">No items yet.<br>Tap products to build the order.</div>
+            </div>
+          </sc-if>
+          <sc-for list="{{ orderLines }}" as="ln" hint-placeholder-count="0">
+            <div onClick="{{ ln.select }}" style="{{ ln.rowStyle }}">
+              <div style="width:4px;align-self:stretch;border-radius:3px;background:{{ ln.color }};flex:none"></div>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:baseline;gap:8px">
+                  <div style="font:600 13.5px 'IBM Plex Sans';color:var(--text,#241f1a);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ ln.name }}</div>
+                  <div style="font:600 13px 'IBM Plex Mono';color:var(--text,#241f1a)">{{ ln.lineTotal }}</div>
+                </div>
+                <sc-for list="{{ ln.mods }}" as="md" hint-placeholder-count="0">
+                  <div style="font:400 11px 'IBM Plex Sans';color:var(--muted,#6b6259);margin-top:1px">· {{ md }}</div>
+                </sc-for>
+                <div style="display:flex;align-items:center;gap:10px;margin-top:7px">
+                  <div style="display:flex;align-items:center;border:1px solid var(--input-border,rgba(36,31,26,.16));border-radius:7px;overflow:hidden;background:var(--bg,#faf7f2)">
+                    <div onClick="{{ ln.dec }}" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted,#6b6259);font-size:16px" style-hover="background:var(--surface2,#f0ece3)">−</div>
+                    <div style="min-width:26px;text-align:center;font:600 12.5px 'IBM Plex Mono';color:var(--text,#241f1a)">{{ ln.qty }}</div>
+                    <div onClick="{{ ln.inc }}" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted,#6b6259);font-size:15px" style-hover="background:var(--surface2,#f0ece3)">+</div>
+                  </div>
+                  <div style="font:400 11px 'IBM Plex Mono';color:var(--faint,#a39a8c)">{{ ln.unitLabel }} ea</div>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="border-top:1px solid var(--border,rgba(36,31,26,.08));padding:14px 18px;background:var(--surface,#fff)">
+          <div style="display:flex;justify-content:space-between;font:400 12.5px 'IBM Plex Sans';color:var(--muted,#6b6259);margin-bottom:5px"><span>Subtotal</span><span style="font-family:'IBM Plex Mono'">{{ subtotalLabel }}</span></div>
+          <div style="display:flex;justify-content:space-between;font:400 12.5px 'IBM Plex Sans';color:var(--muted,#6b6259);margin-bottom:9px"><span>GST (incl. 10%)</span><span style="font-family:'IBM Plex Mono'">{{ gstLabel }}</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:9px;border-top:1px solid var(--divider,rgba(36,31,26,.08))">
+            <span style="font-family:'Public Sans',sans-serif;font-weight:700;font-size:17px;color:var(--text,#241f1a)">Total</span>
+            <span style="font:600 22px 'IBM Plex Mono';color:var(--text,#241f1a)">{{ totalLabel }}</span>
+          </div>
+          <div style="display:flex;gap:9px;margin-top:13px">
+            <div style="flex:none;padding:0 16px;height:48px;border:1px solid var(--input-border,rgba(36,31,26,.18));border-radius:10px;display:flex;align-items:center;justify-content:center;font:600 13px 'IBM Plex Sans';color:var(--muted,#6b6259);cursor:pointer;background:var(--surface,#fff)" style-hover="border-color:var(--accent,#A82040);color:var(--accent-text,#A82040)">Hold</div>
+            <div onClick="{{ openPay }}" style="{{ payBtnStyle }}" style-hover="filter:brightness(1.08)">Pay {{ totalLabel }}</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ============ TABLES ============ -->
+  <sc-if value="{{ isTables }}" hint-placeholder-val="{{ false }}">
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;background:var(--bg,#faf7f2)">
+    <div style="display:flex;align-items:center;gap:16px;padding:14px 24px;border-bottom:1px solid var(--border,rgba(36,31,26,.08));background:var(--surface,#fff);flex:none">
+      <div>
+        <div style="font-family:'Public Sans',sans-serif;font-weight:700;font-size:20px;color:var(--text,#241f1a);line-height:1">Table Map</div>
+        <div style="font:500 10.5px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:var(--faint,#a39a8c);margin-top:3px">Front of House · Live</div>
+      </div>
+      <div style="display:flex;gap:6px;margin-left:22px">
+        <sc-for list="{{ floorTabs }}" as="f" hint-placeholder-count="2">
+          <div onClick="{{ f.select }}" style="{{ f.style }}" style-hover="filter:brightness(.97)">{{ f.label }}</div>
+        </sc-for>
+      </div>
+      <div style="flex:1"></div>
+      <div style="display:flex;align-items:center;gap:16px">
+        <sc-for list="{{ tableLegend }}" as="lg" hint-placeholder-count="4">
+          <div style="display:flex;align-items:center;gap:7px;font:500 12px 'IBM Plex Sans';color:var(--muted,#6b6259)"><span style="width:12px;height:12px;border-radius:4px;background:{{ lg.color }}"></span>{{ lg.label }}</div>
+        </sc-for>
+      </div>
+    </div>
+    <div style="flex:1;min-height:0;overflow:auto;padding:24px;display:flex">
+      <div style="position:relative;width:100%;max-width:1220px;aspect-ratio:16/10;margin:auto;background:var(--surface,#fff);border-radius:22px;box-shadow:inset 0 0 0 2px var(--border,rgba(36,31,26,.08)),0 4px 24px rgba(36,31,26,.06)">
+
+        <!-- zone backdrops -->
+        <sc-for list="{{ floorZones }}" as="z" hint-placeholder-count="3">
+          <div style="{{ z.style }}"><span style="{{ z.labelStyle }}">{{ z.label }}</span></div>
+        </sc-for>
+
+        <!-- bar counter -->
+        <div style="position:absolute;left:5%;top:8%;width:44%;height:6.5%;border-radius:0 0 12px 12px;background:var(--surface2,#f0ece3);box-shadow:inset 0 0 0 2px var(--border,rgba(36,31,26,.1))"></div>
+        <!-- entrance -->
+        <div style="position:absolute;left:50%;bottom:-1px;transform:translateX(-50%);width:110px;height:6px;background:var(--bg,#faf7f2);box-shadow:0 0 0 2px var(--accent,#A82040)"></div>
+        <div style="position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font:600 9.5px 'IBM Plex Sans';letter-spacing:.14em;text-transform:uppercase;color:var(--faint,#a39a8c)">Entrance</div>
+
+        <!-- tables -->
+        <sc-for list="{{ floorTables }}" as="t" hint-placeholder-count="15">
+          <div onClick="{{ t.select }}" style="{{ t.wrapStyle }}" style-hover="transform:translate(-50%,-50%) scale(1.04)">
+            <div style="{{ t.shapeStyle }}">
+              <div style="font-family:'Public Sans',sans-serif;font-weight:700;font-size:15px;color:{{ t.textColor }};line-height:1">{{ t.label }}</div>
+              <div style="font:600 10px 'IBM Plex Sans';color:{{ t.subColor }};margin-top:2px">{{ t.coversShort }}</div>
+              <sc-if value="{{ t.hasTimer }}" hint-placeholder-val="{{ false }}">
+                <div style="font:600 9px 'IBM Plex Mono';color:{{ t.subColor }};margin-top:2px;opacity:.85">{{ t.timerLabel }}</div>
+              </sc-if>
+            </div>
+            <sc-if value="{{ t.hasTotal }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;top:-8px;right:-8px;font:700 9.5px 'IBM Plex Mono';color:#fff;background:{{ t.dotColor }};padding:2px 6px;border-radius:8px;white-space:nowrap;box-shadow:0 1px 3px rgba(36,31,26,.2)">{{ t.total }}</div>
+            </sc-if>
+            <sc-if value="{{ t.hasReserved }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;top:-9px;left:-9px;font:700 8.5px 'IBM Plex Sans';letter-spacing:.02em;color:var(--text,#241f1a);background:var(--surface2,#f0ece3);border:1.5px solid var(--border,rgba(36,31,26,.15));padding:2px 6px;border-radius:8px;white-space:nowrap">◷ {{ t.reservedShort }}</div>
+            </sc-if>
+            <sc-if value="{{ t.hasMerge }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);font:700 8.5px 'IBM Plex Sans';color:#fff;background:var(--text,#241f1a);padding:2px 7px;border-radius:8px;white-space:nowrap">⛓ {{ t.mergeWith }}</div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    <sc-if value="{{ tableSelected }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;align-items:center;gap:18px;background:var(--text,#241f1a);color:#fff;border-radius:14px;padding:12px 18px;box-shadow:0 10px 34px rgba(36,31,26,.32);animation:zrPop .16s ease;z-index:8;max-width:min(94vw,1000px)">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <div style="font-family:'Public Sans',sans-serif;font-weight:700;font-size:16px;line-height:1">{{ selTableLabel }}</div>
+          <div style="align-self:flex-start;font:700 8.5px 'IBM Plex Sans';letter-spacing:.08em;text-transform:uppercase;color:#fff;background:{{ selStatusColor }};padding:2px 7px;border-radius:6px">{{ selStatusLabel }}</div>
+        </div>
+        <div style="width:1px;height:36px;background:rgba(255,255,255,.16)"></div>
+        <div style="display:flex;align-items:center;gap:18px">
+          <sc-for list="{{ selChips }}" as="c" hint-placeholder-count="3">
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <div style="font:600 8px 'IBM Plex Sans';letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.5)">{{ c.k }}</div>
+              <div style="font:600 13px 'IBM Plex Sans';color:{{ c.color }};white-space:nowrap">{{ c.v }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="flex:1;min-width:6px"></div>
+        <div onClick="{{ startMerge }}" style="{{ mergeBtnStyle }}" style-hover="background:rgba(255,255,255,.16)">{{ mergeBtnLabel }}</div>
+        <div onClick="{{ openTableOrder }}" style="background:#A82040;color:#fff;font:600 12.5px 'IBM Plex Sans';padding:9px 16px;border-radius:9px;cursor:pointer;white-space:nowrap" style-hover="filter:brightness(1.1)">Open order →</div>
+        <div onClick="{{ clearTable }}" style="font:500 14px 'IBM Plex Sans';color:rgba(255,255,255,.7);cursor:pointer;padding:4px 6px">✕</div>
+      </div>
+    </sc-if>
+  </div>
+  </sc-if>
+
+  <!-- ============ ONLINE ============ -->
+  <sc-if value="{{ isOnline }}" hint-placeholder-val="{{ false }}">
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;background:var(--bg,#faf7f2)">
+    <div style="display:flex;align-items:center;gap:16px;padding:14px 24px;border-bottom:1px solid var(--border,rgba(36,31,26,.08));background:var(--surface,#fff);flex:none">
+      <div>
+        <div style="font-family:'Public Sans',sans-serif;font-weight:700;font-size:20px;color:var(--text,#241f1a);line-height:1">Online Orders</div>
+        <div style="font:500 10.5px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:var(--faint,#a39a8c);margin-top:3px">Delivery &amp; Pickup Channels</div>
+      </div>
+      <div style="flex:1"></div>
+      <div style="display:flex;align-items:center;gap:16px">
+        <sc-for list="{{ channelLegend }}" as="ch" hint-placeholder-count="3">
+          <div style="display:flex;align-items:center;gap:7px;font:500 12px 'IBM Plex Sans';color:var(--muted,#6b6259)"><span style="width:12px;height:12px;border-radius:4px;background:{{ ch.color }}"></span>{{ ch.label }}</div>
+        </sc-for>
+      </div>
+    </div>
+    <div style="flex:1;min-height:0;overflow:hidden;padding:20px 24px;display:flex;gap:18px">
+      <sc-for list="{{ onlineColumns }}" as="col" hint-placeholder-count="3">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:var(--surface,#fff);border:1px solid var(--border,rgba(36,31,26,.08));border-radius:14px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:9px;padding:14px 16px;border-bottom:1px solid var(--divider,rgba(36,31,26,.07))">
+            <span style="width:9px;height:9px;border-radius:50%;background:{{ col.dot }}"></span>
+            <span style="font:700 13px 'IBM Plex Sans';letter-spacing:.03em;color:var(--text,#241f1a);text-transform:uppercase">{{ col.title }}</span>
+            <span style="margin-left:auto;font:600 12px 'IBM Plex Mono';background:var(--surface2,#f0ece3);color:var(--muted,#6b6259);padding:2px 9px;border-radius:10px">{{ col.count }}</span>
+          </div>
+          <div style="flex:1;min-height:0;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px">
+            <sc-for list="{{ col.orders }}" as="o" hint-placeholder-count="2">
+              <div style="border:1px solid var(--border,rgba(36,31,26,.1));border-radius:12px;padding:13px;background:var(--bg,#faf7f2);animation:zrPop .16s ease">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
+                  <span style="{{ o.channelStyle }}">{{ o.channel }}</span>
+                  <span style="font:600 12.5px 'IBM Plex Mono';color:var(--text,#241f1a)">{{ o.id }}</span>
+                  <span style="{{ o.timerStyle }}">{{ o.timer }}</span>
+                </div>
+                <div style="font:600 13.5px 'IBM Plex Sans';color:var(--text,#241f1a)">{{ o.customer }}</div>
+                <div style="font:400 11.5px 'IBM Plex Sans';color:var(--muted,#6b6259);margin-top:2px">{{ o.itemsLabel }} · <span style="font-family:'IBM Plex Mono';font-weight:600;color:var(--text,#241f1a)">{{ o.total }}</span></div>
+                <div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--divider,rgba(36,31,26,.12));font:400 11px 'IBM Plex Sans';color:var(--faint,#a39a8c);line-height:1.5">{{ o.itemsDetail }}</div>
+                <div style="display:flex;gap:8px;margin-top:11px">
+                  <sc-if value="{{ o.isNew }}" hint-placeholder-val="{{ false }}">
+                    <div onClick="{{ o.reject }}" style="flex:none;padding:8px 13px;border:1px solid var(--input-border,rgba(36,31,26,.18));border-radius:8px;font:600 12px 'IBM Plex Sans';color:var(--muted,#6b6259);cursor:pointer;background:var(--surface,#fff)" style-hover="border-color:#A82040;color:#A82040">Reject</div>
+                    <div onClick="{{ o.accept }}" style="flex:1;padding:8px;border-radius:8px;background:#2F4034;color:#fff;font:600 12px 'IBM Plex Sans';text-align:center;cursor:pointer" style-hover="filter:brightness(1.12)">Accept</div>
+                  </sc-if>
+                  <sc-if value="{{ o.isPrep }}" hint-placeholder-val="{{ false }}">
+                    <div onClick="{{ o.advance }}" style="flex:1;padding:8px;border-radius:8px;background:#A82040;color:#fff;font:600 12px 'IBM Plex Sans';text-align:center;cursor:pointer" style-hover="filter:brightness(1.1)">Mark ready</div>
+                  </sc-if>
+                  <sc-if value="{{ o.isReady }}" hint-placeholder-val="{{ false }}">
+                    <div onClick="{{ o.advance }}" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--input-border,rgba(36,31,26,.18));color:var(--muted,#6b6259);font:600 12px 'IBM Plex Sans';text-align:center;cursor:pointer;background:var(--surface,#fff)" style-hover="border-color:#2F4034;color:#2F4034">Picked up ✓</div>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-for>
+            <sc-if value="{{ col.empty }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:26px 10px;text-align:center;font:500 12px 'IBM Plex Sans';color:var(--faint,#a39a8c)">Nothing here</div>
+            </sc-if>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+
+  </div>
+  <!-- ============ MODIFIER SHEET ============ -->
+  <sc-if value="{{ modOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ modClose }}" style="position:absolute;inset:0;background:rgba(36,31,26,.42);z-index:30;animation:zrFade .18s ease"></div>
+    <div style="position:absolute;top:0;right:0;bottom:0;width:clamp(380px,34vw,460px);background:var(--surface,#fff);z-index:31;display:flex;flex-direction:column;box-shadow:-14px 0 40px rgba(36,31,26,.22);animation:zrSlideIn .22s cubic-bezier(.22,.61,.36,1)">
+      <div style="padding:20px 22px;border-bottom:1px solid var(--border,rgba(36,31,26,.08));display:flex;align-items:flex-start;gap:12px">
+        <div style="width:44px;height:44px;border-radius:11px;background:{{ modColor }};flex:none"></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-family:'Public Sans',sans-serif;font-weight:700;font-size:19px;color:var(--text,#241f1a)">{{ modName }}</div>
+          <div style="font:500 12px 'IBM Plex Sans';color:var(--faint,#a39a8c);margin-top:2px">{{ modBaseLabel }} · Customise</div>
+        </div>
+        <div onClick="{{ modClose }}" style="width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--muted,#6b6259);cursor:pointer;font-size:16px" style-hover="background:var(--surface2,#f0ece3)">✕</div>
+      </div>
+      <div style="flex:1;min-height:0;overflow:auto;padding:18px 22px;display:flex;flex-direction:column;gap:22px">
+        <sc-for list="{{ modGroups }}" as="g" hint-placeholder-count="3">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px">
+              <div style="font:700 12.5px 'IBM Plex Sans';color:var(--text,#241f1a);text-transform:uppercase;letter-spacing:.05em">{{ g.name }}</div>
+              <div style="{{ g.ruleStyle }}">{{ g.rule }}</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ g.choices }}" as="ch" hint-placeholder-count="3">
+                <div onClick="{{ ch.toggle }}" style="{{ ch.rowStyle }}" style-hover="border-color:var(--accent,#A82040)">
+                  <span style="{{ ch.markStyle }}">{{ ch.mark }}</span>
+                  <span style="flex:1;font:500 13.5px 'IBM Plex Sans';color:var(--text,#241f1a)">{{ ch.label }}</span>
+                  <sc-if value="{{ ch.hasPrice }}" hint-placeholder-val="{{ false }}"><span style="font:600 12.5px 'IBM Plex Mono';color:var(--muted,#6b6259)">{{ ch.priceLabel }}</span></sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="border-top:1px solid var(--border,rgba(36,31,26,.08));padding:16px 22px;display:flex;align-items:center;gap:14px">
+        <div style="display:flex;align-items:center;border:1px solid var(--input-border,rgba(36,31,26,.18));border-radius:10px;overflow:hidden;background:var(--bg,#faf7f2)">
+          <div onClick="{{ modQtyDec }}" style="width:40px;height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted,#6b6259);font-size:19px" style-hover="background:var(--surface2,#f0ece3)">−</div>
+          <div style="min-width:34px;text-align:center;font:600 15px 'IBM Plex Mono';color:var(--text,#241f1a)">{{ modQty }}</div>
+          <div onClick="{{ modQtyInc }}" style="width:40px;height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted,#6b6259);font-size:18px" style-hover="background:var(--surface2,#f0ece3)">+</div>
+        </div>
+        <div onClick="{{ modAdd }}" style="flex:1;height:52px;border-radius:12px;background:#A82040;color:#fff;display:flex;align-items:center;justify-content:center;gap:10px;font:700 14.5px 'IBM Plex Sans';cursor:pointer" style-hover="filter:brightness(1.08)">
+          Add to order <span style="font-family:'IBM Plex Mono';opacity:.9">{{ modTotalLabel }}</span>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ PAYMENT ============ -->
+  <sc-if value="{{ payOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(36,31,26,.5);z-index:40;display:flex;align-items:center;justify-content:center;animation:zrFade .18s ease">
+      <div style="width:clamp(440px,44vw,560px);background:var(--surface,#fff);border-radius:18px;overflow:hidden;box-shadow:0 24px 70px rgba(36,31,26,.4);animation:zrPop .2s ease">
+
+        <sc-if value="{{ payDone }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:44px 40px;text-align:center">
+            <div style="width:76px;height:76px;border-radius:50%;background:var(--green-soft,rgba(47,64,52,.14));color:var(--green,#2F4034);font-size:38px;display:flex;align-items:center;justify-content:center;margin:0 auto 20px">✓</div>
+            <div style="font-family:'Public Sans',sans-serif;font-weight:700;font-size:24px;color:var(--text,#241f1a)">Payment complete</div>
+            <div style="font:500 13px 'IBM Plex Sans';color:var(--muted,#6b6259);margin-top:6px">{{ payDoneMethod }} · {{ totalLabel }}</div>
+            <sc-if value="{{ hasChange }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:22px;padding:18px;background:var(--bg,#faf7f2);border-radius:12px">
+                <div style="font:500 11px 'IBM Plex Sans';letter-spacing:.1em;text-transform:uppercase;color:var(--faint,#a39a8c)">Change due</div>
+                <div style="font:600 34px 'IBM Plex Mono';color:var(--green,#2F4034);margin-top:4px">{{ changeLabel }}</div>
+              </div>
+            </sc-if>
+            <div onClick="{{ payNewOrder }}" style="margin-top:26px;height:52px;border-radius:12px;background:#A82040;color:#fff;display:flex;align-items:center;justify-content:center;font:700 14.5px 'IBM Plex Sans';cursor:pointer" style-hover="filter:brightness(1.08)">New order</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ payChoosing }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:24px 30px;border-bottom:1px solid var(--border,rgba(36,31,26,.08));display:flex;align-items:center">
+            <div>
+              <div style="font:500 11px 'IBM Plex Sans';letter-spacing:.1em;text-transform:uppercase;color:var(--faint,#a39a8c)">Amount due</div>
+              <div style="font:600 32px 'IBM Plex Mono';color:var(--text,#241f1a);margin-top:2px">{{ totalLabel }}</div>
+            </div>
+            <div style="flex:1"></div>
+            <div onClick="{{ payClose }}" style="width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--muted,#6b6259);cursor:pointer;font-size:17px" style-hover="background:var(--surface2,#f0ece3)">✕</div>
+          </div>
+          <div style="padding:24px 30px">
+            <div style="display:flex;gap:12px;margin-bottom:22px">
+              <div onClick="{{ selectCard }}" style="{{ cardTabStyle }}">💳 Card</div>
+              <div onClick="{{ selectCash }}" style="{{ cashTabStyle }}">💵 Cash</div>
+            </div>
+
+            <sc-if value="{{ isCard }}" hint-placeholder-val="{{ true }}">
+              <div style="text-align:center;padding:26px 10px 10px">
+                <div style="width:130px;height:130px;margin:0 auto;border:2px dashed var(--input-border,rgba(36,31,26,.2));border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:52px">📟</div>
+                <div style="font:500 13px 'IBM Plex Sans';color:var(--muted,#6b6259);margin-top:16px">Present card or device to the terminal</div>
+              </div>
+              <div onClick="{{ confirmCard }}" style="margin-top:20px;height:54px;border-radius:12px;background:#A82040;color:#fff;display:flex;align-items:center;justify-content:center;font:700 15px 'IBM Plex Sans';cursor:pointer" style-hover="filter:brightness(1.08)">Charge {{ totalLabel }}</div>
+            </sc-if>
+
+            <sc-if value="{{ isCash }}" hint-placeholder-val="{{ false }}">
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+                <sc-for list="{{ tenderPresets }}" as="tp" hint-placeholder-count="6">
+                  <div onClick="{{ tp.pick }}" style="{{ tp.style }}" style-hover="border-color:var(--accent,#A82040);color:var(--accent-text,#A82040)">{{ tp.label }}</div>
+                </sc-for>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding:16px;background:var(--bg,#faf7f2);border-radius:12px">
+                <div>
+                  <div style="font:500 11px 'IBM Plex Sans';color:var(--faint,#a39a8c)">Tendered</div>
+                  <div style="font:600 22px 'IBM Plex Mono';color:var(--text,#241f1a)">{{ tenderedLabel }}</div>
+                </div>
+                <div style="text-align:right">
+                  <div style="font:500 11px 'IBM Plex Sans';color:var(--faint,#a39a8c)">Change</div>
+                  <div style="font:600 22px 'IBM Plex Mono';color:{{ changePreviewColor }}">{{ changePreview }}</div>
+                </div>
+              </div>
+              <div onClick="{{ confirmCash }}" style="{{ cashConfirmStyle }}">Complete payment</div>
+            </sc-if>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- toast -->
+  <sc-if value="{{ toastShow }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:50%;bottom:26px;transform:translateX(-50%);background:var(--text,#241f1a);color:#fff;padding:11px 20px;border-radius:11px;font:600 13px 'IBM Plex Sans';box-shadow:0 10px 30px rgba(36,31,26,.32);z-index:50;animation:zrPop .16s ease">{{ toastMsg }}</div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+const PALETTE = {
+  coffee:'#A82040', cold:'#2E6F7E', food:'#4E7A51', bakery:'#B8892B', specials:'#C56A1A', pantry:'#6B4E8C'
+};
+const CATS = [
+  {id:'coffee', name:'Coffee', color:'#A82040'},
+  {id:'cold', name:'Cold Drinks', color:'#2E6F7E'},
+  {id:'food', name:'Kitchen', color:'#4E7A51'},
+  {id:'bakery', name:'Bakery', color:'#B8892B'},
+  {id:'specials', name:'Specials', color:'#C56A1A'},
+  {id:'pantry', name:'Retail', color:'#6B4E8C'},
+];
+const PRODUCTS = [
+  {id:'p1', cat:'coffee', name:'Flat White', price:4.5, mod:'coffee'},
+  {id:'p2', cat:'coffee', name:'Latte', price:4.8, mod:'coffee', img:'uploads/images.jpg'},
+  {id:'p3', cat:'coffee', name:'Cappuccino', price:4.5, mod:'coffee'},
+  {id:'p4', cat:'coffee', name:'Long Black', price:4.0, mod:'coffee'},
+  {id:'p5', cat:'coffee', name:'Espresso', price:3.5, mod:null},
+  {id:'p6', cat:'coffee', name:'Mocha', price:5.2, mod:'coffee'},
+  {id:'p7', cat:'coffee', name:'Piccolo', price:4.0, mod:null},
+  {id:'p8', cat:'coffee', name:'Chai Latte', price:5.0, mod:'coffee'},
+  {id:'c1', cat:'cold', name:'Iced Latte', price:5.5, mod:'coffee'},
+  {id:'c2', cat:'cold', name:'Iced Chocolate', price:5.5, mod:null},
+  {id:'c3', cat:'cold', name:'Lemonade', price:4.0, mod:null},
+  {id:'c4', cat:'cold', name:'Sparkling Water', price:3.5, mod:null},
+  {id:'c5', cat:'cold', name:'Orange Juice', price:5.0, mod:null},
+  {id:'c6', cat:'cold', name:'Cola', price:3.5, mod:null},
+  {id:'c7', cat:'cold', name:'Iced Tea', price:4.5, mod:null},
+  {id:'c8', cat:'cold', name:'Kombucha', price:6.0, mod:null},
+  {id:'f1', cat:'food', name:'Big Brekky', price:18.5, mod:'brekky'},
+  {id:'f2', cat:'food', name:'Avo Toast', price:14.0, mod:'avo'},
+  {id:'f3', cat:'food', name:'Bacon Roll', price:9.5, mod:'roll'},
+  {id:'f4', cat:'food', name:'Halloumi Bowl', price:16.0, mod:null},
+  {id:'f5', cat:'food', name:'BLT', price:12.5, mod:'roll'},
+  {id:'f6', cat:'food', name:'Chicken Wrap', price:13.5, mod:null},
+  {id:'f7', cat:'food', name:'Soup of Day', price:11.0, mod:null},
+  {id:'f8', cat:'food', name:'Caesar Salad', price:15.0, mod:null},
+  {id:'b1', cat:'bakery', name:'Croissant', price:5.0, mod:null},
+  {id:'b2', cat:'bakery', name:'Almond Croissant', price:6.0, mod:null},
+  {id:'b3', cat:'bakery', name:'Blueberry Muffin', price:4.5, mod:null},
+  {id:'b4', cat:'bakery', name:'Banana Bread', price:5.5, mod:null},
+  {id:'b5', cat:'bakery', name:'Scone', price:4.5, mod:null},
+  {id:'b6', cat:'bakery', name:'Danish', price:5.5, mod:null},
+  {id:'b7', cat:'bakery', name:'Cookie', price:3.5, mod:null},
+  {id:'b8', cat:'bakery', name:'Brownie', price:4.5, mod:null},
+  {id:'s1', cat:'specials', name:'Pumpkin Spice Latte', price:6.0, mod:'coffee'},
+  {id:'s2', cat:'specials', name:'Brekky Combo', price:22.0, mod:'brekky'},
+  {id:'s3', cat:'specials', name:'Brownie Stack', price:9.0, mod:null},
+  {id:'s4', cat:'specials', name:'Winter Soup + Roll', price:16.0, mod:null},
+  {id:'r1', cat:'pantry', name:'House Beans 250g', price:14.0, mod:null},
+  {id:'r2', cat:'pantry', name:'Keep Cup', price:19.0, mod:null},
+  {id:'r3', cat:'pantry', name:'Gift Card', price:25.0, mod:null},
+  {id:'r4', cat:'pantry', name:'Granola Jar', price:12.0, mod:null},
+];
+const MODSETS = {
+  coffee: [
+    {name:'Size', rule:'Choose 1', type:'single', req:true, choices:[{label:'Small',price:0},{label:'Regular',price:0},{label:'Large',price:0.6}]},
+    {name:'Milk', rule:'Choose 1', type:'single', req:true, choices:[{label:'Full cream',price:0},{label:'Skim',price:0},{label:'Oat',price:0.7},{label:'Almond',price:0.7},{label:'Soy',price:0.5}]},
+    {name:'Extras', rule:'Optional', type:'multi', req:false, choices:[{label:'Extra shot',price:0.6},{label:'Decaf',price:0},{label:'Extra hot',price:0},{label:'Caramel syrup',price:0.5},{label:'Vanilla syrup',price:0.5}]},
+  ],
+  brekky: [
+    {name:'Eggs', rule:'Choose 1', type:'single', req:true, choices:[{label:'Scrambled',price:0},{label:'Fried',price:0},{label:'Poached',price:0}]},
+    {name:'Add-ons', rule:'Optional', type:'multi', req:false, choices:[{label:'Extra bacon',price:4},{label:'Mushrooms',price:3},{label:'Avocado',price:3.5},{label:'Hash brown',price:2.5}]},
+  ],
+  avo: [
+    {name:'Bread', rule:'Choose 1', type:'single', req:true, choices:[{label:'Sourdough',price:0},{label:'Multigrain',price:0},{label:'Gluten free',price:1.5}]},
+    {name:'Add', rule:'Optional', type:'multi', req:false, choices:[{label:'Poached egg',price:2.5},{label:'Feta',price:2},{label:'Chilli flakes',price:0}]},
+  ],
+  roll: [
+    {name:'Sauce', rule:'Choose 1', type:'single', req:true, choices:[{label:'BBQ',price:0},{label:'Tomato',price:0},{label:'None',price:0}]},
+    {name:'Add', rule:'Optional', type:'multi', req:false, choices:[{label:'Add egg',price:2},{label:'Extra cheese',price:1.5}]},
+  ],
+};
+const money = n => '$' + Number(n).toFixed(2);
+function textOn(hex){
+  const h = hex.replace('#',''); const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);
+  return (0.299*r+0.587*g+0.114*b) > 150 ? '#241f1a' : '#ffffff';
+}
+const THEMES = {
+  light:{'--bg':'#faf7f2','--sidebar':'#554C44','--surface':'#ffffff','--surface2':'#f0ece3','--border':'rgba(36,31,26,.08)','--divider':'rgba(36,31,26,.06)','--input-border':'rgba(36,31,26,.16)','--text':'#241f1a','--muted':'#6b6259','--faint':'#a39a8c','--accent':'#A82040','--accent-text':'#A82040','--accent-soft':'rgba(168,32,64,.1)','--accent-soft2':'rgba(168,32,64,.16)','--green':'#2F4034','--green-soft':'rgba(47,64,52,.14)'},
+  dark:{'--bg':'#201a15','--sidebar':'#1b1611','--surface':'#2a2119','--surface2':'#33291f','--border':'rgba(255,255,255,.08)','--divider':'rgba(255,255,255,.06)','--input-border':'rgba(255,255,255,.15)','--text':'#efe9e0','--muted':'#a89f92','--faint':'#6f685e','--accent':'#A82040','--accent-text':'#e58ba0','--accent-soft':'rgba(168,32,64,.2)','--accent-soft2':'rgba(168,32,64,.3)','--green':'#8fbf9c','--green-soft':'rgba(143,191,156,.16)'}};
+
+const FLOORS = {
+  main:{ label:'Ground Floor',
+    zones:[
+      {label:'Bar', x:4,y:4, w:47,h:16, tint:'rgba(85,76,68,.05)', dashed:false},
+      {label:'Indoor Dining', x:4,y:26, w:52,h:70, tint:'rgba(85,76,68,.03)', dashed:false},
+      {label:'Patio', x:60,y:8, w:36,h:82, tint:'rgba(78,122,81,.08)', dashed:true},
+    ],
+    tables:{
+      B1:{x:13,y:14,shape:'stool'}, B2:{x:23,y:14,shape:'stool'}, B3:{x:33,y:14,shape:'stool'}, B4:{x:43,y:14,shape:'stool'},
+      T1:{x:14,y:42,shape:'round'}, T2:{x:31,y:42,shape:'round'}, T5:{x:47,y:42,shape:'round'},
+      T3:{x:14,y:68,shape:'round'}, T4:{x:31,y:68,shape:'round'}, T6:{x:47,y:70,shape:'rect'},
+      P1:{x:70,y:22,shape:'round'}, P2:{x:87,y:22,shape:'round'}, P3:{x:70,y:48,shape:'round'}, P4:{x:87,y:48,shape:'round'}, P5:{x:78,y:74,shape:'rect'},
+    }
+  },
+  rooftop:{ label:'Rooftop',
+    zones:[
+      {label:'Rooftop Bar', x:4,y:4, w:44,h:16, tint:'rgba(85,76,68,.05)', dashed:false},
+      {label:'Deck', x:4,y:26, w:52,h:70, tint:'rgba(78,122,81,.08)', dashed:true},
+      {label:'Lounge', x:60,y:8, w:36,h:82, tint:'rgba(85,76,68,.05)', dashed:false},
+    ],
+    tables:{
+      RB1:{x:12,y:14,shape:'stool'}, RB2:{x:24,y:14,shape:'stool'}, RB3:{x:36,y:14,shape:'stool'},
+      R1:{x:16,y:44,shape:'round'}, R2:{x:38,y:44,shape:'round'},
+      R3:{x:16,y:70,shape:'round'}, R4:{x:38,y:70,shape:'round'},
+      L1:{x:70,y:26,shape:'rect'}, L2:{x:70,y:62,shape:'rect'}, L3:{x:87,y:44,shape:'round'},
+    }
+  }
+};
+
+class Component extends DCLogic {
+  rootRef = React.createRef();
+  state = {
+    theme:'light', screen:'register', regLayout:'top', orderType:'dinein',
+    activeCat:'coffee', order:[], selLine:null, seq:1, ticket:42,
+    mod:null,
+    pay:null,
+    tables:this.initTables(), selTable:null, activeFloor:'main', mergeAnchor:null, merges:{},
+    online:this.initOnline(),
+    toast:null,
+  };
+  componentDidMount(){ this.applyTheme(); }
+  componentDidUpdate(){ this.applyTheme(); }
+  applyTheme(){ const el=this.rootRef.current; if(!el) return; const t=THEMES[this.state.theme]; for(const k in t) el.style.setProperty(k,t[k]); document.body.style.background=t['--bg']; }
+
+  initTables(){
+    return [
+      {name:'Indoor', tables:[
+        {id:'T1',status:'seated',covers:2,seats:4,total:34.5,server:'Maya',activated:24,touch:6},
+        {id:'T2',status:'open',seats:2,reserved:'7:30 · Chen'},
+        {id:'T3',status:'ordered',covers:4,seats:4,total:88.0,server:'Jordan',activated:41,touch:3},
+        {id:'T4',status:'bill',covers:2,seats:2,total:52.0,server:'Maya',activated:58,touch:12},
+        {id:'T5',status:'open',seats:4},
+        {id:'T6',status:'seated',covers:6,seats:6,total:120.0,server:'Priya',activated:15,touch:2},
+      ]},
+      {name:'Patio', tables:[
+        {id:'P1',status:'open',seats:2},
+        {id:'P2',status:'ordered',covers:2,seats:2,total:46.0,server:'Jordan',activated:33,touch:8},
+        {id:'P3',status:'seated',covers:4,seats:4,total:72.5,server:'Priya',activated:19,touch:5},
+        {id:'P4',status:'open',seats:4,reserved:'8:00 · Walk-in'},
+        {id:'P5',status:'bill',covers:3,seats:6,total:63.0,server:'Maya',activated:62,touch:20},
+      ]},
+      {name:'Bar', tables:[
+        {id:'B1',status:'seated',covers:1,seats:1,total:18.0,server:'Sam',activated:12,touch:4},
+        {id:'B2',status:'open',seats:1},
+        {id:'B3',status:'open',seats:1},
+        {id:'B4',status:'ordered',covers:2,seats:2,total:39.5,server:'Sam',activated:27,touch:9},
+      ]},
+      {name:'Rooftop', tables:[
+        {id:'RB1',status:'seated',covers:2,seats:2,total:22.0,server:'Sam',activated:18,touch:5},
+        {id:'RB2',status:'open',seats:1},
+        {id:'RB3',status:'ordered',covers:1,seats:1,total:14.0,server:'Sam',activated:9,touch:2},
+        {id:'R1',status:'seated',covers:3,seats:4,total:58.0,server:'Maya',activated:30,touch:7},
+        {id:'R2',status:'open',seats:4,reserved:'8:15 · Patel'},
+        {id:'R3',status:'bill',covers:2,seats:4,total:47.0,server:'Jordan',activated:50,touch:15},
+        {id:'R4',status:'open',seats:4},
+        {id:'L1',status:'seated',covers:5,seats:6,total:142.0,server:'Priya',activated:22,touch:4},
+        {id:'L2',status:'open',seats:6,reserved:'9:00 · Party'},
+        {id:'L3',status:'ordered',covers:2,seats:4,total:51.0,server:'Jordan',activated:12,touch:3},
+      ]},
+    ];
+  }
+  initOnline(){
+    return [
+      {id:'#1042',status:'new',ch:'uber',customer:'Sarah K.',items:['1× Big Brekky','1× Flat White','1× Croissant'],total:38.5,timer:'2 min ago'},
+      {id:'#1041',status:'new',ch:'door',customer:'Tom R.',items:['2× Avo Toast'],total:24.0,timer:'4 min ago'},
+      {id:'#1039',status:'prep',ch:'web',customer:'Aisha M.',items:['1× Caesar Salad','1× Soup','2× Latte','1× Muffin'],total:61.0,timer:'8 min left'},
+      {id:'#1038',status:'prep',ch:'uber',customer:'Ben O.',items:['1× Bacon Roll'],total:12.5,timer:'3 min left'},
+      {id:'#1036',status:'ready',ch:'door',customer:'Chloe W.',items:['1× BLT','1× Chicken Wrap','2× Cola'],total:47.0,timer:'Ready'},
+      {id:'#1035',status:'ready',ch:'web',customer:'Marcus L.',items:['2× Long Black'],total:19.0,timer:'Ready'},
+    ];
+  }
+
+  flash(msg){ this.setState({toast:msg}); clearTimeout(this._tt); this._tt=setTimeout(()=>this.setState({toast:null}),1600); }
+
+  addLine(prod, mods, qty){
+    this.setState(s=>{
+      const order=[...s.order];
+      if(!mods || mods.length===0){
+        const ex=order.find(l=>l.pid===prod.id && l.mods.length===0);
+        if(ex){ ex.qty+=qty; return {order}; }
+      }
+      order.push({id:'L'+(s.seq), pid:prod.id, name:prod.name, cat:prod.cat, unit:prod.price + (mods?mods.reduce((a,m)=>a+m.price,0):0), qty, mods:mods||[]});
+      return {order, seq:s.seq+1};
+    });
+    this.flash(prod.name+' added');
+  }
+  tapProduct(prod){
+    if(prod.mod){ this.openMod(prod); return; }
+    this.addLine(prod, [], 1);
+  }
+  openMod(prod){
+    const sets=MODSETS[prod.mod].map(g=>({...g, choices:g.choices.map(c=>({...c}))}));
+    const sel=sets.map(g=> g.type==='single' ? [0] : []);
+    this.setState({mod:{prod, sets, sel, qty:1}});
+  }
+  toggleChoice(gi,ci){
+    this.setState(s=>{
+      const mod={...s.mod, sel:s.mod.sel.map(a=>[...a])};
+      const g=mod.sets[gi];
+      if(g.type==='single'){ mod.sel[gi]=[ci]; }
+      else { const arr=mod.sel[gi]; const p=arr.indexOf(ci); if(p>=0) arr.splice(p,1); else arr.push(ci); }
+      return {mod};
+    });
+  }
+  modQtyStep(d){ this.setState(s=>({mod:{...s.mod, qty:Math.max(1,s.mod.qty+d)}})); }
+  modAddToOrder(){
+    const m=this.state.mod; const mods=[];
+    m.sets.forEach((g,gi)=> m.sel[gi].forEach(ci=>{ const c=g.choices[ci]; if(c.price>0 || g.type==='single') mods.push({label:c.label, price:c.price}); }));
+    this.addLine(m.prod, mods, m.qty);
+    this.setState({mod:null});
+  }
+
+  lineTotals(){
+    const total=this.state.order.reduce((a,l)=>a+l.unit*l.qty,0);
+    const gst=total - total/1.1;
+    return {total, gst, sub:total-gst};
+  }
+
+  openPay(){ if(this.state.order.length===0){ this.flash('Add items first'); return;} this.setState({pay:{stage:'choose', method:'card', tendered:0}}); }
+  confirmCard(){ this.setState(s=>({pay:{...s.pay, stage:'done', method:'Card', change:0}})); }
+  pickTender(v){ this.setState(s=>({pay:{...s.pay, tendered:v}})); }
+  confirmCash(){
+    const {total}=this.lineTotals(); const t=this.state.pay.tendered;
+    if(t<total){ this.flash('Insufficient amount'); return; }
+    this.setState(s=>({pay:{...s.pay, stage:'done', method:'Cash', change:t-total}}));
+  }
+  newOrder(){ this.setState(s=>({pay:null, order:[], selLine:null, ticket:s.ticket+1})); }
+
+  selectTable(zi,ti){
+    const t=this.state.tables[zi].tables[ti];
+    this.setState({selTable:{...t, zone:this.state.tables[zi].name}});
+  }
+  tapTable(id, tobj){
+    const s=this.state;
+    if(s.mergeAnchor && s.mergeAnchor!==id){
+      const a=s.mergeAnchor;
+      this.setState({merges:{...s.merges,[a]:id,[id]:a}, mergeAnchor:null});
+      this.flash('Merged '+a+' + '+id);
+      return;
+    }
+    this.setState({selTable:tobj, mergeAnchor:null});
+  }
+  startMerge(){
+    const s=this.state;
+    if(s.mergeAnchor){ this.setState({mergeAnchor:null}); return; }
+    if(!s.selTable) return;
+    this.setState({mergeAnchor:s.selTable.id});
+    this.flash('Tap another table to merge with '+s.selTable.id);
+  }
+  clearTable(){ this.setState({selTable:null, mergeAnchor:null}); }
+  openTableOrder(){
+    const t=this.state.selTable;
+    this.setState({screen:'register', orderType:'dinein', selTable:null, ticket:parseInt(t.id.replace(/\D/g,''))||this.state.ticket});
+    this.flash('Opened '+t.id);
+  }
+
+  advanceOnline(id){
+    this.setState(s=>{
+      const online=s.online.map(o=>{ if(o.id!==id) return o; if(o.status==='new') return {...o,status:'prep',timer:'12 min left'}; if(o.status==='prep') return {...o,status:'ready',timer:'Ready'}; return null; }).filter(Boolean);
+      return {online};
+    });
+  }
+  rejectOnline(id){ this.setState(s=>({online:s.online.filter(o=>o.id!==id)})); this.flash('Order rejected'); }
+
+  renderVals(){
+    const s=this.state;
+    Promise.resolve().then(()=>this.applyTheme());
+    const navStyle=(active)=>'position:relative;display:flex;align-items:center;gap:9px;padding:10px 20px;border-radius:12px;cursor:pointer;color:#fff;white-space:nowrap;font:600 14px \'IBM Plex Sans\';'+(active?'background:rgba(255,255,255,.18)':'opacity:.68');
+
+    // order lines
+    const orderLines=s.order.map(l=>{
+      const catColor=PALETTE[l.cat]||'#5A5550';
+      const sel=s.selLine===l.id;
+      return {
+        id:l.id, name:l.name, qty:l.qty, color:catColor,
+        lineTotal:money(l.unit*l.qty), unitLabel:money(l.unit),
+        mods:l.mods.map(m=> m.label + (m.price>0?' +'+money(m.price):'')),
+        rowStyle:'display:flex;gap:11px;padding:11px 10px;border-radius:11px;cursor:pointer;margin-bottom:4px;'+(sel?'background:var(--accent-soft,rgba(168,32,64,.1))':'background:transparent'),
+        select:()=>this.setState({selLine:l.id}),
+        inc:(e)=>{ e.stopPropagation(); this.setState(st=>({order:st.order.map(x=>x.id===l.id?{...x,qty:x.qty+1}:x)})); },
+        dec:(e)=>{ e.stopPropagation(); this.setState(st=>({order:st.order.map(x=>x.id===l.id?{...x,qty:x.qty-1}:x).filter(x=>x.qty>0)})); },
+      };
+    });
+    const {total,gst,sub}=this.lineTotals();
+
+    // cats + products
+    const cats=CATS.map(c=>{
+      const count=PRODUCTS.filter(p=>p.cat===c.id).length;
+      const active=s.activeCat===c.id;
+      const fg=textOn(c.color);
+      return {
+        id:c.id, name:c.name, color:c.color, count,
+        railStyle:'display:flex;align-items:center;gap:12px;padding:0 16px;min-height:60px;border-radius:0;cursor:pointer;user-select:none;font:700 15px \'IBM Plex Sans\';transition:transform .08s,filter .1s;color:'+fg+';background:'+c.color+';'+(active?'box-shadow:inset 0 0 0 3px #000':'opacity:.86'),
+        countStyle:'flex:none;min-width:26px;height:26px;padding:0 8px;border-radius:13px;display:flex;align-items:center;justify-content:center;font:700 12px \'IBM Plex Mono\';color:'+fg+';background:rgba(255,255,255,.22)',
+        pick:()=>this.setState({activeCat:c.id}),
+      };
+    });
+    const products=PRODUCTS.filter(p=>p.cat===s.activeCat).map(p=>{
+      const col=PALETTE[p.cat]; const fg=textOn(col);
+      return {
+        id:p.id, name:p.name, priceLabel:money(p.price), hasMods:!!p.mod, img:p.img||'', hasImg:!!p.img, noImg:!p.img, fg:fg,
+        tileStyle:p.img
+          ? 'position:relative;min-height:160px;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;cursor:pointer;user-select:none;background:'+col+';color:'+fg+';box-shadow:0 1px 3px rgba(36,31,26,.14);transition:transform .1s,filter .1s'
+          : 'position:relative;min-height:160px;border-radius:14px;padding:13px 14px;display:flex;flex-direction:column;justify-content:space-between;cursor:pointer;user-select:none;background:'+col+';color:'+fg+';box-shadow:0 1px 3px rgba(36,31,26,.14);transition:transform .1s,filter .1s',
+        tap:()=>this.tapProduct(p),
+      };
+    });
+
+    const otNames={dinein:'Dine-in',takeaway:'Takeaway',pickup:'Pickup',delivery:'Delivery'};
+    const orderTypes=Object.keys(otNames).map(k=>({
+      name:otNames[k],
+      style:'flex:1;text-align:center;padding:10px 4px;border-radius:8px;cursor:pointer;font:600 12.5px \'IBM Plex Sans\';white-space:nowrap;transition:background .1s;'+(s.orderType===k?'background:var(--surface,#fff);color:var(--accent-text,#A82040);box-shadow:0 1px 3px rgba(36,31,26,.12)':'color:var(--muted,#8a8177)'),
+      pick:()=>this.setState({orderType:k}),
+    }));
+
+    // modifier sheet
+    let modOpen=false, modGroups=[], modName='', modColor='#A82040', modBaseLabel='', modQty=1, modTotalLabel='';
+    if(s.mod){
+      modOpen=true; const m=s.mod; modName=m.prod.name; modColor=PALETTE[m.prod.cat]; modBaseLabel=money(m.prod.price); modQty=m.qty;
+      let unit=m.prod.price;
+      modGroups=m.sets.map((g,gi)=>({
+        name:g.name, rule:g.rule,
+        ruleStyle:'font:600 10px \'IBM Plex Sans\';letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:6px;'+(g.req?'background:var(--accent-soft,rgba(168,32,64,.1));color:var(--accent-text,#A82040)':'background:var(--surface2,#f0ece3);color:var(--faint,#a39a8c)'),
+        choices:g.choices.map((c,ci)=>{
+          const on=m.sel[gi].includes(ci); if(on) unit+=c.price;
+          const single=g.type==='single';
+          return {
+            label:c.label, hasPrice:c.price>0, priceLabel:'+'+money(c.price),
+            rowStyle:'display:flex;align-items:center;gap:12px;padding:12px 13px;border-radius:10px;cursor:pointer;border:1.5px solid '+(on?'var(--accent,#A82040)':'var(--input-border,rgba(36,31,26,.14))')+';background:'+(on?'var(--accent-soft,rgba(168,32,64,.08))':'var(--surface,#fff)'),
+            markStyle:'width:20px;height:20px;flex:none;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;border:1.5px solid '+(on?'var(--accent,#A82040)':'var(--input-border,rgba(36,31,26,.28))')+';background:'+(on?'var(--accent,#A82040)':'transparent')+';border-radius:'+(single?'50%':'6px'),
+            mark:on?(single?'●':'✓'):'',
+            toggle:()=>this.toggleChoice(gi,ci),
+          };
+        }),
+      }));
+      modTotalLabel=money(unit*m.qty);
+    }
+
+    // tables
+    const statusMeta={
+      open:{label:'Open',dot:'var(--surface2,#f0ece3)',accent:'var(--faint,#a39a8c)',fill:'var(--surface,#fff)',border:'var(--border,rgba(36,31,26,.1))'},
+      seated:{label:'Seated',dot:'#3B5A8C',accent:'#3B5A8C',fill:'rgba(59,90,140,.08)',border:'rgba(59,90,140,.4)'},
+      ordered:{label:'Ordered',dot:'#C56A1A',accent:'#C56A1A',fill:'rgba(197,106,26,.08)',border:'rgba(197,106,26,.4)'},
+      bill:{label:'Needs bill',dot:'#A82040',accent:'#A82040',fill:'rgba(168,32,64,.08)',border:'rgba(168,32,64,.42)'},
+    };
+    const tableLegend=[
+      {label:'Open',color:'var(--surface2,#e5ded1)'},
+      {label:'Seated',color:'#3B5A8C'},
+      {label:'Ordered',color:'#C56A1A'},
+      {label:'Needs bill',color:'#A82040'},
+    ];
+    const mins=m=>m==null?'—':m+'m';
+    const tmap={}; s.tables.forEach(z=>z.tables.forEach(t=>{tmap[t.id]={...t,zone:z.name};}));
+    const shapeSize={stool:[58,58],round:[92,92],rect:[154,94]};
+    const curFloor=FLOORS[s.activeFloor]||FLOORS.main;
+    const floorTables=Object.keys(curFloor.tables).map(id=>{
+      const pos=curFloor.tables[id]; const t=tmap[id]||{status:'open'}; const m=statusMeta[t.status]; const open=t.status==='open';
+      const sz=shapeSize[pos.shape]; const radius=pos.shape==='rect'?'18px':'50%';
+      const isAnchor=s.mergeAnchor===id;
+      return {
+        label:id,
+        wrapStyle:'position:absolute;left:'+pos.x+'%;top:'+pos.y+'%;transform:translate(-50%,-50%);cursor:pointer;z-index:2;transition:transform .1s',
+        shapeStyle:'width:'+sz[0]+'px;height:'+sz[1]+'px;border-radius:'+radius+';display:flex;flex-direction:column;align-items:center;justify-content:center;border:2.5px solid '+(isAnchor?'#A82040':m.border)+';background:'+(open?'var(--surface,#fff)':m.fill)+';box-shadow:'+(isAnchor?'0 0 0 3px rgba(168,32,64,.25),':'')+'0 2px 8px rgba(36,31,26,.12)',
+        textColor:open?'var(--faint,#a39a8c)':'var(--text,#241f1a)',
+        subColor:open?'var(--faint,#a39a8c)':m.accent,
+        coversShort:open?'Open':((t.covers||0)+'/'+(t.seats||0)),
+        hasTimer:!open, timerLabel:open?'':mins(t.activated),
+        hasTotal:!open, total:open?'':money(t.total), dotColor:m.accent,
+        hasReserved:open&&!!t.reserved, reservedShort:t.reserved?t.reserved.split(' · ')[0]:'',
+        hasMerge:!!s.merges[id], mergeWith:s.merges[id]||'',
+        select:()=>this.tapTable(id,{...t,zone:t.zone||''}),
+      };
+    });
+    const floorZones=curFloor.zones.map(z=>({
+      label:z.label,
+      style:'position:absolute;left:'+z.x+'%;top:'+z.y+'%;width:'+z.w+'%;height:'+z.h+'%;border-radius:16px;background:'+z.tint+';border:'+(z.dashed?'2px dashed var(--input-border,rgba(36,31,26,.18))':'1.5px solid var(--border,rgba(36,31,26,.08))'),
+      labelStyle:'position:absolute;top:10px;left:14px;font:700 10.5px \'IBM Plex Sans\';letter-spacing:.12em;text-transform:uppercase;color:var(--faint,#a39a8c)',
+    }));
+    const floorTabs=Object.keys(FLOORS).map(fid=>({
+      label:FLOORS[fid].label,
+      select:()=>this.setState({activeFloor:fid,selTable:null,mergeAnchor:null}),
+      style:'padding:7px 15px;border-radius:9px;cursor:pointer;font:600 12.5px \'IBM Plex Sans\';white-space:nowrap;border:1.5px solid '+(s.activeFloor===fid?'var(--text,#241f1a)':'var(--border,rgba(36,31,26,.14))')+';background:'+(s.activeFloor===fid?'var(--text,#241f1a)':'transparent')+';color:'+(s.activeFloor===fid?'#fff':'var(--muted,#6b6259)'),
+    }));
+    const st=s.selTable;
+    const selChips = st ? (()=>{ const arr=[]; if(st.status==='open'){ arr.push({k:'Seats',v:String(st.seats||'—'),color:'#fff'}); if(st.reserved) arr.push({k:'Reserved',v:st.reserved,color:'#E9C46A'}); } else { arr.push({k:'Guests',v:(st.covers||0)+' / '+(st.seats||0),color:'#fff'}); arr.push({k:'Seated',v:mins(st.activated),color:'#fff'}); arr.push({k:'Last touch',v:mins(st.touch),color:(st.touch>=15?'#F4A98C':'#fff')}); if(st.server) arr.push({k:'Server',v:st.server,color:'#fff'}); arr.push({k:'Total',v:money(st.total||0),color:'#fff'}); } return arr; })() : [];
+
+    // online
+    const chMeta={
+      uber:{label:'Uber Eats',color:'#4E7A51'},
+      door:{label:'DoorDash',color:'#A82040'},
+      web:{label:'ZedRead Web',color:'#3B5A8C'},
+    };
+    const channelLegend=[chMeta.uber,chMeta.door,chMeta.web];
+    const colDefs=[{key:'new',title:'New',dot:'#C56A1A'},{key:'prep',title:'Preparing',dot:'#3B5A8C'},{key:'ready',title:'Ready',dot:'#2F4034'}];
+    const onlineColumns=colDefs.map(cd=>{
+      const list=s.online.filter(o=>o.status===cd.key);
+      return {
+        title:cd.title, dot:cd.dot, count:list.length, empty:list.length===0,
+        orders:list.map(o=>{
+          const c=chMeta[o.ch];
+          const isReady=o.status==='ready';
+          return {
+            id:o.id, channel:c.label, customer:o.customer, total:money(o.total),
+            itemsLabel:o.items.reduce((a,x)=>a+parseInt(x),0)+' items',
+            itemsDetail:o.items.join(' · '),
+            channelStyle:'font:700 9.5px \'IBM Plex Sans\';letter-spacing:.04em;text-transform:uppercase;padding:3px 8px;border-radius:6px;color:#fff;background:'+c.color,
+            timer:o.timer, timerStyle:'margin-left:auto;font:600 11px \'IBM Plex Mono\';color:'+(isReady?'var(--green,#2F4034)':'var(--faint,#a39a8c)'),
+            isNew:o.status==='new', isPrep:o.status==='prep', isReady,
+            accept:()=>this.advanceOnline(o.id), advance:()=>this.advanceOnline(o.id), reject:()=>this.rejectOnline(o.id),
+          };
+        }),
+      };
+    });
+    const onlineNewCount=s.online.filter(o=>o.status==='new').length;
+
+    // payment
+    let payOpen=false, payChoosing=false, payDone=false, isCard=false, isCash=false, tenderPresets=[], tenderedLabel='', changePreview='', changePreviewColor='', changeLabel='', hasChange=false, payDoneMethod='', cardTabStyle='', cashTabStyle='', cashConfirmStyle='';
+    if(s.pay){
+      payOpen=true;
+      const p=s.pay;
+      if(p.stage==='done'){ payDone=true; payDoneMethod=p.method; hasChange=p.change>0.001; changeLabel=money(p.change); }
+      else {
+        payChoosing=true; isCard=p.method==='card'; isCash=p.method==='cash';
+        const tabOn='flex:1;height:56px;border-radius:12px;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;font:700 14px \'IBM Plex Sans\';border:2px solid var(--accent,#A82040);background:var(--accent-soft,rgba(168,32,64,.1));color:var(--accent-text,#A82040)';
+        const tabOff='flex:1;height:56px;border-radius:12px;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;font:600 14px \'IBM Plex Sans\';border:1.5px solid var(--input-border,rgba(36,31,26,.16));background:var(--surface,#fff);color:var(--muted,#6b6259)';
+        cardTabStyle=isCard?tabOn:tabOff; cashTabStyle=isCash?tabOn:tabOff;
+        const presets=[Math.ceil(total),total,20,50,100,200].filter((v,i,a)=>a.indexOf(v)===i && v>=total).slice(0,6);
+        const seen=new Set(); const uniq=[];
+        [total, Math.ceil(total), 20,50,100,200].forEach(v=>{ const r=Math.round(v*100)/100; if(v>=total-0.001 && !seen.has(r)){ seen.add(r); uniq.push(v);} });
+        tenderPresets=uniq.slice(0,6).map(v=>({
+          label: Math.abs(v-total)<0.001?'Exact':money(v),
+          style:'height:52px;border-radius:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;font:600 14px \'IBM Plex Mono\';border:1.5px solid '+(Math.abs(p.tendered-v)<0.001?'var(--accent,#A82040)':'var(--input-border,rgba(36,31,26,.16))')+';color:'+(Math.abs(p.tendered-v)<0.001?'var(--accent-text,#A82040)':'var(--text,#241f1a)')+';background:'+(Math.abs(p.tendered-v)<0.001?'var(--accent-soft,rgba(168,32,64,.08))':'var(--surface,#fff)'),
+          pick:()=>this.pickTender(v),
+        }));
+        tenderedLabel=p.tendered?money(p.tendered):'—';
+        const chg=p.tendered-total;
+        changePreview=p.tendered?money(Math.max(0,chg)):'—';
+        changePreviewColor=chg>=0&&p.tendered?'var(--green,#2F4034)':'var(--faint,#a39a8c)';
+        const ok=p.tendered>=total-0.001 && p.tendered>0;
+        cashConfirmStyle='margin-top:16px;height:54px;border-radius:12px;display:flex;align-items:center;justify-content:center;font:700 15px \'IBM Plex Sans\';cursor:pointer;'+(ok?'background:#A82040;color:#fff':'background:var(--surface2,#f0ece3);color:var(--faint,#a39a8c);cursor:not-allowed');
+      }
+    }
+
+    return {
+      rootRef:this.rootRef,
+      themeIcon:s.theme==='light'?'☾':'☀', toggleTheme:()=>this.setState(x=>({theme:x.theme==='light'?'dark':'light'})),
+      isRegister:s.screen==='register', isTables:s.screen==='tables', isOnline:s.screen==='online',
+      goRegister:()=>this.setState({screen:'register'}), goTables:()=>this.setState({screen:'tables'}), goOnline:()=>this.setState({screen:'online'}),
+      navRegisterStyle:navStyle(s.screen==='register'), navTablesStyle:navStyle(s.screen==='tables'), navOnlineStyle:navStyle(s.screen==='online'),
+      onlineNewCount:onlineNewCount||0,
+      // register header
+      orderTypes,
+      // order pane
+      ticketNum:'#'+s.ticket, orderTitle:otNames[s.orderType]+(s.orderType==='dinein'?' · Table '+s.ticket:''),
+      orderSub:'Order '+('000'+s.ticket).slice(-4)+' · Maya R.',
+      orderEmpty:s.order.length===0, orderLines,
+      subtotalLabel:money(sub), gstLabel:money(gst), totalLabel:money(total),
+      clearOrder:()=>this.setState({order:[],selLine:null}),
+      payBtnStyle:'flex:1;height:48px;border-radius:10px;background:'+(s.order.length?'#A82040':'var(--surface2,#f0ece3)')+';color:'+(s.order.length?'#fff':'var(--faint,#a39a8c)')+';display:flex;align-items:center;justify-content:center;font:700 14px \'IBM Plex Sans\';cursor:pointer',
+      openPay:()=>this.openPay(),
+      // cats/products
+      cats, products,
+      // modifier
+      modOpen, modName, modColor, modBaseLabel, modGroups, modQty, modTotalLabel,
+      modClose:()=>this.setState({mod:null}), modQtyInc:()=>this.modQtyStep(1), modQtyDec:()=>this.modQtyStep(-1), modAdd:()=>this.modAddToOrder(),
+      // tables
+      floorZones, floorTables, floorTabs, tableLegend, tableSelected:!!st,
+      selTableLabel:st?(st.zone+' · '+st.id):'',
+      selStatusLabel:st?statusMeta[st.status].label:'', selStatusColor:st?statusMeta[st.status].accent:'#888',
+      selChips, mergeBtnLabel:s.mergeAnchor?'Cancel merge':'⛓ Merge', mergeBtnStyle:'border:1.5px solid rgba(255,255,255,.28);color:#fff;font:600 12.5px \'IBM Plex Sans\';padding:8px 14px;border-radius:9px;cursor:pointer;white-space:nowrap;background:'+(s.mergeAnchor?'rgba(255,255,255,.14)':'transparent'),
+      startMerge:()=>this.startMerge(), openTableOrder:()=>this.openTableOrder(), clearTable:()=>this.clearTable(),
+      // online
+      onlineColumns, channelLegend,
+      // payment
+      payOpen, payChoosing, payDone, isCard, isCash,
+      selectCard:()=>this.setState(x=>({pay:{...x.pay,method:'card',tendered:0}})), selectCash:()=>this.setState(x=>({pay:{...x.pay,method:'cash',tendered:0}})),
+      confirmCard:()=>this.confirmCard(), confirmCash:()=>this.confirmCash(),
+      tenderPresets, tenderedLabel, changePreview, changePreviewColor, cashConfirmStyle, cardTabStyle, cashTabStyle,
+      payClose:()=>this.setState({pay:null}), payNewOrder:()=>this.newOrder(),
+      payDoneMethod, hasChange, changeLabel,
+      // toast
+      toastShow:!!s.toast, toastMsg:s.toast||'',
+    };
+  }
+}
+</script>
+</body>
+</html>
