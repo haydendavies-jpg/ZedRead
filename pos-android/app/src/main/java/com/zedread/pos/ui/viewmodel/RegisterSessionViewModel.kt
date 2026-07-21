@@ -2,6 +2,7 @@ package com.zedread.pos.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.zedread.pos.data.api.RegisterSessionDto
 import com.zedread.pos.data.repository.AuthRepository
 import com.zedread.pos.data.repository.RegisterSessionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -66,6 +67,46 @@ class RegisterSessionViewModel @Inject constructor(
                 .onFailure { e -> _cashInState.value = CashInState.Error(e.message ?: "Failed to open the till") }
         }
     }
+
+    private val _cashUpState = MutableStateFlow<CashUpState>(CashUpState.Loading)
+    val cashUpState: StateFlow<CashUpState> = _cashUpState.asStateFlow()
+
+    /** Load this terminal's open session so end-of-day cash-up has something to close. */
+    fun loadForCashUp() {
+        _cashUpState.value = CashUpState.Loading
+        viewModelScope.launch {
+            runCatching { repo.getCurrentSession() }
+                .onSuccess { session ->
+                    _cashUpState.value = if (session != null) {
+                        CashUpState.Ready(session)
+                    } else {
+                        CashUpState.Error("No open till session to close")
+                    }
+                }
+                .onFailure { e -> _cashUpState.value = CashUpState.Error(e.message ?: "Could not load the till session") }
+        }
+    }
+
+    /** Close the till with [closingCashCents] counted in at the end of the shift. */
+    fun closeSession(sessionId: String, closingCashCents: Long) {
+        _cashUpState.value = CashUpState.Submitting
+        viewModelScope.launch {
+            runCatching { repo.closeSession(sessionId, closingCashCents) }
+                .onSuccess { result -> _cashUpState.value = CashUpState.Closed(result) }
+                .onFailure { e -> _cashUpState.value = CashUpState.Error(e.message ?: "Failed to close the till") }
+        }
+    }
+
+    private val _loggedOut = MutableStateFlow(false)
+    val loggedOut: StateFlow<Boolean> = _loggedOut.asStateFlow()
+
+    /** End the shift: log the operator out once the till is closed. The device stays paired. */
+    fun logout() {
+        viewModelScope.launch {
+            authRepository.logout()
+            _loggedOut.value = true
+        }
+    }
 }
 
 sealed class RegisterGateState {
@@ -82,4 +123,12 @@ sealed class CashInState {
     object Loading : CashInState()
     object Done : CashInState()
     data class Error(val message: String) : CashInState()
+}
+
+sealed class CashUpState {
+    object Loading : CashUpState()
+    data class Ready(val session: RegisterSessionDto) : CashUpState()
+    object Submitting : CashUpState()
+    data class Closed(val session: RegisterSessionDto) : CashUpState()
+    data class Error(val message: String) : CashUpState()
 }

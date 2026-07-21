@@ -23,6 +23,7 @@ import com.zedread.pos.ui.screens.cart.CartScreen
 import com.zedread.pos.ui.screens.catalog.CatalogScreen
 import com.zedread.pos.ui.screens.payment.PaymentScreen
 import com.zedread.pos.ui.screens.register.CashInScreen
+import com.zedread.pos.ui.screens.register.CashUpScreen
 import com.zedread.pos.ui.screens.register.RegisterGateScreen
 import com.zedread.pos.ui.screens.switchuser.SwitchUserScreen
 import com.zedread.pos.ui.viewmodel.AppEntryViewModel
@@ -110,6 +111,18 @@ fun PosNavHost() {
             )
         }
 
+        composable(Screen.CashUp.route) {
+            CashUpScreen(
+                onDone = {
+                    // End of shift: the till is closed and the operator logged out —
+                    // clear the whole back stack so Back can't return to a stale sale.
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(navController.graph.id) { inclusive = true }
+                    }
+                },
+            )
+        }
+
         // ── Sell sub-graph: Catalog → Cart → Payment share one SellViewModel ────
         //
         // There is no backend endpoint to reconstruct a draft invoice's line
@@ -125,6 +138,7 @@ fun PosNavHost() {
                     viewModel = sellViewModel,
                     onProceedToCart = { navController.navigate(Screen.Cart.route) },
                     onSwitchUser = { navController.navigate(Screen.SwitchUser.route) },
+                    onCashUp = { navController.navigate(Screen.CashUp.route) },
                 )
             }
 
@@ -191,6 +205,7 @@ sealed class Screen(val route: String) {
     object PinSet : Screen("pin_set")
     object RegisterGate : Screen("register_gate")
     object CashIn : Screen("cash_in")
+    object CashUp : Screen("cash_up")
     object SellGraph : Screen("sell")
     object Catalog : Screen("catalog")
     object Cart : Screen("cart")

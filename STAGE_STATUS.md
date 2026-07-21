@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-21 (self-service license-seat device claiming auth rework — see ANDROID_POS_BUILD_PLAN.md)
+Last updated: 2026-07-21 (Android end-of-day cash-up screen — see ANDROID_POS_BUILD_PLAN.md)
 
 ---
 
@@ -1311,7 +1311,10 @@ first when picking this phase back up.
       styling still pending
 - [ ] Docket/receipt printing (`printing/` module scaffolded)
 - [x] Switch user flow (PIN re-entry without full logout)
-- [ ] End-of-day summary screen (cash-up) — start-of-day cash-in is done, cash-up is not
+- [x] End-of-day cash-up screen (`CashUpScreen.kt`) — closes the register session, shows the
+      computed Expected/Counted/Variance summary, logs the operator out. Entry point is a "Cash up"
+      icon on `CatalogScreen`'s top bar for now (no account/nav menu exists yet — that's
+      design-bundle-dependent, see `ANDROID_POS_BUILD_PLAN.md`).
 - [ ] Invoice history screen
 - [ ] Error handling + offline sync reconciliation
 - [ ] APK build + signing configuration — CI produces an unsigned debug APK; release signing not set up
