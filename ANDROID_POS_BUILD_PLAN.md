@@ -45,6 +45,11 @@ already-merged contract:
   scaffolding or screen list — added as the minimum needed to make Login functional, not scope creep.
   `TokenStore` now also separates device pairing from the operator session (`clearSession()` keeps
   the pairing on logout, matching the "device stays pinned" architecture decision above).
+  `POST /pos-devices` itself had no portal UI at all (API-only, first tested via curl/Swagger) — a
+  follow-up added **`PosDevicesPage.tsx`** (new admin-portal page at `/pos-devices`, `SUPER_ADMIN_NAV`)
+  to register/deregister terminals: site + license (filtered per selected site) + device name + a
+  device token field with a "Generate" button (random 32-char hex, still freely editable) and
+  click-to-copy so the value can be pasted straight into the app's Device Setup screen.
 - Corrected the actual login flow: the backend issues a token directly from
   `login()`/`select_site()` with no PIN step in between — `is_pin_reset_required` on that response
   (not a separate PIN check) is what decides whether **PinSetScreen** appears next. The scaffolding's

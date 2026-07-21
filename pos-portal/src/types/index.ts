@@ -169,6 +169,16 @@ export interface License {
   updated_at: string
 }
 
+export interface PosDevice {
+  id: string
+  site_id: string
+  license_id: string
+  device_name: string
+  device_token: string
+  is_active: boolean
+  registered_at: string
+}
+
 export interface LicenseInvoice {
   id: string
   license_id: string

@@ -22,6 +22,7 @@ import { GroupsPage } from './pages/GroupsPage'
 import { BrandsPage } from './pages/BrandsPage'
 import { SitesPage } from './pages/SitesPage'
 import { LicensesPage } from './pages/LicensesPage'
+import { PosDevicesPage } from './pages/PosDevicesPage'
 import { BrandDetailPage } from './pages/brands/BrandDetailPage'
 import { GroupDetailPage } from './pages/groups/GroupDetailPage'
 import { SiteDetailPage } from './pages/sites/SiteDetailPage'
@@ -125,6 +126,14 @@ export default function App() {
                 element={
                   <PrivateRoute requireSuperAdmin>
                     <LicensesPage />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="pos-devices"
+                element={
+                  <PrivateRoute requireSuperAdmin>
+                    <PosDevicesPage />
                   </PrivateRoute>
                 }
               />

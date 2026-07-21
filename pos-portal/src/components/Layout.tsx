@@ -12,6 +12,7 @@ const SUPER_ADMIN_NAV = [
   { to: '/brands', label: 'Brands' },
   { to: '/sites', label: 'Sites' },
   { to: '/licenses', label: 'Licenses' },
+  { to: '/pos-devices', label: 'POS Devices' },
 ]
 
 const SUPER_ADMIN_ONLY_NAV = [
