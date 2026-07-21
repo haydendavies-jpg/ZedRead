@@ -6,6 +6,7 @@ import com.zedread.pos.data.api.RegisterSessionDto
 import com.zedread.pos.data.api.RegisterSessionOpenRequest
 import com.zedread.pos.data.local.TokenStore
 import kotlinx.coroutines.flow.firstOrNull
+import retrofit2.HttpException
 import java.time.OffsetDateTime
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,8 +22,11 @@ class RegisterSessionRepository @Inject constructor(
     private val tokenStore: TokenStore,
 ) {
     /** Fetch the open session for this terminal, or null if the till is closed. */
-    suspend fun getCurrentSession(): RegisterSessionDto? =
-        api.getCurrentRegisterSession(requireBearer())
+    suspend fun getCurrentSession(): RegisterSessionDto? {
+        val response = api.getCurrentRegisterSession(requireBearer())
+        if (!response.isSuccessful) throw HttpException(response)
+        return response.body()
+    }
 
     /** Open a new session (start-of-day cash-in) with the device-local time now. */
     suspend fun openSession(openingCashCents: Long): RegisterSessionDto =
