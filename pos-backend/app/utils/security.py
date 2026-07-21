@@ -43,6 +43,14 @@ _ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
 _ACCESS_TOKEN_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
 _REFRESH_TOKEN_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
+# POS terminal tokens intentionally do not expire on a short clock: a terminal
+# is expected to stay signed in for an entire shift (or longer), and revocation
+# is already handled independently of expiry — logout ends the token's
+# user_pos_sessions row (_check_pos_session_row), and license/device state is
+# re-checked on every request. A ~10-year TTL keeps the JWT's "exp" claim
+# structurally present without it ever being the thing that logs someone out.
+_POS_ACCESS_TOKEN_DAYS: int = int(os.getenv("POS_ACCESS_TOKEN_EXPIRE_DAYS", "3650"))
+
 
 def normalize_email(email: str) -> str:
     """
@@ -213,7 +221,12 @@ def create_pos_access_token(
     user_id: str, site_id: str, jti: str, device_id: str | None = None
 ) -> str:
     """
-    Create a short-lived access JWT for an authenticated POS terminal user.
+    Create a long-lived access JWT for an authenticated POS terminal user.
+
+    Unlike portal/management tokens, this does not expire on a short clock —
+    a terminal is meant to stay signed in for a whole shift or longer, and
+    revocation runs independently of the token's own expiry (logout ends the
+    matching user_pos_sessions row; see _check_pos_session_row).
 
     Embeds site_id, device_id, and jti so the token is self-contained — the
     dependency can verify site/device access without an extra query parameter.
@@ -234,7 +247,7 @@ def create_pos_access_token(
     return _make_token(
         subject=user_id,
         token_type="pos_access",
-        expires_delta=timedelta(minutes=_ACCESS_TOKEN_MINUTES),
+        expires_delta=timedelta(days=_POS_ACCESS_TOKEN_DAYS),
         # jti is passed explicitly so it matches the session row written to DB
         extra_claims={"site_id": site_id, "device_id": device_id, "jti": jti},
     )

@@ -4,13 +4,18 @@ Tests cover password hashing (argon2) and JWT token creation/validation.
 No database is required — these are pure function tests.
 """
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
-from jose import JWTError
+from jose import JWTError, jwt
 
 from app.utils.security import (
+    _ALGORITHM,
     _MIN_SECRET_KEY_LENGTH,
+    _SECRET_KEY,
     _SECRET_KEY_PLACEHOLDER,
     create_access_token,
+    create_pos_access_token,
     create_refresh_token,
     decode_token,
     hash_password,
@@ -97,6 +102,30 @@ def test_access_token_different_from_refresh_token():
     access = create_access_token(user_id, "admin")
     refresh = create_refresh_token(user_id)
     assert access != refresh
+
+
+def test_create_pos_access_token_decodes_with_correct_claims():
+    """create_pos_access_token() embeds site_id, device_id, jti, and type='pos_access'."""
+    user_id = "pos-user-1"
+    token = create_pos_access_token(user_id, site_id="site-1", jti="jti-1", device_id="device-1")
+    payload = decode_token(token, expected_type="pos_access")
+
+    assert payload["sub"] == user_id
+    assert payload["site_id"] == "site-1"
+    assert payload["device_id"] == "device-1"
+    assert payload["jti"] == "jti-1"
+
+
+def test_create_pos_access_token_does_not_expire_on_a_short_clock():
+    """POS terminal tokens stay valid for years, not minutes — revocation is
+    session-based (user_pos_sessions), not TTL-based, so a terminal shouldn't
+    be forced to re-authenticate mid-shift."""
+    token = create_pos_access_token("pos-user-2", site_id="site-1", jti="jti-2")
+    # Decode without going through decode_token() so we can inspect the raw exp claim
+    payload = jwt.decode(token, _SECRET_KEY, algorithms=[_ALGORITHM])
+    expires_at = datetime.fromtimestamp(payload["exp"], tz=UTC)
+
+    assert expires_at - datetime.now(UTC) > timedelta(days=365)
 
 
 # ── SECRET_KEY validation (fail-fast) ─────────────────────────────────────────
