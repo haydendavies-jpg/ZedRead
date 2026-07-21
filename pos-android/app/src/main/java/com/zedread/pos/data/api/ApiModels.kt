@@ -152,13 +152,11 @@ data class CategoryDto(
 )
 
 // ── Invoices ──────────────────────────────────────────────────────────────
-
-/** POST /invoices request. */
-@JsonClass(generateAdapter = true)
-data class CreateInvoiceRequest(
-    @Json(name = "site_id") val siteId: String,
-    @Json(name = "invoice_type") val invoiceType: String = "sale",
-)
+//
+// Mirrors the inline request/response models in app/services/invoice_service.py
+// (there is no separate schemas/invoice.py). POST /invoices takes no body at
+// all — brand/site/register-session are all resolved server-side from the
+// caller's POS access token, not supplied by the client.
 
 @JsonClass(generateAdapter = true)
 data class InvoiceDto(
@@ -171,12 +169,19 @@ data class InvoiceDto(
     @Json(name = "is_refunded") val isRefunded: Boolean,
 )
 
-/** POST /invoices/{id}/line-items request. */
+/**
+ * POST /invoices/{id}/line-items request.
+ *
+ * No modifier_ids field — AddLineItemRequest has none; a modifier is
+ * attached afterward, one at a time, via
+ * POST /invoices/{id}/line-items/{lineItemId}/modifiers. Not wired yet — no
+ * modifier-picking UI exists (the modifier customise sheet is still Phase 1
+ * unbuilt work).
+ */
 @JsonClass(generateAdapter = true)
 data class AddLineItemRequest(
     @Json(name = "product_id") val productId: String,
     val quantity: Int,
-    @Json(name = "modifier_ids") val modifierIds: List<String> = emptyList(),
 )
 
 @JsonClass(generateAdapter = true)

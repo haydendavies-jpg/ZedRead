@@ -31,21 +31,22 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.zedread.pos.ui.viewmodel.PaymentFlowState
-import com.zedread.pos.ui.viewmodel.PaymentViewModel
+import com.zedread.pos.ui.viewmodel.SellViewModel
 
 /**
  * Dedicated payment screen supporting single payment (cash or card) and split payments.
  *
  * Split flow: operator enters a card amount, pays the first leg → screen refreshes
- * with remaining balance → operator pays second leg with cash.
+ * with remaining balance → operator pays second leg with cash. [viewModel] is
+ * shared with Catalog/Cart (scoped to the "sell" nav sub-graph).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PaymentScreen(
     onPaymentComplete: (invoiceId: String) -> Unit,
-    viewModel: PaymentViewModel = hiltViewModel(),
+    viewModel: SellViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.paymentState.collectAsState()
     var splitMode by remember { mutableStateOf(false) }
     var splitAmountInput by remember { mutableStateOf("") }
 

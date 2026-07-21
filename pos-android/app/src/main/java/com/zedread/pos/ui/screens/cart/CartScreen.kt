@@ -25,15 +25,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.zedread.pos.data.api.LineItemDto
-import com.zedread.pos.ui.viewmodel.CartViewModel
+import com.zedread.pos.ui.viewmodel.SellViewModel
 
-/** Invoice builder screen — displays line items, running total, and navigates to payment. */
+/**
+ * Invoice builder screen — displays line items already added from the
+ * catalog and the running total, then hands off to payment. [viewModel] is
+ * shared with CatalogScreen/PaymentScreen (scoped to the "sell" nav
+ * sub-graph), so the cart it shows is the one the operator was just building.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CartScreen(
-    invoiceId: String,
-    onProceedToPayment: (totalCents: Long) -> Unit,
-    viewModel: CartViewModel = hiltViewModel(),
+    onProceedToPayment: () -> Unit,
+    viewModel: SellViewModel = hiltViewModel(),
 ) {
     val lineItems by viewModel.lineItems.collectAsState()
 
@@ -76,7 +80,7 @@ fun CartScreen(
                 Spacer(Modifier.height(12.dp))
 
                 Button(
-                    onClick = { onProceedToPayment(viewModel.totalCents) },
+                    onClick = onProceedToPayment,
                     enabled = lineItems.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth(),
                 ) {

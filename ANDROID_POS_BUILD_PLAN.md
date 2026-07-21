@@ -14,17 +14,19 @@ here in a new session — read the Status section first, then the phase you're o
 | 1 | Android — project wiring (Retrofit/Hilt/Room/Nav) | ✅ Done |
 | 1 | Android — Device setup, Login, Site selector, PIN set/switch-user screens | ✅ Done |
 | 1 | Android — Register-session gate + start-of-day cash-in screen | 🔶 Partial — end-of-day cash-up not started |
-| 1 | Android — Register (order-entry) screen, exact match | 🔲 Not started |
+| 1 | Android — functional (non-exact-match) sell loop: browse → cart → pay | ✅ Done — see below |
+| 1 | Android — Register (order-entry) screen, exact match to design bundle | 🔲 Not started — functional but generic placeholder UI today |
 | 1 | Android — Modifier customise sheet, exact match | 🔲 Not started |
-| 1 | Android — Payment flow (Card/Cash exact match + Voucher/Split addition) | 🔲 Not started |
+| 1 | Android — Payment flow, exact match + Voucher tab/Split toggle | 🔶 Partial — Cash/Card + split work functionally, not styled; no Voucher tab |
 | 2 | Settings framework, idempotency, checksums, offline write-queue | 🔲 Not started |
 | 3 | Menu Studio → POS integration depth (recurring scheduling, menu selector) | 🔲 Not started |
 | 4 | Table maps & floor service | 🔲 Not started |
 
-**Next up:** the portal side of Phase 1 is complete, and so is the auth/register-session slice of the
-Android app (see "What the Android auth slice actually shipped" below). What's left in Phase 1 is the
-Register screen itself (exact match to the design bundle), the modifier sheet, the payment flow, and
-end-of-day cash-up.
+**Next up:** the portal side of Phase 1 is complete, and the Android app now has a functional
+end-to-end sell loop (device setup → login → till open → browse → cart → pay), verified by manual
+code review only (see "not verified against a real build" below — still true). What's left in Phase 1
+is purely visual/UX: the exact-match Register screen and modifier sheet from the design bundle, the
+Voucher tab + styled Split flow, and end-of-day cash-up.
 
 **What the Android auth slice actually shipped** (this session — no PR yet, see branch
 `claude/session-a61ycb`): the Stage 25 Android scaffolding predated PR #92's backend rework and called
@@ -58,6 +60,32 @@ already-merged contract:
   source. Checked manually instead: every renamed/removed API symbol was grepped for stale call sites,
   and every screen/nav route pairing was cross-checked. Needs a real compile + emulator run before
   merging with confidence — flagging rather than claiming a build that didn't happen.
+
+**What the functional sell-loop slice shipped** (same session, on top of the auth slice above): the
+Catalog/Cart/Payment scaffolding had its own contract drift plus a load-bearing bug, both fixed —
+- `ApiModels.kt`/`PosApiService.kt`: `POST /invoices` takes no request body at all (site/brand/
+  register-session all resolve server-side from the caller's POS token) — the scaffolding was sending
+  a `{site_id, invoice_type}` body the route doesn't declare a parameter for. `AddLineItemRequest` had
+  a `modifier_ids` field the real endpoint doesn't accept — modifiers attach one at a time via a
+  separate `POST .../line-items/{id}/modifiers` call, which nothing calls yet (no modifier-picking UI
+  exists). Both fixed to mirror the inline request/response models in
+  `app/services/invoice_service.py` (there is no separate `schemas/invoice.py`).
+- **The bug**: tapping a product called `startInvoice()`, which created an *empty* draft invoice and
+  immediately navigated to Cart — the tapped product was never added as a line item, so Cart always
+  rendered empty. Separately, Cart and Payment each instantiated their own fresh `hiltViewModel()`,
+  and since there's no `GET /invoices/{id}/line-items` to reconstruct a cart from, navigating away from
+  Catalog would have discarded whatever was added regardless.
+- **The fix**: consolidated `CatalogViewModel`/`CartViewModel`/`PaymentViewModel` into one
+  `SellViewModel` scoped to a new nested "sell" nav sub-graph wrapping Catalog/Cart/Payment
+  (`hiltViewModel(navController.getBackStackEntry("sell"))` — the standard Compose Navigation pattern
+  for a ViewModel shared across a set of screens). Tapping a product now calls `addToCart(productId)`,
+  which opens the draft invoice on the first tap and appends a line item on every tap after; Catalog
+  gained a "View Cart — N items · $X.XX" bottom bar instead of auto-navigating away per tap. Completing
+  payment re-navigates to the sell graph's own route with `popUpTo(...) { inclusive = true }`, which
+  discards the graph's back stack entry (and with it the `SellViewModel` instance) — a clean cart reset
+  for the next sale, for free.
+- Still generic, non-exact-match UI (a plain product grid, a plain line-item list, plain Cash/Card/
+  Split buttons) — the design-bundle-exact Register screen and modifier sheet are the next slice.
 
 **What Phase 1's merged backend slice actually shipped** (PR #92, on top of migration `0049` —
 renumbered from `0048` during a merge-conflict resolution with main's concurrent `0048_drop_menus_table`):

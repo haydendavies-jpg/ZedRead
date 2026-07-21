@@ -76,11 +76,10 @@ interface PosApiService {
 
     // ── Invoices ─────────────────────────────────────────────────────────────
 
-    /** POST /invoices — open a new draft invoice. */
+    /** POST /invoices — open a new draft invoice. No body: site/brand/register-session resolve from the token. */
     @POST("invoices")
     suspend fun createInvoice(
         @Header("Authorization") bearer: String,
-        @Body body: CreateInvoiceRequest,
     ): InvoiceDto
 
     /** POST /invoices/{id}/line-items — append a product to the invoice. */
