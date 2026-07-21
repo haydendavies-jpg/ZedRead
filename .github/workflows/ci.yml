@@ -90,3 +90,49 @@ jobs:
 
       - name: Type-check and build
         run: npm run build
+
+  # ── Android: debug APK build ─────────────────────────────────────────────────
+  #
+  # No gradlew is checked in yet (nothing in this repo has generated one —
+  # see ANDROID_POS_BUILD_PLAN.md), so this calls the system `gradle` these
+  # runners ship with directly instead of `./gradlew`. Android Studio
+  # generates gradlew locally on first sync; once that's committed this job
+  # should switch to `./gradlew` for a version-pinned build.
+  android:
+    name: Android build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: pos-android
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('pos-android/gradle/libs.versions.toml') }}
+          restore-keys: gradle-
+
+      - name: Build debug APK
+        run: gradle assembleDebug --console=plain
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: zedread-pos-debug-apk
+          path: pos-android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
