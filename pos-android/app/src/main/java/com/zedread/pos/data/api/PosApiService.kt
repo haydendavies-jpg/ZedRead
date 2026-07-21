@@ -1,5 +1,6 @@
 package com.zedread.pos.data.api
 
+import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
@@ -37,11 +38,20 @@ interface PosApiService {
 
     // ── Register (till) sessions ───────────────────────────────────────────
 
-    /** GET /register-sessions/current — the open session for this terminal, or null. */
+    /**
+     * GET /register-sessions/current — the open session for this terminal, or null.
+     *
+     * Wrapped in Response<T> rather than declaring a nullable suspend return
+     * type directly - Retrofit's suspend-fun nullable-body detection doesn't
+     * reliably recognize a Kotlin `T?` return type from bytecode alone, and
+     * throws "declared as non-null" even though the body is a legitimate
+     * JSON `null` (this endpoint's contract when no session is open, not an
+     * empty/204 response). Response<T>.body() sidesteps that entirely.
+     */
     @GET("register-sessions/current")
     suspend fun getCurrentRegisterSession(
         @Header("Authorization") bearer: String,
-    ): RegisterSessionDto?
+    ): Response<RegisterSessionDto>
 
     /** POST /register-sessions/open — start-of-day cash-in. */
     @POST("register-sessions/open")

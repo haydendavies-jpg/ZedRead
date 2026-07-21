@@ -13,14 +13,16 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * DataStore-backed storage for this terminal's device pairing and the active
+ * DataStore-backed storage for this terminal's claimed device and the active
  * operator session.
  *
- * Device pairing (deviceToken) and the operator session are separate
- * lifecycles: [clearSession] runs on logout and leaves deviceToken alone —
- * the physical terminal stays paired to its site even when nobody is
- * signed in, matching the "device stays pinned unless explicitly re-paired"
- * architecture decision in ANDROID_POS_BUILD_PLAN.md.
+ * The device token and the operator session are separate lifecycles:
+ * [clearSession] runs on logout and leaves deviceToken alone — the physical
+ * terminal stays paired to its site even when nobody is signed in, matching
+ * the "device stays pinned unless explicitly re-paired" architecture
+ * decision in ANDROID_POS_BUILD_PLAN.md. deviceToken is populated
+ * automatically from a login response (self-service claiming) rather than
+ * entered manually.
  */
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "pos_auth")
 
@@ -57,8 +59,8 @@ class TokenStore @Inject constructor(
     /** Emit the signed-in operator's email — needed to re-verify their PIN. */
     val email: Flow<String?> = context.dataStore.data.map { it[KEY_EMAIL] }
 
-    /** Persist the device pairing. Independent of any operator session. */
-    suspend fun pairDevice(deviceToken: String) {
+    /** Persist this terminal's claimed/re-paired device token. Independent of any operator session. */
+    suspend fun saveDeviceToken(deviceToken: String) {
         context.dataStore.edit { prefs -> prefs[KEY_DEVICE_TOKEN] = deviceToken }
     }
 

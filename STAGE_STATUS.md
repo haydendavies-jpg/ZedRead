@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-21 (Android auth/register-session slice — see ANDROID_POS_BUILD_PLAN.md)
+Last updated: 2026-07-21 (self-service license-seat device claiming auth rework — see ANDROID_POS_BUILD_PLAN.md)
 
 ---
 

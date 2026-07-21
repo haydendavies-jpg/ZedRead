@@ -12,11 +12,13 @@ import javax.inject.Inject
 
 /**
  * Resolves which screen the nav graph should start on, so a relaunch skips
- * straight back past setup/login instead of always starting cold.
+ * straight back past login instead of always starting cold.
  *
  * [startDestination] is null while resolving — PosNavHost waits for a value
  * before composing the NavHost, since Compose Navigation doesn't support
- * changing startDestination after the graph is created.
+ * changing startDestination after the graph is created. No device-setup
+ * branch — a terminal self-claims its device on login, so there's nothing
+ * to resolve ahead of it.
  */
 @HiltViewModel
 class AppEntryViewModel @Inject constructor(
@@ -29,7 +31,6 @@ class AppEntryViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             _startDestination.value = when {
-                !authRepo.hasPairedDevice() -> StartDestination.DeviceSetup
                 !authRepo.hasActiveSession() -> StartDestination.Login
                 else -> StartDestination.RegisterGate
             }
@@ -38,7 +39,6 @@ class AppEntryViewModel @Inject constructor(
 }
 
 enum class StartDestination {
-    DeviceSetup,
     Login,
     RegisterGate,
 }

@@ -12,7 +12,7 @@ here in a new session — read the Status section first, then the phase you're o
 | 1 | Portal — "POS - Site Assignment" toggle on Users edit page | ✅ Done |
 | 1 | Portal — Register Sessions report page | ✅ Done |
 | 1 | Android — project wiring (Retrofit/Hilt/Room/Nav) | ✅ Done |
-| 1 | Android — Device setup, Login, Site selector, PIN set/switch-user screens | ✅ Done |
+| 1 | Android — Login, Site selector, PIN set/switch-user screens (self-service device claiming — no Device Setup screen) | ✅ Done |
 | 1 | Android — Register-session gate + start-of-day cash-in screen | 🔶 Partial — end-of-day cash-up not started |
 | 1 | Android — functional (non-exact-match) sell loop: browse → cart → pay | ✅ Done — see below |
 | 1 | Android — Register (order-entry) screen, exact match to design bundle | 🔲 Not started — functional but generic placeholder UI today |
@@ -107,6 +107,48 @@ renumbered from `0048` during a merge-conflict resolution with main's concurrent
   open for the calling device.
 - 785 backend tests passing (full suite) at merge time.
 
+**What the self-service license-seat auth rework shipped** (this session, on top of everything above
+— see PR #110 backend+portal, branch `claude/session-a61ycb` for the Android slice): user feedback
+after exercising the real login flow on an emulator — hitting the Device Setup screen was an
+unexpected, undocumented prerequisite ("I wasn't aware of the new page") — led to reworking the whole
+model instead of just polishing that screen. The admin-pre-registration flow (portal admin registers
+a device via `POST /pos-devices`, someone types the resulting `device_token` into Device Setup before
+Login even works) is replaced with self-service: log in with credentials only, pick a site from your
+own grants, and the app claims (or re-pairs) a license seat automatically.
+- **Backend**: `licenses.max_devices` (migration `0051`) is the new seat-capacity concept — licenses
+  had none before, just a 1-device-1-site pairing with no cap on how many devices could attach.
+  `pos_auth_service.login()`/`select_site()` no longer resolve the site from a device's own pairing at
+  all — site resolution is now purely `UserAccessGrant`-driven (one grant auto-resolves, zero is a
+  403, two+ returns `available_sites` **unconditionally**, superseding `is_pos_multi_site_enabled`'s
+  former gating role — the flag/column/portal toggle still exist, just unused by this decision now).
+  `_finalize_login()`'s new `_resolve_or_claim_device()` reuses an already-paired device on the
+  resolved site as-is, re-pairs it elsewhere (`DEVICE_REPAIRED`), or claims a brand-new one
+  (`DEVICE_REGISTERED`) — the latter two gated by the license's remaining seats, `403` if none are
+  free. New `GET /pos-devices/management` + `POST /pos-devices/{id}/release` let a management-portal
+  user (permission- and scope-gated by the existing `"devices"` page key) or a portal admin (any
+  device) free a seat; the superadmin-only manual-registration routes from the original slice are
+  unchanged as an escape hatch, not removed.
+- **Portal**: `LicensesPage` gained a seat-capacity field + a click-to-edit "N of M seats" column; new
+  management-portal `DevicesPage.tsx` (nav entry "Devices") lists the caller's scoped devices with a
+  Release action.
+- **Android**: `DeviceSetupScreen.kt`/`DeviceViewModel.kt` and `Screen.DeviceSetup` are deleted
+  outright — `StartDestination` is now just `Login` vs `RegisterGate`, nothing to resolve ahead of
+  Login. `TokenStore.deviceToken` stays structurally the same (still "this terminal's own persisted
+  token") but is now populated automatically from a login response instead of manual entry —
+  `AuthRepository.pairDevice()`/`hasPairedDevice()`/`requireDeviceToken()` are gone, replaced by an
+  internal `saveDeviceToken()` called after every successful login/site-select. `LoginRequest`/
+  `SiteTokenRequest` send `device_name` (sourced from `android.os.Build.MODEL` — no rename screen
+  exists yet, flagged as an easy follow-up if wanted) and a nullable `device_token` (whatever's
+  locally stored, `null` on first-ever login); `PosLoginResponseDto` gains the claimed/re-paired
+  `device_token` to persist. `AuthViewModel.loginErrorMessage()` gained a 403 sub-case (checks the
+  error body for "seat") distinguishing "no available license seats" from a plain no-grant 403 — the
+  first HTTP-body-content-based error mapping in this file, everything else there is status-code-only.
+- **Not verified against a real build** — same standing caveat as the original auth slice above (this
+  sandbox can't reach Google's Maven repo); relies on the GitHub Actions Android CI job added this
+  session plus a manual grep sweep for stale call sites (`DeviceSetup`, `pairDevice`,
+  `hasPairedDevice`, `requireDeviceToken`, `DevicePairState`, `DeviceViewModel` — all confirmed zero
+  remaining references).
+
 ---
 
 ## Context
@@ -188,8 +230,9 @@ takes payment — matching the design file exactly wherever it defines one.
 **Android**
 - ✅ Project wiring: Retrofit client, Hilt DI modules, Room DB, Compose nav graph (existing Stage 25
   scaffolding, filled in for real — see "What the Android auth slice actually shipped" above).
-- ✅ **Device Setup** screen (not in the original list — see above for why it's a hard prerequisite):
-  one-time entry of this terminal's `device_token`, persisted independently of the operator session.
+- ~~**Device Setup** screen~~ — built in this slice (not in the original list — see above for why it
+  was a hard prerequisite at the time), then **removed** by the self-service auth rework noted above:
+  a terminal no longer needs one-time `device_token` entry, it claims a seat automatically on login.
 - ✅ **Login** screen (email + password, ZedRead wordmark). Calls `POST /auth/pos/login` with
   `{email, password, device_token}`. Still needs the Public Sans 700 / Register-surface type
   treatment pass — functionally wired but not yet styled to the design bundle.
@@ -217,9 +260,12 @@ takes payment — matching the design file exactly wherever it defines one.
   hide-variance option is a Phase 2 setting); confirm-close. A "Cash Up" entry point in the
   account/nav menu. Calls `POST /register-sessions/{id}/close`.
 
-**Backend API reference for Phase 1 Android work** (all merged, live on `main`):
-- `POST /auth/pos/login` `{email, password, device_token}` → token, or `{available_sites: [...]}`.
-- `POST /auth/pos/site-token` `{email, password, device_token, site_id}` → token.
+**Backend API reference for Phase 1 Android work** (current contract — see the self-service
+auth-rework note above for how this superseded the original device-paired shape):
+- `POST /auth/pos/login` `{email, password, device_name, device_token?}` → token (incl. the claimed/
+  re-paired `device_token` to persist), or `{available_sites: [...]}`. `device_token` is the
+  terminal's own previously-claimed token, `null`/omitted on first-ever login.
+- `POST /auth/pos/site-token` `{email, password, device_name, device_token?, site_id}` → token.
 - `GET /register-sessions/current` → open session for this device, or `null`.
 - `POST /register-sessions/open` `{opened_at, opening_cash_cents}` → session.
 - `POST /register-sessions/{session_id}/close` `{closed_at, closing_cash_cents}` → session with

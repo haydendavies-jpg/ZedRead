@@ -9,14 +9,27 @@ class POSLoginRequest(BaseModel):
     """
     Payload for POST /auth/pos/login — email+password login for this terminal.
 
-    No site_id here: the site is resolved from the device's own paired site
-    (device_token) and the user's grants, not chosen by the caller — see
-    SiteOption / POSSiteTokenRequest for the multi-site selection step.
+    No site_id here: the site is resolved from the user's own active grants
+    (self-service — auto-resolved if there's exactly one, otherwise offered
+    via available_sites), not chosen by the caller — see SiteOption /
+    POSSiteTokenRequest for the multi-site selection step. device_token is
+    this terminal's own previously-claimed token, or None on its very first
+    login ever; the server claims (or re-pairs) a device and returns its
+    token for the client to persist — see POSLoginResponse.device_token.
     """
 
     email: EmailStr
     password: str
-    device_token: str
+    device_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Human-readable name for this terminal, used only if a new device is claimed",
+    )
+    device_token: str | None = Field(
+        default=None,
+        description="This terminal's own previously-claimed device token, or None on first login",
+    )
 
 
 class SiteOption(BaseModel):
@@ -37,7 +50,8 @@ class POSSiteTokenRequest(BaseModel):
 
     email: EmailStr
     password: str
-    device_token: str
+    device_name: str = Field(..., min_length=1, max_length=255)
+    device_token: str | None = None
     site_id: uuid.UUID
 
 
@@ -49,7 +63,9 @@ class POSLoginResponse(BaseModel):
     or available_sites is populated and the caller must call
     POST /auth/pos/site-token with the chosen site_id — mirrors the portal's
     available_grants selection pattern. Exactly one of the two shapes is
-    populated, never both.
+    populated, never both. device_token is the (possibly newly-claimed or
+    re-paired) terminal token the client must persist locally and echo back
+    on every subsequent login/site-token/pin-verify call.
     """
 
     access_token: str | None = None
@@ -61,6 +77,7 @@ class POSLoginResponse(BaseModel):
     access_profile_name: str | None = None
     is_pin_reset_required: bool | None = None
     available_sites: list[SiteOption] | None = None
+    device_token: str | None = None
 
 
 class PINSetRequest(BaseModel):

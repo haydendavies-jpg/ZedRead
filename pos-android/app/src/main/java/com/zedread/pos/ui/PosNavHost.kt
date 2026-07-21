@@ -16,7 +16,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
-import com.zedread.pos.ui.screens.auth.DeviceSetupScreen
 import com.zedread.pos.ui.screens.auth.LoginScreen
 import com.zedread.pos.ui.screens.auth.PinSetScreen
 import com.zedread.pos.ui.screens.auth.SiteSelectorScreen
@@ -34,9 +33,9 @@ import com.zedread.pos.ui.viewmodel.StartDestination
  * Top-level Compose navigation graph covering every screen in the POS terminal.
  *
  * Waits for [AppEntryViewModel] to resolve where a relaunch should land
- * (device setup / login / straight past both into the register gate) before
- * composing the graph — Compose Navigation doesn't support changing
- * startDestination after the NavHost is first created.
+ * (login, or straight past it into the register gate) before composing the
+ * graph — Compose Navigation doesn't support changing startDestination
+ * after the NavHost is first created.
  */
 @Composable
 fun PosNavHost() {
@@ -53,22 +52,11 @@ fun PosNavHost() {
 
     val navController = rememberNavController()
     val startRoute = when (resolved) {
-        StartDestination.DeviceSetup -> Screen.DeviceSetup.route
         StartDestination.Login -> Screen.Login.route
         StartDestination.RegisterGate -> Screen.RegisterGate.route
     }
 
     NavHost(navController = navController, startDestination = startRoute) {
-        composable(Screen.DeviceSetup.route) {
-            DeviceSetupScreen(
-                onPaired = {
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(Screen.DeviceSetup.route) { inclusive = true }
-                    }
-                },
-            )
-        }
-
         composable(Screen.Login.route) {
             LoginScreen(
                 onNeedsSiteSelection = { navController.navigate(Screen.SiteSelector.route) },
@@ -198,7 +186,6 @@ private fun navigateAfterAuth(navController: NavHostController, needsPinSetup: B
 
 /** Sealed class of all navigation destinations. */
 sealed class Screen(val route: String) {
-    object DeviceSetup : Screen("device_setup")
     object Login : Screen("login")
     object SiteSelector : Screen("site_selector")
     object PinSet : Screen("pin_set")

@@ -108,6 +108,7 @@ async def test_reset_password_consumes_user_token_and_changes_password(
         json={
             "email": "posuser@test.com",
             "password": "BrandNewUserPassword123!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
         },
     )

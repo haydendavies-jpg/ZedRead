@@ -4,10 +4,10 @@ Covers:
 1. Happy path — login returns token + context; PIN set; PIN verify issues token
 2. Auth failure — wrong password, inactive user, no grant, wrong PIN
 3. Invalid input — missing fields return 422
-4. Business rules — device not registered, license inactive, no active grant,
-   multi-site selection (available_sites + site-token), device re-pairing
-5. Audit log — login success/failure, device repair, pin set, pin verify all
-   write correct rows
+4. Business rules — self-service device claim/re-pair, license seat exhaustion,
+   multi-site selection (available_sites + site-token)
+5. Audit log — login success/failure, device claim/repair, pin set, pin verify
+   all write correct rows
 """
 
 import uuid
@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy import select
 
 from app.constants.audit_actions import (
+    DEVICE_REGISTERED,
     DEVICE_REPAIRED,
     POS_LOGIN_FAILED,
     POS_LOGIN_SUCCESS,
@@ -43,12 +44,13 @@ pytestmark = pytest.mark.asyncio
 async def test_pos_login_valid_credentials_returns_200(
     client, test_user, test_site, test_access_grant, test_device
 ):
-    """Valid email+password+device_token returns 200 with token and terminal context."""
+    """Valid email+password, with the terminal's existing device_token, returns 200."""
     response = await client.post(
         "/auth/pos/login",
         json={
             "email": "posuser@test.com",
             "password": "POSPassword123!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
         },
     )
@@ -64,6 +66,7 @@ async def test_pos_login_valid_credentials_returns_200(
     assert body["access_profile_name"] == "Cashier"
     assert body["is_pin_reset_required"] is True  # No PIN set yet
     assert body["available_sites"] is None
+    assert body["device_token"] == test_device.device_token
 
 
 async def test_pos_login_creates_session_row(client, db, test_user, test_site, test_access_grant, test_device):
@@ -73,6 +76,7 @@ async def test_pos_login_creates_session_row(client, db, test_user, test_site, t
         json={
             "email": "posuser@test.com",
             "password": "POSPassword123!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
         },
     )
@@ -94,6 +98,7 @@ async def test_pos_login_success_writes_audit_log(
         json={
             "email": "posuser@test.com",
             "password": "POSPassword123!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
         },
     )
@@ -109,6 +114,141 @@ async def test_pos_login_success_writes_audit_log(
     assert row.actor_id == test_user.id
 
 
+async def test_pos_login_same_site_reuses_device_without_repair(
+    client, db, test_user, test_site, test_access_grant, test_device
+):
+    """Logging back in on the device's already-paired site writes no device audit row."""
+    await client.post(
+        "/auth/pos/login",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "device_name": "Test Terminal",
+            "device_token": test_device.device_token,
+        },
+    )
+
+    result = await db.execute(
+        select(AuditLog).where(AuditLog.action.in_([DEVICE_REPAIRED, DEVICE_REGISTERED]))
+    )
+    assert result.scalar_one_or_none() is None
+
+
+# ── Self-service device claim / seat exhaustion ────────────────────────────────
+
+
+async def test_pos_login_no_existing_device_claims_new_device(
+    client, db, test_user, test_site, test_access_grant, test_license
+):
+    """First-ever login (no device_token) claims a new device and a license seat."""
+    response = await client.post(
+        "/auth/pos/login",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "device_name": "Brand New Terminal",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["device_token"] is not None
+
+    result = await db.execute(
+        select(PosDevice).where(PosDevice.device_token == body["device_token"])
+    )
+    device = result.scalar_one()
+    assert device.site_id == test_site.id
+    assert device.license_id == test_license.id
+    assert device.device_name == "Brand New Terminal"
+
+
+async def test_pos_login_new_device_writes_device_registered_audit_log(
+    client, db, test_user, test_site, test_access_grant, test_license
+):
+    """Claiming a new device writes a DEVICE_REGISTERED row attributed to the POS user."""
+    response = await client.post(
+        "/auth/pos/login",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "device_name": "Brand New Terminal",
+        },
+    )
+    device_id = (
+        await db.execute(select(PosDevice).where(PosDevice.device_token == response.json()["device_token"]))
+    ).scalar_one().id
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(device_id),
+            AuditLog.action == DEVICE_REGISTERED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.actor_id == test_user.id
+    assert row.actor_email == "posuser@test.com"
+
+
+async def test_pos_login_unknown_device_token_claims_new_device(
+    client, test_user, test_site, test_access_grant, test_license
+):
+    """A device_token that matches nothing active is treated as a first-ever claim, not an error."""
+    response = await client.post(
+        "/auth/pos/login",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "device_name": "New Terminal",
+            "device_token": "not-a-real-device-token",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["device_token"] is not None
+
+
+async def test_pos_login_no_available_seats_returns_403(
+    client, test_user, test_site, test_access_grant, test_license, test_device
+):
+    """A site whose license has no free seat rejects a different terminal's claim with 403."""
+    # test_license defaults to max_devices=1, and test_device already occupies it.
+    response = await client.post(
+        "/auth/pos/login",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "device_name": "Second Terminal",
+        },
+    )
+
+    assert response.status_code == 403
+    assert "seat" in response.json()["detail"].lower()
+
+
+async def test_pos_login_no_available_seats_writes_audit_log(
+    client, db, test_user, test_site, test_access_grant, test_license, test_device
+):
+    """A seat-exhausted login attempt writes a POS_LOGIN_FAILED audit row."""
+    await client.post(
+        "/auth/pos/login",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "device_name": "Second Terminal",
+        },
+    )
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.action == POS_LOGIN_FAILED,
+            AuditLog.actor_email == "posuser@test.com",
+        )
+    )
+    rows = result.scalars().all()
+    assert any(row.after_state.get("reason") == "no_available_seats" for row in rows)
+
+
 # ── Logout / session revocation ───────────────────────────────────────────────
 
 
@@ -119,6 +259,7 @@ async def _login_pos(client, device) -> str:
         json={
             "email": "posuser@test.com",
             "password": "POSPassword123!",
+            "device_name": "Test Terminal",
             "device_token": device.device_token,
         },
     )
@@ -187,6 +328,7 @@ async def test_pos_login_wrong_password_returns_401(
         json={
             "email": "posuser@test.com",
             "password": "WrongPassword!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
         },
     )
@@ -195,14 +337,14 @@ async def test_pos_login_wrong_password_returns_401(
     assert response.json()["detail"] == "Invalid credentials"
 
 
-async def test_pos_login_unknown_email_returns_401(client, test_device):
+async def test_pos_login_unknown_email_returns_401(client):
     """Unknown email returns 401 with the same message as wrong password."""
     response = await client.post(
         "/auth/pos/login",
         json={
             "email": "nobody@test.com",
             "password": "POSPassword123!",
-            "device_token": test_device.device_token,
+            "device_name": "Test Terminal",
         },
     )
 
@@ -210,10 +352,8 @@ async def test_pos_login_unknown_email_returns_401(client, test_device):
     assert response.json()["detail"] == "Invalid credentials"
 
 
-async def test_pos_login_inactive_user_returns_401(client, db, test_site, test_brand, test_device):
+async def test_pos_login_inactive_user_returns_401(client, db, test_site, test_brand):
     """Inactive POS user cannot log in."""
-    from app.models.user import User
-
     inactive = User(
         id=uuid.uuid4(),
         group_id=test_brand.group_id,
@@ -231,41 +371,27 @@ async def test_pos_login_inactive_user_returns_401(client, db, test_site, test_b
         json={
             "email": "inactive_pos@test.com",
             "password": "POSPassword123!",
-            "device_token": test_device.device_token,
+            "device_name": "Test Terminal",
         },
     )
 
     assert response.status_code == 401
 
 
-async def test_pos_login_no_grant_returns_403(client, test_user, test_site, test_device):
-    """User with no active grant for the device's paired site is denied with 403."""
-    # No test_access_grant fixture — user exists but has no grant
+async def test_pos_login_no_grant_returns_403(client, test_user):
+    """User with no active grant on any site is denied with 403."""
+    # No test_access_grant fixture — user exists but has no grant anywhere
     response = await client.post(
         "/auth/pos/login",
         json={
             "email": "posuser@test.com",
             "password": "POSPassword123!",
-            "device_token": test_device.device_token,
+            "device_name": "Test Terminal",
         },
     )
 
     assert response.status_code == 403
     assert "grant" in response.json()["detail"].lower()
-
-
-async def test_pos_login_unregistered_device_returns_404(client, test_user, test_access_grant):
-    """An unknown device_token returns 404 — the device has not been registered."""
-    response = await client.post(
-        "/auth/pos/login",
-        json={
-            "email": "posuser@test.com",
-            "password": "POSPassword123!",
-            "device_token": "not-a-real-device-token",
-        },
-    )
-
-    assert response.status_code == 404
 
 
 async def test_pos_login_inactive_license_returns_403(
@@ -280,6 +406,7 @@ async def test_pos_login_inactive_license_returns_403(
         json={
             "email": "posuser@test.com",
             "password": "POSPassword123!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
         },
     )
@@ -297,6 +424,7 @@ async def test_pos_login_failure_writes_audit_log(
         json={
             "email": "posuser@test.com",
             "password": "WrongPassword!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
         },
     )
@@ -339,6 +467,7 @@ async def second_site_grant(db, test_user, test_brand, test_access_profile):
         status="active",
         monthly_fee_cents=9900,
         is_trial=False,
+        max_devices=1,
         starts_at=datetime.now(tz=timezone.utc),
         expires_at=datetime.now(tz=timezone.utc) + timedelta(days=365),
     )
@@ -358,18 +487,16 @@ async def second_site_grant(db, test_user, test_brand, test_access_profile):
     return site
 
 
-async def test_pos_login_single_site_ignores_multi_site_flag(
+async def test_pos_login_single_grant_auto_resolves(
     client, db, test_user, test_site, test_access_grant, test_device
 ):
-    """is_pos_multi_site_enabled with only one granted site still resolves directly — no selector."""
-    test_user.is_pos_multi_site_enabled = True
-    await db.commit()
-
+    """Exactly one active site grant resolves directly to a token — no selector."""
     response = await client.post(
         "/auth/pos/login",
         json={
             "email": "posuser@test.com",
             "password": "POSPassword123!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
         },
     )
@@ -380,18 +507,16 @@ async def test_pos_login_single_site_ignores_multi_site_flag(
     assert body["available_sites"] is None
 
 
-async def test_pos_login_multi_site_returns_available_sites(
+async def test_pos_login_multiple_grants_returns_available_sites(
     client, db, test_user, test_site, test_access_grant, test_device, second_site_grant
 ):
-    """A multi-site-enabled user with grants on 2+ sites gets a selection list, not a token."""
-    test_user.is_pos_multi_site_enabled = True
-    await db.commit()
-
+    """Two or more active site grants always return a selection list, not a token."""
     response = await client.post(
         "/auth/pos/login",
         json={
             "email": "posuser@test.com",
             "password": "POSPassword123!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
         },
     )
@@ -404,36 +529,39 @@ async def test_pos_login_multi_site_returns_available_sites(
     assert site_ids == {str(test_site.id), str(second_site_grant.id)}
 
 
-async def test_pos_login_without_multi_site_flag_ignores_other_grants(
+async def test_pos_login_multiple_grants_ignores_multi_site_flag(
     client, db, test_user, test_site, test_access_grant, test_device, second_site_grant
 ):
-    """Without the flag, login resolves straight to the device's paired site even with 2+ grants."""
+    """
+    is_pos_multi_site_enabled no longer gates the selector — 2+ grants always
+    offer a picker, even with the flag left at its default False.
+    """
+    assert test_user.is_pos_multi_site_enabled is False
+
     response = await client.post(
         "/auth/pos/login",
         json={
             "email": "posuser@test.com",
             "password": "POSPassword123!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
         },
     )
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["site_id"] == str(test_site.id)
+    assert response.json()["available_sites"] is not None
 
 
 async def test_site_token_finalizes_selection_and_repairs_device(
     client, db, test_user, test_site, test_access_grant, test_device, second_site_grant
 ):
     """POST /auth/pos/site-token issues a token for the chosen site and re-pairs the device."""
-    test_user.is_pos_multi_site_enabled = True
-    await db.commit()
-
     response = await client.post(
         "/auth/pos/site-token",
         json={
             "email": "posuser@test.com",
             "password": "POSPassword123!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
             "site_id": str(second_site_grant.id),
         },
@@ -443,6 +571,7 @@ async def test_site_token_finalizes_selection_and_repairs_device(
     body = response.json()
     assert body["site_id"] == str(second_site_grant.id)
     assert body["access_token"] is not None
+    assert body["device_token"] == test_device.device_token
 
     await db.refresh(test_device)
     assert test_device.site_id == second_site_grant.id
@@ -452,14 +581,12 @@ async def test_site_token_repair_writes_audit_log(
     client, db, test_user, test_access_grant, test_device, second_site_grant
 ):
     """Re-pairing the device via site-token writes a DEVICE_REPAIRED audit row."""
-    test_user.is_pos_multi_site_enabled = True
-    await db.commit()
-
     await client.post(
         "/auth/pos/site-token",
         json={
             "email": "posuser@test.com",
             "password": "POSPassword123!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
             "site_id": str(second_site_grant.id),
         },
@@ -479,14 +606,12 @@ async def test_site_token_same_site_does_not_repair(
     client, db, test_user, test_site, test_access_grant, test_device
 ):
     """Selecting the device's already-paired site does not write a DEVICE_REPAIRED row."""
-    test_user.is_pos_multi_site_enabled = True
-    await db.commit()
-
     await client.post(
         "/auth/pos/site-token",
         json={
             "email": "posuser@test.com",
             "password": "POSPassword123!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
             "site_id": str(test_site.id),
         },
@@ -498,6 +623,39 @@ async def test_site_token_same_site_does_not_repair(
     assert result.scalar_one_or_none() is None
 
 
+async def test_site_token_no_available_seats_returns_403(
+    client, db, test_user, test_access_grant, test_device, second_site_grant
+):
+    """Re-pairing to a site whose license has no free seat is rejected with 403."""
+    # Occupy second_site_grant's only seat with an unrelated device first.
+    blocker = PosDevice(
+        id=uuid.uuid4(),
+        site_id=second_site_grant.id,
+        license_id=(
+            await db.execute(select(License).where(License.site_id == second_site_grant.id))
+        ).scalar_one().id,
+        device_name="Blocker Terminal",
+        device_token="blocker-token-xyz",
+        is_active=True,
+    )
+    db.add(blocker)
+    await db.commit()
+
+    response = await client.post(
+        "/auth/pos/site-token",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "device_name": "Test Terminal",
+            "device_token": test_device.device_token,
+            "site_id": str(second_site_grant.id),
+        },
+    )
+
+    assert response.status_code == 403
+    assert "seat" in response.json()["detail"].lower()
+
+
 async def test_site_token_wrong_password_returns_401(
     client, test_user, test_access_grant, test_device, second_site_grant
 ):
@@ -507,6 +665,7 @@ async def test_site_token_wrong_password_returns_401(
         json={
             "email": "posuser@test.com",
             "password": "WrongPassword!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
             "site_id": str(second_site_grant.id),
         },
@@ -735,14 +894,31 @@ async def test_pin_verify_duplicate_email_superadmin_row_resolves_pos_user(
 # ── Login missing fields ──────────────────────────────────────────────────────
 
 
-async def test_pos_login_missing_device_token_returns_422(client, test_user):
-    """Missing device_token returns 422."""
+async def test_pos_login_missing_device_name_returns_422(client, test_user):
+    """Missing device_name returns 422 — device_token is now optional, device_name is not."""
     response = await client.post(
         "/auth/pos/login",
         json={"email": "posuser@test.com", "password": "POSPassword123!"},
     )
 
     assert response.status_code == 422
+
+
+async def test_pos_login_omitted_device_token_defaults_to_claim(
+    client, test_user, test_site, test_access_grant, test_license
+):
+    """device_token may be omitted entirely (not just null) — a first-ever login."""
+    response = await client.post(
+        "/auth/pos/login",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "device_name": "Test Terminal",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["device_token"] is not None
 
 
 # ── Case-insensitive email login ────────────────────────────────────────────────
@@ -757,6 +933,7 @@ async def test_pos_login_email_case_insensitive(
         json={
             "email": "PosUser@TEST.com",
             "password": "POSPassword123!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
         },
     )
@@ -796,6 +973,7 @@ async def test_pos_login_duplicate_email_superadmin_row_resolves_pos_user(
         json={
             "email": test_user.email,
             "password": "POSPassword123!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
         },
     )
@@ -832,6 +1010,7 @@ async def test_pos_login_duplicate_email_resolves_to_matching_identity_not_pos_u
         json={
             "email": test_user.email,
             "password": "DifferentPassword456!",
+            "device_name": "Test Terminal",
             "device_token": test_device.device_token,
         },
     )

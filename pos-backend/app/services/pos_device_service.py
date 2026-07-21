@@ -4,7 +4,7 @@ import uuid
 
 import structlog
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import DEVICE_DEREGISTERED, DEVICE_REGISTERED
@@ -59,6 +59,62 @@ async def list_devices(
     result = await db.execute(
         select(PosDevice).order_by(PosDevice.registered_at.desc()).offset(skip).limit(limit)
     )
+    return list(result.scalars().all())
+
+
+async def count_active_devices_for_license(db: AsyncSession, license_id: uuid.UUID) -> int:
+    """
+    Count active PosDevice rows currently consuming a seat on a license.
+
+    Used by pos_auth_service's self-service claim/re-pair flow to enforce
+    License.max_devices — counted live from pos_devices rather than a
+    separate mutable counter column, so it can never drift out of sync.
+
+    Args:
+        db: Active database session.
+        license_id: The license to count seats against.
+
+    Returns:
+        int: Number of active devices currently claiming a seat.
+    """
+    result = await db.execute(
+        select(func.count())
+        .select_from(PosDevice)
+        .where(PosDevice.license_id == license_id, PosDevice.is_active == True)  # noqa: E712
+    )
+    return result.scalar_one()
+
+
+async def list_devices_for_brand(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    site_id: uuid.UUID | None = None,
+    skip: int = 0,
+    limit: int = 200,
+) -> list[PosDevice]:
+    """
+    List devices within a brand, optionally narrowed to one site.
+
+    Backs the management portal's scoped Devices page (as opposed to the
+    superadmin-only list_devices() above, which sees every device).
+
+    Args:
+        db: Active database session.
+        brand_id: Brand to scope the listing to.
+        site_id: Optional site filter within the brand.
+        skip: Number of rows to skip.
+        limit: Maximum rows to return.
+
+    Returns:
+        list[PosDevice]: Matching devices, most recently registered first.
+    """
+    query = (
+        select(PosDevice).join(Site, Site.id == PosDevice.site_id).where(Site.brand_id == brand_id)
+    )
+    if site_id is not None:
+        query = query.where(PosDevice.site_id == site_id)
+    query = query.order_by(PosDevice.registered_at.desc()).offset(skip).limit(limit)
+    result = await db.execute(query)
     return list(result.scalars().all())
 
 

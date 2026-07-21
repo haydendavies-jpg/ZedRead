@@ -10,7 +10,7 @@ terminal. One license per site. Status transitions:
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -57,6 +57,12 @@ class License(Base):
         nullable=False,
         default=False,
         comment="True for trial licenses that carry no invoicing obligation",
+    )
+    max_devices: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        comment="Seat capacity — how many active pos_devices this license may claim at once",
     )
     starts_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

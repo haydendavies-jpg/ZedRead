@@ -93,7 +93,18 @@ sealed class PinSetUiState {
 /** Maps common login failure codes to operator-facing copy. */
 internal fun loginErrorMessage(e: Throwable): String = when {
     e is HttpException && e.code() == 401 -> "Incorrect email or password"
+    e is HttpException && e.code() == 403 && e.isNoAvailableSeats() ->
+        "No available license seats for this site — ask an admin to release one, or purchase more"
     e is HttpException && e.code() == 403 -> "This account has no active access at this site"
-    e is HttpException && e.code() == 404 -> "This terminal is not registered — contact your administrator"
     else -> e.message ?: "Something went wrong. Please try again."
 }
+
+/**
+ * True when a 403's response body mentions "seat" — distinguishes the
+ * license-seat-exhausted case from a plain no-access-grant 403, both of
+ * which share the same HTTP status code.
+ */
+private fun HttpException.isNoAvailableSeats(): Boolean =
+    runCatching { response()?.errorBody()?.string() }
+        .getOrNull()
+        ?.contains("seat", ignoreCase = true) == true
