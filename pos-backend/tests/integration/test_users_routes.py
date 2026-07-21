@@ -32,6 +32,7 @@ from app.constants.audit_actions import (
     USER_PASSWORD_ADMIN_SET,
     USER_REACTIVATED,
     USER_SUPERADMIN_ROLE_UPDATED,
+    USER_UPDATED,
 )
 from app.models.audit_log import AuditLog
 from app.models.user import User
@@ -376,6 +377,45 @@ async def test_update_user_superadmin_role_writes_audit(client, db, portal_auth_
     )
     row = audit.scalar_one()  # raises if 0 or 2+ rows
     assert row.after_state["superadmin_role"] == "reseller_staff"
+
+
+async def test_update_user_pos_multi_site_enabled_toggle_writes_audit(client, db, portal_auth_headers, test_user):
+    """PATCH /users/{id} toggling is_pos_multi_site_enabled persists and writes a USER_UPDATED audit row."""
+    assert test_user.is_pos_multi_site_enabled is False
+
+    response = await client.patch(
+        f"/users/{test_user.id}",
+        json={"is_pos_multi_site_enabled": True},
+        headers=portal_auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["is_pos_multi_site_enabled"] is True
+
+    await db.refresh(test_user)
+    assert test_user.is_pos_multi_site_enabled is True
+
+    audit = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_user.id),
+            AuditLog.action == USER_UPDATED,
+        )
+    )
+    row = audit.scalar_one()  # raises if 0 or 2+ rows
+    assert row.after_state["is_pos_multi_site_enabled"] is True
+
+
+async def test_update_user_omits_pos_multi_site_enabled_leaves_unchanged(client, db, portal_auth_headers, test_user):
+    """Omitting is_pos_multi_site_enabled from the PATCH body leaves the existing value untouched."""
+    test_user.is_pos_multi_site_enabled = True
+    await db.commit()
+
+    response = await client.patch(
+        f"/users/{test_user.id}",
+        json={"first_name": test_user.first_name},
+        headers=portal_auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["is_pos_multi_site_enabled"] is True
 
 
 async def test_update_user_superadmin_role_reseller_staff_returns_403(client, db, test_user):

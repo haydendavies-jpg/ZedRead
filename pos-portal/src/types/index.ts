@@ -502,6 +502,8 @@ export interface User {
   /** 'admin' | 'reseller_staff' | null — admin-portal role, grantable only from the admin portal. */
   superadmin_role: 'admin' | 'reseller_staff' | null
   is_active: boolean
+  /** 'POS - Site Assignment' — when true and the user holds active grants on more than one site, POS login presents a site selector instead of resolving straight to the device's paired site. */
+  is_pos_multi_site_enabled: boolean
   site_grants: SiteGrantSummary[]
   has_portal_access: boolean
 }

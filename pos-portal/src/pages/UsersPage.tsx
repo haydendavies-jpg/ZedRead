@@ -155,6 +155,7 @@ export function UsersPage() {
   const [editEmail, setEditEmail] = useState('')
   const [editPassword, setEditPassword] = useState('')
   const [editSuperadminRole, setEditSuperadminRole] = useState('')
+  const [editPosMultiSiteEnabled, setEditPosMultiSiteEnabled] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
   const [resetSent, setResetSent] = useState(false)
 
@@ -201,11 +202,12 @@ export function UsersPage() {
   })
 
   const editMutation = useMutation({
-    mutationFn: ({ id, firstName, lastName, email, superadminRole, password }: { id: string; firstName: string; lastName: string; email: string; superadminRole?: string | null; password?: string }) =>
+    mutationFn: ({ id, firstName, lastName, email, superadminRole, password, isPosMultiSiteEnabled }: { id: string; firstName: string; lastName: string; email: string; superadminRole?: string | null; password?: string; isPosMultiSiteEnabled: boolean }) =>
       api.patch(`/users/${id}`, {
         first_name: firstName,
         last_name: lastName,
         email,
+        is_pos_multi_site_enabled: isPosMultiSiteEnabled,
         ...(superadminRole !== undefined ? { superadmin_role: superadminRole } : {}),
         ...(password ? { password } : {}),
       }),
@@ -308,6 +310,7 @@ export function UsersPage() {
     setEditEmail(user.email ?? '')
     setEditPassword('')
     setEditSuperadminRole(user.superadmin_role ?? '')
+    setEditPosMultiSiteEnabled(user.is_pos_multi_site_enabled)
     setEditError(null)
     setPinValue(''); setPinError(null); setPinSuccess(false)
     setAccessSearch('')
@@ -343,6 +346,7 @@ export function UsersPage() {
       firstName: editFirstName,
       lastName: editLastName,
       email: editEmail,
+      isPosMultiSiteEnabled: editPosMultiSiteEnabled,
       ...(canManageSuperadminRole ? { superadminRole: editSuperadminRole || null } : {}),
       ...(canSetPassword && editPassword ? { password: editPassword } : {}),
     })
@@ -734,6 +738,20 @@ export function UsersPage() {
                     )}
                   </div>
                 )}
+                <div>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editPosMultiSiteEnabled}
+                      onChange={(e) => setEditPosMultiSiteEnabled(e.target.checked)}
+                      className="rounded"
+                    />
+                    POS - Site Assignment
+                  </label>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                    When enabled and this user holds access to more than one site, POS login prompts them to choose a site instead of using the terminal's paired site automatically.
+                  </p>
+                </div>
                 {canSetPassword && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Set password</label>

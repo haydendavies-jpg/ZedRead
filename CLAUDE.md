@@ -329,6 +329,16 @@ into one page (kept at `pages/UsersPage.tsx`/`/users`) with a "Portal Role" colu
 unchanged and still has no Admin/Reseller option, per "only grantable from the admin portal." See
 `STAGE_STATUS.md` "SuperAdmin/User table merge" for full deliverables.
 
+**Users edit page — "POS - Site Assignment" toggle (post-SuperAdmin/User-table-merge, complete).**
+`users.is_pos_multi_site_enabled` existed on the model and was already read by
+`pos_auth_service.login()` (gates whether POS login prompts a site selector for a user with grants
+on more than one site), but had no read/write path — `UserOut`/`UserUpdate` didn't expose it and no
+portal control set it. `schemas/user.py` and `routes/users.py`'s `update_user()` now expose/accept
+it (same `model_fields_set` "not supplied vs explicit" sentinel as `backend_role`/`superadmin_role`,
+folded into the existing `USER_UPDATED` audit row rather than a new audit action); the admin
+portal's Users edit modal (`pages/UsersPage.tsx`) gained a checkbox for it in the User Details
+section. See `STAGE_STATUS.md` "Users edit page — POS - Site Assignment toggle".
+
 ## Folder structure (backend)
 ```
 pos-backend/

@@ -89,6 +89,10 @@ class UserOut(BaseModel):
     # 'admin' | 'reseller_staff' | None — admin-portal role, orthogonal to tenant grants
     superadmin_role: str | None = None
     is_active: bool
+    # 'POS - Site Assignment' — when true and the user holds active grants on
+    # more than one site, POS login presents a site selector instead of
+    # resolving straight to the device's paired site.
+    is_pos_multi_site_enabled: bool = False
     # Active site-scope grants with grant ID, site info, and default flag
     site_grants: list[SiteGrantSummary] = []
     # True when at least one active grant uses a portal-capable access profile
@@ -185,6 +189,8 @@ class UserUpdate(BaseModel):
     # Admin-portal role — same "not supplied" vs "clear" sentinel as backend_role
     superadmin_role: str | None = None
     password: str | None = Field(default=None, min_length=8)
+    # 'POS - Site Assignment' toggle — optional, only applied when supplied
+    is_pos_multi_site_enabled: bool | None = None
 
     model_config = {"from_attributes": True}
 
