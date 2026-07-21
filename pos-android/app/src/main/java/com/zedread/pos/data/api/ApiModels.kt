@@ -111,7 +111,7 @@ data class RegisterSessionCloseRequest(
     @Json(name = "closing_cash_cents") val closingCashCents: Long,
 )
 
-/** Full register session state, returned by /register-sessions/*. */
+/** Full register session state, returned by every /register-sessions endpoint. */
 @JsonClass(generateAdapter = true)
 data class RegisterSessionDto(
     val id: String,
