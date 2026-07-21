@@ -27,23 +27,24 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.zedread.pos.ui.viewmodel.AuthViewModel
-import com.zedread.pos.ui.viewmodel.PinUiState
+import com.zedread.pos.ui.viewmodel.PinSetUiState
 
 /**
- * PIN set screen — shown when [PinVerifyResponse.mustReset] is true.
- * The operator enters a new PIN (confirmed) to replace their temporary one.
+ * PIN set screen — shown right after login/switch-user when the backend
+ * flags is_pin_reset_required, so the operator has a PIN on file for future
+ * quick switch-user checks (POST /auth/pos/pin/verify).
  */
 @Composable
 fun PinSetScreen(
     onPinSet: () -> Unit,
     viewModel: AuthViewModel = hiltViewModel(),
 ) {
-    val uiState by viewModel.pinUiState.collectAsState()
+    val uiState by viewModel.pinSetUiState.collectAsState()
     var newPin by remember { mutableStateOf("") }
     var confirmPin by remember { mutableStateOf("") }
 
     LaunchedEffect(uiState) {
-        if (uiState is PinUiState.Set) onPinSet()
+        if (uiState is PinSetUiState.Done) onPinSet()
     }
 
     Column(
@@ -53,9 +54,9 @@ fun PinSetScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Set New PIN", style = MaterialTheme.typography.headlineMedium)
+        Text("Set Your PIN", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "You must set a new PIN before continuing.",
+            "Set a PIN so you can quickly switch back in on this terminal later.",
             style = MaterialTheme.typography.bodyMedium,
         )
         Spacer(Modifier.height(32.dp))
@@ -75,7 +76,7 @@ fun PinSetScreen(
         OutlinedTextField(
             value = confirmPin,
             onValueChange = { if (it.length <= 6) confirmPin = it },
-            label = { Text("Confirm New PIN") },
+            label = { Text("Confirm PIN") },
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
             isError = confirmPin.isNotBlank() && confirmPin != newPin,
@@ -89,9 +90,9 @@ fun PinSetScreen(
             Text("PINs do not match", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
 
-        if (uiState is PinUiState.Error) {
+        if (uiState is PinSetUiState.Error) {
             Text(
-                (uiState as PinUiState.Error).message,
+                (uiState as PinSetUiState.Error).message,
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -99,14 +100,14 @@ fun PinSetScreen(
 
         Spacer(Modifier.height(24.dp))
 
-        val canSubmit = newPin.length >= 4 && newPin == confirmPin && uiState !is PinUiState.Loading
+        val canSubmit = newPin.length in 4..6 && newPin == confirmPin && uiState !is PinSetUiState.Loading
 
         Button(
-            onClick = { viewModel.setPin(currentPin = null, newPin = newPin) },
+            onClick = { viewModel.setPin(newPin) },
             enabled = canSubmit,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            if (uiState is PinUiState.Loading) {
+            if (uiState is PinSetUiState.Loading) {
                 CircularProgressIndicator(modifier = Modifier.height(20.dp))
             } else {
                 Text("Save PIN")

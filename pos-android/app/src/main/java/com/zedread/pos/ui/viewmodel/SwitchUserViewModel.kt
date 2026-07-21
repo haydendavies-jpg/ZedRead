@@ -2,26 +2,36 @@ package com.zedread.pos.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.zedread.pos.data.api.SiteDto
 import com.zedread.pos.data.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import retrofit2.HttpException
 import javax.inject.Inject
 
 /**
  * Drives the switch-user flow (change cashier without full device logout)
  * and the inline manager auth prompt (approve void/refund actions).
  *
- * Switch user keeps the device logged in to the same site. Only the active
- * operator changes — the site-scoped JWT is NOT replaced.
+ * Both call POST /auth/pos/pin/verify, which is unauthenticated and keyed by
+ * email — there is no PIN-only lookup, so both flows must know which
+ * account's PIN they're checking.
  */
 @HiltViewModel
 class SwitchUserViewModel @Inject constructor(
     private val authRepo: AuthRepository,
 ) : ViewModel() {
+
+    // ── Currently signed-in operator (context shown while switching) ────────
+
+    private val _currentUserName = MutableStateFlow<String?>(null)
+    val currentUserName: StateFlow<String?> = _currentUserName.asStateFlow()
+
+    init {
+        viewModelScope.launch { _currentUserName.value = authRepo.getUserName() }
+    }
 
     // ── Switch user state ────────────────────────────────────────────────────
 
@@ -29,22 +39,15 @@ class SwitchUserViewModel @Inject constructor(
     val switchState: StateFlow<SwitchUserState> = _switchState.asStateFlow()
 
     /**
-     * Verify the new operator's PIN to switch the active cashier.
-     * On success the caller should update any displayed "current user" label.
-     * The JWT and site selection are not changed.
+     * Verify [email]'s PIN and adopt their session as the terminal's active one.
+     * [needsPinSetup] on success mirrors PinVerifyResponse.is_pin_reset_required.
      */
-    fun switchOperator(pin: String) {
+    fun switchOperator(email: String, pin: String) {
         _switchState.value = SwitchUserState.Loading
         viewModelScope.launch {
-            runCatching { authRepo.verifyPin(pin) }
-                .onSuccess { resp ->
-                    _switchState.value = when {
-                        !resp.valid -> SwitchUserState.InvalidPin
-                        resp.mustReset -> SwitchUserState.MustResetPin
-                        else -> SwitchUserState.Switched
-                    }
-                }
-                .onFailure { e -> _switchState.value = SwitchUserState.Error(e.message ?: "Switch failed") }
+            runCatching { authRepo.verifyPin(email, pin) }
+                .onSuccess { resp -> _switchState.value = SwitchUserState.Switched(resp.isPinResetRequired) }
+                .onFailure { e -> _switchState.value = pinFailureToSwitchState(e) }
         }
     }
 
@@ -57,29 +60,37 @@ class SwitchUserViewModel @Inject constructor(
 
     /**
      * Verify the manager's PIN for elevated-privilege actions (void, refund, discount).
-     * Does not switch the active cashier — only confirms the manager approved the action.
+     * Does not change the active cashier session — only confirms the manager approved.
      */
-    fun authorizeManager(managerPin: String) {
+    fun authorizeManager(managerEmail: String, managerPin: String) {
         _inlineAuthState.value = InlineAuthState.Loading
         viewModelScope.launch {
-            runCatching { authRepo.verifyPin(managerPin) }
-                .onSuccess { resp ->
-                    _inlineAuthState.value = if (resp.valid) InlineAuthState.Authorised
-                                             else InlineAuthState.Denied
+            runCatching { authRepo.verifyPin(managerEmail, managerPin) }
+                .onSuccess { _inlineAuthState.value = InlineAuthState.Authorised }
+                .onFailure { e ->
+                    _inlineAuthState.value = if (e is HttpException && e.code() == 401) {
+                        InlineAuthState.Denied
+                    } else {
+                        InlineAuthState.Error(e.message ?: "Authorisation failed")
+                    }
                 }
-                .onFailure { e -> _inlineAuthState.value = InlineAuthState.Error(e.message ?: "Auth failed") }
         }
     }
 
     fun resetInlineAuth() { _inlineAuthState.value = InlineAuthState.Idle }
+
+    private fun pinFailureToSwitchState(e: Throwable): SwitchUserState = when {
+        e is HttpException && e.code() == 401 -> SwitchUserState.InvalidPin
+        e is HttpException && e.code() == 403 -> SwitchUserState.Error("No active access at this site")
+        else -> SwitchUserState.Error(e.message ?: "Switch failed")
+    }
 }
 
 sealed class SwitchUserState {
     object Idle : SwitchUserState()
     object Loading : SwitchUserState()
-    object Switched : SwitchUserState()
+    data class Switched(val needsPinSetup: Boolean) : SwitchUserState()
     object InvalidPin : SwitchUserState()
-    object MustResetPin : SwitchUserState()
     data class Error(val message: String) : SwitchUserState()
 }
 

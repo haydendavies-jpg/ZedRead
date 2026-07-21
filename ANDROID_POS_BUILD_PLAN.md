@@ -11,19 +11,53 @@ here in a new session — read the Status section first, then the phase you're o
 | 1 | Backend — register-session portal report route | ✅ Done |
 | 1 | Portal — "POS - Site Assignment" toggle on Users edit page | ✅ Done |
 | 1 | Portal — Register Sessions report page | ✅ Done |
-| 1 | Android — project wiring (Retrofit/Hilt/Room/Nav) | 🔲 Not started |
-| 1 | Android — Login, PIN entry, Site selector screens | 🔲 Not started |
+| 1 | Android — project wiring (Retrofit/Hilt/Room/Nav) | ✅ Done |
+| 1 | Android — Device setup, Login, Site selector, PIN set/switch-user screens | ✅ Done |
+| 1 | Android — Register-session gate + start-of-day cash-in screen | 🔶 Partial — end-of-day cash-up not started |
 | 1 | Android — Register (order-entry) screen, exact match | 🔲 Not started |
 | 1 | Android — Modifier customise sheet, exact match | 🔲 Not started |
 | 1 | Android — Payment flow (Card/Cash exact match + Voucher/Split addition) | 🔲 Not started |
-| 1 | Android — Start-of-day cash-in / End-of-day cash-up screens | 🔲 Not started |
 | 2 | Settings framework, idempotency, checksums, offline write-queue | 🔲 Not started |
 | 3 | Menu Studio → POS integration depth (recurring scheduling, menu selector) | 🔲 Not started |
 | 4 | Table maps & floor service | 🔲 Not started |
 
-**Next up:** the portal side of Phase 1 is now complete (Users-page toggle, Register Sessions report
-page). What's left is the Android app itself — auth/PIN/site-selector screens first, since everything
-else depends on having a working login.
+**Next up:** the portal side of Phase 1 is complete, and so is the auth/register-session slice of the
+Android app (see "What the Android auth slice actually shipped" below). What's left in Phase 1 is the
+Register screen itself (exact match to the design bundle), the modifier sheet, the payment flow, and
+end-of-day cash-up.
+
+**What the Android auth slice actually shipped** (this session — no PR yet, see branch
+`claude/session-a61ycb`): the Stage 25 Android scaffolding predated PR #92's backend rework and called
+endpoints that no longer exist (`/auth/pos/token`, `/auth/pos/refresh`) with the wrong request/response
+shapes (no `device_token`, a `valid`/`must_reset` PIN-verify shape the real 401-on-failure endpoint
+doesn't have). Rewrote the auth-adjacent Retrofit/Hilt/Room layer and screens to match the real,
+already-merged contract:
+- `ApiModels.kt`/`PosApiService.kt` now mirror `app/schemas/pos_auth.py` and
+  `app/schemas/register_session.py` exactly — two-step device-paired login
+  (`POST /auth/pos/login` → token or `available_sites` → `POST /auth/pos/site-token`), PIN
+  set/verify, and the three `/register-sessions/*` routes. No refresh-token endpoint exists in the
+  backend, so that concept was dropped rather than left half-wired.
+- New **Device Setup** screen + `TokenStore` support for pairing: `device_token` (issued by a portal
+  admin via `POST /pos-devices`, not the operator's own credentials) turned out to be a hard
+  prerequisite for the login screen to even call the API, and wasn't accounted for in the original
+  scaffolding or screen list — added as the minimum needed to make Login functional, not scope creep.
+  `TokenStore` now also separates device pairing from the operator session (`clearSession()` keeps
+  the pairing on logout, matching the "device stays pinned" architecture decision above).
+- Corrected the actual login flow: the backend issues a token directly from
+  `login()`/`select_site()` with no PIN step in between — `is_pin_reset_required` on that response
+  (not a separate PIN check) is what decides whether **PinSetScreen** appears next. The scaffolding's
+  separate post-login "PinEntryScreen" had no real trigger under the actual contract (PIN verify is
+  unauthenticated and switch-user-shaped, keyed by email) — deleted it and folded its job into
+  **SwitchUserScreen** (now takes an email field, shown as "PIN entry" doubling as switch-user per the
+  plan's screen list), rather than ship a second, functionally duplicate screen.
+  `RegisterGateScreen`/`CashInScreen` (new) implement the "must call `GET /register-sessions/current`
+  on launch and route to cash-in if null" requirement below.
+- **Not verified against a real build**: this sandbox cannot reach Google's Maven repo (same class of
+  network-policy gap as the backend's unreachable Postgres), so the Android Gradle Plugin itself can't
+  be resolved here — `gradle :app:compileDebugKotlin` fails at plugin resolution, not at any Kotlin
+  source. Checked manually instead: every renamed/removed API symbol was grepped for stale call sites,
+  and every screen/nav route pairing was cross-checked. Needs a real compile + emulator run before
+  merging with confidence — flagging rather than claiming a build that didn't happen.
 
 **What Phase 1's merged backend slice actually shipped** (PR #92, on top of migration `0049` —
 renumbered from `0048` during a merge-conflict resolution with main's concurrent `0048_drop_menus_table`):
@@ -118,30 +152,35 @@ takes payment — matching the design file exactly wherever it defines one.
   rather than a separate device-list fetch, since `GET /pos-devices` is portal-admin-only and has no
   brand/site scoping a management user could use.
 
-**Android** (none of this started yet)
-- Project wiring: Retrofit client, Hilt DI modules, Room DB, Compose nav graph (existing Stage 25
-  scaffolding, filled in for real).
-- **Login** screen (email + password, ZedRead wordmark, Public Sans 700 titles matching the Register
-  surface's type treatment). Calls `POST /auth/pos/login` with `{email, password, device_token}`.
-- **PIN entry** screen (numeric keypad, current-user context).
-- **Site selector** screen — shown only when login returns `available_sites`; selecting a non-paired
-  site shows a brief inline notice that this re-pairs the device for the session. Calls
-  `POST /auth/pos/site-token` with the chosen `site_id`.
-- **Register / order-entry screen** — exact match to `ZedRead Register.dc.html`: header, category
+**Android**
+- ✅ Project wiring: Retrofit client, Hilt DI modules, Room DB, Compose nav graph (existing Stage 25
+  scaffolding, filled in for real — see "What the Android auth slice actually shipped" above).
+- ✅ **Device Setup** screen (not in the original list — see above for why it's a hard prerequisite):
+  one-time entry of this terminal's `device_token`, persisted independently of the operator session.
+- ✅ **Login** screen (email + password, ZedRead wordmark). Calls `POST /auth/pos/login` with
+  `{email, password, device_token}`. Still needs the Public Sans 700 / Register-surface type
+  treatment pass — functionally wired but not yet styled to the design bundle.
+- ✅ **PIN entry** — folded into **SwitchUserScreen** (email + PIN, "current user" context line)
+  rather than shipped as a second, functionally-identical screen — see above.
+- ✅ **Site selector** screen — shown only when login returns `available_sites`; re-pairs the device
+  when a non-paired site is chosen (backend-side, per `_finalize_login`). Calls
+  `POST /auth/pos/site-token` with the chosen `site_id`. Still needs the inline re-pair notice copy.
+- 🔲 **Register / order-entry screen** — exact match to `ZedRead Register.dc.html`: header, category
   rail, product grid (text-only + with-image tiles), order pane (ticket header, order-type segmented
-  control, line list with qty stepper, totals footer, Hold/Pay).
-- **Modifier customise sheet** — exact match (slide-over, group blocks, qty stepper, live total).
-- **Payment flow** — exact match for Card/Cash tabs and the Choosing/Done states, **plus one flagged
-  addition**: a third **Voucher** tab (reference-code input, same visual language as Card) and a
-  **Split** toggle on Cash/Card (partial amount + "Add another payment" keeps the modal open with a
-  running "remaining due") — since the mockup predates the voucher/split backend capability.
-- Basic online invoice creation (no offline queue yet — that's Phase 2). Must call
-  `GET /register-sessions/current` on launch/resume and route to cash-in if null before allowing a
-  sale — `POST /invoices` returns 400 otherwise.
-- **Start-of-day cash-in**: bulk-value entry (denomination-breakdown variant added in Phase 2 once the
-  settings framework can toggle it); blocks Register access with an "enter start-of-day cash to
-  continue" gate until a session is open. Calls `POST /register-sessions/open`.
-- **End-of-day cash-up**: bulk-value entry compared against expected takings, variance shown (the
+  control, line list with qty stepper, totals footer, Hold/Pay). `CatalogScreen` scaffolding exists
+  but is a generic grid, not the exact-match design.
+- 🔲 **Modifier customise sheet** — exact match (slide-over, group blocks, qty stepper, live total).
+- 🔲 **Payment flow** — exact match for Card/Cash tabs and the Choosing/Done states, **plus one
+  flagged addition**: a third **Voucher** tab (reference-code input, same visual language as Card)
+  and a **Split** toggle on Cash/Card (partial amount + "Add another payment" keeps the modal open
+  with a running "remaining due") — since the mockup predates the voucher/split backend capability.
+- 🔲 Basic online invoice creation (no offline queue yet — that's Phase 2).
+- ✅ `GET /register-sessions/current` gate on launch/resume, routing to cash-in if null before
+  allowing a sale (`RegisterGateScreen`) — `POST /invoices` returns 400 otherwise.
+- ✅ **Start-of-day cash-in**: bulk-value entry (denomination-breakdown variant is a Phase 2
+  setting); blocks Register access until a session is open. Calls `POST /register-sessions/open`
+  (`CashInScreen`).
+- 🔲 **End-of-day cash-up**: bulk-value entry compared against expected takings, variance shown (the
   hide-variance option is a Phase 2 setting); confirm-close. A "Cash Up" entry point in the
   account/nav menu. Calls `POST /register-sessions/{id}/close`.
 

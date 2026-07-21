@@ -12,33 +12,51 @@ interface PosApiService {
 
     // ── Auth ────────────────────────────────────────────────────────────────
 
-    /** POST /auth/pos/login — returns list of sites for the operator to pick from. */
+    /** POST /auth/pos/login — token, or available_sites for a multi-site user. */
     @POST("auth/pos/login")
-    suspend fun login(@Body body: LoginRequest): LoginResponse
+    suspend fun login(@Body body: LoginRequest): PosLoginResponseDto
 
-    /** POST /auth/pos/token — exchange credentials + site selection for a site-scoped JWT. */
-    @POST("auth/pos/token")
-    suspend fun getPosToken(@Body body: PosTokenRequest): PosTokenResponse
+    /** POST /auth/pos/site-token — finalizes a multi-site login for the chosen site. */
+    @POST("auth/pos/site-token")
+    suspend fun selectSite(@Body body: SiteTokenRequest): PosLoginResponseDto
 
-    /** POST /auth/pos/refresh — exchange a refresh token for a new access token. */
-    @POST("auth/pos/refresh")
-    suspend fun refresh(@Body body: Map<String, String>): PosTokenResponse
-
-    // ── PIN ─────────────────────────────────────────────────────────────────
-
-    /** POST /auth/pos/pin/verify — verify the operator's PIN. */
-    @POST("auth/pos/pin/verify")
-    suspend fun verifyPin(
-        @Header("Authorization") bearer: String,
-        @Body body: PinVerifyRequest,
-    ): PinVerifyResponse
-
-    /** POST /auth/pos/pin/set — set or change the operator's PIN. */
+    /** POST /auth/pos/pin/set — set or replace the caller's own PIN. */
     @POST("auth/pos/pin/set")
     suspend fun setPin(
         @Header("Authorization") bearer: String,
         @Body body: PinSetRequest,
-    ): Unit
+    )
+
+    /** POST /auth/pos/pin/verify — unauthenticated switch-user / re-auth check. */
+    @POST("auth/pos/pin/verify")
+    suspend fun verifyPin(@Body body: PinVerifyRequest): PinVerifyResponseDto
+
+    /** POST /auth/pos/logout — revokes the presented access token. */
+    @POST("auth/pos/logout")
+    suspend fun logout(@Header("Authorization") bearer: String): LogoutResponseDto
+
+    // ── Register (till) sessions ───────────────────────────────────────────
+
+    /** GET /register-sessions/current — the open session for this terminal, or null. */
+    @GET("register-sessions/current")
+    suspend fun getCurrentRegisterSession(
+        @Header("Authorization") bearer: String,
+    ): RegisterSessionDto?
+
+    /** POST /register-sessions/open — start-of-day cash-in. */
+    @POST("register-sessions/open")
+    suspend fun openRegisterSession(
+        @Header("Authorization") bearer: String,
+        @Body body: RegisterSessionOpenRequest,
+    ): RegisterSessionDto
+
+    /** POST /register-sessions/{id}/close — end-of-day cash-up. */
+    @POST("register-sessions/{id}/close")
+    suspend fun closeRegisterSession(
+        @Header("Authorization") bearer: String,
+        @Path("id") sessionId: String,
+        @Body body: RegisterSessionCloseRequest,
+    ): RegisterSessionDto
 
     // ── Catalog ─────────────────────────────────────────────────────────────
 

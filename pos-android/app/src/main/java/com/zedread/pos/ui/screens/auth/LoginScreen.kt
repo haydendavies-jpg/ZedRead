@@ -29,10 +29,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.zedread.pos.ui.viewmodel.AuthViewModel
 import com.zedread.pos.ui.viewmodel.LoginUiState
 
-/** Email + password login screen — first step of the two-step login flow. */
+/** Email + password login — POST /auth/pos/login against this terminal's paired device. */
 @Composable
 fun LoginScreen(
-    onLoginSuccess: () -> Unit,
+    onNeedsSiteSelection: () -> Unit,
+    onAuthenticated: (needsPinSetup: Boolean) -> Unit,
     viewModel: AuthViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.loginUiState.collectAsState()
@@ -40,9 +41,12 @@ fun LoginScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
 
-    // Navigate when the API returns a sites list.
     LaunchedEffect(uiState) {
-        if (uiState is LoginUiState.Sites) onLoginSuccess()
+        when (val state = uiState) {
+            is LoginUiState.NeedsSiteSelection -> onNeedsSiteSelection()
+            is LoginUiState.Authenticated -> onAuthenticated(state.needsPinSetup)
+            else -> Unit
+        }
     }
 
     Column(

@@ -3,62 +3,132 @@ package com.zedread.pos.data.api
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 
+// ── Auth ──────────────────────────────────────────────────────────────────
+//
+// Mirrors app/schemas/pos_auth.py exactly (backend PR #92's two-step,
+// device-paired login — no site_id on the first call, no refresh-token
+// endpoint). device_token identifies this physical terminal, provisioned
+// once by a portal admin via POST /pos-devices and entered locally through
+// DeviceSetupScreen — it is unrelated to the operator's own credentials.
+
 /** POST /auth/pos/login request body. */
 @JsonClass(generateAdapter = true)
 data class LoginRequest(
     val email: String,
     val password: String,
+    @Json(name = "device_token") val deviceToken: String,
 )
 
-/** POST /auth/pos/login response — site list included for site selection. */
+/** POST /auth/pos/site-token request body — finalizes a multi-site login. */
 @JsonClass(generateAdapter = true)
-data class LoginResponse(
-    @Json(name = "access_token") val accessToken: String,
-    @Json(name = "refresh_token") val refreshToken: String,
-    val sites: List<SiteDto>,
-)
-
-@JsonClass(generateAdapter = true)
-data class SiteDto(
-    val id: String,
-    val name: String,
-    @Json(name = "brand_id") val brandId: String,
-    @Json(name = "is_active") val isActive: Boolean,
-)
-
-/** POST /auth/pos/token request — exchange credentials for a site-scoped POS JWT. */
-@JsonClass(generateAdapter = true)
-data class PosTokenRequest(
+data class SiteTokenRequest(
     val email: String,
     val password: String,
+    @Json(name = "device_token") val deviceToken: String,
     @Json(name = "site_id") val siteId: String,
 )
 
+/** One selectable site returned when a login can't resolve to a single site. */
 @JsonClass(generateAdapter = true)
-data class PosTokenResponse(
-    @Json(name = "access_token") val accessToken: String,
-    @Json(name = "refresh_token") val refreshToken: String,
+data class SiteOptionDto(
     @Json(name = "site_id") val siteId: String,
+    @Json(name = "site_name") val siteName: String,
 )
 
-/** POST /auth/pos/pin/verify request. */
+/**
+ * Response shared by POST /auth/pos/login and POST /auth/pos/site-token.
+ *
+ * Exactly one of (accessToken, availableSites) is populated — never both.
+ */
 @JsonClass(generateAdapter = true)
-data class PinVerifyRequest(
+data class PosLoginResponseDto(
+    @Json(name = "access_token") val accessToken: String?,
+    @Json(name = "token_type") val tokenType: String = "bearer",
+    @Json(name = "user_id") val userId: String?,
+    @Json(name = "user_name") val userName: String?,
+    @Json(name = "site_id") val siteId: String?,
+    @Json(name = "site_name") val siteName: String?,
+    @Json(name = "access_profile_name") val accessProfileName: String?,
+    @Json(name = "is_pin_reset_required") val isPinResetRequired: Boolean?,
+    @Json(name = "available_sites") val availableSites: List<SiteOptionDto>?,
+)
+
+/** POST /auth/pos/pin/set request — the caller's own new PIN (4-6 digits). */
+@JsonClass(generateAdapter = true)
+data class PinSetRequest(
     val pin: String,
 )
 
+/**
+ * POST /auth/pos/pin/verify request — unauthenticated switch-user check.
+ *
+ * Verifies [email]'s PIN and issues them a fresh session; used both to swap
+ * the active operator on an already-unlocked terminal and to re-confirm the
+ * current operator's identity. deviceToken carries device context forward
+ * so the switched-in session still gates on this terminal's register session.
+ */
 @JsonClass(generateAdapter = true)
-data class PinVerifyResponse(
-    val valid: Boolean,
-    @Json(name = "must_reset") val mustReset: Boolean = false,
+data class PinVerifyRequest(
+    val email: String,
+    val pin: String,
+    @Json(name = "site_id") val siteId: String,
+    @Json(name = "device_token") val deviceToken: String?,
 )
 
-/** POST /auth/pos/pin/set request. */
+/** Response on successful PIN verification — a fresh POS access token. */
 @JsonClass(generateAdapter = true)
-data class PinSetRequest(
-    @Json(name = "current_pin") val currentPin: String? = null,
-    @Json(name = "new_pin") val newPin: String,
+data class PinVerifyResponseDto(
+    @Json(name = "access_token") val accessToken: String,
+    @Json(name = "token_type") val tokenType: String = "bearer",
+    @Json(name = "user_id") val userId: String,
+    @Json(name = "user_name") val userName: String,
+    @Json(name = "access_profile_name") val accessProfileName: String,
+    @Json(name = "is_pin_reset_required") val isPinResetRequired: Boolean,
 )
+
+/** POST /auth/pos/logout response — the body is informational only. */
+@JsonClass(generateAdapter = true)
+data class LogoutResponseDto(
+    val detail: String,
+)
+
+// ── Register (till) sessions ─────────────────────────────────────────────
+//
+// Mirrors app/schemas/register_session.py. Timestamps are device-local,
+// ISO-8601 with offset (java.time.OffsetDateTime.toString()).
+
+/** POST /register-sessions/open request — start-of-day cash-in. */
+@JsonClass(generateAdapter = true)
+data class RegisterSessionOpenRequest(
+    @Json(name = "opened_at") val openedAt: String,
+    @Json(name = "opening_cash_cents") val openingCashCents: Long,
+)
+
+/** POST /register-sessions/{id}/close request — end-of-day cash-up. */
+@JsonClass(generateAdapter = true)
+data class RegisterSessionCloseRequest(
+    @Json(name = "closed_at") val closedAt: String,
+    @Json(name = "closing_cash_cents") val closingCashCents: Long,
+)
+
+/** Full register session state, returned by /register-sessions/*. */
+@JsonClass(generateAdapter = true)
+data class RegisterSessionDto(
+    val id: String,
+    @Json(name = "device_id") val deviceId: String,
+    @Json(name = "site_id") val siteId: String,
+    val status: String,
+    @Json(name = "opened_at") val openedAt: String,
+    @Json(name = "opening_cash_cents") val openingCashCents: Long,
+    @Json(name = "opened_by_name") val openedByName: String,
+    @Json(name = "closed_at") val closedAt: String?,
+    @Json(name = "closing_cash_cents") val closingCashCents: Long?,
+    @Json(name = "expected_cash_cents") val expectedCashCents: Long?,
+    @Json(name = "variance_cents") val varianceCents: Long?,
+    @Json(name = "closed_by_name") val closedByName: String?,
+)
+
+// ── Catalog ───────────────────────────────────────────────────────────────
 
 /** Resolved product — returned by GET /products (site-resolved catalog). */
 @JsonClass(generateAdapter = true)
@@ -80,6 +150,8 @@ data class CategoryDto(
     val name: String,
     @Json(name = "display_order") val displayOrder: Int,
 )
+
+// ── Invoices ──────────────────────────────────────────────────────────────
 
 /** POST /invoices request. */
 @JsonClass(generateAdapter = true)

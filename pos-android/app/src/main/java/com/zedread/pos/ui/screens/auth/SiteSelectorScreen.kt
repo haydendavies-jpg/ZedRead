@@ -24,19 +24,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.zedread.pos.ui.viewmodel.AuthViewModel
-import com.zedread.pos.ui.viewmodel.SiteUiState
+import com.zedread.pos.ui.viewmodel.LoginUiState
 
-/** Displays the list of sites returned after login — operator picks their active site. */
+/**
+ * Shown only when POST /auth/pos/login returns available_sites — the operator
+ * has grants on more than one site and must pick which one to sign into.
+ * Selecting a site the terminal isn't currently paired to re-pairs the device.
+ */
 @Composable
 fun SiteSelectorScreen(
-    onSiteSelected: () -> Unit,
+    onAuthenticated: (needsPinSetup: Boolean) -> Unit,
     viewModel: AuthViewModel = hiltViewModel(),
 ) {
-    val siteState by viewModel.siteUiState.collectAsState()
-    val sites = viewModel.sitesFromLogin()
+    val uiState by viewModel.loginUiState.collectAsState()
+    val sites = (uiState as? LoginUiState.NeedsSiteSelection)?.sites ?: emptyList()
 
-    LaunchedEffect(siteState) {
-        if (siteState is SiteUiState.Done) onSiteSelected()
+    LaunchedEffect(uiState) {
+        if (uiState is LoginUiState.Authenticated) {
+            onAuthenticated((uiState as LoginUiState.Authenticated).needsPinSetup)
+        }
     }
 
     Column(
@@ -47,30 +53,30 @@ fun SiteSelectorScreen(
         Text("Select Site", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
 
-        if (siteState is SiteUiState.Error) {
+        if (uiState is LoginUiState.Error) {
             Text(
-                text = (siteState as SiteUiState.Error).message,
+                text = (uiState as LoginUiState.Error).message,
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.height(8.dp))
         }
 
-        if (siteState is SiteUiState.Loading) {
+        if (uiState is LoginUiState.Loading) {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         } else {
             LazyColumn {
-                items(sites.filter { it.isActive }) { site ->
+                items(sites) { site ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
-                            .clickable { viewModel.selectSite(site.id) },
+                            .clickable { viewModel.selectSite(site.siteId) },
                     ) {
                         Column(Modifier.padding(16.dp)) {
-                            Text(site.name, style = MaterialTheme.typography.titleMedium)
+                            Text(site.siteName, style = MaterialTheme.typography.titleMedium)
                         }
                     }
                     HorizontalDivider()
