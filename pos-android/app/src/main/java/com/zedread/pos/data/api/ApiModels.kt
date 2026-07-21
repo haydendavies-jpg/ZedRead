@@ -155,6 +155,32 @@ data class ProductDto(
     @Json(name = "modifier_names") val modifierNames: String?,
 )
 
+// ── Modifiers ─────────────────────────────────────────────────────────────
+//
+// Mirrors ProductModifierGroupDetailOut / ProductModifierOptionOut in
+// app/services/modifier_service.py — a product's attached modifier groups,
+// each fully nested with its active options. Powers the Register screen's
+// modifier customise sheet (GET /products/{id}/modifiers/detailed).
+
+@JsonClass(generateAdapter = true)
+data class ProductModifierOptionDto(
+    val id: String,
+    val name: String,
+    @Json(name = "price_delta_cents") val priceDeltaCents: Long,
+    @Json(name = "display_order") val displayOrder: Int,
+)
+
+@JsonClass(generateAdapter = true)
+data class ProductModifierGroupDto(
+    val id: String,
+    val name: String,
+    @Json(name = "min_selections") val minSelections: Int,
+    @Json(name = "max_selections") val maxSelections: Int,
+    @Json(name = "has_quantity") val hasQuantity: Boolean,
+    @Json(name = "display_order") val displayOrder: Int,
+    val options: List<ProductModifierOptionDto>,
+)
+
 @JsonClass(generateAdapter = true)
 data class CategoryDto(
     val id: String,
@@ -186,9 +212,8 @@ data class InvoiceDto(
  *
  * No modifier_ids field — AddLineItemRequest has none; a modifier is
  * attached afterward, one at a time, via
- * POST /invoices/{id}/line-items/{lineItemId}/modifiers. Not wired yet — no
- * modifier-picking UI exists (the modifier customise sheet is still Phase 1
- * unbuilt work).
+ * POST /invoices/{id}/line-items/{lineItemId}/modifiers (see
+ * [AddModifierRequest] — wired by the modifier customise sheet).
  */
 @JsonClass(generateAdapter = true)
 data class AddLineItemRequest(
@@ -202,6 +227,30 @@ data class UpdateLineItemQuantityRequest(
     val quantity: Int,
 )
 
+/** POST /invoices/{id}/line-items/{lineItemId}/modifiers request. */
+@JsonClass(generateAdapter = true)
+data class AddModifierRequest(
+    @Json(name = "modifier_option_id") val modifierOptionId: String,
+)
+
+/** A modifier attached to a line item — mirrors LineModifierResponse. */
+@JsonClass(generateAdapter = true)
+data class LineModifierDto(
+    val id: String,
+    @Json(name = "line_item_id") val lineItemId: String,
+    @Json(name = "modifier_option_id") val modifierOptionId: String?,
+    @Json(name = "modifier_name") val modifierName: String,
+    @Json(name = "price_delta_cents") val priceDeltaCents: Long,
+)
+
+/**
+ * A line item, optionally with its attached modifiers.
+ *
+ * [modifiers] is only populated by GET .../line-items/{id} (mirrors
+ * LineItemDetailResponse) — the plain add/update line-item responses don't
+ * include it (LineItemResponse has no such field), so it defaults to empty
+ * for those.
+ */
 @JsonClass(generateAdapter = true)
 data class LineItemDto(
     val id: String,
@@ -211,11 +260,13 @@ data class LineItemDto(
     @Json(name = "unit_price_cents") val unitPriceCents: Long,
     @Json(name = "subtotal_cents") val subtotalCents: Long,
     @Json(name = "tax_cents") val taxCents: Long,
+    val modifiers: List<LineModifierDto> = emptyList(),
 )
 
-/** POST /invoices/{id}/pay request. */
+/** POST /invoices/{id}/pay request. reference carries a voucher's redemption code; null for cash/card. */
 @JsonClass(generateAdapter = true)
 data class PaymentRequest(
     val method: String,
     @Json(name = "amount_cents") val amountCents: Long,
+    val reference: String? = null,
 )

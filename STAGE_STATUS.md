@@ -1301,8 +1301,9 @@ first when picking this phase back up.
       `design_handoff_zedread/ZedRead Register.dc.html`'s header/category-rail/product-grid/order-pane
       layout, replacing the earlier generic `CatalogScreen`/`CartScreen` pair (the design has no
       separate cart screen). Qty stepper backed by new `PATCH`/`DELETE .../line-items/{id}` routes.
-      Modifier customise sheet and Payment flow exact-match styling are still pending — see
-      `ANDROID_POS_BUILD_PLAN.md`.
+- [x] Modifier customise sheet — `ModifierSheet.kt`, exact match to the design bundle's slide-over
+      (rule chips, radio/checkbox rows, qty stepper, live total). New POS-reachable
+      `GET /products/{id}/modifiers/detailed` backs it — see `ANDROID_POS_BUILD_PLAN.md`.
 - [x] Retrofit API client wired to backend endpoints
 - [ ] Room local cache for catalog (offline-capable browsing) — Phase 2 of the build plan
 - [x] Hilt DI modules for network, database, repositories
@@ -1310,8 +1311,10 @@ first when picking this phase back up.
 ### Stage 26 — Android Payments & Printing 🔜
 
 **Deliverables:**
-- [x] Payment screen (cash / card / split) — functional, generic UI; no Voucher tab yet, exact-match
-      styling still pending
+- [x] Payment screen (cash / card / voucher / split) — `PaymentScreen.kt`'s `PaymentModal`, exact match
+      to the design bundle's Choosing/Done modal, plus the flagged Voucher tab and Split toggle
+      (running remaining-due, "Add another payment"). Backend `pay_invoice()` split-payment bug fixed —
+      see `ANDROID_POS_BUILD_PLAN.md`.
 - [ ] Docket/receipt printing (`printing/` module scaffolded)
 - [x] Switch user flow (PIN re-entry without full logout)
 - [x] End-of-day cash-up screen (`CashUpScreen.kt`) — closes the register session, shows the
@@ -1346,7 +1349,7 @@ first when picking this phase back up.
 | Circular combo reference: no DB constraint | `combo_service.py` graph traversal only | Low |
 | Photo size limit: no DB constraint | `product_service.py` check only | Low |
 | Invoice line `notes` column: not exposed in API | `invoice_line_items.notes` exists in model | Low |
-| Split payment: backend done, Android UI pending | Stage 26 | High |
 | Offline sync strategy: not documented | Android Stage 25–26 | High |
+| Line modifier price is a flat per-line addition, not scaled by quantity | `invoice_line_modifiers` has no quantity dimension — one row per (line, modifier); `add_line_modifier()`/`_recompute_invoice_totals()` add `price_delta_cents` once regardless of the line's `quantity` | Medium |
 | Tax compound edge cases (PST on GST): not validated | `tax_calculation_service.py` | Medium |
 | Accounting/journal integration for refunds | Not started | Future |

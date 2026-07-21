@@ -16,6 +16,7 @@ from app.services.modifier_service import (
     ModifierOptionLinkCreate,
     ModifierOptionResponse,
     ModifierOptionUpdate,
+    ProductModifierGroupDetailOut,
     ProductModifiersOut,
     ProductModifiersReorderRequest,
     create_modifier_group,
@@ -29,6 +30,7 @@ from app.services.modifier_service import (
     list_modifier_groups_detailed,
     list_modifier_options,
     list_product_modifiers,
+    list_product_modifiers_detailed,
     list_products_for_modifier_group,
     sync_product_modifier_groups,
     unlink_modifier_group,
@@ -461,6 +463,33 @@ async def list_product_modifier_groups(
         ProductModifiersOut: attached (ordered) and available modifier groups.
     """
     return await list_product_modifiers(db, access.effective_brand_id(brand_id), product_id)
+
+
+@router.get(
+    "/products/{product_id}/modifiers/detailed",
+    response_model=list[ProductModifierGroupDetailOut],
+    status_code=status.HTTP_200_OK,
+)
+async def list_product_modifier_groups_detailed(
+    product_id: uuid.UUID,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> list[ProductModifierGroupDetailOut]:
+    """
+    List a product's attached modifier groups, each fully nested with its
+    active options — powers the POS Register's modifier customise sheet.
+
+    Args:
+        product_id: UUID of the product.
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access (POS, management, or portal).
+        db: Active database session.
+
+    Returns:
+        list[ProductModifierGroupDetailOut]: Attached groups, fully nested.
+    """
+    return await list_product_modifiers_detailed(db, access.effective_brand_id(brand_id), product_id)
 
 
 @router.post(

@@ -177,6 +177,34 @@ class ProductModifiersOut(BaseModel):
     available: list[ProductModifierAvailableItem]
 
 
+class ProductModifierOptionOut(BaseModel):
+    """One active option belonging to a product's attached modifier group — flat, no comboing links."""
+
+    id: uuid.UUID
+    name: str
+    price_delta_cents: int
+    display_order: int
+
+
+class ProductModifierGroupDetailOut(BaseModel):
+    """
+    A modifier group attached to a product, with its full active option list.
+
+    Powers the POS Register's modifier customise sheet — unlike
+    ProductModifierAttachedItem (which only carries an option_count for the
+    portal's picker UI), the sheet needs every option's name and
+    price_delta_cents to render selectable rows.
+    """
+
+    id: uuid.UUID
+    name: str
+    min_selections: int
+    max_selections: int
+    has_quantity: bool
+    display_order: int
+    options: list[ProductModifierOptionOut]
+
+
 class ProductModifiersReorderRequest(BaseModel):
     """
     Payload for PATCH /products/{id}/modifiers/reorder.
@@ -679,6 +707,76 @@ async def list_product_modifiers(
     ]
 
     return ProductModifiersOut(attached=attached, available=available)
+
+
+async def list_product_modifiers_detailed(
+    db: AsyncSession, brand_id: uuid.UUID, product_id: uuid.UUID
+) -> list[ProductModifierGroupDetailOut]:
+    """
+    Return a product's attached modifier groups, each with its full active
+    option list — powers the POS Register's modifier customise sheet.
+
+    Unlike list_product_modifiers(), this never touches the brand's other
+    (unattached) groups — the sheet only needs what a given product actually
+    offers. Unlike list_modifier_groups_detailed(), it skips comboing links
+    and used_by_count (not needed at the point of sale) and is scoped to one
+    product instead of every brand group.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+        product_id: UUID of the product.
+
+    Returns:
+        list[ProductModifierGroupDetailOut]: Attached groups ordered by
+            display_order, each with its active options ordered by
+            display_order then name.
+
+    Raises:
+        HTTPException: 404 if the product is not found for this brand.
+    """
+    product_result = await db.execute(
+        select(Product).where(Product.id == product_id, Product.brand_id == brand_id)
+    )
+    if product_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+
+    attached_result = await db.execute(
+        select(ProductModifierGroupLink, ModifierGroup)
+        .join(ModifierGroup, ProductModifierGroupLink.modifier_group_id == ModifierGroup.id)
+        .where(
+            ProductModifierGroupLink.product_id == product_id,
+            ModifierGroup.is_active == True,  # noqa: E712
+        )
+        .order_by(ProductModifierGroupLink.display_order)
+    )
+    attached_rows = attached_result.all()
+    if not attached_rows:
+        return []
+
+    group_ids = [group.id for _, group in attached_rows]
+    options_by_group = await _active_options_by_group(db, group_ids)
+
+    return [
+        ProductModifierGroupDetailOut(
+            id=group.id,
+            name=group.name,
+            min_selections=group.min_selections,
+            max_selections=group.max_selections,
+            has_quantity=group.has_quantity,
+            display_order=link.display_order,
+            options=[
+                ProductModifierOptionOut(
+                    id=option.id,
+                    name=option.name,
+                    price_delta_cents=option.price_delta_cents,
+                    display_order=option.display_order,
+                )
+                for option in options_by_group.get(group.id, [])
+            ],
+        )
+        for link, group in attached_rows
+    ]
 
 
 async def sync_product_modifier_groups(

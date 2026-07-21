@@ -17,19 +17,96 @@ here in a new session — read the Status section first, then the phase you're o
 | 1 | Android — functional (non-exact-match) sell loop: browse → cart → pay | ✅ Done — see below |
 | 1 | Android — Register (order-entry) screen, exact match to design bundle | ✅ Done — see below |
 | 1 | Backend — invoice line-item quantity update / remove (qty stepper support) | ✅ Done |
-| 1 | Android — Modifier customise sheet, exact match | 🔲 Not started |
-| 1 | Android — Payment flow, exact match + Voucher tab/Split toggle | 🔶 Partial — Cash/Card + split work functionally, not styled; no Voucher tab |
+| 1 | Android — Modifier customise sheet, exact match | ✅ Done — see below |
+| 1 | Android — Payment flow, exact match + Voucher tab/Split toggle | ✅ Done — see below |
 | 2 | Settings framework, idempotency, checksums, offline write-queue | 🔲 Not started |
 | 3 | Menu Studio → POS integration depth (recurring scheduling, menu selector) | 🔲 Not started |
 | 4 | Table maps & floor service | 🔲 Not started |
 
-**Next up:** the portal side of Phase 1 is complete, and the Android app now has a functional
-end-to-end sell loop (device setup → login → till open → browse → order → pay) plus the full till
-round-trip (cash-in at start of shift, cash-up at end of shift). The design bundle
-(`design_handoff_zedread/`) was re-supplied by the user and is now committed to this repository, and
-the Register (order-entry) screen has been rebuilt to match it exactly (see below). What's left in
-Phase 1 is the **modifier customise sheet** (exact match) and the **Payment flow**'s exact-match
-styling + Voucher tab/Split toggle — both still buildable now that the design bundle is in-repo.
+**Next up:** Phase 1 is now functionally complete on both backend and Android — the design bundle's
+Register screen, modifier customise sheet, and payment flow (incl. the flagged Voucher tab and Split
+toggle) are all built exact-match. What's left before calling Phase 1 fully done is verification: a
+real Gradle build + emulator run (still blocked in this sandbox, see below) and manual exercise of the
+till round-trip end to end. Phase 2 (settings framework, idempotency, offline write-queue) is next.
+
+**What the modifier sheet + payment flow slice shipped** (this session): the two remaining Phase 1
+Android pieces, plus three backend fixes surfaced while wiring them up.
+- **Backend — new POS-reachable read endpoint**: `GET /products/{id}/modifiers/detailed`
+  (`modifier_service.list_product_modifiers_detailed()` + `routes/modifiers.py`) returns a product's
+  *attached* modifier groups fully nested with their active options (name, `price_delta_cents`) — the
+  existing `GET /products/{id}/modifiers` only returns option *counts* (it powers the portal's
+  attach/reorder picker, not a selection UI), and `GET /modifier-groups/detailed` returns every group
+  in the *brand*, unfiltered, plus comboing links and a `used_by_count` the POS doesn't need. Confirmed
+  `resolve_catalog_access` already accepts POS tokens (tried in order: portal → management → POS), so
+  no new auth path was needed, just the new query shape.
+- **Backend — `pay_invoice()` split-payment bug, found and fixed**: the route previously set
+  `invoice.status = PAID` unconditionally on the *first* payment call regardless of amount — a $5
+  payment against a $30 invoice silently marked the whole invoice paid. The `Payment` model's own
+  docstring already documented the intended contract ("PAID once the sum of payments >= total_cents");
+  `pay_invoice()` just didn't implement it. Fixed to sum all payments (via `func.sum()`, cast to `int`
+  since asyncpg returns a `Decimal` for a `SUM()` over `BigInteger` — that Decimal isn't JSON-serializable
+  and broke the audit log's `after_state` until cast) and only flip to `PAID` once covered; a
+  not-yet-covered leg now writes a new `INVOICE_PAYMENT_RECORDED` audit action instead of `INVOICE_PAID`
+  so the audit trail doesn't claim "paid" prematurely. This was a real, pre-existing bug the Split
+  toggle's own correctness depends on, not something introduced by this slice.
+- **Backend — `add_line_modifier()` missing audit log, found and fixed**: the route had no
+  `log_action()` call at all — a violation of the project's absolute rule 7, invisible until this
+  session made the endpoint load-bearing for the first time (nothing called it before). Added
+  `INVOICE_LINE_ITEM_MODIFIER_ADDED` and the missing call.
+- **Backend — new `GET /invoices/{id}/line-items/{id}`**: `POST .../modifiers` returns only the
+  created `LineModifierResponse` row, not the parent line — and a line's own `subtotal_cents`/
+  `line_total_cents` never reflect its modifiers regardless (only the *invoice's* aggregate total does,
+  via `_recompute_invoice_totals()`'s separate `InvoiceLineModifier` query — a modifier is a flat
+  per-line addition, not scaled by quantity, an existing limitation of `invoice_line_modifiers`'
+  schema, not something this slice changed or could cleanly fix without a bigger invoice-engine rework;
+  flagged in `STAGE_STATUS.md`'s Known Gaps). The new route (`LineItemDetailResponse` = `LineItemResponse`
+  + `modifiers: list[LineModifierResponse]`) lets the Android client fetch a line's accumulated
+  modifiers after attaching them, to display "· modifier" sub-lines and a modifier-inclusive line total.
+- **Backend tests**: 12 new integration tests (product-modifiers-detailed happy path/unattached/
+  inactive-options/404/403; line-modifier audit log; line-item-detail happy path/404; partial-payment
+  leaves invoice open/second-leg completes it/writes the right audit action; full-payment still writes
+  `INVOICE_PAID`) — full suite 852/852 passing (up from 840), verified against a real local Postgres 16
+  instance with migrations applied through `0051`.
+- **`SellViewModel`**: `addToCart()` is now a dispatcher — a product with a non-blank `modifierNames`
+  (the same field backing the grid's "+" badge) opens the modifier sheet instead of adding directly.
+  New modifier-sheet state machine (`ModifierSheetState`: `Closed`/`Loading`/`Ready`/`Error`,
+  `ModifierGroupSelection` tracking per-group selected option indices) mirrors the mockup's own
+  `mod`/`toggleChoice`/`modAddToOrder` logic exactly: single-select groups default to their first
+  option and always keep exactly one selected; multi-select groups toggle freely; on confirm, a
+  single-select choice is always attached as a line modifier (even a free one, so it still shows on
+  the receipt) while a multi-select choice is only attached when priced — the mockup's
+  `c.price>0 || g.type==='single'` filter, reproduced verbatim. `subtotalCents`/`taxCents`/`totalCents`
+  are now computed including each line's modifier total (mirroring `_recompute_invoice_totals()`
+  exactly) instead of ignoring modifiers entirely, which they previously did since nothing attached
+  modifiers before this slice.
+- **New payment state machine**: replaces the old `PaymentFlowState`/`pay()` pair with a single
+  `PaymentUiState` (stage/method/tendered/splitMode/splitAmountCents/voucherReference/paidCents)
+  mirroring the mockup's own `pay: {stage, method, tendered}` shape, extended with the split/voucher
+  fields the mockup predates. `submitPayment()` reads the real `InvoiceDto.status` from
+  `POST .../pay` to decide Done vs. "leg recorded, remaining due updated" — now meaningful now that
+  the backend bug above is fixed.
+- **Both the modifier sheet and payment modal are overlays on the Register screen itself, not separate
+  nav destinations** — matching the design bundle's own architecture (`ZedRead Register.dc.html`'s
+  `mod`/`pay` state live alongside `order[]` on one Component, not routed). This let the earlier
+  "sell" nav sub-graph (`Screen.SellGraph`, built to share one `SellViewModel` across
+  `OrderEntryScreen`/`PaymentScreen` as separate destinations) be deleted entirely: `Screen.OrderEntry`
+  is now a single flat destination, `SellViewModel` scopes to it via the default `hiltViewModel()`, and
+  "New order" resets cart/payment state in place (`completePaymentAndStartNewOrder()`) instead of the
+  previous navigate-and-`popUpTo` trick to discard the ViewModel instance. `RegisterGateScreen`/
+  `CashInScreen` now navigate straight to `Screen.OrderEntry.route`.
+- New `ModifierSheet.kt` (`ModifierSheetOverlay` + group/choice-row/footer composables) and a rewritten
+  `PaymentScreen.kt` (`PaymentModal` + Choosing/Done content, Card/Cash/Voucher tabs, split-amount
+  entry) — both exact-match to the design bundle's spacing/colors/interaction per
+  `design_handoff_zedread/README.md` and cross-checked against `ZedRead Register.dc.html`'s actual
+  markup/state logic for anything the README left ambiguous (rule-chip text, tender-preset computation,
+  mark glyphs, selection defaults).
+- **Not verified against a real build** — same standing constraint as every prior Android slice: this
+  sandbox cannot reach Google's Maven repo (`gradle :app:compileDebugKotlin` fails at AGP plugin
+  resolution, confirmed again this session). Relied on a careful manual read-through of every changed/
+  new file (brace/paren balance checked, every type and import cross-referenced against its
+  definition) plus a repo-wide grep for stale symbols (`PaymentFlowState`, `Screen.Payment`,
+  `Screen.SellGraph`, `sellViewModel(`, `onProceedToPayment` — all confirmed zero remaining
+  references) instead of a build. Needs a real compile + emulator run before merging with confidence.
 
 **What the exact-match Register screen slice shipped** (this session, branch
 `claude/next-stage-hl4xwg`): rebuilt the order-entry screen from
@@ -315,12 +392,11 @@ takes payment — matching the design file exactly wherever it defines one.
 - ✅ **Site selector** screen — shown only when login returns `available_sites`; re-pairs the device
   when a non-paired site is chosen (backend-side, per `_finalize_login`). Calls
   `POST /auth/pos/site-token` with the chosen `site_id`. Still needs the inline re-pair notice copy.
-- 🔲 **Register / order-entry screen** — exact match to `ZedRead Register.dc.html`: header, category
+- ✅ **Register / order-entry screen** — exact match to `ZedRead Register.dc.html`: header, category
   rail, product grid (text-only + with-image tiles), order pane (ticket header, order-type segmented
-  control, line list with qty stepper, totals footer, Hold/Pay). `CatalogScreen` scaffolding exists
-  but is a generic grid, not the exact-match design.
-- 🔲 **Modifier customise sheet** — exact match (slide-over, group blocks, qty stepper, live total).
-- 🔲 **Payment flow** — exact match for Card/Cash tabs and the Choosing/Done states, **plus one
+  control, line list with qty stepper, totals footer, Hold/Pay).
+- ✅ **Modifier customise sheet** — exact match (slide-over, group blocks, qty stepper, live total).
+- ✅ **Payment flow** — exact match for Card/Cash tabs and the Choosing/Done states, **plus one
   flagged addition**: a third **Voucher** tab (reference-code input, same visual language as Card)
   and a **Split** toggle on Cash/Card (partial amount + "Add another payment" keeps the modal open
   with a running "remaining due") — since the mockup predates the voucher/split backend capability.
@@ -350,6 +426,17 @@ auth-rework note above for how this superseded the original device-paired shape)
 - `PATCH /invoices/{id}/line-items/{lineItemId}` `{quantity}` → updated line — the Register screen's
   qty stepper.
 - `DELETE /invoices/{id}/line-items/{lineItemId}` → 204 — removes a line from the order.
+- `GET /invoices/{id}/line-items/{lineItemId}` → the line plus its attached modifiers — refreshes
+  display state (modifier sub-lines, modifier-inclusive total) after the modifier sheet attaches one
+  or more modifiers, since `POST .../modifiers` itself only returns the created modifier row.
+- `GET /products/{id}/modifiers/detailed` → the product's attached modifier groups, each fully nested
+  with its active options (`price_delta_cents` included) — powers the modifier customise sheet.
+- `POST /invoices/{id}/line-items/{lineItemId}/modifiers` `{modifier_option_id}` → attaches one
+  modifier selection; the sheet calls this once per qualifying selection on confirm.
+- `POST /invoices/{id}/pay` `{method: cash|card|voucher, amount_cents, reference?}` → invoice with
+  `status` only `"paid"` once the sum of all payments recorded against it covers `total_cents` — a
+  smaller amount records a split-payment leg and leaves the invoice `"open"`. `reference` carries a
+  voucher's redemption code.
 - `GET /register-session-reports` — portal/management report: filtered, paginated register-session
   list (see above). Not an Android-consumed endpoint — listed here since it completes the till
   round-trip Phase 1 needs before the report *page* can be built.
