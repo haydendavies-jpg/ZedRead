@@ -534,7 +534,7 @@ export function UsersPage() {
                 <th>Email</th>
                 <th>Sites</th>
                 <th>Backend</th>
-                <th>Portal Role</th>
+                <th>Admin Portal</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -567,9 +567,9 @@ export function UsersPage() {
                     )}
                   </td>
                   <td>
-                    {u.backend_role ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 capitalize">
-                        {u.backend_role}
+                    {u.has_portal_access ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
+                        Yes
                       </span>
                     ) : (
                       <span className="text-xs text-[var(--zr-faint)]">—</span>
