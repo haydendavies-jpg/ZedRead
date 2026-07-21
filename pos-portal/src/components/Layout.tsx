@@ -27,6 +27,7 @@ const MGMT_NAV = [
   { to: '/management/reports', label: 'Reports' },
   { to: '/management/invoices', label: 'Invoices' },
   { to: '/management/register-sessions', label: 'Register Sessions' },
+  { to: '/management/devices', label: 'Devices' },
   { to: '/management/company-profile', label: 'Company Profile' },
 ]
 

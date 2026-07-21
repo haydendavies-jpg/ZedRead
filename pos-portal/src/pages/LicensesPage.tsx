@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, fetchAll } from '../api/axios'
-import type { License, Site } from '../types'
+import type { License, PosDevice, Site } from '../types'
 import { EntityIdChip } from '../components/EntityIdChip'
 import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
@@ -16,6 +16,10 @@ async function fetchSites(): Promise<Site[]> {
   return fetchAll<Site>('/sites/')
 }
 
+async function fetchDevices(): Promise<PosDevice[]> {
+  return fetchAll<PosDevice>('/pos-devices/')
+}
+
 function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
 }
@@ -24,6 +28,7 @@ export function LicensesPage() {
   const qc = useQueryClient()
   const { data: licenses = [], isLoading } = useQuery({ queryKey: ['licenses'], queryFn: fetchLicenses })
   const { data: sites = [] } = useQuery({ queryKey: ['sites'], queryFn: fetchSites })
+  const { data: devices = [] } = useQuery({ queryKey: ['pos-devices'], queryFn: fetchDevices })
 
   const [siteFilter, setSiteFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -37,6 +42,7 @@ export function LicensesPage() {
     is_trial: false,
     starts_at: '',
     expires_at: '',
+    max_devices: '1',
   })
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -47,9 +53,10 @@ export function LicensesPage() {
     onSuccess: () => {
       invalidate()
       setShowCreate(false)
-      setForm({ site_id: '', plan_name: '', monthly_fee_cents: '0', is_trial: false, starts_at: '', expires_at: '' })
+      setForm({ site_id: '', plan_name: '', monthly_fee_cents: '0', is_trial: false, starts_at: '', expires_at: '', max_devices: '1' })
     },
     onError: (e: unknown) => {
+      invalidate() // re-fetch so a DB-written record still appears even if response serialization failed
       const msg = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
       setFormError(msg ?? 'Failed to create license.')
     },
@@ -68,7 +75,15 @@ export function LicensesPage() {
   const siteName = (id: string) => sites.find((s) => s.id === id)?.name ?? id.slice(0, 8)
 
   const openCreate = () => {
-    setForm({ site_id: sites[0]?.id ?? '', plan_name: 'starter', monthly_fee_cents: '9900', is_trial: false, starts_at: '', expires_at: '' })
+    setForm({
+      site_id: sites[0]?.id ?? '',
+      plan_name: 'starter',
+      monthly_fee_cents: '9900',
+      is_trial: false,
+      starts_at: '',
+      expires_at: '',
+      max_devices: '1',
+    })
     setFormError(null)
     setShowCreate(true)
   }
@@ -79,7 +94,38 @@ export function LicensesPage() {
     createMutation.mutate({
       ...form,
       monthly_fee_cents: parseInt(form.monthly_fee_cents, 10),
+      max_devices: parseInt(form.max_devices, 10),
     })
+  }
+
+  const activeDeviceCount = (licenseId: string) =>
+    devices.filter((d) => d.license_id === licenseId && d.is_active).length
+
+  const [editingSeatsId, setEditingSeatsId] = useState<string | null>(null)
+  const [seatsDraft, setSeatsDraft] = useState('')
+
+  const updateSeatsMutation = useMutation({
+    mutationFn: ({ id, max_devices }: { id: string; max_devices: number }) =>
+      api.patch(`/licenses/${id}`, { max_devices }),
+    onSuccess: () => {
+      invalidate()
+      setEditingSeatsId(null)
+    },
+    onError: invalidate,
+  })
+
+  const startEditSeats = (l: License) => {
+    setEditingSeatsId(l.id)
+    setSeatsDraft(String(l.max_devices))
+  }
+
+  const commitEditSeats = (id: string) => {
+    const parsed = parseInt(seatsDraft, 10)
+    if (Number.isFinite(parsed) && parsed >= 1) {
+      updateSeatsMutation.mutate({ id, max_devices: parsed })
+    } else {
+      setEditingSeatsId(null)
+    }
   }
 
   const filtered = licenses.filter((l) => {
@@ -159,6 +205,7 @@ export function LicensesPage() {
                 <th>Plan</th>
                 <th className="zr-num">Monthly Fee</th>
                 <th>Expires</th>
+                <th>Seats</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -174,6 +221,31 @@ export function LicensesPage() {
                   </td>
                   <td className="zr-num font-mono">{formatCents(l.monthly_fee_cents)}</td>
                   <td className="text-[var(--zr-muted)]">{new Date(l.expires_at).toLocaleDateString()}</td>
+                  <td className="zr-cell-pad">
+                    {editingSeatsId === l.id ? (
+                      <input
+                        type="number"
+                        min={1}
+                        autoFocus
+                        value={seatsDraft}
+                        onChange={(e) => setSeatsDraft(e.target.value)}
+                        onBlur={() => commitEditSeats(l.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitEditSeats(l.id)
+                          if (e.key === 'Escape') setEditingSeatsId(null)
+                        }}
+                        className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      />
+                    ) : (
+                      <button
+                        onClick={() => startEditSeats(l)}
+                        title="Click to change seat capacity"
+                        className="font-mono text-sm hover:underline"
+                      >
+                        {activeDeviceCount(l.id)} of {l.max_devices}
+                      </button>
+                    )}
+                  </td>
                   <td><StatusBadge status={l.status} /></td>
                   <td className="zr-cell-pad">
                     <div className="flex flex-wrap items-center gap-2">
@@ -191,7 +263,7 @@ export function LicensesPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={7} className="text-center text-[var(--zr-faint)] py-8">
+                <tr><td colSpan={8} className="text-center text-[var(--zr-faint)] py-8">
                   {licenses.length === 0 ? 'No licenses yet.' : 'No licenses match the current filters.'}
                 </td></tr>
               )}
@@ -234,6 +306,20 @@ export function LicensesPage() {
                 required
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Seat Capacity</label>
+              <input
+                type="number"
+                min={1}
+                value={form.max_devices}
+                onChange={(e) => setForm({ ...form, max_devices: e.target.value })}
+                required
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <p className="text-xs text-[var(--zr-faint)] mt-1">
+                How many terminals can self-claim a seat on this license at once.
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

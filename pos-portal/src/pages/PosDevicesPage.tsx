@@ -1,10 +1,12 @@
 /**
  * POS Devices management page — register/deregister Android terminals.
  *
- * Registering a device is a prerequisite for the Android app's Login screen
- * to work at all (POST /auth/pos/login requires a device_token), and until
- * now the only way to do it was a raw API call — this is the first portal UI
- * for POST /pos-devices.
+ * Terminals normally self-register: logging into the app claims a seat on
+ * the chosen site's license automatically, with no portal step required
+ * (see LicensesPage's seat capacity column). This page is the admin escape
+ * hatch for manual registration/deregistration — e.g. pre-provisioning a
+ * device, or freeing a seat when a terminal is decommissioned without
+ * logging out first.
  */
 
 import { useState } from 'react'
@@ -176,7 +178,7 @@ export function PosDevicesPage() {
                   <td className="zr-cell-pad">
                     <button
                       onClick={() => handleCopy(d.id, d.device_token)}
-                      title="Click to copy — paste into the app's Device Setup screen"
+                      title="Click to copy this device's token"
                       className="font-mono text-xs bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded cursor-pointer transition-colors"
                     >
                       {copiedId === d.id ? '✓ copied' : d.device_token}
@@ -268,7 +270,8 @@ export function PosDevicesPage() {
                 </button>
               </div>
               <p className="text-xs text-[var(--zr-faint)] mt-1">
-                Enter this into the app's Device Setup screen on the terminal being paired.
+                Manual registration — most terminals should self-claim a seat by logging into the
+                app instead.
               </p>
             </div>
             {formError && <p className="text-sm text-red-600">{formError}</p>}

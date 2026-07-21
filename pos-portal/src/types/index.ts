@@ -165,6 +165,7 @@ export interface License {
   is_trial: boolean
   starts_at: string
   expires_at: string
+  max_devices: number
   created_at: string
   updated_at: string
 }
