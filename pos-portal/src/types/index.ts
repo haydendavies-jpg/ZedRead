@@ -641,6 +641,26 @@ export interface InvoiceReportRow {
   created_at: string
 }
 
+// ── Register session reporting types (Android POS Phase 1) ─────────────────────
+
+export interface RegisterSessionReportRow {
+  id: string
+  device_id: string
+  device_name: string
+  site_id: string
+  site_name: string
+  status: string
+  opened_at: string
+  opening_cash_cents: number
+  opened_by_name: string
+  closed_at: string | null
+  closing_cash_cents: number | null
+  expected_cash_cents: number | null
+  cash_takings_cents: number | null
+  variance_cents: number | null
+  closed_by_name: string | null
+}
+
 export interface InvoicePayment {
   id: string
   invoice_id: string
