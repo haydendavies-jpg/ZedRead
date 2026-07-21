@@ -24,7 +24,6 @@ from app.constants.audit_actions import (
 from app.models.access_profile import AccessProfile
 from app.models.audit_log import AuditLog
 from app.models.brand import Brand
-from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
@@ -372,12 +371,14 @@ async def test_login_shared_email_returns_available_identities(
     client, db, test_user, test_portal_grant
 ):
     """A superadmin and a portal-capable user sharing an email get disambiguated."""
-    shared_superadmin = SuperAdmin(
+    shared_superadmin = User(
         id=uuid.uuid4(),
+        group_id=None,
+        brand_id=None,
         email="posuser@test.com",
         password_hash=hash_password("SharedPassword123!"),
         name="Shared Superadmin",
-        role="admin",
+        superadmin_role="admin",
         is_active=True,
     )
     db.add(shared_superadmin)
@@ -400,12 +401,14 @@ async def test_login_shared_email_returns_available_identities(
 
 async def test_login_shared_email_pos_only_user_unaffected(client, db, test_user):
     """A superadmin sharing an email with a non-portal-capable user logs in unaffected."""
-    shared_superadmin = SuperAdmin(
+    shared_superadmin = User(
         id=uuid.uuid4(),
+        group_id=None,
+        brand_id=None,
         email="posuser@test.com",
         password_hash=hash_password("SharedPassword123!"),
         name="Shared Superadmin",
-        role="admin",
+        superadmin_role="admin",
         is_active=True,
     )
     db.add(shared_superadmin)
@@ -426,12 +429,14 @@ async def test_identity_token_superadmin_selection_issues_portal_tokens(
     client, db, test_user, test_portal_grant
 ):
     """Choosing identity_type=superadmin issues a portal token pair."""
-    shared_superadmin = SuperAdmin(
+    shared_superadmin = User(
         id=uuid.uuid4(),
+        group_id=None,
+        brand_id=None,
         email="posuser@test.com",
         password_hash=hash_password("SharedPassword123!"),
         name="Shared Superadmin",
-        role="admin",
+        superadmin_role="admin",
         is_active=True,
     )
     db.add(shared_superadmin)
@@ -457,12 +462,14 @@ async def test_identity_token_user_selection_issues_mgmt_token(
     client, db, test_user, test_portal_grant
 ):
     """Choosing identity_type=user issues a management token pair."""
-    shared_superadmin = SuperAdmin(
+    shared_superadmin = User(
         id=uuid.uuid4(),
+        group_id=None,
+        brand_id=None,
         email="posuser@test.com",
         password_hash=hash_password("SharedPassword123!"),
         name="Shared Superadmin",
-        role="admin",
+        superadmin_role="admin",
         is_active=True,
     )
     db.add(shared_superadmin)
@@ -486,12 +493,14 @@ async def test_identity_token_user_selection_issues_mgmt_token(
 
 async def test_identity_token_wrong_password_returns_401(client, db, test_user, test_portal_grant):
     """Wrong password on the identity-token endpoint returns 401."""
-    shared_superadmin = SuperAdmin(
+    shared_superadmin = User(
         id=uuid.uuid4(),
+        group_id=None,
+        brand_id=None,
         email="posuser@test.com",
         password_hash=hash_password("SharedPassword123!"),
         name="Shared Superadmin",
-        role="admin",
+        superadmin_role="admin",
         is_active=True,
     )
     db.add(shared_superadmin)
@@ -520,3 +529,70 @@ async def test_identity_token_invalid_identity_type_returns_401(client, test_use
         },
     )
     assert response.status_code == 401
+
+
+# ── Hybrid account: one row with both superadmin_role and a grant ────────────
+
+
+async def test_login_hybrid_row_returns_available_identities(
+    client, db, test_user, test_portal_grant
+):
+    """A single row with both superadmin_role and a portal-capable grant gets disambiguated."""
+    test_user.superadmin_role = "admin"
+    await db.commit()
+
+    response = await client.post(
+        "/auth/portal/login",
+        json={"email": "posuser@test.com", "password": "POSPassword123!"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["access_token"] is None
+    assert body["available_identities"] is not None
+    identity_types = {i["identity_type"] for i in body["available_identities"]}
+    assert identity_types == {"superadmin", "user"}
+
+
+async def test_identity_token_hybrid_row_superadmin_selection(
+    client, db, test_user, test_portal_grant
+):
+    """Choosing identity_type=superadmin on a hybrid row issues a portal token for the same row."""
+    test_user.superadmin_role = "admin"
+    await db.commit()
+
+    response = await client.post(
+        "/auth/portal/identity-token",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "identity_type": "superadmin",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["access_token"] is not None
+    assert body["user_id"] is None
+
+
+async def test_identity_token_hybrid_row_user_selection(
+    client, db, test_user, test_portal_grant
+):
+    """Choosing identity_type=user on a hybrid row issues a management token for the same row."""
+    test_user.superadmin_role = "admin"
+    await db.commit()
+
+    response = await client.post(
+        "/auth/portal/identity-token",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "identity_type": "user",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["access_token"] is not None
+    assert str(body["user_id"]) == str(test_user.id)

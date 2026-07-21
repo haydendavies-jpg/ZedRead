@@ -59,10 +59,10 @@ class Group(Base):
     )
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("superadmins.id"),
+        ForeignKey("users.id"),
         nullable=True,
-        comment="SuperAdmin who created this group. Scopes Reseller Staff "
-        "visibility to own accounts only (ROLE_MODEL.md §5.1); NULL for "
+        comment="User (superadmin_role) who created this group. Scopes Reseller "
+        "Staff visibility to own accounts only (ROLE_MODEL.md §5.1); NULL for "
         "pre-existing groups and groups created by Admin.",
     )
     timezone: Mapped[str] = mapped_column(

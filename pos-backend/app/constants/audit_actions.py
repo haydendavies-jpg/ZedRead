@@ -39,11 +39,6 @@ SITE_LOGO_UPDATED = "site.logo.updated"
 
 HIERARCHY_WIPED = "hierarchy.wiped"  # Admin CLI: hard-delete of all Groups/Brands/Sites and dependents
 
-PORTAL_USER_CREATED = "superadmin.created"
-PORTAL_USER_UPDATED = "superadmin.updated"
-PORTAL_USER_SUSPENDED = "superadmin.suspended"
-PORTAL_USER_ACTIVATED = "superadmin.activated"
-
 # ── Phase 1 / Stage 4 — License Management ───────────────────────────────────
 LICENSE_CREATED = "license.created"
 LICENSE_UPDATED = "license.updated"
@@ -68,10 +63,12 @@ POS_PIN_VERIFIED = "pos_auth.pin.verified"
 USER_CREATED = "user.created"
 USER_UPDATED = "user.updated"
 USER_DEACTIVATED = "user.deactivated"
+USER_REACTIVATED = "user.reactivated"
 USER_INVITED = "user.invited"
 USER_INVITE_ACCEPTED = "user.invite.accepted"
 USER_PIN_ADMIN_SET = "user.pin.admin_set"  # Portal admin sets a PIN on behalf of a POS user
 USER_BACKEND_ROLE_UPDATED = "user.backend_role.updated"
+USER_SUPERADMIN_ROLE_UPDATED = "user.superadmin_role.updated"  # Admin-portal role granted/revoked/changed
 USER_PASSWORD_ADMIN_SET = "user.password.admin_set"  # Portal admin sets a password on behalf of a POS user
 
 # ── Phase 2 / Stage 8 — Product Catalog ──────────────────────────────────────

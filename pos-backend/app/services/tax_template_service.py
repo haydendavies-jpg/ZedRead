@@ -1,6 +1,6 @@
 """Business logic for admin-managed tax templates and their rates.
 
-Templates are SuperAdmin-portal-only: management (customer) users never see
+Templates are portal-admin-only: management (customer) users never see
 or modify them. Every write logs an audit row in the same transaction.
 """
 
@@ -20,7 +20,7 @@ from app.constants.audit_actions import (
     TAX_TEMPLATE_UPDATED,
 )
 from app.constants.statuses import ActorType
-from app.models.superadmin import SuperAdmin
+from app.models.user import User
 from app.models.tax_template import TaxTemplate
 from app.models.tax_template_rate import TaxTemplateRate
 from app.schemas.tax_template import (
@@ -129,7 +129,7 @@ async def list_templates(
 async def create_template(
     db: AsyncSession,
     payload: TaxTemplateCreate,
-    actor: SuperAdmin,
+    actor: User,
 ) -> TaxTemplateResponse:
     """
     Create a tax template and write an audit log row.
@@ -174,7 +174,7 @@ async def update_template(
     db: AsyncSession,
     template_id: uuid.UUID,
     payload: TaxTemplateUpdate,
-    actor: SuperAdmin,
+    actor: User,
 ) -> TaxTemplateResponse:
     """
     Update a tax template's fields and write an audit log row.
@@ -228,7 +228,7 @@ async def update_template(
 async def delete_template(
     db: AsyncSession,
     template_id: uuid.UUID,
-    actor: SuperAdmin,
+    actor: User,
 ) -> None:
     """
     Soft-delete a tax template (is_active = False) and write an audit log row.
@@ -273,7 +273,7 @@ async def create_rate(
     db: AsyncSession,
     template_id: uuid.UUID,
     payload: TaxTemplateRateCreate,
-    actor: SuperAdmin,
+    actor: User,
 ) -> TaxTemplateRateResponse:
     """
     Add a rate to a tax template and write an audit log row.
@@ -325,7 +325,7 @@ async def update_rate(
     db: AsyncSession,
     rate_id: uuid.UUID,
     payload: TaxTemplateRateUpdate,
-    actor: SuperAdmin,
+    actor: User,
 ) -> TaxTemplateRateResponse:
     """
     Update a template rate's fields and write an audit log row.
@@ -374,7 +374,7 @@ async def update_rate(
 async def delete_rate(
     db: AsyncSession,
     rate_id: uuid.UUID,
-    actor: SuperAdmin,
+    actor: User,
 ) -> None:
     """
     Soft-delete a template rate (is_active = False) and write an audit log row.

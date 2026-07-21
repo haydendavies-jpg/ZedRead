@@ -43,7 +43,7 @@ def _mgmt_headers(user: User, grant: UserAccessGrant) -> dict[str, str]:
 
 def _portal_headers(superadmin) -> dict[str, str]:
     """Return portal JWT headers."""
-    token = create_access_token(str(superadmin.id), superadmin.role)
+    token = create_access_token(str(superadmin.id), superadmin.superadmin_role)
     return {"Authorization": f"Bearer {token}"}
 
 

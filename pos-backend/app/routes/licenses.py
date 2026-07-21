@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.superadmin import SuperAdmin
+from app.models.user import User
 from app.schemas.license import LicenseCreate, LicenseResponse, LicenseUpdate
 from app.services import license_service
 from app.utils.dependencies import get_current_superadmin
@@ -21,7 +21,7 @@ async def list_licenses(
     site_id: uuid.UUID | None = Query(default=None, description="Filter by site ID"),
     status: str | None = Query(default=None, description="Exact-match filter on license status"),
     db: AsyncSession = Depends(get_db),
-    _: SuperAdmin = Depends(get_current_superadmin),
+    _: User = Depends(get_current_superadmin),
 ) -> list[LicenseResponse]:
     """List all licenses with pagination and optional filters."""
     return await license_service.list_licenses(db, skip=skip, limit=limit, site_id=site_id, status=status)
@@ -31,7 +31,7 @@ async def list_licenses(
 async def get_license(
     license_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: SuperAdmin = Depends(get_current_superadmin),
+    _: User = Depends(get_current_superadmin),
 ) -> LicenseResponse:
     """Fetch a single license by ID."""
     return await license_service.get_license(db, license_id)
@@ -41,7 +41,7 @@ async def get_license(
 async def create_license(
     payload: LicenseCreate,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> LicenseResponse:
     """Create a new license for a site. One license per site."""
     return await license_service.create_license(db, payload, actor)
@@ -52,7 +52,7 @@ async def update_license(
     license_id: uuid.UUID,
     payload: LicenseUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> LicenseResponse:
     """Update mutable license fields (plan name, fee, expiry)."""
     return await license_service.update_license(db, license_id, payload, actor)
@@ -62,7 +62,7 @@ async def update_license(
 async def disable_license(
     license_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> LicenseResponse:
     """Manually disable an active license."""
     return await license_service.disable_license(db, license_id, actor)
@@ -72,7 +72,7 @@ async def disable_license(
 async def enable_license(
     license_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> LicenseResponse:
     """Re-enable a disabled license."""
     return await license_service.enable_license(db, license_id, actor)

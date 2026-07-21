@@ -22,7 +22,6 @@ from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.group import Group
 from app.models.pos_device import PosDevice
-from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
@@ -33,7 +32,8 @@ from app.utils.security import decode_token
 @dataclass
 class ImpersonatorSnapshot:
     """
-    Carries the SuperAdmin's identity during an impersonation session.
+    Carries the impersonating admin's identity (a User with superadmin_role
+    set) during an impersonation session.
 
     Snapshotted from JWT claims at token-decode time so no extra DB query is
     needed per request. Used by _actor_from_mgmt() to attribute audit log
@@ -74,9 +74,10 @@ class ManagementAccess:
       scope='brand' → brand is populated; site is None
       scope='group' → group is populated; brand and site are None
 
-    impersonator is set when a SuperAdmin obtained this token via
-    POST /admin/impersonate. All audit logs for the session must use
-    the impersonator's id/email/name rather than the master user's.
+    impersonator is set when a portal admin (a User with superadmin_role set)
+    obtained this token via POST /admin/impersonate. All audit logs for the
+    session must use the impersonator's id/email/name rather than the master
+    user's.
     """
 
     user: User
@@ -101,7 +102,8 @@ class CatalogAccess:
 
     pos_access: "POSAccess | None"
     mgmt_access: "ManagementAccess | None"
-    portal_access: "SuperAdmin | None"
+    # A User with superadmin_role set, resolved from a portal (access-type) JWT
+    portal_access: "User | None"
 
     @property
     def brand_id(self) -> uuid.UUID:
@@ -128,7 +130,7 @@ class CatalogAccess:
         )
 
     @property
-    def actor_user(self) -> "User | SuperAdmin | ImpersonatorSnapshot":
+    def actor_user(self) -> "User | ImpersonatorSnapshot":
         """
         The effective actor for audit logging.
 
@@ -143,7 +145,8 @@ class CatalogAccess:
             if self.mgmt_access.impersonator:
                 return self.mgmt_access.impersonator
             return self.mgmt_access.user
-        return self.portal_access  # type: ignore[return-value]
+        assert self.portal_access is not None  # one of the three must be set
+        return self.portal_access
 
     def effective_brand_id(self, brand_id_param: "uuid.UUID | None" = None) -> uuid.UUID:
         """
@@ -397,9 +400,9 @@ def _actor_from_mgmt(mgmt: ManagementAccess) -> dict:
 async def get_current_superadmin(
     credentials: HTTPAuthorizationCredentials = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
-) -> SuperAdmin:
+) -> User:
     """
-    Decode the Bearer access token and return the authenticated portal user.
+    Decode the Bearer access token and return the authenticated portal admin.
 
     Raises HTTP 401 for invalid/expired tokens and HTTP 403 for inactive users.
 
@@ -408,7 +411,7 @@ async def get_current_superadmin(
         db: The active database session.
 
     Returns:
-        SuperAdmin: The authenticated and active portal user.
+        User: The authenticated and active User row (superadmin_role set).
 
     Raises:
         HTTPException: 401 if the token is invalid or expired.
@@ -425,7 +428,7 @@ async def get_current_superadmin(
 
     user_id: str = payload.get("sub", "")
     result = await db.execute(
-        select(SuperAdmin).where(SuperAdmin.id == user_id)
+        select(User).where(User.id == user_id, User.superadmin_role.isnot(None))
     )
     user = result.scalar_one_or_none()
 
@@ -454,21 +457,21 @@ async def get_current_superadmin(
 
 
 def require_super_admin(
-    current_user: SuperAdmin = Depends(get_current_superadmin),
-) -> SuperAdmin:
+    current_user: User = Depends(get_current_superadmin),
+) -> User:
     """
     Dependency that restricts a route to Admin-role SuperAdmins only.
 
     Args:
-        current_user: The authenticated portal user from get_current_superadmin.
+        current_user: The authenticated portal admin from get_current_superadmin.
 
     Returns:
-        SuperAdmin: The authenticated Admin-role SuperAdmin.
+        User: The authenticated Admin-role portal admin.
 
     Raises:
-        HTTPException: 403 if the user is not an Admin-role SuperAdmin.
+        HTTPException: 403 if the user is not an Admin-role portal admin.
     """
-    if current_user.role != SuperAdminRole.ADMIN.value:
+    if current_user.superadmin_role != SuperAdminRole.ADMIN.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Super admin access required",
@@ -705,11 +708,11 @@ async def resolve_management_access(
 async def resolve_portal_or_management(
     credentials: HTTPAuthorizationCredentials = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
-) -> "SuperAdmin | ManagementAccess":
+) -> "User | ManagementAccess":
     """
-    Accept either a SuperAdmin portal token or a management-portal token.
+    Accept either a portal-admin (superadmin_role) token or a management-portal token.
 
-    Backs Group/Brand/Site company-profile routes, which both the SuperAdmin
+    Backs Group/Brand/Site company-profile routes, which both the admin
     portal (full CRUD) and the tenant-facing Company Profile page (read/edit
     the caller's own scope entity) read from — those two portals otherwise
     authenticate with disjoint token types (get_current_superadmin only
@@ -722,7 +725,7 @@ async def resolve_portal_or_management(
         db: The active database session.
 
     Returns:
-        SuperAdmin | ManagementAccess: whichever token type decoded.
+        User | ManagementAccess: whichever token type decoded.
 
     Raises:
         HTTPException: 401 if neither token type is valid.
@@ -771,7 +774,7 @@ async def resolve_catalog_access(
         payload = decode_token(token_str, expected_type="access")
         user_id_str: str = payload.get("sub", "")
         portal_result = await db.execute(
-            select(SuperAdmin).where(SuperAdmin.id == user_id_str)
+            select(User).where(User.id == user_id_str, User.superadmin_role.isnot(None))
         )
         superadmin = portal_result.scalar_one_or_none()
         if superadmin and superadmin.is_active:

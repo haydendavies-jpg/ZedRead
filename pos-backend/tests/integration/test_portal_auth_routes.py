@@ -23,7 +23,7 @@ from app.constants.audit_actions import (
     AUTH_TOKEN_REFRESHED,
 )
 from app.models.audit_log import AuditLog
-from app.models.superadmin import SuperAdmin
+from app.models.user import User
 from app.utils.security import create_refresh_token, hash_password
 
 _SEND_RESET_EMAIL_PATH = "app.services.portal_auth_service.send_password_reset_email"
@@ -117,12 +117,14 @@ async def test_login_unknown_email_returns_401(client):
 
 async def test_login_inactive_user_returns_401(client, db):
     """Inactive portal user cannot log in."""
-    inactive = SuperAdmin(
+    inactive = User(
         id=uuid.uuid4(),
+        group_id=None,
+        brand_id=None,
         email="inactive@test.com",
         password_hash=hash_password("TestPassword123!"),
         name="Inactive User",
-        role="admin",
+        superadmin_role="admin",
         is_active=False,
     )
     db.add(inactive)
@@ -210,7 +212,7 @@ async def test_refresh_with_access_token_returns_401(client, test_superadmin):
     """Passing an access token to the refresh endpoint returns 401 (wrong token type)."""
     from app.utils.security import create_access_token
 
-    access_token = create_access_token(str(test_superadmin.id), test_superadmin.role)
+    access_token = create_access_token(str(test_superadmin.id), test_superadmin.superadmin_role)
 
     response = await client.post(
         "/auth/portal/refresh",

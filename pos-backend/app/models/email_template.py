@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM model for SuperAdmin-managed email templates."""
+"""SQLAlchemy ORM model for email templates managed by portal admins (User.superadmin_role)."""
 
 import uuid
 from datetime import datetime

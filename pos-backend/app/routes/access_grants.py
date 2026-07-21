@@ -179,7 +179,7 @@ async def create_user_with_grant(
     Backs the Users page "Add User" action. Until now, a management caller
     could only grant additional access to an *existing* user (found via
     search) — there was no way to onboard a brand-new colleague without a
-    SuperAdmin using the separate POST /users route. Scope and role-ceiling
+    a portal admin using the separate POST /users route. Scope and role-ceiling
     authority are the same rules create_grant() enforces (ROLE_MODEL.md §2):
     the new user's access can never exceed the caller's own, and the
     site/brand must be within the caller's scope.

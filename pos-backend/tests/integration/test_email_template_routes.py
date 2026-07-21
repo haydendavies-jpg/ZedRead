@@ -2,7 +2,7 @@
 
 Covers all five required scenarios per tests_CLAUDE.md:
 1. Happy path — list/get/create/update return correct shapes
-2. Auth failure — no token → 403, non-Admin SuperAdmin → 403
+2. Auth failure — no token → 403, non-Admin portal admin → 403
 3. Invalid input — missing fields → 422
 4. Business rule — 404 for unknown template, 409 for duplicate template_key
 5. Audit log — every write asserts the correct audit_logs row
@@ -25,23 +25,25 @@ _CREATE_PAYLOAD = {
 
 
 async def _reseller_staff_headers(db) -> dict[str, str]:
-    """Create a Reseller Staff SuperAdmin and return a valid Authorization header for them."""
-    from app.models.superadmin import SuperAdmin
+    """Create a Reseller Staff portal admin and return a valid Authorization header for them."""
+    from app.models.user import User
     from app.utils.security import create_access_token
 
-    user = SuperAdmin(
+    user = User(
         id=uuid.uuid4(),
+        group_id=None,
+        brand_id=None,
         email="reseller@test.com",
         password_hash=hash_password("TestPassword123!"),
         name="Reseller Staff",
-        role="reseller_staff",
+        superadmin_role="reseller_staff",
         is_active=True,
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
 
-    token = create_access_token(str(user.id), user.role)
+    token = create_access_token(str(user.id), user.superadmin_role)
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -111,7 +113,7 @@ async def test_create_email_template_no_token_returns_403(client):
 
 
 async def test_create_email_template_non_admin_returns_403(client, db):
-    """POST /email-templates as a Reseller Staff (non-Admin) SuperAdmin returns 403."""
+    """POST /email-templates as a Reseller Staff (non-Admin) portal admin returns 403."""
     headers = await _reseller_staff_headers(db)
     response = await client.post("/email-templates/", json=_CREATE_PAYLOAD, headers=headers)
     assert response.status_code == 403

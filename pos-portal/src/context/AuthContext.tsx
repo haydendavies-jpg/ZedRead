@@ -2,7 +2,7 @@
  * Authentication context — provides current user, login, and logout to the tree.
  *
  * Supports two user types:
- *   portal_access — SuperAdmin (admin, reseller_staff); fetched from API.
+ *   portal_access — User with superadmin_role set; fetched from API.
  *   mgmt_access   — MgmtUser (POS manager with portal access); decoded from JWT.
  *
  * When login returns available_grants (multi-grant POS user), the context exposes
@@ -11,9 +11,9 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { api, clearTokens, getAccessToken, getTokenType, setImpersonationSession, setTokens } from '../api/axios'
-import type { GrantSummary, IdentitySummary, MgmtTokenPayload, MgmtUser, SuperAdmin, TokenType, UnifiedLoginResponse } from '../types'
+import type { GrantSummary, IdentitySummary, MgmtTokenPayload, MgmtUser, User, TokenType, UnifiedLoginResponse } from '../types'
 
-export type AuthUser = SuperAdmin | MgmtUser
+export type AuthUser = User | MgmtUser
 
 interface AuthContextValue {
   user: AuthUser | null
@@ -27,7 +27,7 @@ interface AuthContextValue {
   pendingGrants: GrantSummary[] | null
   pendingUserId: string | null
   /**
-   * Non-null when the email matched both a SuperAdmin and a portal-capable User
+   * Non-null when a matching row (or rows) offered more than one login capability
    * (ROLE_MODEL.md §3); cleared after selectIdentity().
    */
   pendingIdentities: IdentitySummary[] | null
@@ -36,7 +36,7 @@ interface AuthContextValue {
    * user or single-grant POS user) so the caller can navigate away. Returns
    * 'grant_selection' when the POS user has multiple grants and must pick one
    * via selectGrant(). Returns 'identity_selection' when the email matches both
-   * a SuperAdmin and a portal-capable User and the caller must pick one via
+   * more than one capability and the caller must pick one via
    * selectIdentity(). In the two selection cases the caller should NOT navigate —
    * LoginPage re-renders with the appropriate selector automatically.
    */
@@ -104,8 +104,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setTokenType('mgmt_access')
     } else {
       const id = payload['sub'] as string
-      const { data: superAdmin } = await api.get<SuperAdmin>(`/portal-users/${id}`)
-      setUser(superAdmin)
+      const { data: portalAdmin } = await api.get<User>(`/users/${id}`)
+      setUser(portalAdmin)
       setTokenType('portal_access')
     }
   }, [])
@@ -146,7 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setTokenType('mgmt_access')
       } else {
         const id = payload['sub'] as string
-        const { data } = await api.get<SuperAdmin>(`/portal-users/${id}`)
+        const { data } = await api.get<User>(`/users/${id}`)
         setUser(data)
         setTokenType('portal_access')
       }
@@ -171,7 +171,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await applyTokens(data.access_token, data.refresh_token)
       return 'direct'
     } else if (data.available_identities && data.available_identities.length > 0) {
-      // Email matched both a SuperAdmin and a portal-capable User — pick which
+      // A matching row (or rows) offered more than one capability — pick which
       // to enter before any token is issued (ROLE_MODEL.md §3).
       setPendingIdentities(data.available_identities)
       return 'identity_selection'
@@ -262,9 +262,9 @@ export function useAuth(): AuthContextValue {
   return ctx
 }
 
-/** True if the logged-in user is a SuperAdmin (admin, reseller_staff). */
-export function isSuperAdmin(user: AuthUser | null): user is SuperAdmin {
-  return user !== null && 'role' in user
+/** True if the logged-in user is a portal admin (superadmin_role set: admin, reseller_staff). */
+export function isSuperAdmin(user: AuthUser | null): user is User {
+  return user !== null && 'superadmin_role' in user
 }
 
 /** True if the logged-in user is a management JWT holder. */

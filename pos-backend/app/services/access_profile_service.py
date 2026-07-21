@@ -27,7 +27,6 @@ from app.constants.statuses import ActorType, PageCategory, SystemAccessProfile
 from app.models.access_profile import AccessProfile
 from app.models.access_profile_page_permission import AccessProfilePagePermission
 from app.models.license import License
-from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.schemas.access_profile import AccessProfileCapabilitiesUpdate
 from app.services.audit_service import log_action
@@ -246,7 +245,7 @@ async def grant_page(
     db: AsyncSession,
     access_profile_id: uuid.UUID,
     page_key: str,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> None:
     """
     Grant a single page to an AccessProfile, idempotently.
@@ -255,7 +254,7 @@ async def grant_page(
         db: Active database session.
         access_profile_id: UUID of the profile to grant the page to.
         page_key: Key from app.constants.pages.PAGE_CATALOG to grant.
-        actor: The User or SuperAdmin performing the grant, for audit attribution.
+        actor: The authenticated User (any role, incl. portal admins) performing the grant, for audit attribution.
 
     Raises:
         HTTPException: 404 if the profile does not exist.
@@ -306,7 +305,7 @@ async def revoke_page(
     db: AsyncSession,
     access_profile_id: uuid.UUID,
     page_key: str,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> None:
     """
     Revoke a single page from an AccessProfile.
@@ -315,7 +314,7 @@ async def revoke_page(
         db: Active database session.
         access_profile_id: UUID of the profile to revoke the page from.
         page_key: Key from app.constants.pages.PAGE_CATALOG to revoke.
-        actor: The User or SuperAdmin performing the revoke, for audit attribution.
+        actor: The authenticated User (any role, incl. portal admins) performing the revoke, for audit attribution.
 
     Raises:
         HTTPException: 404 if the profile does not exist, or the page is not granted.
@@ -355,7 +354,7 @@ async def bulk_set_pages(
     access_profile_id: uuid.UUID,
     page_keys: list[str],
     grant: bool,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> list[str]:
     """
     Grant or revoke many pages on an AccessProfile in one call.
@@ -371,7 +370,7 @@ async def bulk_set_pages(
         access_profile_id: UUID of the profile to update.
         page_keys: Page keys to grant or revoke.
         grant: True to grant every key, False to revoke every key.
-        actor: The User or SuperAdmin performing the change, for audit attribution.
+        actor: The authenticated User (any role, incl. portal admins) performing the change, for audit attribution.
 
     Returns:
         list[str]: The page keys actually changed (already-correct keys are skipped).
@@ -473,7 +472,7 @@ async def update_capabilities(
     db: AsyncSession,
     access_profile_id: uuid.UUID,
     payload: AccessProfileCapabilitiesUpdate,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> AccessProfile:
     """
     Update an AccessProfile's open-item capability flag and/or price ceiling.

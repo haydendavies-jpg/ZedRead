@@ -46,7 +46,6 @@ from app.models.menu_layout import MenuLayout
 from app.models.menu_tab import MenuTab
 from app.models.product import Product
 from app.models.site import Site
-from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.schemas.menu_layout import (
     MenuButtonCreate,
@@ -343,7 +342,7 @@ async def create_menu_layout(
     db: AsyncSession,
     brand_id: uuid.UUID,
     payload: MenuLayoutCreate,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> MenuLayout:
     """
     Create a new menu layout.
@@ -390,7 +389,7 @@ async def update_menu_layout(
     brand_id: uuid.UUID,
     layout_id: uuid.UUID,
     payload: MenuLayoutUpdate,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> MenuLayout:
     """
     Update a menu layout's mutable fields, including active-time/day-of-week scheduling.
@@ -447,7 +446,7 @@ async def update_menu_layout(
 
 
 async def delete_menu_layout(
-    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, actor: User | SuperAdmin
+    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, actor: User
 ) -> None:
     """Delete a menu layout and its tabs/buttons (cascade)."""
     layout = await _get_layout_or_404(db, brand_id, layout_id)
@@ -468,7 +467,7 @@ async def delete_menu_layout(
 
 
 async def duplicate_menu_layout(
-    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, actor: User | SuperAdmin
+    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, actor: User
 ) -> MenuLayout:
     """
     Duplicate a layout and its full tab tree + buttons (name suffixed "(copy)").
@@ -543,7 +542,7 @@ async def duplicate_menu_layout(
 
 
 async def publish_menu_layout(
-    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, actor: User | SuperAdmin
+    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, actor: User
 ) -> tuple[MenuLayout, list[PublishWarning]]:
     """
     Publish a menu layout, bumping its version. Does not block on stale button refs.
@@ -603,7 +602,7 @@ async def publish_menu_layout(
 
 
 async def unpublish_menu_layout(
-    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, actor: User | SuperAdmin
+    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, actor: User
 ) -> MenuLayout:
     """Unpublish a menu layout."""
     layout = await _get_layout_or_404(db, brand_id, layout_id)
@@ -625,7 +624,7 @@ async def unpublish_menu_layout(
 
 
 async def schedule_layout_publish(
-    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, scheduled_publish_at: datetime, actor: User | SuperAdmin
+    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, scheduled_publish_at: datetime, actor: User
 ) -> MenuLayout:
     """
     Set a layout's "Schedule publish" target time (bulk-publish-changes-later).
@@ -655,7 +654,7 @@ async def schedule_layout_publish(
 
 
 async def cancel_layout_scheduled_publish(
-    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, actor: User | SuperAdmin
+    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, actor: User
 ) -> MenuLayout:
     """Cancel a layout's pending "Schedule publish"."""
     layout = await _get_layout_or_404(db, brand_id, layout_id)
@@ -684,7 +683,7 @@ async def create_menu_tab(
     brand_id: uuid.UUID,
     layout_id: uuid.UUID,
     payload: MenuTabCreate,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> MenuTab:
     """
     Add a tab to a menu layout, appended after any existing sibling tabs.
@@ -735,7 +734,7 @@ async def update_menu_tab(
     layout_id: uuid.UUID,
     tab_id: uuid.UUID,
     payload: MenuTabUpdate,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> MenuTab:
     """Update a menu tab's mutable fields (name/color)."""
     await _get_layout_or_404(db, brand_id, layout_id)
@@ -769,7 +768,7 @@ async def update_menu_tab(
 
 
 async def delete_menu_tab(
-    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, tab_id: uuid.UUID, actor: User | SuperAdmin
+    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, tab_id: uuid.UUID, actor: User
 ) -> None:
     """Delete a menu tab, its nested child tabs, and their buttons (cascade)."""
     await _get_layout_or_404(db, brand_id, layout_id)
@@ -794,7 +793,7 @@ async def reorder_menu_tabs(
     brand_id: uuid.UUID,
     layout_id: uuid.UUID,
     tab_ids: list[uuid.UUID],
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> list[MenuTab]:
     """
     Reorder a set of sibling tabs — each id in tab_ids gets display_order = its list index.
@@ -847,7 +846,7 @@ async def create_menu_button(
     layout_id: uuid.UUID,
     tab_id: uuid.UUID,
     payload: MenuButtonCreate,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> MenuButtonOut:
     """
     Add a button to a tab — a product tile, or a folder that creates a new nested tab.
@@ -919,7 +918,7 @@ async def update_menu_button(
     tab_id: uuid.UUID,
     button_id: uuid.UUID,
     payload: MenuButtonUpdate,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> MenuButtonOut:
     """
     Update a button's mutable fields — resize (width/height), recolor, or relink a product.
@@ -982,7 +981,7 @@ async def place_menu_button(
     tab_id: uuid.UUID,
     grid_col: int,
     grid_row: int,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> MenuButtonOut:
     """
     Move a button to an explicit grid cell — the drag-to-any-cell operation.
@@ -1066,7 +1065,7 @@ async def place_menu_button(
 
 
 async def delete_menu_button(
-    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, tab_id: uuid.UUID, button_id: uuid.UUID, actor: User | SuperAdmin
+    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, tab_id: uuid.UUID, button_id: uuid.UUID, actor: User
 ) -> None:
     """Remove a button from a tab. A folder button's nested tab (and its buttons) cascade-deletes too."""
     await _get_layout_or_404(db, brand_id, layout_id)
@@ -1092,7 +1091,7 @@ async def reorder_menu_buttons(
     layout_id: uuid.UUID,
     tab_id: uuid.UUID,
     button_ids: list[uuid.UUID],
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> MenuTabOut:
     """
     Reorder a tab's buttons, and/or move buttons into this tab from another (drag-and-drop move).
@@ -1167,7 +1166,7 @@ async def _buttons_in_one_tab_or_400(db: AsyncSession, layout_id: uuid.UUID, but
 
 
 async def bulk_recolor_menu_buttons(
-    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, button_ids: list[uuid.UUID], color: str, actor: User | SuperAdmin
+    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, button_ids: list[uuid.UUID], color: str, actor: User
 ) -> list[MenuButtonOut]:
     """
     Bulk-recolor a multi-selection of buttons (the grid editor's floating action bar).
@@ -1193,7 +1192,7 @@ async def bulk_recolor_menu_buttons(
 
 
 async def bulk_delete_menu_buttons(
-    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, button_ids: list[uuid.UUID], actor: User | SuperAdmin
+    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, button_ids: list[uuid.UUID], actor: User
 ) -> dict[str, list[uuid.UUID]]:
     """
     Bulk-delete a multi-selection of buttons (folder buttons' nested tabs cascade too).
@@ -1224,7 +1223,7 @@ async def bulk_delete_menu_buttons(
 
 
 async def group_menu_buttons_into_tab(
-    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, button_ids: list[uuid.UUID], name: str, actor: User | SuperAdmin
+    db: AsyncSession, brand_id: uuid.UUID, layout_id: uuid.UUID, button_ids: list[uuid.UUID], name: str, actor: User
 ) -> MenuButtonOut:
     """
     Bundle a multi-selection of buttons into a newly created nested tab (the "Group into tab" bulk action).

@@ -1,4 +1,4 @@
-"""Admin impersonation endpoint — lets a SuperAdmin session into any entity's management portal.
+"""Admin impersonation endpoint — lets a portal admin session into any entity's management portal.
 
 All actions taken during the impersonation session are logged under the admin's
 identity (actor_id/email/name carry the admin's details), not the master user's,
@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants.audit_actions import ADMIN_IMPERSONATION_STARTED
 from app.constants.statuses import ActorType
 from app.database import get_db
-from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.user_access_grant import UserAccessGrant
 from app.services.audit_service import log_action
@@ -51,7 +50,7 @@ async def get_master_grant(
     brand_id: uuid.UUID | None = Query(None, description="Brand ID"),
     group_id: uuid.UUID | None = Query(None, description="Group ID"),
     db: AsyncSession = Depends(get_db),
-    admin: SuperAdmin = Depends(require_super_admin),
+    admin: User = Depends(require_super_admin),
 ) -> MasterGrantResponse:
     """
     Return the active grant ID for an entity's master user.
@@ -64,7 +63,7 @@ async def get_master_grant(
         brand_id: Resolve the master grant for this brand.
         group_id: Resolve the master grant for this group.
         db: Active database session.
-        admin: The authenticated Admin-role SuperAdmin.
+        admin: The authenticated Admin-role portal admin.
 
     Returns:
         MasterGrantResponse: The active grant ID for the entity's master user.
@@ -110,7 +109,7 @@ async def get_master_grant(
 async def impersonate(
     body: ImpersonateRequest,
     db: AsyncSession = Depends(get_db),
-    admin: SuperAdmin = Depends(require_super_admin),
+    admin: User = Depends(require_super_admin),
 ) -> ImpersonateResponse:
     """
     Issue a management-portal JWT that impersonates an entity's master user.
@@ -125,7 +124,7 @@ async def impersonate(
 
     Args:
         body: Contains the grant_id for the entity to impersonate.
-        admin: The authenticated Admin-role SuperAdmin.
+        admin: The authenticated Admin-role portal admin.
 
     Returns:
         ImpersonateResponse: A management access JWT ready for use.

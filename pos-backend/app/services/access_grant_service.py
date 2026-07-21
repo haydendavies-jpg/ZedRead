@@ -34,7 +34,6 @@ from app.constants.statuses import ActorType, GrantScope, SystemAccessProfile
 from app.models.access_profile import AccessProfile
 from app.models.brand import Brand
 from app.models.group import Group
-from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.site import Site
 from app.models.user_access_grant import UserAccessGrant
@@ -55,7 +54,7 @@ async def _load_grant_with_authority(
     db: AsyncSession,
     grant_id: uuid.UUID,
     management_access: ManagementAccess | None,
-    superadmin: SuperAdmin | None,
+    superadmin: User | None,
 ) -> UserAccessGrant:
     """
     Load a grant and verify the caller has authority over it.
@@ -153,7 +152,7 @@ async def _assert_grant_in_scope(
 async def list_grants(
     db: AsyncSession,
     management_access: ManagementAccess | None,
-    superadmin: SuperAdmin | None,
+    superadmin: User | None,
     brand_id_param: uuid.UUID | None,
     skip: int,
     limit: int,
@@ -254,7 +253,7 @@ async def search_grantable_users(
     query: str,
     limit: int,
     management_access: ManagementAccess | None,
-    superadmin: SuperAdmin | None,
+    superadmin: User | None,
 ) -> list[User]:
     """
     Search users by name or email within a brand, for the Grant Access user picker.
@@ -296,7 +295,7 @@ async def list_grantable_sites(
     query: str,
     limit: int,
     management_access: ManagementAccess | None,
-    superadmin: SuperAdmin | None,
+    superadmin: User | None,
 ) -> list[Site]:
     """
     List active sites within a brand, for the Add Access/Add User site picker.
@@ -334,7 +333,7 @@ async def list_grantable_sites(
 async def create_grant(
     db: AsyncSession,
     management_access: ManagementAccess | None,
-    superadmin: SuperAdmin | None,
+    superadmin: User | None,
     payload: AccessGrantCreate,
 ) -> UserAccessGrant:
     """
@@ -445,7 +444,10 @@ async def create_grant(
     actor = management_access.user if management_access else superadmin
     assert actor is not None
 
-    granted_by = actor.id if isinstance(actor, User) else None
+    # actor is always a User row now (portal admins included), so granted_by_id
+    # can always be attributed — previously a portal-admin actor left this NULL
+    # since a portal admin previously wasn't itself a users.id row.
+    granted_by = actor.id
 
     # Auto-set is_default=True when this is the user's first active site-scope grant.
     # Subsequent site grants are non-default; admins can change the default via set_default_grant.
@@ -805,7 +807,7 @@ async def update_grant(
     grant_id: uuid.UUID,
     payload: AccessGrantUpdate,
     management_access: ManagementAccess | None,
-    superadmin: SuperAdmin | None,
+    superadmin: User | None,
 ) -> UserAccessGrant:
     """
     Update the POS access profile and/or backend role on an existing grant.
@@ -842,7 +844,7 @@ async def _apply_grant_update(
     db: AsyncSession,
     grant: UserAccessGrant,
     payload: AccessGrantUpdate,
-    actor: User | SuperAdmin,
+    actor: User,
     management_access: ManagementAccess | None,
 ) -> None:
     """
@@ -936,7 +938,7 @@ async def revoke_grant(
     db: AsyncSession,
     grant_id: uuid.UUID,
     management_access: ManagementAccess | None,
-    superadmin: SuperAdmin | None,
+    superadmin: User | None,
 ) -> None:
     """
     Soft-delete a grant (set is_active=False).
@@ -977,7 +979,7 @@ async def set_default_grant(
     db: AsyncSession,
     grant_id: uuid.UUID,
     management_access: ManagementAccess | None,
-    superadmin: SuperAdmin | None,
+    superadmin: User | None,
 ) -> UserAccessGrant:
     """
     Set a site-scope grant as the user's default (primary) login entry point.
@@ -1052,7 +1054,7 @@ async def bulk_update_grants(
     db: AsyncSession,
     payload: AccessGrantBulkUpdate,
     management_access: ManagementAccess | None,
-    superadmin: SuperAdmin | None,
+    superadmin: User | None,
 ) -> tuple[list[uuid.UUID], list[tuple[uuid.UUID, str]]]:
     """
     Apply one profile and/or backend-role change to many grants at once.
@@ -1117,7 +1119,7 @@ async def bulk_revoke_grants(
     db: AsyncSession,
     grant_ids: list[uuid.UUID],
     management_access: ManagementAccess | None,
-    superadmin: SuperAdmin | None,
+    superadmin: User | None,
 ) -> tuple[list[uuid.UUID], list[tuple[uuid.UUID, str]]]:
     """
     Revoke (soft-delete) many grants at once, skipping any the caller can't.

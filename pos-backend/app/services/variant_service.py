@@ -19,7 +19,6 @@ from app.constants.audit_actions import (
     VARIANT_UPDATED,
 )
 from app.constants.statuses import ActorType
-from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.models.product import Product
 from app.models.product_attribute_type import ProductAttributeType
@@ -269,7 +268,7 @@ async def create_variant(
     brand_id: uuid.UUID,
     product_id: uuid.UUID,
     payload: VariantCreate,
-    actor: User | SuperAdmin,
+    actor: User,
     import_id: uuid.UUID | None = None,
 ) -> VariantResponse:
     """
@@ -372,7 +371,7 @@ async def update_variant(
     brand_id: uuid.UUID,
     variant_id: uuid.UUID,
     payload: VariantUpdate,
-    actor: User | SuperAdmin,
+    actor: User,
     import_id: uuid.UUID | None = None,
 ) -> VariantResponse:
     """
@@ -427,7 +426,7 @@ async def deactivate_variant(
     db: AsyncSession,
     brand_id: uuid.UUID,
     variant_id: uuid.UUID,
-    actor: User | SuperAdmin,
+    actor: User,
 ) -> VariantResponse:
     """
     Soft-delete a variant (set is_active=False).
@@ -477,7 +476,7 @@ async def set_variant_active_state(
     brand_id: uuid.UUID,
     variant_id: uuid.UUID,
     is_active: bool,
-    actor: User | SuperAdmin,
+    actor: User,
     import_id: uuid.UUID | None = None,
 ) -> VariantResponse:
     """

@@ -52,7 +52,7 @@ async def log_action(
         before_state: Serialisable dict of entity state before the change.
         after_state: Serialisable dict of entity state after the change.
         request_id: UUID from the X-Request-ID header for request correlation.
-        impersonator_id: SuperAdmin UUID when this action occurred under impersonation.
+        impersonator_id: Portal admin (User) UUID when this action occurred under impersonation.
         impersonator_email: Snapshotted admin email for impersonation audit trail.
 
     Returns:

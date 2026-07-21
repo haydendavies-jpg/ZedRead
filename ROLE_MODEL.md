@@ -1,48 +1,52 @@
 # ZedRead — Target User & Role Model
 
-**Status: target design, not yet implemented.** This document defines the intended naming and permission
-model for identity in ZedRead. `ARCHITECTURE_MAP.md` and `DATA_MODEL.md` describe what the code does
-*today* (`PortalUser`, `POSUser`, `backend_role`); this doc describes where that's heading. Treat the two
-as separate sources of truth until the rename/role-model work is scheduled into a stage (see
-`CLAUDE.md` rollout table) and implemented — at which point this document becomes ground truth and
-`ARCHITECTURE_MAP.md`/`DATA_MODEL.md` get updated to match the code.
+**Status: implemented**, including the SuperAdmin/User table merge below. `ARCHITECTURE_MAP.md` and
+`DATA_MODEL.md` are kept in sync with this document — the code is ground truth; flag any discrepancy
+you find against it.
 
 ---
 
-## 1. SuperAdmin (target rename of "Portal User")
+## 1. SuperAdmin (a role on User, not a separate identity type)
 
-**Purpose:** ZedRead's own staff and reseller/partner staff only. Used exclusively to access the
-ZedRead admin portal to create and manage Group/Brand/Site accounts. A SuperAdmin is **never** a
-customer identity and is never assigned to a Group/Brand/Site — it has no tenant scope, same as today's
-`PortalUser`.
+**Purpose:** ZedRead's own staff and reseller/partner staff access to the admin portal. SuperAdmin is
+**not** a separate table/identity — it is `users.superadmin_role`, an axis orthogonal to a User's
+tenant scope (`group_id`/`brand_id`) and grants. A pure ZedRead/reseller-staff row has no tenant scope
+at all (`group_id IS NULL`); a **hybrid** row can carry `superadmin_role` *and* tenant grants at once —
+the same person, one row, one password. This replaces the earlier design (Stage 15) where `SuperAdmin`
+was a fully separate table (`superadmins`) with its own login table and a whole cross-identity
+disambiguation mechanism to let one person hold both identities under a shared email — seeing the
+recurring need for the "same person, two capabilities" case is exactly why it was collapsed into one
+row (see migration `0050`).
 
-**Roles:**
+**Roles** (`users.superadmin_role`, nullable):
 
 | Role | Definition |
 |---|---|
 | Admin | Full ZedRead administrative access — sees and manages all Groups across all resellers. |
 | Reseller Staff | Partner-side staff. Scoped to **own accounts only**: can create/view/manage only the Groups they personally created or are assigned to. No visibility into other resellers' or ZedRead-direct accounts. |
 
-**Mapping to existing schema:** `portal_users.role` (today `super_admin \| admin \| reseller`) becomes
-`admin \| reseller_staff`. "Super Admin" as a role name is retired — "Admin" is the top role *within* the
-SuperAdmin user type, so the distinct "super_admin" vs "admin" split collapses to one `admin` value.
+Granting or changing `superadmin_role` is only possible via the admin portal's Users page, and only by
+an Admin-role portal admin (`routes/users.py`'s `_require_admin_role()`) — a Reseller Staff portal
+admin can manage tenant Users freely but cannot create or promote other portal admins.
 
 ---
 
-## 2. User (target rename of "POS User")
+## 2. User
 
 **Purpose:** the actual account/tenant identity — what ZedRead's customers and their staff are. A User
 always has POS login. Backend/portal access (to manage Group/Brand/Site configuration) is optional and
-granted per scope.
+granted per scope. As of the SuperAdmin/User merge (§1), the same table also holds pure ZedRead/
+reseller-staff rows (`group_id IS NULL`, `superadmin_role` set) and hybrid rows (both a tenant identity
+and `superadmin_role`).
 
-**This is already architecturally supported today** — it does not need new tables, just a rename and
-some new constraints:
-- Identity rows live in one table per account, scoped at the **Group** level (today's `pos_users`,
-  target name `users`).
-- Site assignment happens via the existing grant join table (today's `user_access_grants`, scope
-  site/brand/group), with `is_default` marking the user's default site.
-- Per-grant `backend_role` already gates portal/config access independently of POS access — this is
-  exactly the "optional backend access" behaviour described below.
+- Identity rows live in one table per account (`users`), scoped at the **Group** level for a
+  tenant-scoped row; `group_id` is `NULL` for a pure admin-portal row.
+- Site assignment happens via the grant join table (`user_access_grants`, scope site/brand/group),
+  with `is_default` marking the user's default site.
+- Per-grant `backend_role` gates portal/config access independently of POS access — this is
+  exactly the "optional backend access" behaviour described below, and is itself independent of
+  `superadmin_role` (§1) — three separate axes in total: POS tier, backend_role per grant, and
+  superadmin_role on the row.
 
 ### Required fields (Stage 15 slice 5 — enforced)
 
@@ -85,27 +89,31 @@ permission sets are new.
 
 ---
 
-## 3. Multi-identity login disambiguation
+## 3. Login disambiguation across capabilities
 
-**Target:** logging in with an email associated with more than one identity (e.g. a SuperAdmin account
-and a User-Master account sharing an email, or a User with grants across multiple roles) presents a
-selection screen — the person picks which platform/role/scope to enter, then lands in the matching
+**What it's for:** logging in with an email that resolves to more than one capability — a hybrid row
+with both `superadmin_role` and a portal-capable grant, or several `users` rows sharing an email (email
+is intentionally non-unique — migration `0031`) each offering a different capability — presents a
+selection screen so the person picks which platform/scope to enter, then lands in the matching
 portal/page.
 
-**Already built (within the User/grant world):** the unified portal login flow already returns
-`available_grants` when a User has multiple backend-role grants, and a follow-up call
-(`/auth/portal/management-token`) finalizes the selection.
+**Within the grant world:** the unified portal login flow returns `available_grants` when a User has
+multiple backend-role grants, and a follow-up call (`/auth/portal/management-token`) finalizes the
+selection.
 
-**Already built (across SuperAdmin and User):** `POST /auth/portal/login` now loads both a
-candidate SuperAdmin and a candidate User by email. If both have valid credentials (the User
-additionally needing at least one portal-capable grant), no token is issued yet — the response
-instead carries `available_identities` (`identity_type` + `display_name` per identity). The client
-selects one and calls `POST /auth/portal/identity-token` with `{email, password, identity_type}`,
-which re-verifies credentials for the chosen identity and then issues SuperAdmin tokens directly
-or delegates into the existing User/grant-resolution flow (itself possibly returning
-`available_grants` if that User identity has multiple ungranted-default grants). A User matched by
-credentials but with zero portal-capable grants is not treated as a competing identity — the
-existing single-table 403 behaviour still applies in that case.
+**Across capabilities (superadmin_role vs grants):** `POST /auth/portal/login`
+(`management_auth_service.login()`) loads every `users` row matching the email and verifies credentials
+against each independently (`_authenticate_candidates()`). If, across all valid rows, more than one
+capability is offered (a bare `superadmin_role`, and/or one or more portal-capable grants), no token is
+issued yet — the response carries `available_identities` (`identity_type` + `display_name` per
+capability). The client selects one and calls `POST /auth/portal/identity-token` with
+`{email, password, identity_type}`, which re-verifies credentials and then issues a portal token
+directly for `identity_type="superadmin"`, or delegates into the grant-resolution flow for
+`identity_type="user"` (itself possibly returning `available_grants` if multiple grants remain). A row
+matched by credentials but offering zero capabilities is not treated as competing — the existing 403
+behaviour still applies in that case. This is the same mechanism the pre-merge design used across two
+separate tables — collapsing to one table changed only where the candidate rows come from, not the
+wire contract or the portal's selector UI.
 
 ---
 

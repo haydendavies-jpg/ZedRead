@@ -1,6 +1,6 @@
 """Read-only reference data routes backing the company-profile dropdowns
 (timezone/currency/country selects and the country-driven tax ID label)
-shared by the SuperAdmin portal and the tenant-facing management portal."""
+shared by the admin portal and the tenant-facing management portal."""
 
 from fastapi import APIRouter, Depends, Query
 

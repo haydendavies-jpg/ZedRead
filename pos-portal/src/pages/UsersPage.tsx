@@ -1,47 +1,22 @@
-/** Admin page for managing Users — list, create, edit (with grants, PIN, backend role). */
+/**
+ * Admin portal page for managing Users — list, create, edit (grants, PIN, backend role,
+ * admin-portal role). Condenses what used to be two separate pages (SuperAdmins + Users):
+ * admin-portal access is now just a superadmin_role on the same User row, not a distinct
+ * identity type, so one page/table covers both tenant staff and portal admins.
+ */
 
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, fetchAll } from '../api/axios'
-import type { Brand, Site } from '../types'
+import type { Brand, Site, User } from '../types'
 import { EntityIdChip } from '../components/EntityIdChip'
 import { StatusBadge } from '../components/StatusBadge'
 import { Modal } from '../components/Modal'
+import { FilterBar, type FilterConfig } from '../components/FilterBar'
 import { apiErrorMessage } from '../utils/apiError'
 import { isSuperAdmin, useAuth } from '../context/AuthContext'
 
-// Temporary: admin-set password on the edit form is being trialled with a
-// single SuperAdmin before it's opened up more broadly — mirrors the
-// backend's _PASSWORD_SET_ALLOWED_EMAIL gate in routes/users.py.
-const PASSWORD_SET_ALLOWED_EMAIL = 'hayden_davies@live.com.au'
-
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-interface SiteGrant {
-  grant_id: string
-  site_id: string
-  site_name: string
-  is_default: boolean
-  access_profile_name: string
-  can_access_portal: boolean
-}
-
-interface AppUser {
-  id: string
-  ref: string
-  brand_id: string | null
-  brand_name: string
-  group_name: string
-  name: string
-  /** Null for Master Users, whose `name` is the site's name rather than a person's. */
-  first_name: string | null
-  last_name: string | null
-  email: string
-  backend_role: string | null
-  is_active: boolean
-  site_grants: SiteGrant[]
-  has_portal_access: boolean
-}
 
 interface AccessProfile {
   id: string
@@ -52,7 +27,6 @@ interface AccessProfile {
 /** Result of GET /users/email-check — whether the typed email already exists. */
 interface EmailCheckResult {
   exists: boolean
-  identity_type?: 'superadmin' | 'user'
   display_name?: string
   has_password?: boolean
 }
@@ -87,10 +61,10 @@ async function fetchSites(): Promise<Site[]> {
   return fetchAll<Site>('/sites/')
 }
 
-async function fetchUsers(brandId: string): Promise<AppUser[]> {
+async function fetchUsers(brandId: string): Promise<User[]> {
   const params: Record<string, unknown> = {}
   if (brandId) params.brand_id = brandId
-  return fetchAll<AppUser>('/users', params)
+  return fetchAll<User>('/users', params)
 }
 
 async function fetchProfiles(brandId: string | null): Promise<AccessProfile[]> {
@@ -111,12 +85,21 @@ const BACKEND_ROLES = [
   { value: 'reporting', label: 'Reporting' },
 ]
 
+const SUPERADMIN_ROLES = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'reseller_staff', label: 'Reseller' },
+]
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function UsersPage() {
   const qc = useQueryClient()
   const { user: currentUser } = useAuth()
-  const canSetPassword = isSuperAdmin(currentUser) && currentUser.email === PASSWORD_SET_ALLOWED_EMAIL
+  // Any portal admin may set another user's password; only an Admin-role portal
+  // admin may grant/change the admin-portal role itself (mirrors the backend's
+  // require_super_admin gate on superadmin_role changes in routes/users.py).
+  const canSetPassword = isSuperAdmin(currentUser)
+  const canManageSuperadminRole = isSuperAdmin(currentUser) && currentUser.superadmin_role === 'admin'
 
   const { data: brands = [] } = useQuery({ queryKey: ['brands'], queryFn: fetchBrands })
   const { data: sites = [] } = useQuery({ queryKey: ['sites'], queryFn: fetchSites })
@@ -134,7 +117,8 @@ export function UsersPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [siteFilter, setSiteFilter] = useState('')
-  const [portalFilter, setPortalFilter] = useState('')
+  const [portalAccessFilter, setPortalAccessFilter] = useState('')
+  const [superadminRoleFilter, setSuperadminRoleFilter] = useState('')
 
   // ── Create user state ─────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false)
@@ -142,6 +126,7 @@ export function UsersPage() {
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [createSuperadminRole, setCreateSuperadminRole] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
 
   // Detect an already-registered email while the admin types, so the form can
@@ -164,11 +149,12 @@ export function UsersPage() {
   const linkedEmail = !!(emailCheck?.exists && emailCheck.has_password)
 
   // ── Edit user state ───────────────────────────────────────────────────────
-  const [editUser, setEditUser] = useState<AppUser | null>(null)
+  const [editUser, setEditUser] = useState<User | null>(null)
   const [editFirstName, setEditFirstName] = useState('')
   const [editLastName, setEditLastName] = useState('')
   const [editEmail, setEditEmail] = useState('')
   const [editPassword, setEditPassword] = useState('')
+  const [editSuperadminRole, setEditSuperadminRole] = useState('')
   const [editError, setEditError] = useState<string | null>(null)
   const [resetSent, setResetSent] = useState(false)
 
@@ -184,7 +170,8 @@ export function UsersPage() {
   const { data: groupAccess, isLoading: accessLoading } = useQuery({
     queryKey: ['group-access', editUser?.id],
     queryFn: () => fetchGroupAccess(editUser!.id),
-    enabled: !!editUser,
+    // A pure admin-portal row (no group_id) has nothing to show here.
+    enabled: !!editUser && !!editUser.brand_id,
   })
 
   // Profiles for the edit modal — keyed to the specific user's brand
@@ -199,12 +186,12 @@ export function UsersPage() {
 
   // ── Mutations ─────────────────────────────────────────────────────────────
   const createMutation = useMutation({
-    mutationFn: (body: { brand_id: string; first_name: string; last_name: string; email: string; password?: string }) =>
+    mutationFn: (body: { brand_id: string | null; first_name: string; last_name: string; email: string; password?: string; superadmin_role: string | null }) =>
       api.post('/users', body),
     onSuccess: () => {
       invalidateUsers()
       setShowCreate(false)
-      setFirstName(''); setLastName(''); setEmail(''); setPassword('')
+      setFirstName(''); setLastName(''); setEmail(''); setPassword(''); setCreateSuperadminRole('')
       setCreateError(null)
     },
     onError: (e: unknown) => {
@@ -214,8 +201,14 @@ export function UsersPage() {
   })
 
   const editMutation = useMutation({
-    mutationFn: ({ id, firstName, lastName, email, password }: { id: string; firstName: string; lastName: string; email: string; password?: string }) =>
-      api.patch(`/users/${id}`, { first_name: firstName, last_name: lastName, email, ...(password ? { password } : {}) }),
+    mutationFn: ({ id, firstName, lastName, email, superadminRole, password }: { id: string; firstName: string; lastName: string; email: string; superadminRole?: string | null; password?: string }) =>
+      api.patch(`/users/${id}`, {
+        first_name: firstName,
+        last_name: lastName,
+        email,
+        ...(superadminRole !== undefined ? { superadmin_role: superadminRole } : {}),
+        ...(password ? { password } : {}),
+      }),
     onSuccess: () => {
       invalidateUsers()
       setEditError(null)
@@ -283,6 +276,13 @@ export function UsersPage() {
   const deactivateMutation = useMutation({
     mutationFn: (userId: string) => api.patch(`/users/${userId}/deactivate`),
     onSuccess: invalidateUsers,
+    onError: (e: unknown) => { invalidateUsers(); alert(apiErrorMessage(e, 'Failed to deactivate user.')) },
+  })
+
+  const reactivateMutation = useMutation({
+    mutationFn: (userId: string) => api.post(`/users/${userId}/reactivate`),
+    onSuccess: invalidateUsers,
+    onError: (e: unknown) => { invalidateUsers(); alert(apiErrorMessage(e, 'Failed to reactivate user.')) },
   })
 
   const sendResetMutation = useMutation({
@@ -296,17 +296,18 @@ export function UsersPage() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const openCreate = () => {
-    setFirstName(''); setLastName(''); setEmail(''); setPassword(''); setCreateError(null)
+    setFirstName(''); setLastName(''); setEmail(''); setPassword(''); setCreateSuperadminRole(''); setCreateError(null)
     setShowCreate(true)
   }
 
-  const openEdit = (user: AppUser) => {
+  const openEdit = (user: User) => {
     // Older rows created before the Stage 15 first/last split carry only a
     // composed `name` — fall back to splitting it on the first space.
     setEditFirstName(user.first_name ?? user.name.split(' ')[0] ?? '')
     setEditLastName(user.last_name ?? user.name.split(' ').slice(1).join(' '))
-    setEditEmail(user.email)
+    setEditEmail(user.email ?? '')
     setEditPassword('')
+    setEditSuperadminRole(user.superadmin_role ?? '')
     setEditError(null)
     setPinValue(''); setPinError(null); setPinSuccess(false)
     setAccessSearch('')
@@ -319,7 +320,13 @@ export function UsersPage() {
     setCreateError(null)
     // Omit the password for a linked email — the backend reuses the existing
     // identity's sign-in password and rejects a competing one.
-    const body = { brand_id: selectedBrandId, first_name: firstName, last_name: lastName, email }
+    const body = {
+      brand_id: selectedBrandId || null,
+      first_name: firstName,
+      last_name: lastName,
+      email,
+      superadmin_role: createSuperadminRole || null,
+    }
     createMutation.mutate(linkedEmail ? body : { ...body, password })
   }
 
@@ -336,6 +343,7 @@ export function UsersPage() {
       firstName: editFirstName,
       lastName: editLastName,
       email: editEmail,
+      ...(canManageSuperadminRole ? { superadminRole: editSuperadminRole || null } : {}),
       ...(canSetPassword && editPassword ? { password: editPassword } : {}),
     })
   }
@@ -407,17 +415,61 @@ export function UsersPage() {
   const filtered = users.filter((u) => {
     if (search) {
       const q = search.toLowerCase()
-      if (!u.name.toLowerCase().includes(q) && !u.email.toLowerCase().includes(q)) return false
+      if (!u.name.toLowerCase().includes(q) && !(u.email ?? '').toLowerCase().includes(q)) return false
     }
     if (statusFilter === 'active' && !u.is_active) return false
     if (statusFilter === 'inactive' && u.is_active) return false
     if (siteFilter && !u.site_grants.some((g) => g.site_name === siteFilter)) return false
-    if (portalFilter === 'yes' && !u.has_portal_access) return false
-    if (portalFilter === 'no' && u.has_portal_access) return false
+    if (portalAccessFilter === 'yes' && !u.has_portal_access) return false
+    if (portalAccessFilter === 'no' && u.has_portal_access) return false
+    if (superadminRoleFilter === 'none' && u.superadmin_role) return false
+    if (superadminRoleFilter && superadminRoleFilter !== 'none' && u.superadmin_role !== superadminRoleFilter) return false
     return true
   })
 
-  const hasFilters = search || statusFilter || siteFilter || portalFilter
+  const hasFilters = !!(search || statusFilter || siteFilter || portalAccessFilter || superadminRoleFilter)
+  const clearFilters = () => {
+    setSearch(''); setStatusFilter(''); setSiteFilter(''); setPortalAccessFilter(''); setSuperadminRoleFilter('')
+  }
+
+  const filterConfigs: FilterConfig[] = [
+    {
+      label: 'Status',
+      value: statusFilter,
+      onChange: setStatusFilter,
+      options: [
+        { value: '', label: 'Any' },
+        { value: 'active', label: 'Active' },
+        { value: 'inactive', label: 'Inactive' },
+      ],
+    },
+    {
+      label: 'Site',
+      value: siteFilter,
+      onChange: setSiteFilter,
+      options: [{ value: '', label: 'Any' }, ...brandSites.map((s) => ({ value: s.name, label: s.name }))],
+    },
+    {
+      label: 'Backend Access',
+      value: portalAccessFilter,
+      onChange: setPortalAccessFilter,
+      options: [
+        { value: '', label: 'Any' },
+        { value: 'yes', label: 'Has access' },
+        { value: 'no', label: 'No access' },
+      ],
+    },
+    {
+      label: 'Portal Role',
+      value: superadminRoleFilter,
+      onChange: setSuperadminRoleFilter,
+      options: [
+        { value: '', label: 'Any' },
+        { value: 'none', label: '— none —' },
+        ...SUPERADMIN_ROLES,
+      ],
+    },
+  ]
 
   const filteredEntries = (groupAccess?.entries ?? []).filter((e) => {
     if (e.scope === 'group') return true  // group row always visible
@@ -433,100 +485,46 @@ export function UsersPage() {
         <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Users</h1>
         <button
           onClick={openCreate}
-          disabled={!selectedBrandId}
-          title={!selectedBrandId ? 'Select a brand first' : undefined}
           className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
         >
           + New User
         </button>
       </div>
 
-      {/* ── Page-level filters (labels above controls) ───────────────────── */}
-      <div className="flex flex-wrap items-end gap-3 mb-4">
+      {/* ── Brand context selector (drives which tenant users load) ───────── */}
+      <div className="flex flex-wrap items-end gap-3 mb-1">
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Brand</label>
           <select
             value={selectedBrandId}
-            onChange={(e) => { setSelectedBrandId(e.target.value); setSearch(''); setStatusFilter(''); setSiteFilter(''); setPortalFilter('') }}
+            onChange={(e) => { setSelectedBrandId(e.target.value); clearFilters() }}
             className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
-            <option value="">Any</option>
+            <option value="">Any (incl. admin-portal-only rows)</option>
             {brands.map((b) => (
               <option key={b.id} value={b.id}>{b.name}</option>
             ))}
           </select>
         </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Search</label>
-          <input
-            type="text"
-            placeholder="Name or email…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-40"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Status</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
-          >
-            <option value="">Any</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Site</label>
-          <select
-            value={siteFilter}
-            onChange={(e) => setSiteFilter(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
-          >
-            <option value="">Any</option>
-            {brandSites.map((s) => (
-              <option key={s.id} value={s.name}>{s.name}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Portal</label>
-          <select
-            value={portalFilter}
-            onChange={(e) => setPortalFilter(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
-          >
-            <option value="">Any</option>
-            <option value="yes">Has access</option>
-            <option value="no">No access</option>
-          </select>
-        </div>
-
-        {hasFilters && (
-          <button
-            onClick={() => { setSearch(''); setStatusFilter(''); setSiteFilter(''); setPortalFilter('') }}
-            className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 self-end pb-1.5"
-          >
-            Clear filters
-          </button>
-        )}
-        <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto self-end pb-1.5">
-          {filtered.length} of {users.length}
-        </span>
       </div>
+
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Name or email…"
+        filters={filterConfigs}
+        hasFilters={hasFilters}
+        onClear={clearFilters}
+        resultCount={filtered.length}
+        totalCount={users.length}
+      />
 
       {/* ── Users table ──────────────────────────────────────────────────────── */}
       {isLoading ? (
         <div className="text-gray-400 dark:text-gray-500 text-sm">Loading…</div>
       ) : (
         <div className="zr-table-wrap">
-          <table className="zr-table min-w-[900px]">
+          <table className="zr-table min-w-[980px]">
             <thead>
               <tr>
                 <th>ID</th>
@@ -536,6 +534,7 @@ export function UsersPage() {
                 <th>Email</th>
                 <th>Sites</th>
                 <th>Backend</th>
+                <th>Portal Role</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -546,8 +545,11 @@ export function UsersPage() {
                   <td><EntityIdChip id={u.id} ref={u.ref} /></td>
                   <td className="text-[var(--zr-muted)]">{u.group_name || <span className="text-[var(--zr-faint)]">—</span>}</td>
                   <td className="text-[var(--zr-muted)]">{u.brand_name || <span className="text-[var(--zr-faint)]">—</span>}</td>
-                  <td className="font-medium">{u.name}</td>
-                  <td className="text-[var(--zr-muted)]">{u.email}</td>
+                  <td className="font-medium">
+                    {u.name}
+                    {u.id === currentUser?.id && <span className="ml-1 text-xs text-brand-400">(you)</span>}
+                  </td>
+                  <td className="text-[var(--zr-muted)]">{u.email ?? <span className="text-[var(--zr-faint)]">—</span>}</td>
                   <td className="zr-cell-pad">
                     {u.site_grants.length === 0 ? (
                       <span className="text-xs text-[var(--zr-faint)]">None</span>
@@ -574,15 +576,30 @@ export function UsersPage() {
                     )}
                   </td>
                   <td>
+                    {u.superadmin_role ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-brand-50 dark:bg-brand-950/30 text-brand-700 dark:text-brand-400">
+                        {SUPERADMIN_ROLES.find((r) => r.value === u.superadmin_role)?.label ?? u.superadmin_role}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-[var(--zr-faint)]">—</span>
+                    )}
+                  </td>
+                  <td>
                     <StatusBadge status={u.is_active ? 'active' : 'disabled'} />
                   </td>
                   <td className="zr-cell-pad">
                     <div className="flex flex-wrap items-center gap-3">
                       <button onClick={() => openEdit(u)} className="text-brand-600 hover:underline text-xs">Edit</button>
-                      {u.is_active && (
-                        <button onClick={() => deactivateMutation.mutate(u.id)} className="text-red-500 hover:underline text-xs">
-                          Deactivate
-                        </button>
+                      {u.id !== currentUser?.id && (
+                        u.is_active ? (
+                          <button onClick={() => deactivateMutation.mutate(u.id)} className="text-red-500 hover:underline text-xs">
+                            Deactivate
+                          </button>
+                        ) : (
+                          <button onClick={() => reactivateMutation.mutate(u.id)} className="text-green-600 hover:underline text-xs">
+                            Reactivate
+                          </button>
+                        )
                       )}
                     </div>
                   </td>
@@ -590,7 +607,7 @@ export function UsersPage() {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-center text-[var(--zr-faint)] py-8">
+                  <td colSpan={10} className="text-center text-[var(--zr-faint)] py-8">
                     {users.length === 0 ? 'No users yet. Create one above.' : 'No users match the current filters.'}
                   </td>
                 </tr>
@@ -630,16 +647,34 @@ export function UsersPage() {
                   This email already has an account{emailCheck?.display_name ? ` (${emailCheck.display_name})` : ''}.
                 </p>
                 <p className="text-xs text-brand-700 dark:text-brand-400 mt-1">
-                  No new password needed — the user signs in with the existing password and chooses
-                  {emailCheck?.identity_type === 'superadmin' ? ' the Admin Portal or this account' : ' which account to open'} at login.
+                  No new password needed — the user signs in with the existing password and chooses which account to open at login.
                 </p>
               </div>
             ) : (
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8}
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={createSuperadminRole ? 6 : 8}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  placeholder="Min 8 characters" />
+                  placeholder={createSuperadminRole ? 'Min 6 characters' : 'Min 8 characters'} />
+              </div>
+            )}
+            {canManageSuperadminRole && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Portal Role</label>
+                <select
+                  value={createSuperadminRole}
+                  onChange={(e) => setCreateSuperadminRole(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  <option value="">— none (ordinary tenant user) —</option>
+                  {SUPERADMIN_ROLES.map((r) => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  Grants admin-portal access. Only visible/grantable to Admin-role portal admins.
+                  {!selectedBrandId && ' Leave the Brand filter above unset to create a pure admin-portal row with no tenant scope.'}
+                </p>
               </div>
             )}
             {createError && <p className="text-sm text-red-600">{createError}</p>}
@@ -680,6 +715,25 @@ export function UsersPage() {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
                   </div>
                 </div>
+                {canManageSuperadminRole && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Portal Role</label>
+                    <select
+                      value={editSuperadminRole}
+                      onChange={(e) => setEditSuperadminRole(e.target.value)}
+                      disabled={editUser.id === currentUser?.id}
+                      className="w-full sm:w-1/3 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
+                    >
+                      <option value="">— none (ordinary tenant user) —</option>
+                      {SUPERADMIN_ROLES.map((r) => (
+                        <option key={r.value} value={r.value}>{r.label}</option>
+                      ))}
+                    </select>
+                    {editUser.id === currentUser?.id && (
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">You cannot change your own admin-portal role.</p>
+                    )}
+                  </div>
+                )}
                 {canSetPassword && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Set password</label>
@@ -687,7 +741,9 @@ export function UsersPage() {
                       onChange={(e) => setEditPassword(e.target.value)}
                       placeholder="Leave blank to keep the current password"
                       className="w-full sm:w-1/3 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">At least 8 characters. Only visible to you while this is being trialled.</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                      At least 8 characters.
+                    </p>
                   </div>
                 )}
                 {editError && <p className="text-sm text-red-600">{editError}</p>}
@@ -760,6 +816,11 @@ export function UsersPage() {
                 </div>
               </div>
 
+              {!editUser.brand_id ? (
+                <p className="text-xs text-[var(--zr-faint)] py-4 text-center">
+                  This is a pure admin-portal row with no tenant scope — there is no site/brand access to manage.
+                </p>
+              ) : (
               <div className="zr-table-wrap">
                 <table className="zr-table min-w-[680px]">
                   <thead>
@@ -866,6 +927,7 @@ export function UsersPage() {
                   </tbody>
                 </table>
               </div>
+              )}
             </section>
 
             <div className="flex justify-end pt-2">

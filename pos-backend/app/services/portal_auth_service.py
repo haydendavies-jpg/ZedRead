@@ -1,4 +1,4 @@
-"""Business logic for portal user authentication: login, refresh, and user lookup."""
+"""Business logic for portal admin authentication: refresh, password reset, and user lookup."""
 
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -10,16 +10,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
-    AUTH_LOGIN_FAILED,
-    AUTH_LOGIN_SUCCESS,
     AUTH_PASSWORD_RESET_COMPLETED,
     AUTH_PASSWORD_RESET_REQUESTED,
     AUTH_TOKEN_REFRESHED,
 )
 from app.constants.statuses import ActorType
-from app.models.superadmin import SuperAdmin
 from app.models.user import User
-from app.schemas.portal_auth import LoginRequest, TokenResponse
+from app.schemas.portal_auth import TokenResponse
 from app.services.audit_service import log_action
 from app.utils.email import PASSWORD_RESET_EXPIRY_HOURS, send_password_reset_email
 from app.utils.security import (
@@ -28,99 +25,29 @@ from app.utils.security import (
     decode_token,
     hash_password,
     normalize_email,
-    verify_password_async,
 )
 
 log = structlog.get_logger(__name__)
 
 
-async def _get_user_by_email(db: AsyncSession, email: str) -> SuperAdmin | None:
+async def _get_user_by_email(db: AsyncSession, email: str) -> User | None:
     """
-    Fetch a portal user by email address, case-insensitively.
+    Fetch a portal admin (User with superadmin_role set) by email, case-insensitively.
 
     Args:
         db: The active database session.
         email: The email address to look up.
 
     Returns:
-        SuperAdmin | None: The matching user, or None if not found.
+        User | None: The matching portal admin, or None if not found.
     """
     result = await db.execute(
-        select(SuperAdmin).where(func.lower(SuperAdmin.email) == normalize_email(email))
+        select(User).where(
+            func.lower(User.email) == normalize_email(email),
+            User.superadmin_role.isnot(None),
+        )
     )
     return result.scalar_one_or_none()
-
-
-async def login(db: AsyncSession, payload: LoginRequest) -> TokenResponse:
-    """
-    Authenticate a portal user and return an access + refresh token pair.
-
-    Writes an audit log row on both success and failure.
-    On failure, raises HTTP 401 — the error message is intentionally vague
-    to avoid leaking whether the email exists (security best practice).
-
-    Args:
-        db: The active database session.
-        payload: The login credentials (email + password).
-
-    Returns:
-        TokenResponse: The access and refresh token pair.
-
-    Raises:
-        HTTPException: 401 if credentials are invalid or user is inactive.
-    """
-    log.info("auth.login.attempt", email=payload.email)
-
-    user = await _get_user_by_email(db, payload.email)
-
-    # Evaluate both conditions before deciding — avoids timing attacks that
-    # could reveal whether an email exists in the system
-    credentials_valid = (
-        user is not None
-        and await verify_password_async(payload.password, user.password_hash)
-        and user.is_active
-    )
-
-    if not credentials_valid:
-        # Audit failure — entity_id uses email since we may not have a user ID
-        entity_id = str(user.id) if user else payload.email
-        await log_action(
-            db=db,
-            action=AUTH_LOGIN_FAILED,
-            entity_type="superadmin",
-            entity_id=entity_id,
-            actor_type=ActorType.USER,
-            actor_id=None,
-            actor_email=payload.email,
-            actor_name=None,
-        )
-        await db.commit()
-        log.warning("auth.login.failed", email=payload.email)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # Success — issue tokens and audit the login. token_version is embedded so
-    # a later bump (password change/reset, logout) revokes these tokens.
-    access_token = create_access_token(str(user.id), user.role, user.token_version)
-    refresh_token = create_refresh_token(str(user.id), user.token_version)
-
-    await log_action(
-        db=db,
-        action=AUTH_LOGIN_SUCCESS,
-        entity_type="superadmin",
-        entity_id=str(user.id),
-        actor_type=ActorType.USER,
-        actor_id=user.id,
-        actor_email=user.email,
-        actor_name=user.name,
-    )
-    await db.commit()
-
-    log.info("auth.login.success", user_id=str(user.id), email=user.email)
-    return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
 
 async def refresh(db: AsyncSession, refresh_token: str) -> TokenResponse:
@@ -151,7 +78,7 @@ async def refresh(db: AsyncSession, refresh_token: str) -> TokenResponse:
 
     user_id: str = payload.get("sub", "")
     result = await db.execute(
-        select(SuperAdmin).where(SuperAdmin.id == user_id)
+        select(User).where(User.id == user_id, User.superadmin_role.isnot(None))
     )
     user = result.scalar_one_or_none()
 
@@ -170,13 +97,13 @@ async def refresh(db: AsyncSession, refresh_token: str) -> TokenResponse:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    new_access = create_access_token(str(user.id), user.role, user.token_version)
+    new_access = create_access_token(str(user.id), user.superadmin_role, user.token_version)
     new_refresh = create_refresh_token(str(user.id), user.token_version)
 
     await log_action(
         db=db,
         action=AUTH_TOKEN_REFRESHED,
-        entity_type="superadmin",
+        entity_type="user",
         entity_id=str(user.id),
         actor_type=ActorType.USER,
         actor_id=user.id,
@@ -219,7 +146,7 @@ async def request_password_reset(db: AsyncSession, email: str) -> None:
     await log_action(
         db=db,
         action=AUTH_PASSWORD_RESET_REQUESTED,
-        entity_type="superadmin",
+        entity_type="user",
         entity_id=str(user.id),
         actor_type=ActorType.USER,
         actor_id=user.id,
@@ -242,10 +169,10 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> Non
     """
     Consume a password reset token and set the account's new password.
 
-    Checks SuperAdmin first, then User — the same emailed-link/consume
-    endpoint serves both the portal self-service flow (SuperAdmin) and the
-    admin-triggered reset (User, see user_service.request_user_password_reset())
-    since reset tokens are opaque random strings, not derived from identity type.
+    A single `users` table lookup now serves both the portal self-service
+    flow (a row with superadmin_role set) and the admin-triggered reset for
+    a tenant row (see user_service.request_user_password_reset()) — reset
+    tokens are opaque random strings, not derived from role.
 
     Args:
         db: The active database session.
@@ -258,15 +185,8 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> Non
     Raises:
         HTTPException: 400 if the token is invalid or has expired.
     """
-    sa_result = await db.execute(
-        select(SuperAdmin).where(SuperAdmin.password_reset_token == token)
-    )
-    account: SuperAdmin | User | None = sa_result.scalar_one_or_none()
-    entity_type = "superadmin"
-    if account is None:
-        user_result = await db.execute(select(User).where(User.password_reset_token == token))
-        account = user_result.scalar_one_or_none()
-        entity_type = "user"
+    result = await db.execute(select(User).where(User.password_reset_token == token))
+    account = result.scalar_one_or_none()
 
     if account is None or account.password_reset_token_expires_at is None:
         raise HTTPException(
@@ -291,7 +211,7 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> Non
     await log_action(
         db=db,
         action=AUTH_PASSWORD_RESET_COMPLETED,
-        entity_type=entity_type,
+        entity_type="user",
         entity_id=str(account.id),
         actor_type=ActorType.USER,
         actor_id=account.id,
@@ -299,4 +219,4 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> Non
         actor_name=account.name,
     )
     await db.commit()
-    log.info("auth.password_reset.completed", entity_type=entity_type, user_id=str(account.id))
+    log.info("auth.password_reset.completed", user_id=str(account.id))

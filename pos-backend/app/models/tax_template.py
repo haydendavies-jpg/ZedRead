@@ -1,6 +1,6 @@
 """Admin-owned tax template — jurisdiction-scoped tax definitions.
 
-Templates are managed exclusively in the SuperAdmin portal and are never
+Templates are managed exclusively by portal admins (User.superadmin_role) and are never
 exposed to management-portal (customer) users. At sale time the invoice
 engine resolves the rates that apply to a site by matching its location
 against every active template: a template applies when EVERY jurisdiction

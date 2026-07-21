@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants.audit_actions import CATEGORY_CREATED, CATEGORY_UPDATED
 from app.models.category import Category
 from app.models.reporting_group import ReportingGroup
-from app.models.superadmin import SuperAdmin
 from app.models.user import User
 from app.schemas.category import CategoryCreate, CategoryUpdate
 from app.services.audit_service import log_action
@@ -90,7 +89,7 @@ async def create_category(
     db: AsyncSession,
     brand_id: uuid.UUID,
     payload: CategoryCreate,
-    actor: User | SuperAdmin,
+    actor: User,
     import_id: uuid.UUID | None = None,
 ) -> Category:
     """
@@ -151,7 +150,7 @@ async def update_category(
     brand_id: uuid.UUID,
     category_id: uuid.UUID,
     payload: CategoryUpdate,
-    actor: User | SuperAdmin,
+    actor: User,
     import_id: uuid.UUID | None = None,
 ) -> Category:
     """

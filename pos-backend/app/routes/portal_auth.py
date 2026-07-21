@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import AUTH_LOGOUT, AUTH_PASSWORD_CHANGED
 from app.database import get_db
-from app.models.superadmin import SuperAdmin
+from app.models.user import User
 from app.schemas.portal_auth import (
     ForgotPasswordRequest,
     IdentityTokenRequest,
@@ -33,16 +33,16 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ) -> UnifiedLoginResponse:
     """
-    Unified portal login — accepts both superadmin and user credentials.
+    Unified portal login — checks every capability a matching User row (or rows) holds.
 
-    - superadmin → issues a portal access + refresh token (role-based admin access).
-    - user with one portal-capable grant → issues a management JWT.
-    - user with multiple grants → returns available_grants list for scope selection.
-    - email shared by both a superadmin and a portal-capable user → returns
-      available_identities; the client selects one and calls /identity-token.
+    - a row with superadmin_role set → issues a portal access + refresh token.
+    - a row with one portal-capable grant → issues a management JWT.
+    - a row with multiple grants → returns available_grants list for scope selection.
+    - a row (or rows sharing an email) offering more than one capability →
+      returns available_identities; the client selects one and calls /identity-token.
 
     Returns HTTP 401 for invalid credentials. The error message is intentionally
-    vague — it does not reveal whether the email exists or which table was checked.
+    vague — it does not reveal whether the email exists at all.
     """
     return await management_auth_service.login(db, payload)
 
@@ -56,9 +56,9 @@ async def identity_token(
     Issue tokens for the chosen identity after cross-identity disambiguation.
 
     Called by the frontend identity-selector when /login returned
-    available_identities (the email matched both a superadmin and a
-    portal-capable user). Re-verifies the password for the chosen
-    identity_type to prevent identity enumeration.
+    available_identities (a matching row, or rows, offered more than one
+    capability). Re-verifies the password for the chosen identity_type to
+    prevent identity enumeration.
     """
     return await management_auth_service.issue_identity_token(db, payload)
 
@@ -117,10 +117,10 @@ class ChangePasswordRequest(BaseModel):
 async def change_password(
     payload: ChangePasswordRequest,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> None:
     """
-    Change the authenticated portal user's password.
+    Change the authenticated portal admin's password.
 
     Requires the current password for verification — prevents an attacker with
     a stolen session token from locking the user out.
@@ -132,7 +132,7 @@ async def change_password(
             detail="New password must be at least 8 characters.",
         )
 
-    result = await db.execute(select(SuperAdmin).where(SuperAdmin.id == actor.id))
+    result = await db.execute(select(User).where(User.id == actor.id))
     user = result.scalar_one()
 
     if not await verify_password_async(payload.current_password, user.password_hash):
@@ -152,7 +152,7 @@ async def change_password(
         actor_email=user.email,
         actor_name=user.name,
         action=AUTH_PASSWORD_CHANGED,
-        entity_type="superadmin",
+        entity_type="user",
         entity_id=str(user.id),
         after_state={"password_changed": True},
     )
@@ -163,7 +163,7 @@ async def change_password(
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> None:
     """
     Log the authenticated portal admin out of all sessions.
@@ -173,7 +173,7 @@ async def logout(
     is stateless, so this "logout everywhere" is the meaningful server-side
     revocation — there is no per-session token to selectively drop.
     """
-    result = await db.execute(select(SuperAdmin).where(SuperAdmin.id == actor.id))
+    result = await db.execute(select(User).where(User.id == actor.id))
     user = result.scalar_one()
     user.token_version += 1  # invalidate all outstanding tokens for this admin
 
@@ -183,7 +183,7 @@ async def logout(
         actor_email=user.email,
         actor_name=user.name,
         action=AUTH_LOGOUT,
-        entity_type="superadmin",
+        entity_type="user",
         entity_id=str(user.id),
         after_state={"logged_out": True},
     )

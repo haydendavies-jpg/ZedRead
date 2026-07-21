@@ -55,7 +55,7 @@ def _mgmt_headers(user: User, grant: UserAccessGrant) -> dict[str, str]:
 
 def _portal_headers(superadmin) -> dict[str, str]:
     """Return portal JWT headers."""
-    token = create_access_token(str(superadmin.id), superadmin.role)
+    token = create_access_token(str(superadmin.id), superadmin.superadmin_role)
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -1105,7 +1105,7 @@ async def test_grantable_sites_pos_jwt_forbidden(client, pos_auth_headers, test_
 # ── Create user with grant (Users page "Add User") ──────────────────────────────
 # Until this route existed, a management caller could only grant additional
 # access to an *existing* user found via search — there was no way to
-# onboard a brand-new colleague without a SuperAdmin using POST /users.
+# onboard a brand-new colleague without a portal admin using POST /users.
 
 
 def _create_user_payload(site_id: uuid.UUID, profile_id: uuid.UUID, **overrides: object) -> dict:

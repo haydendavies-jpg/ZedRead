@@ -1,6 +1,6 @@
 """Business logic for EmailTemplate CRUD operations.
 
-Email templates are global and managed only by Admin-role SuperAdmins (route
+Email templates are global and managed only by Admin-role portal admins (User.superadmin_role) (route
 layer enforces this via require_super_admin) — they back ZedRead's own
 billing-info-request emails, not a tenant-facing feature.
 """
@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import EMAIL_TEMPLATE_CREATED, EMAIL_TEMPLATE_UPDATED
 from app.models.email_template import EmailTemplate
-from app.models.superadmin import SuperAdmin
+from app.models.user import User
 from app.schemas.email_template import EmailTemplateCreate, EmailTemplateUpdate
 from app.services.audit_service import log_action
 
@@ -104,7 +104,7 @@ async def get_template(db: AsyncSession, template_id: uuid.UUID) -> EmailTemplat
 async def create_template(
     db: AsyncSession,
     payload: EmailTemplateCreate,
-    actor: SuperAdmin,
+    actor: User,
 ) -> EmailTemplate:
     """
     Create a new, non-system email template and write an audit log row.
@@ -112,7 +112,7 @@ async def create_template(
     Args:
         db: Active database session.
         payload: The template creation data.
-        actor: The authenticated Admin-role SuperAdmin performing the action.
+        actor: The authenticated Admin-role portal admin performing the action.
 
     Returns:
         EmailTemplate: The newly created template.
@@ -167,7 +167,7 @@ async def update_template(
     db: AsyncSession,
     template_id: uuid.UUID,
     payload: EmailTemplateUpdate,
-    actor: SuperAdmin,
+    actor: User,
 ) -> EmailTemplate:
     """
     Update an email template's mutable fields and write an audit log row.
@@ -176,7 +176,7 @@ async def update_template(
         db: Active database session.
         template_id: UUID of the template to update.
         payload: The fields to update (all optional).
-        actor: The authenticated Admin-role SuperAdmin performing the action.
+        actor: The authenticated Admin-role portal admin performing the action.
 
     Returns:
         EmailTemplate: The updated template.

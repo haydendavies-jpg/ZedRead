@@ -20,7 +20,6 @@ from app.models.modifier_group import ModifierGroup
 from app.models.modifier_option import ModifierOption
 from app.models.modifier_option_group_link import ModifierOptionGroupLink
 from app.models.payment import Payment
-from app.models.superadmin import SuperAdmin
 from app.models.pos_device import PosDevice
 from app.models.user import User
 from app.models.product import Product
@@ -64,7 +63,6 @@ __all__ = [
     "ModifierOption",
     "ModifierOptionGroupLink",
     "Payment",
-    "SuperAdmin",
     "PosDevice",
     "User",
     "Product",

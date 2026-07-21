@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.superadmin import SuperAdmin
+from app.models.user import User
 from app.schemas.billing_info_request import BillingInfoRequestResponse
 from app.schemas.brand import BrandCreate, BrandResponse, BrandUpdate
 from app.services import brand_service
@@ -23,7 +23,7 @@ async def list_brands(
     group_id: uuid.UUID | None = Query(default=None, description="Filter by parent group ID"),
     is_active: bool | None = Query(default=None, description="Filter by active/inactive status"),
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> list[BrandResponse]:
     """List brands with pagination and optional filters, scoped to the actor's accounts."""
     return await brand_service.list_brands(
@@ -35,7 +35,7 @@ async def list_brands(
 async def get_brand(
     brand_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin | ManagementAccess = Depends(resolve_portal_or_management),
+    actor: User | ManagementAccess = Depends(resolve_portal_or_management),
 ) -> BrandResponse:
     """Fetch a single brand by ID, scoped to the actor's accounts (or a management caller's own scope)."""
     return await brand_service.get_brand(db, brand_id, actor)
@@ -45,7 +45,7 @@ async def get_brand(
 async def create_brand(
     payload: BrandCreate,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> BrandResponse:
     """Create a new brand. Auto-creates an 'Uncategorised' system category."""
     return await brand_service.create_brand(db, payload, actor)
@@ -56,7 +56,7 @@ async def update_brand(
     brand_id: uuid.UUID,
     payload: BrandUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin | ManagementAccess = Depends(resolve_portal_or_management),
+    actor: User | ManagementAccess = Depends(resolve_portal_or_management),
 ) -> BrandResponse:
     """Update a brand's company profile fields."""
     return await brand_service.update_brand(db, brand_id, payload, actor)
@@ -66,7 +66,7 @@ async def update_brand(
 async def suspend_brand(
     brand_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> BrandResponse:
     """Suspend a brand (set is_active = False)."""
     return await brand_service.suspend_brand(db, brand_id, actor)
@@ -76,7 +76,7 @@ async def suspend_brand(
 async def activate_brand(
     brand_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin = Depends(get_current_superadmin),
+    actor: User = Depends(get_current_superadmin),
 ) -> BrandResponse:
     """Activate a previously suspended brand."""
     return await brand_service.activate_brand(db, brand_id, actor)
@@ -87,7 +87,7 @@ async def upload_brand_logo(
     brand_id: uuid.UUID,
     file: UploadFile,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin | ManagementAccess = Depends(resolve_portal_or_management),
+    actor: User | ManagementAccess = Depends(resolve_portal_or_management),
 ) -> BrandResponse:
     """Upload or replace the brand's logo (JPEG/PNG/WebP, up to 1 MB)."""
     return await brand_service.upload_logo(db, brand_id, file, actor)
@@ -97,7 +97,7 @@ async def upload_brand_logo(
 async def request_brand_billing_info(
     brand_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: SuperAdmin | ManagementAccess = Depends(resolve_portal_or_management),
+    actor: User | ManagementAccess = Depends(resolve_portal_or_management),
 ) -> BillingInfoRequestResponse:
     """Email the brand's effective billing contact the billing_info_request template."""
     resolved = await brand_service.request_billing_info(db, brand_id, actor)
