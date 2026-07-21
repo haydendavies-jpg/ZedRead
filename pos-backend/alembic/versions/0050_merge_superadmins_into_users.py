@@ -47,6 +47,16 @@ def upgrade() -> None:
     # users.group_id becomes optional — NULL for a pure ZedRead/reseller-staff row
     op.alter_column("users", "group_id", nullable=True)
 
+    # Belt-and-braces: migration 0031 dropped every unique constraint/index on
+    # users.email it knew about (pos_users_email_key/users_email_key,
+    # ix_users_email/ix_pos_users_email), but a database provisioned with
+    # SQLAlchemy's default naming convention ends up with a constraint named
+    # uq_pos_users_email instead — a variant 0031 didn't anticipate, so it
+    # silently survived untouched. Nothing hit it until now: this is the first
+    # migration that inserts two users rows sharing an email. Drop it here too
+    # so the INSERT below (and any future shared-email insert) doesn't 23505.
+    op.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS uq_pos_users_email")
+
     # Migrate each superadmins row into users as a new, separate row (same id,
     # no tenant scope, no grants) — preserves groups.created_by_id resolution
     # and the historical PTL- ref string without renumbering.
