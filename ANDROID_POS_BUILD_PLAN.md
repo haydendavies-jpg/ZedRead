@@ -13,7 +13,7 @@ here in a new session — read the Status section first, then the phase you're o
 | 1 | Portal — Register Sessions report page | ✅ Done |
 | 1 | Android — project wiring (Retrofit/Hilt/Room/Nav) | ✅ Done |
 | 1 | Android — Login, Site selector, PIN set/switch-user screens (self-service device claiming — no Device Setup screen) | ✅ Done |
-| 1 | Android — Register-session gate + start-of-day cash-in screen | 🔶 Partial — end-of-day cash-up not started |
+| 1 | Android — Register-session gate + start-of-day cash-in / end-of-day cash-up screens | ✅ Done |
 | 1 | Android — functional (non-exact-match) sell loop: browse → cart → pay | ✅ Done — see below |
 | 1 | Android — Register (order-entry) screen, exact match to design bundle | 🔲 Not started — functional but generic placeholder UI today |
 | 1 | Android — Modifier customise sheet, exact match | 🔲 Not started |
@@ -23,10 +23,30 @@ here in a new session — read the Status section first, then the phase you're o
 | 4 | Table maps & floor service | 🔲 Not started |
 
 **Next up:** the portal side of Phase 1 is complete, and the Android app now has a functional
-end-to-end sell loop (device setup → login → till open → browse → cart → pay), verified by manual
-code review only (see "not verified against a real build" below — still true). What's left in Phase 1
-is purely visual/UX: the exact-match Register screen and modifier sheet from the design bundle, the
-Voucher tab + styled Split flow, and end-of-day cash-up.
+end-to-end sell loop (device setup → login → till open → browse → cart → pay) plus the full till
+round-trip (cash-in at start of shift, cash-up at end of shift), verified by manual code review only
+(see "not verified against a real build" below — still true). What's left in Phase 1 is purely
+visual/UX and blocked on the design bundle: the exact-match Register screen and modifier sheet, and
+the Voucher tab + styled Split flow. **The design bundle itself
+(`design_handoff_zedread/ZedRead Register.dc.html` + its READMEs) is not present in this repository**
+— it was supplied to an earlier session as an upload, referenced throughout this plan, but never
+committed. Re-supply it (or a replacement reference) before starting the exact-match Register screen
+or modifier sheet; building "from memory" against the plan's prose description would drift from
+what the user actually approved.
+
+**What the end-of-day cash-up slice shipped** (this session, branch `claude/next-stage-hl4xwg`):
+a new `CashUpScreen.kt` mirrors `CashInScreen.kt`'s bulk-value-entry pattern — loads the terminal's
+open session (`GET /register-sessions/current`), takes a closing-cash amount, calls
+`POST /register-sessions/{id}/close`, then shows the computed Expected/Counted/Variance summary
+before logging the operator out (`AuthRepository.logout()` — the device stays paired for the next
+shift, matching the "device stays pinned" architecture decision). `RegisterSessionViewModel` gained
+the matching `CashUpState` state machine (`Loading`/`Ready`/`Submitting`/`Closed`/`Error`) and a
+`logout()`/`loggedOut` pair alongside its existing cash-in state. Entry point: since there's no
+account/nav menu yet (out of scope until the exact-match Register header ships), a "Cash up" icon
+button was added to `CatalogScreen`'s existing `TopAppBar` next to the switch-operator icon —
+functional placement, not the design bundle's styling. Wired into `PosNavHost` as a new `cash_up`
+route that clears the whole back stack back to Login on completion, so Back can't return to a stale
+sale after a shift ends.
 
 **What the Android auth slice actually shipped** (this session — no PR yet, see branch
 `claude/session-a61ycb`): the Stage 25 Android scaffolding predated PR #92's backend rework and called
@@ -256,9 +276,10 @@ takes payment — matching the design file exactly wherever it defines one.
 - ✅ **Start-of-day cash-in**: bulk-value entry (denomination-breakdown variant is a Phase 2
   setting); blocks Register access until a session is open. Calls `POST /register-sessions/open`
   (`CashInScreen`).
-- 🔲 **End-of-day cash-up**: bulk-value entry compared against expected takings, variance shown (the
-  hide-variance option is a Phase 2 setting); confirm-close. A "Cash Up" entry point in the
-  account/nav menu. Calls `POST /register-sessions/{id}/close`.
+- ✅ **End-of-day cash-up**: bulk-value entry compared against expected takings, variance shown (the
+  hide-variance option is a Phase 2 setting); confirm-close, then logs the operator out. A "Cash up"
+  icon button on `CatalogScreen`'s top bar is the entry point for now (no account/nav menu exists
+  yet — that's design-bundle-dependent). Calls `POST /register-sessions/{id}/close` (`CashUpScreen`).
 
 **Backend API reference for Phase 1 Android work** (current contract — see the self-service
 auth-rework note above for how this superseded the original device-paired shape):

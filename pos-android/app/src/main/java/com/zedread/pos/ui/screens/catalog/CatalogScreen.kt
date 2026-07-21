@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -42,6 +43,7 @@ import com.zedread.pos.ui.viewmodel.SellViewModel
 fun CatalogScreen(
     onProceedToCart: () -> Unit,
     onSwitchUser: () -> Unit,
+    onCashUp: () -> Unit,
     viewModel: SellViewModel = hiltViewModel(),
 ) {
     val categories by viewModel.categories.collectAsState()
@@ -56,6 +58,9 @@ fun CatalogScreen(
             TopAppBar(
                 title = { Text("Menu") },
                 actions = {
+                    IconButton(onClick = onCashUp) {
+                        Icon(Icons.Default.AttachMoney, contentDescription = "Cash up")
+                    }
                     IconButton(onClick = onSwitchUser) {
                         Icon(Icons.Default.Person, contentDescription = "Switch operator")
                     }
