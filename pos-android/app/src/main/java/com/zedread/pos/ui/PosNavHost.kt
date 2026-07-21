@@ -104,6 +104,11 @@ fun PosNavHost() {
                         popUpTo(Screen.RegisterGate.route) { inclusive = true }
                     }
                 },
+                onSessionExpired = {
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(Screen.RegisterGate.route) { inclusive = true }
+                    }
+                },
             )
         }
 

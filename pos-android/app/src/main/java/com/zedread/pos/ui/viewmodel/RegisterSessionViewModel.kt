@@ -2,12 +2,14 @@ package com.zedread.pos.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.zedread.pos.data.repository.AuthRepository
 import com.zedread.pos.data.repository.RegisterSessionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import retrofit2.HttpException
 import javax.inject.Inject
 
 /**
@@ -19,6 +21,7 @@ import javax.inject.Inject
 @HiltViewModel
 class RegisterSessionViewModel @Inject constructor(
     private val repo: RegisterSessionRepository,
+    private val authRepository: AuthRepository,
 ) : ViewModel() {
 
     private val _gateState = MutableStateFlow<RegisterGateState>(RegisterGateState.Checking)
@@ -36,7 +39,17 @@ class RegisterSessionViewModel @Inject constructor(
                     }
                 }
                 .onFailure { e ->
-                    _gateState.value = RegisterGateState.Error(e.message ?: "Could not check register session")
+                    // A 401 here means the terminal's session was revoked server-side
+                    // (logout elsewhere, device unpaired, license lapsed) — the POS
+                    // access token itself no longer expires on its own, so retrying
+                    // the same call would just 401 forever. Clear local credentials
+                    // and send the operator back to login instead.
+                    if (e is HttpException && e.code() == 401) {
+                        authRepository.logout()
+                        _gateState.value = RegisterGateState.SessionExpired
+                    } else {
+                        _gateState.value = RegisterGateState.Error(e.message ?: "Could not check register session")
+                    }
                 }
         }
     }
@@ -60,6 +73,8 @@ sealed class RegisterGateState {
     object NeedsCashIn : RegisterGateState()
     data class Open(val sessionId: String) : RegisterGateState()
     data class Error(val message: String) : RegisterGateState()
+    /** The terminal's session was revoked server-side — credentials are already cleared. */
+    object SessionExpired : RegisterGateState()
 }
 
 sealed class CashInState {

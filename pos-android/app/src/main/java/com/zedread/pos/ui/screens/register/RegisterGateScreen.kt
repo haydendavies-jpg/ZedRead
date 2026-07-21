@@ -31,6 +31,7 @@ import com.zedread.pos.ui.viewmodel.RegisterSessionViewModel
 fun RegisterGateScreen(
     onNeedsCashIn: () -> Unit,
     onOpen: () -> Unit,
+    onSessionExpired: () -> Unit,
     viewModel: RegisterSessionViewModel = hiltViewModel(),
 ) {
     val state by viewModel.gateState.collectAsState()
@@ -41,6 +42,7 @@ fun RegisterGateScreen(
         when (state) {
             is RegisterGateState.NeedsCashIn -> onNeedsCashIn()
             is RegisterGateState.Open -> onOpen()
+            is RegisterGateState.SessionExpired -> onSessionExpired()
             else -> Unit
         }
     }
