@@ -231,6 +231,99 @@ async def test_add_line_item_with_modifier(
 
 
 @pytest.mark.asyncio
+async def test_add_line_item_modifier_writes_audit_log(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    db: AsyncSession,
+) -> None:
+    """Attaching a modifier writes an 'invoice.line_item.modifier_added' audit row."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    mg_resp = await client.post(
+        "/modifier-groups",
+        json={"name": "Extras", "min_selections": 0, "max_selections": 3},
+        headers=pos_auth_headers,
+    )
+    group_id = mg_resp.json()["id"]
+    opt_resp = await client.post(
+        f"/modifier-groups/{group_id}/options",
+        json={"name": "Extra Cheese", "price_delta_cents": 50},
+        headers=pos_auth_headers,
+    )
+    option_id = opt_resp.json()["id"]
+    line = await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id))
+
+    resp = await client.post(
+        f"/invoices/{invoice_id}/line-items/{line['id']}/modifiers",
+        json={"modifier_option_id": option_id},
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 201
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == line["id"],
+            AuditLog.action == "invoice.line_item.modifier_added",
+        )
+    )
+    row = result.scalar_one()
+    assert row.after_state["modifier_option_id"] == option_id
+    assert row.after_state["price_delta_cents"] == 50
+
+
+@pytest.mark.asyncio
+async def test_get_line_item_returns_attached_modifiers(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+) -> None:
+    """GET /invoices/{id}/line-items/{id} returns the line plus its attached modifiers."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    mg_resp = await client.post(
+        "/modifier-groups",
+        json={"name": "Size", "min_selections": 1, "max_selections": 1},
+        headers=pos_auth_headers,
+    )
+    group_id = mg_resp.json()["id"]
+    opt_resp = await client.post(
+        f"/modifier-groups/{group_id}/options",
+        json={"name": "Large", "price_delta_cents": 60},
+        headers=pos_auth_headers,
+    )
+    option_id = opt_resp.json()["id"]
+    line = await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id))
+
+    await client.post(
+        f"/invoices/{invoice_id}/line-items/{line['id']}/modifiers",
+        json={"modifier_option_id": option_id},
+        headers=pos_auth_headers,
+    )
+
+    resp = await client.get(
+        f"/invoices/{invoice_id}/line-items/{line['id']}", headers=pos_auth_headers
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == line["id"]
+    assert len(data["modifiers"]) == 1
+    assert data["modifiers"][0]["modifier_name"] == "Large"
+    assert data["modifiers"][0]["price_delta_cents"] == 60
+
+
+@pytest.mark.asyncio
+async def test_get_line_item_unknown_line_returns_404(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+) -> None:
+    """GET /invoices/{id}/line-items/{id} for a non-existent line item returns 404."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    resp = await client.get(
+        f"/invoices/{invoice_id}/line-items/{uuid.uuid4()}", headers=pos_auth_headers
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_update_line_item_quantity_rescales_subtotal_and_tax(
     client: AsyncClient,
     pos_auth_headers: dict,
@@ -508,6 +601,120 @@ async def test_pay_already_paid_invoice_returns_409(
 
     r2 = await client.post(f"/invoices/{invoice_id}/pay", json=payload, headers=pos_auth_headers)
     assert r2.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_pay_invoice_partial_amount_leaves_invoice_open(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    db: AsyncSession,
+) -> None:
+    """A split-payment leg smaller than the total records the payment but does not mark the invoice paid."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id))  # total 1500
+
+    resp = await client.post(
+        f"/invoices/{invoice_id}/pay",
+        json={"method": "card", "amount_cents": 500},
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "open"
+    assert data["paid_at"] is None
+
+    pay_result = await db.execute(select(Payment).where(Payment.invoice_id == uuid.UUID(invoice_id)))
+    payments = pay_result.scalars().all()
+    assert len(payments) == 1
+    assert payments[0].amount_cents == 500
+
+
+@pytest.mark.asyncio
+async def test_pay_invoice_second_leg_completes_split_payment(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    db: AsyncSession,
+) -> None:
+    """A second payment leg covering the remaining balance marks the invoice paid."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id))  # total 1500
+
+    first = await client.post(
+        f"/invoices/{invoice_id}/pay",
+        json={"method": "card", "amount_cents": 500},
+        headers=pos_auth_headers,
+    )
+    assert first.json()["status"] == "open"
+
+    second = await client.post(
+        f"/invoices/{invoice_id}/pay",
+        json={"method": "cash", "amount_cents": 1000},
+        headers=pos_auth_headers,
+    )
+    assert second.status_code == 200
+    data = second.json()
+    assert data["status"] == "paid"
+    assert data["paid_at"] is not None
+
+    pay_result = await db.execute(select(Payment).where(Payment.invoice_id == uuid.UUID(invoice_id)))
+    payments = pay_result.scalars().all()
+    assert len(payments) == 2
+    assert sum(p.amount_cents for p in payments) == 1500
+
+
+@pytest.mark.asyncio
+async def test_pay_invoice_partial_writes_payment_recorded_audit_log(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    db: AsyncSession,
+) -> None:
+    """A split-payment leg that doesn't cover the total writes 'invoice.payment.recorded', not 'invoice.paid'."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id))
+
+    await client.post(
+        f"/invoices/{invoice_id}/pay",
+        json={"method": "card", "amount_cents": 500},
+        headers=pos_auth_headers,
+    )
+
+    recorded = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == invoice_id, AuditLog.action == "invoice.payment.recorded"
+        )
+    )
+    assert recorded.scalar_one_or_none() is not None
+
+    paid = await db.execute(
+        select(AuditLog).where(AuditLog.entity_id == invoice_id, AuditLog.action == "invoice.paid")
+    )
+    assert paid.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_pay_invoice_full_amount_still_writes_invoice_paid_audit_log(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    db: AsyncSession,
+) -> None:
+    """A single payment covering the full total still writes 'invoice.paid' (not the split-leg action)."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id))
+
+    await client.post(
+        f"/invoices/{invoice_id}/pay",
+        json={"method": "cash", "amount_cents": 1500},
+        headers=pos_auth_headers,
+    )
+
+    result = await db.execute(
+        select(AuditLog).where(AuditLog.entity_id == invoice_id, AuditLog.action == "invoice.paid")
+    )
+    assert result.scalar_one_or_none() is not None
 
 
 @pytest.mark.asyncio

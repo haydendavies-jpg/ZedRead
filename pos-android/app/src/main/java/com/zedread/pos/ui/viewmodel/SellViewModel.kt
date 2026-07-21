@@ -3,6 +3,7 @@ package com.zedread.pos.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zedread.pos.data.api.LineItemDto
+import com.zedread.pos.data.api.ProductModifierGroupDto
 import com.zedread.pos.data.local.entity.CategoryEntity
 import com.zedread.pos.data.local.entity.ProductEntity
 import com.zedread.pos.data.repository.CatalogRepository
@@ -18,12 +19,19 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Owns one sale end to end: browsing the catalog, building the cart, and
- * taking payment. Scoped to the "sell" nav sub-graph (Catalog/Cart/Payment
- * share one instance via `hiltViewModel(navController.getBackStackEntry(...))`)
- * so the cart survives navigating between those screens — there is no
- * `GET /invoices/{id}/line-items` to reconstruct it from if each screen held
- * its own short-lived ViewModel instead.
+ * Owns one sale end to end: browsing the catalog, building the cart
+ * (including the modifier customise sheet), and taking payment.
+ *
+ * The modifier sheet and payment modal are both overlays on the Register
+ * screen itself in the design bundle (not separate nav destinations — see
+ * `ZedRead Register.dc.html`'s own `mod`/`pay` state living alongside
+ * `order[]` on one Component), so their state lives here as plain StateFlows
+ * rather than being routed through Compose Navigation — the Register screen
+ * is a single flat nav destination (`Screen.OrderEntry`), and this ViewModel
+ * scopes to it via the default `hiltViewModel()`. There is no
+ * `GET /invoices/{id}/line-items` to reconstruct the cart from, so a fresh
+ * sale after "New order" is a same-instance state reset
+ * ([completePaymentAndStartNewOrder]) rather than a new ViewModel instance.
  */
 @HiltViewModel
 class SellViewModel @Inject constructor(
@@ -75,20 +83,52 @@ class SellViewModel @Inject constructor(
     private val _lineItems = MutableStateFlow<List<LineItemDto>>(emptyList())
     val lineItems: StateFlow<List<LineItemDto>> = _lineItems.asStateFlow()
 
-    /** Computed total in cents across all line items (subtotal + tax). */
-    val totalCents: Long get() = _lineItems.value.sumOf { it.subtotalCents + it.taxCents }
+    /**
+     * A line's modifiers apply as a flat addition to the whole line, not
+     * scaled by quantity — matching add_line_modifier()/
+     * _recompute_invoice_totals()'s snapshot model on the backend (one
+     * InvoiceLineModifier row per line, its price_delta_cents added once).
+     * Mirrored here so the client-computed totals below match the backend's
+     * authoritative invoice.total_cents without an extra round trip per cart
+     * mutation.
+     */
+    private fun modifierTotalCents(item: LineItemDto): Long = item.modifiers.sumOf { it.priceDeltaCents }
+
+    /** Subtotal across all lines, including each line's flat modifier total (matches invoice.subtotal_cents). */
+    val subtotalCents: Long get() = _lineItems.value.sumOf { it.subtotalCents + modifierTotalCents(it) }
+
+    /** Tax across all lines — modifiers carry no tax of their own (matches invoice.tax_cents). */
+    val taxCents: Long get() = _lineItems.value.sumOf { it.taxCents }
+
+    /** Computed total in cents across all line items (subtotal, incl. modifiers, + tax). */
+    val totalCents: Long get() = subtotalCents + taxCents
 
     private val _cartActionState = MutableStateFlow<CartActionState>(CartActionState.Idle)
     val cartActionState: StateFlow<CartActionState> = _cartActionState.asStateFlow()
 
-    /** Add a product to this sale — opens the draft invoice first if this is the first item. */
+    /**
+     * Tap a product tile. A product with a modifier set — [ProductEntity.modifierNames]
+     * non-blank, the same field that backs the grid's "+" badge — opens the
+     * customise sheet instead of adding directly; a plain product adds
+     * straight to the order, same as before.
+     */
     fun addToCart(productId: String) {
+        val product = products.value.firstOrNull { it.id == productId } ?: return
+        if (!product.modifierNames.isNullOrBlank()) {
+            openModifierSheet(product)
+            return
+        }
+        addPlainLineItem(productId, quantity = 1)
+    }
+
+    /** Opens the draft invoice first if this is the first item, then appends the line. */
+    private fun addPlainLineItem(productId: String, quantity: Int) {
         _cartActionState.value = CartActionState.Loading
         viewModelScope.launch {
             runCatching {
                 val invoiceId = currentInvoiceId
                     ?: invoiceRepo.createInvoice().id.also { currentInvoiceId = it; issueTicketNumber() }
-                invoiceRepo.addLineItem(invoiceId, productId, quantity = 1)
+                invoiceRepo.addLineItem(invoiceId, productId, quantity)
             }
                 .onSuccess { item ->
                     _lineItems.value = _lineItems.value + item
@@ -109,7 +149,13 @@ class SellViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { invoiceRepo.updateLineItemQuantity(invoiceId, lineItemId, quantity) }
                 .onSuccess { updated ->
-                    _lineItems.value = _lineItems.value.map { if (it.id == lineItemId) updated else it }
+                    // PATCH's response has no modifiers field (LineItemResponse, not
+                    // LineItemDetailResponse) — keep whatever this line's modifiers
+                    // already were rather than dropping them from the display.
+                    val previousModifiers = _lineItems.value.firstOrNull { it.id == lineItemId }?.modifiers ?: emptyList()
+                    _lineItems.value = _lineItems.value.map {
+                        if (it.id == lineItemId) updated.copy(modifiers = previousModifiers) else it
+                    }
                     _cartActionState.value = CartActionState.Idle
                 }
                 .onFailure { e -> _cartActionState.value = CartActionState.Error(e.message ?: "Failed to update quantity") }
@@ -132,6 +178,109 @@ class SellViewModel @Inject constructor(
     }
 
     fun resetCartActionState() { _cartActionState.value = CartActionState.Idle }
+
+    // ── Modifier customise sheet ────────────────────────────────────────────
+    //
+    // Mirrors the design bundle's own state machine (`mod: {prod, sets, sel,
+    // qty}`, `toggleChoice()`, `modAddToOrder()`): single-select groups
+    // default to their first option and always keep exactly one selected;
+    // multi-select groups toggle freely with no default. On confirm, a
+    // single-select group's chosen option is always attached as a line
+    // modifier (even a free one, e.g. "Small" at +$0, so it still shows on
+    // the receipt); a multi-select choice is only attached when it carries a
+    // price — exactly modAddToOrder's `c.price>0 || g.type==='single'` filter.
+
+    private val _modifierSheetState = MutableStateFlow<ModifierSheetState>(ModifierSheetState.Closed)
+    val modifierSheetState: StateFlow<ModifierSheetState> = _modifierSheetState.asStateFlow()
+
+    private fun openModifierSheet(product: ProductEntity) {
+        _modifierSheetState.value = ModifierSheetState.Loading(product)
+        viewModelScope.launch {
+            runCatching { catalogRepo.getProductModifiers(product.id) }
+                .onSuccess { groups ->
+                    val selections = groups.map { group ->
+                        val defaultSelected =
+                            if (group.maxSelections <= 1 && group.options.isNotEmpty()) setOf(0) else emptySet()
+                        ModifierGroupSelection(group, defaultSelected)
+                    }
+                    _modifierSheetState.value = ModifierSheetState.Ready(product, selections, quantity = 1)
+                }
+                .onFailure { e ->
+                    _modifierSheetState.value =
+                        ModifierSheetState.Error(product, e.message ?: "Failed to load modifiers")
+                }
+        }
+    }
+
+    /** Radio-style select for a single-select group, checkbox-style toggle for multi-select. */
+    fun toggleModifierChoice(groupIndex: Int, optionIndex: Int) {
+        val state = _modifierSheetState.value as? ModifierSheetState.Ready ?: return
+        val groups = state.groups.toMutableList()
+        val current = groups.getOrNull(groupIndex) ?: return
+        val newSelected = when {
+            current.isSingleSelect -> setOf(optionIndex)
+            current.selected.contains(optionIndex) -> current.selected - optionIndex
+            else -> current.selected + optionIndex
+        }
+        groups[groupIndex] = current.copy(selected = newSelected)
+        _modifierSheetState.value = state.copy(groups = groups)
+    }
+
+    fun changeModifierSheetQuantity(delta: Int) {
+        val state = _modifierSheetState.value as? ModifierSheetState.Ready ?: return
+        _modifierSheetState.value = state.copy(quantity = (state.quantity + delta).coerceAtLeast(1))
+    }
+
+    fun closeModifierSheet() { _modifierSheetState.value = ModifierSheetState.Closed }
+
+    /** Per-unit price including selected modifiers — mirrors modAddToOrder's live `unit` calc. */
+    fun modifierSheetUnitPriceCents(state: ModifierSheetState.Ready): Long {
+        var unit = state.product.basePriceCents
+        state.groups.forEach { gs ->
+            gs.selected.forEach { idx -> unit += gs.group.options.getOrNull(idx)?.priceDeltaCents ?: 0 }
+        }
+        return unit
+    }
+
+    /** Footer total ("Add to order $total") — unit price × quantity, mirrors modTotalLabel. */
+    fun modifierSheetTotalCents(state: ModifierSheetState.Ready): Long =
+        modifierSheetUnitPriceCents(state) * state.quantity
+
+    /**
+     * Add the customised product to the order: the line item at the sheet's
+     * quantity, then each qualifying selected option attached as a line
+     * modifier (see the class doc above). Refetches the line afterward when
+     * any modifier was attached, so the order pane can show the "· modifier"
+     * sub-lines and modifier-inclusive total immediately rather than the
+     * pre-modifier snapshot POST /line-items itself returns.
+     */
+    fun confirmModifierSheet() {
+        val state = _modifierSheetState.value as? ModifierSheetState.Ready ?: return
+        _cartActionState.value = CartActionState.Loading
+        _modifierSheetState.value = ModifierSheetState.Closed
+        viewModelScope.launch {
+            runCatching {
+                val invoiceId = currentInvoiceId
+                    ?: invoiceRepo.createInvoice().id.also { currentInvoiceId = it; issueTicketNumber() }
+                val item = invoiceRepo.addLineItem(invoiceId, state.product.id, state.quantity)
+
+                val optionIds = state.groups.flatMap { gs ->
+                    gs.selected.mapNotNull { idx ->
+                        val option = gs.group.options.getOrNull(idx) ?: return@mapNotNull null
+                        if (gs.isSingleSelect || option.priceDeltaCents > 0) option.id else null
+                    }
+                }
+                optionIds.forEach { optionId -> invoiceRepo.addLineModifier(invoiceId, item.id, optionId) }
+
+                if (optionIds.isEmpty()) item else invoiceRepo.getLineItem(invoiceId, item.id)
+            }
+                .onSuccess { item ->
+                    _lineItems.value = _lineItems.value + item
+                    _cartActionState.value = CartActionState.Idle
+                }
+                .onFailure { e -> _cartActionState.value = CartActionState.Error(e.message ?: "Failed to add item") }
+        }
+    }
 
     // ── Order pane presentation state (Register screen) ────────────────────
     //
@@ -158,56 +307,146 @@ class SellViewModel @Inject constructor(
 
     /**
      * Clears the order pane back to empty — the design bundle's "clear order"
-     * ✕ and Hold action. The invoice itself (if any items were added) is
-     * NOT voided or deleted here; it's simply left open/uncollected on the
-     * backend. There's no "recall a held order" list yet to bring it back —
-     * that's a real gap Hold leaves open, flagged rather than silently
-     * dropped.
+     * ✕ and Hold action, and also what a completed payment's "New order"
+     * button resets to. The invoice itself (if any items were added) is NOT
+     * voided or deleted here; it's simply left open/uncollected on the
+     * backend when triggered by ✕/Hold. There's no "recall a held order"
+     * list yet to bring it back — that's a real gap Hold leaves open,
+     * flagged rather than silently dropped.
      */
     fun clearOrder() {
         currentInvoiceId = null
         _lineItems.value = emptyList()
         _ticketNumber.value = null
         _selectedLineItemId.value = null
-        paidCents = 0L
+        _paymentState.value = null
     }
 
     // ── Payment ──────────────────────────────────────────────────────────────
+    //
+    // Mirrors the design bundle's `pay: {stage, method, tendered}` shape
+    // (openPay/pickTender/confirmCard/confirmCash/newOrder), extended with
+    // the Voucher tab and Split toggle the mockup predates the backend
+    // capability for: splitMode/splitAmountCents track a partial-amount leg,
+    // paidCents is the running total already paid on this sale, and
+    // voucherReference backs the Voucher tab's reference-code input.
 
-    private val _paymentState = MutableStateFlow<PaymentFlowState>(PaymentFlowState.Idle)
-    val paymentState: StateFlow<PaymentFlowState> = _paymentState.asStateFlow()
+    private val _paymentState = MutableStateFlow<PaymentUiState?>(null)
+    val paymentState: StateFlow<PaymentUiState?> = _paymentState.asStateFlow()
 
-    /** Running tally of cents already paid via earlier split payments. */
-    private var paidCents: Long = 0L
+    /** Amount still owed on this sale — the full total until a split leg has been paid. */
+    fun remainingCents(state: PaymentUiState): Long = (totalCents - state.paidCents).coerceAtLeast(0)
 
-    /**
-     * Submit a single payment or one leg of a split payment.
-     * Automatically flags [PaymentFlowState.Complete] when the total is covered.
-     */
-    fun pay(method: String, amountCents: Long) {
-        val invoiceId = currentInvoiceId
-        if (invoiceId == null) {
-            _paymentState.value = PaymentFlowState.Error("No open sale to pay")
+    fun openPayment() {
+        if (_lineItems.value.isEmpty()) return
+        _paymentState.value = PaymentUiState()
+    }
+
+    fun closePayment() { _paymentState.value = null }
+
+    fun selectPaymentMethod(method: PaymentMethod) {
+        val s = _paymentState.value ?: return
+        if (s.stage != PaymentStage.CHOOSING) return
+        _paymentState.value = s.copy(method = method, tendered = 0L, errorMessage = null)
+    }
+
+    fun toggleSplitMode(enabled: Boolean) {
+        val s = _paymentState.value ?: return
+        _paymentState.value = s.copy(splitMode = enabled, splitAmountCents = 0L, tendered = 0L, errorMessage = null)
+    }
+
+    fun setSplitAmountCents(cents: Long) {
+        val s = _paymentState.value ?: return
+        _paymentState.value = s.copy(splitAmountCents = cents.coerceAtLeast(0L), errorMessage = null)
+    }
+
+    /** Cash tab's tender-preset grid — a full amount tendered, may exceed what's due (change). */
+    fun pickTender(amountCents: Long) {
+        val s = _paymentState.value ?: return
+        _paymentState.value = s.copy(tendered = amountCents, errorMessage = null)
+    }
+
+    fun setVoucherReference(reference: String) {
+        val s = _paymentState.value ?: return
+        _paymentState.value = s.copy(voucherReference = reference, errorMessage = null)
+    }
+
+    /** Card tab's "Charge $total" (or "Add payment" in split mode). Card never produces change. */
+    fun confirmCardPayment() {
+        val s = _paymentState.value ?: return
+        val amount = if (s.splitMode) s.splitAmountCents else remainingCents(s)
+        submitPayment(method = "card", amountCents = amount, reference = null)
+    }
+
+    /** Cash tab's "Complete payment" (or "Add payment" in split mode). */
+    fun confirmCashPayment() {
+        val s = _paymentState.value ?: return
+        if (s.splitMode) {
+            submitPayment(method = "cash", amountCents = s.splitAmountCents, reference = null)
             return
         }
-        _paymentState.value = PaymentFlowState.Loading
+        val due = remainingCents(s)
+        if (s.tendered < due) {
+            _paymentState.value = s.copy(errorMessage = "Insufficient amount")
+            return
+        }
+        submitPayment(method = "cash", amountCents = s.tendered, reference = null)
+    }
+
+    /** Voucher tab's charge button — a reference code is required. */
+    fun confirmVoucherPayment() {
+        val s = _paymentState.value ?: return
+        if (s.voucherReference.isBlank()) {
+            _paymentState.value = s.copy(errorMessage = "Enter a voucher reference")
+            return
+        }
+        val amount = if (s.splitMode) s.splitAmountCents else remainingCents(s)
+        submitPayment(method = "voucher", amountCents = amount, reference = s.voucherReference)
+    }
+
+    private fun submitPayment(method: String, amountCents: Long, reference: String?) {
+        val invoiceId = currentInvoiceId
+        val current = _paymentState.value
+        if (invoiceId == null || current == null) return
+        if (amountCents <= 0) {
+            _paymentState.value = current.copy(errorMessage = "Enter an amount")
+            return
+        }
+        _paymentState.value = current.copy(isSubmitting = true, errorMessage = null)
         viewModelScope.launch {
-            runCatching { invoiceRepo.pay(invoiceId, method, amountCents) }
+            runCatching { invoiceRepo.pay(invoiceId, method, amountCents, reference) }
                 .onSuccess { dto ->
-                    paidCents += amountCents
-                    _paymentState.value = when (dto.status) {
-                        "paid" -> PaymentFlowState.Complete(dto.id)
-                        else -> PaymentFlowState.PartiallyPaid(
-                            paidCents = paidCents,
-                            remainingCents = totalCents - paidCents,
+                    val before = _paymentState.value ?: return@onSuccess
+                    if (dto.status == "paid") {
+                        // Cash change is whatever this payment overshot the balance that
+                        // was still due before it — 0 for card/voucher, and for a
+                        // non-split cash tender this is exactly amountCents - remaining.
+                        val dueBeforeThisPayment = totalCents - before.paidCents
+                        val change = (amountCents - dueBeforeThisPayment).coerceAtLeast(0)
+                        _paymentState.value = before.copy(
+                            stage = PaymentStage.DONE,
+                            isSubmitting = false,
+                            paidCents = before.paidCents + amountCents,
+                            doneMethodLabel = method.replaceFirstChar { it.uppercase() },
+                            doneAmountCents = totalCents,
+                            doneChangeCents = if (method == "cash") change else 0L,
                         )
+                    } else {
+                        // Split leg recorded but the balance isn't covered yet — reset to
+                        // a fresh Choosing state with the running paidCents carried over,
+                        // per "Add another payment" keeping the modal open.
+                        _paymentState.value = PaymentUiState(paidCents = before.paidCents + amountCents)
                     }
                 }
-                .onFailure { e -> _paymentState.value = PaymentFlowState.Error(e.message ?: "Payment failed") }
+                .onFailure { e ->
+                    val before = _paymentState.value ?: return@onFailure
+                    _paymentState.value = before.copy(isSubmitting = false, errorMessage = e.message ?: "Payment failed")
+                }
         }
     }
 
-    fun resetPaymentError() { if (_paymentState.value is PaymentFlowState.Error) _paymentState.value = PaymentFlowState.Idle }
+    /** "New order" action from the Done screen — resets the sale and closes the modal. */
+    fun completePaymentAndStartNewOrder() { clearOrder() }
 }
 
 /** Order pane segmented control — visual/local only, see the ticket/order-type note above. */
@@ -222,10 +461,50 @@ sealed class CartActionState {
     data class Error(val message: String) : CartActionState()
 }
 
-sealed class PaymentFlowState {
-    object Idle : PaymentFlowState()
-    object Loading : PaymentFlowState()
-    data class PartiallyPaid(val paidCents: Long, val remainingCents: Long) : PaymentFlowState()
-    data class Complete(val invoiceId: String) : PaymentFlowState()
-    data class Error(val message: String) : PaymentFlowState()
+/** Modifier customise sheet state — mirrors the design bundle's `mod: {prod, sets, sel, qty}` shape. */
+sealed class ModifierSheetState {
+    object Closed : ModifierSheetState()
+    data class Loading(val product: ProductEntity) : ModifierSheetState()
+    data class Ready(
+        val product: ProductEntity,
+        val groups: List<ModifierGroupSelection>,
+        val quantity: Int,
+    ) : ModifierSheetState()
+    data class Error(val product: ProductEntity, val message: String) : ModifierSheetState()
 }
+
+/** One modifier group's option list plus which option indices are currently selected. */
+data class ModifierGroupSelection(
+    val group: ProductModifierGroupDto,
+    val selected: Set<Int>,
+) {
+    /** Radio-style (at most 1 choice) vs checkbox-style (multiple) — mirrors the mockup's g.type. */
+    val isSingleSelect: Boolean get() = group.maxSelections <= 1
+    val isRequired: Boolean get() = group.minSelections >= 1
+}
+
+/** Method tabs on the payment modal — Voucher is the flagged addition the design bundle predates. */
+enum class PaymentMethod(val label: String) { CARD("Card"), CASH("Cash"), VOUCHER("Voucher") }
+
+enum class PaymentStage { CHOOSING, DONE }
+
+/**
+ * Payment modal state — mirrors the design bundle's `pay: {stage, method,
+ * tendered}` shape, extended with the split-payment fields the mockup
+ * predates (splitMode/splitAmountCents/paidCents) and the Voucher tab's
+ * reference-code input.
+ */
+data class PaymentUiState(
+    val stage: PaymentStage = PaymentStage.CHOOSING,
+    val method: PaymentMethod = PaymentMethod.CARD,
+    val tendered: Long = 0L,
+    val splitMode: Boolean = false,
+    val splitAmountCents: Long = 0L,
+    val voucherReference: String = "",
+    val paidCents: Long = 0L,
+    val isSubmitting: Boolean = false,
+    val errorMessage: String? = null,
+    val doneMethodLabel: String = "",
+    val doneAmountCents: Long = 0L,
+    val doneChangeCents: Long = 0L,
+)

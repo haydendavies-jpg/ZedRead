@@ -1,6 +1,7 @@
 package com.zedread.pos.data.repository
 
 import com.zedread.pos.data.api.PosApiService
+import com.zedread.pos.data.api.ProductModifierGroupDto
 import com.zedread.pos.data.local.TokenStore
 import com.zedread.pos.data.local.dao.CategoryDao
 import com.zedread.pos.data.local.dao.ProductDao
@@ -69,5 +70,18 @@ class CatalogRepository @Inject constructor(
     suspend fun clearCache() {
         productDao.clearAll()
         categoryDao.clearAll()
+    }
+
+    /**
+     * Fetch a product's attached modifier groups, fully nested with options —
+     * powers the Register screen's modifier customise sheet. Not cached in
+     * Room like the rest of the catalog; the sheet is opened rarely enough
+     * (only for products with modifiers) that a fresh network read each time
+     * is simpler than adding another cache table.
+     */
+    suspend fun getProductModifiers(productId: String): List<ProductModifierGroupDto> {
+        val token = tokenStore.accessToken.firstOrNull()
+            ?: error("No access token — cannot fetch modifiers")
+        return api.getProductModifiersDetailed("Bearer $token", productId)
     }
 }

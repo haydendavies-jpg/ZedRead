@@ -47,11 +47,13 @@ import coil.compose.AsyncImage
 import com.zedread.pos.data.api.LineItemDto
 import com.zedread.pos.data.local.entity.CategoryEntity
 import com.zedread.pos.data.local.entity.ProductEntity
+import com.zedread.pos.ui.screens.payment.PaymentModal
 import com.zedread.pos.ui.theme.LocalZedReadColors
 import com.zedread.pos.ui.theme.ZedReadColors
 import com.zedread.pos.ui.theme.contrastTextColor
 import com.zedread.pos.ui.theme.parseHexColor
 import com.zedread.pos.ui.viewmodel.CartActionState
+import com.zedread.pos.ui.viewmodel.ModifierSheetState
 import com.zedread.pos.ui.viewmodel.OrderType
 import com.zedread.pos.ui.viewmodel.SellViewModel
 
@@ -62,6 +64,11 @@ import com.zedread.pos.ui.viewmodel.SellViewModel
  * Catalog/Cart screens — the design has no "go to cart" navigation step,
  * the order pane is always visible alongside the grid.
  *
+ * The modifier customise sheet and payment modal are both overlays on this
+ * one screen in the design bundle — not separate nav destinations, see
+ * SellViewModel's class doc — so they're rendered here as siblings over the
+ * base layout, driven by [SellViewModel.modifierSheetState]/[SellViewModel.paymentState].
+ *
  * Switch-operator and cash-up controls have no home in the exact-match
  * design itself — they live in the persistent top nav bar
  * (README-tables-floormap.md), which is out of Phase 1 scope. Kept as
@@ -69,7 +76,6 @@ import com.zedread.pos.ui.viewmodel.SellViewModel
  */
 @Composable
 fun OrderEntryScreen(
-    onProceedToPayment: () -> Unit,
     onSwitchUser: () -> Unit,
     onCashUp: () -> Unit,
     viewModel: SellViewModel = hiltViewModel(),
@@ -83,50 +89,85 @@ fun OrderEntryScreen(
     val ticketNumber by viewModel.ticketNumber.collectAsState()
     val orderType by viewModel.orderType.collectAsState()
     val selectedLineItemId by viewModel.selectedLineItemId.collectAsState()
+    val modifierSheetState by viewModel.modifierSheetState.collectAsState()
+    val paymentState by viewModel.paymentState.collectAsState()
 
-    Column(modifier = Modifier.fillMaxSize().background(colors.bg)) {
-        RegisterHeader(
-            selectedCategoryName = categories.firstOrNull { it.id == selectedCatId }?.name,
-            onSwitchUser = onSwitchUser,
-            onCashUp = onCashUp,
-        )
-
-        Row(modifier = Modifier.fillMaxSize()) {
-            CategoryRail(
-                categories = categories,
-                selectedCatId = selectedCatId,
-                onSelect = viewModel::selectCategory,
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize().background(colors.bg)) {
+            RegisterHeader(
+                selectedCategoryName = categories.firstOrNull { it.id == selectedCatId }?.name,
+                onSwitchUser = onSwitchUser,
+                onCashUp = onCashUp,
             )
 
-            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                ProductGrid(
-                    products = products,
-                    onProductTap = viewModel::addToCart,
+            Row(modifier = Modifier.fillMaxSize()) {
+                CategoryRail(
+                    categories = categories,
+                    selectedCatId = selectedCatId,
+                    onSelect = viewModel::selectCategory,
                 )
-                if (cartActionState is CartActionState.Loading) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+
+                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    ProductGrid(
+                        products = products,
+                        onProductTap = viewModel::addToCart,
+                    )
+                    if (cartActionState is CartActionState.Loading) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
                     }
                 }
-            }
 
-            OrderPane(
-                modifier = Modifier.width(360.dp).fillMaxHeight(),
-                ticketNumber = ticketNumber,
-                orderType = orderType,
-                onSelectOrderType = viewModel::selectOrderType,
-                lineItems = lineItems,
-                products = products,
-                selectedLineItemId = selectedLineItemId,
-                onSelectLine = viewModel::selectLine,
-                onQuantityChange = viewModel::setLineQuantity,
-                subtotalCents = lineItems.sumOf { it.subtotalCents },
-                taxCents = lineItems.sumOf { it.taxCents },
+                OrderPane(
+                    modifier = Modifier.width(360.dp).fillMaxHeight(),
+                    ticketNumber = ticketNumber,
+                    orderType = orderType,
+                    onSelectOrderType = viewModel::selectOrderType,
+                    lineItems = lineItems,
+                    products = products,
+                    selectedLineItemId = selectedLineItemId,
+                    onSelectLine = viewModel::selectLine,
+                    onQuantityChange = viewModel::setLineQuantity,
+                    subtotalCents = viewModel.subtotalCents,
+                    taxCents = viewModel.taxCents,
+                    totalCents = viewModel.totalCents,
+                    onClearOrder = viewModel::clearOrder,
+                    onHold = viewModel::clearOrder,
+                    onPay = viewModel::openPayment,
+                    errorMessage = (cartActionState as? CartActionState.Error)?.message,
+                )
+            }
+        }
+
+        if (modifierSheetState !is ModifierSheetState.Closed) {
+            ModifierSheetOverlay(
+                state = modifierSheetState,
+                onDismiss = viewModel::closeModifierSheet,
+                onToggleChoice = viewModel::toggleModifierChoice,
+                onQtyDec = { viewModel.changeModifierSheetQuantity(-1) },
+                onQtyInc = { viewModel.changeModifierSheetQuantity(1) },
+                onConfirm = viewModel::confirmModifierSheet,
+                totalPriceCents = viewModel::modifierSheetTotalCents,
+            )
+        }
+
+        val currentPaymentState = paymentState
+        if (currentPaymentState != null) {
+            PaymentModal(
+                state = currentPaymentState,
                 totalCents = viewModel.totalCents,
-                onClearOrder = viewModel::clearOrder,
-                onHold = viewModel::clearOrder,
-                onPay = onProceedToPayment,
-                errorMessage = (cartActionState as? CartActionState.Error)?.message,
+                remainingCents = viewModel.remainingCents(currentPaymentState),
+                onClose = viewModel::closePayment,
+                onSelectMethod = viewModel::selectPaymentMethod,
+                onToggleSplit = viewModel::toggleSplitMode,
+                onSplitAmountChange = viewModel::setSplitAmountCents,
+                onPickTender = viewModel::pickTender,
+                onVoucherReferenceChange = viewModel::setVoucherReference,
+                onConfirmCard = viewModel::confirmCardPayment,
+                onConfirmCash = viewModel::confirmCashPayment,
+                onConfirmVoucher = viewModel::confirmVoucherPayment,
+                onNewOrder = viewModel::completePaymentAndStartNewOrder,
             )
         }
     }
@@ -460,6 +501,10 @@ private fun OrderLineRow(
     onQuantityChange: (Int) -> Unit,
 ) {
     val colors = LocalZedReadColors.current
+    // Modifiers apply as a flat addition to the whole line, not scaled by
+    // quantity — matches the backend's own invoice.subtotal_cents rollup,
+    // see SellViewModel.modifierTotalCents()'s doc for why.
+    val modifierTotalCents = item.modifiers.sumOf { it.priceDeltaCents }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -478,6 +523,13 @@ private fun OrderLineRow(
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(item.productName, color = colors.text, style = MaterialTheme.typography.bodyMedium)
+            item.modifiers.forEach { mod ->
+                Text(
+                    "· ${mod.modifierName}" + if (mod.priceDeltaCents > 0) " +${formatCents(mod.priceDeltaCents)}" else "",
+                    color = colors.muted,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
             Text(
                 "${formatCents(item.unitPriceCents)} ea",
                 color = colors.faint,
@@ -487,7 +539,7 @@ private fun OrderLineRow(
         QtyStepper(quantity = item.quantity, onChange = onQuantityChange)
         Spacer(Modifier.width(10.dp))
         Text(
-            formatCents(item.subtotalCents + item.taxCents),
+            formatCents(item.subtotalCents + item.taxCents + modifierTotalCents),
             color = colors.text,
             fontWeight = FontWeight.SemiBold,
             style = MaterialTheme.typography.bodyMedium,

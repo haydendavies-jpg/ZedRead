@@ -19,16 +19,18 @@ from datetime import datetime, timezone
 
 import structlog
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
     INVOICE_CREATED,
     INVOICE_DISCOUNT_APPLIED,
     INVOICE_LINE_ITEM_ADDED,
+    INVOICE_LINE_ITEM_MODIFIER_ADDED,
     INVOICE_LINE_ITEM_QUANTITY_UPDATED,
     INVOICE_LINE_ITEM_REMOVED,
     INVOICE_PAID,
+    INVOICE_PAYMENT_RECORDED,
     INVOICE_REFUNDED,
     INVOICE_VOIDED,
 )
@@ -107,6 +109,20 @@ class LineModifierResponse(BaseModel):
     price_delta_cents: int
 
     model_config = {"from_attributes": True}
+
+
+class LineItemDetailResponse(LineItemResponse):
+    """
+    A line item plus its currently attached modifiers.
+
+    Used to refresh a line's display state after attaching one or more
+    modifiers via add_line_modifier() — that route returns only the created
+    LineModifierResponse row, not the parent line, so a caller building a
+    full order-line display (item + its modifier sub-lines) needs this to
+    fetch the accumulated set.
+    """
+
+    modifiers: list[LineModifierResponse]
 
 
 class AddLineItemRequest(BaseModel):
@@ -680,10 +696,68 @@ async def add_line_modifier(
     # Recompute invoice totals (modifier price_delta affects total)
     await _recompute_invoice_totals(db, invoice)
 
+    await log_action(
+        db=db,
+        action=INVOICE_LINE_ITEM_MODIFIER_ADDED,
+        entity_type="invoice_line_item",
+        entity_id=str(line_item_id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        after_state={
+            "modifier_option_id": str(option.id),
+            "modifier_name": option.name,
+            "price_delta_cents": option.price_delta_cents,
+        },
+    )
+
     await db.commit()
     await db.refresh(modifier)
     log.info("invoice.modifier.added", modifier_id=str(modifier.id))
     return modifier
+
+
+async def get_line_item_detail(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    invoice_id: uuid.UUID,
+    line_item_id: uuid.UUID,
+) -> LineItemDetailResponse:
+    """
+    Fetch a single line item with its currently attached modifiers.
+
+    Used by the POS Register screen to refresh a line's display state (its
+    "· modifier" sub-lines and modifier-inclusive total) right after
+    attaching one or more modifiers via add_line_modifier(), which itself
+    only returns the created modifier row.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope for the invoice lookup.
+        invoice_id: Parent invoice.
+        line_item_id: Line item to fetch.
+
+    Returns:
+        LineItemDetailResponse: The line item plus its attached modifiers.
+
+    Raises:
+        HTTPException: 404 if the invoice or line item is not found.
+    """
+    await _get_invoice_or_404(db, brand_id, invoice_id)
+    line = await _get_line_item_or_404(db, invoice_id, line_item_id)
+
+    mods_result = await db.execute(
+        select(InvoiceLineModifier)
+        .where(InvoiceLineModifier.line_item_id == line.id)
+        .order_by(InvoiceLineModifier.created_at)
+    )
+    modifiers = list(mods_result.scalars().all())
+
+    return LineItemDetailResponse(
+        **LineItemResponse.model_validate(line).model_dump(),
+        modifiers=[LineModifierResponse.model_validate(m) for m in modifiers],
+    )
 
 
 async def apply_discount(
@@ -752,8 +826,12 @@ async def pay_invoice(
     """
     Record a payment against an invoice.
 
-    The invoice is marked PAID once a payment is recorded.
-    Split payments are supported — call this endpoint multiple times.
+    The invoice is marked PAID once the sum of all its payments (this one
+    included) covers total_cents — matching the Payment model's own
+    documented contract. A payment smaller than the remaining balance
+    records the leg and leaves the invoice OPEN so a caller can submit
+    further legs of a split payment; the invoice status in the response
+    tells the caller whether the balance is now fully covered.
 
     Args:
         db: Active database session.
@@ -763,7 +841,8 @@ async def pay_invoice(
         actor: The authenticated POS user.
 
     Returns:
-        Invoice: The updated invoice with status=paid.
+        Invoice: The updated invoice — status is only "paid" once the sum of
+            all payments covers total_cents.
 
     Raises:
         HTTPException: 404 if invoice not found.
@@ -793,13 +872,27 @@ async def pay_invoice(
         paid_at=now,
     )
     db.add(payment)
+    await db.flush()
 
-    invoice.status = InvoiceStatus.PAID.value
-    invoice.paid_at = now
+    # Sum every payment recorded against this invoice so far (this one
+    # included) — a split payment is only "paid" once the cumulative total
+    # covers the invoice, not on the first leg regardless of amount.
+    paid_result = await db.execute(
+        select(func.sum(Payment.amount_cents)).where(Payment.invoice_id == invoice.id)
+    )
+    # SUM() over a BigInteger column types as Numeric, so asyncpg returns a
+    # Decimal here — cast to int (money is always cents, never fractional)
+    # so it JSON-serializes cleanly into the audit log's after_state.
+    total_paid_cents = int(paid_result.scalar_one() or 0)
+    fully_paid = total_paid_cents >= invoice.total_cents
+
+    if fully_paid:
+        invoice.status = InvoiceStatus.PAID.value
+        invoice.paid_at = now
 
     await log_action(
         db=db,
-        action=INVOICE_PAID,
+        action=INVOICE_PAID if fully_paid else INVOICE_PAYMENT_RECORDED,
         entity_type="invoice",
         entity_id=str(invoice.id),
         actor_type=ActorType.USER,
@@ -809,13 +902,20 @@ async def pay_invoice(
         after_state={
             "method": payload.method,
             "amount_cents": payload.amount_cents,
+            "total_paid_cents": total_paid_cents,
             "total_cents": invoice.total_cents,
+            "fully_paid": fully_paid,
         },
     )
 
     await db.commit()
     await db.refresh(invoice)
-    log.info("invoice.paid", invoice_id=str(invoice.id), amount_cents=payload.amount_cents)
+    log.info(
+        "invoice.paid" if fully_paid else "invoice.payment_leg_recorded",
+        invoice_id=str(invoice.id),
+        amount_cents=payload.amount_cents,
+        fully_paid=fully_paid,
+    )
     return invoice
 
 

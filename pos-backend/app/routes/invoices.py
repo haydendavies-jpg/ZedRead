@@ -11,6 +11,7 @@ from app.services.invoice_service import (
     AddModifierRequest,
     ApplyDiscountRequest,
     InvoiceResponse,
+    LineItemDetailResponse,
     LineItemResponse,
     LineModifierResponse,
     PayInvoiceRequest,
@@ -21,6 +22,7 @@ from app.services.invoice_service import (
     apply_discount,
     create_invoice,
     create_refund,
+    get_line_item_detail,
     list_invoices,
     pay_invoice,
     remove_line_item,
@@ -136,6 +138,38 @@ async def add_invoice_line_item(
     """
     line = await add_line_item(db, access.user.brand_id, invoice_id, payload, access.user)
     return LineItemResponse.model_validate(line)
+
+
+@router.get(
+    "/{invoice_id}/line-items/{line_item_id}",
+    response_model=LineItemDetailResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_invoice_line_item(
+    invoice_id: uuid.UUID,
+    line_item_id: uuid.UUID,
+    access: POSAccess = Depends(resolve_access),
+    db: AsyncSession = Depends(get_db),
+) -> LineItemDetailResponse:
+    """
+    Fetch a single line item with its currently attached modifiers.
+
+    The Register screen's modifier customise sheet calls this after
+    attaching one or more modifiers to a freshly-added line, to refresh the
+    order pane's display (modifier sub-lines and modifier-inclusive total) —
+    POST .../modifiers itself only returns the created modifier row, not the
+    parent line.
+
+    Args:
+        invoice_id: UUID of the parent invoice.
+        line_item_id: UUID of the line item to fetch.
+        access: Resolved POS access.
+        db: Active database session.
+
+    Returns:
+        LineItemDetailResponse: The line item plus its attached modifiers.
+    """
+    return await get_line_item_detail(db, access.user.brand_id, invoice_id, line_item_id)
 
 
 @router.patch(

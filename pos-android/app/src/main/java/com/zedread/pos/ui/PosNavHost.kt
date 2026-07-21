@@ -6,27 +6,22 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import com.zedread.pos.ui.screens.auth.LoginScreen
 import com.zedread.pos.ui.screens.auth.PinSetScreen
 import com.zedread.pos.ui.screens.auth.SiteSelectorScreen
 import com.zedread.pos.ui.screens.orderentry.OrderEntryScreen
-import com.zedread.pos.ui.screens.payment.PaymentScreen
 import com.zedread.pos.ui.screens.register.CashInScreen
 import com.zedread.pos.ui.screens.register.CashUpScreen
 import com.zedread.pos.ui.screens.register.RegisterGateScreen
 import com.zedread.pos.ui.screens.switchuser.SwitchUserScreen
 import com.zedread.pos.ui.viewmodel.AppEntryViewModel
-import com.zedread.pos.ui.viewmodel.SellViewModel
 import com.zedread.pos.ui.viewmodel.StartDestination
 
 /**
@@ -88,7 +83,7 @@ fun PosNavHost() {
                     }
                 },
                 onOpen = {
-                    navController.navigate(Screen.SellGraph.route) {
+                    navController.navigate(Screen.OrderEntry.route) {
                         popUpTo(Screen.RegisterGate.route) { inclusive = true }
                     }
                 },
@@ -103,7 +98,7 @@ fun PosNavHost() {
         composable(Screen.CashIn.route) {
             CashInScreen(
                 onOpened = {
-                    navController.navigate(Screen.SellGraph.route) {
+                    navController.navigate(Screen.OrderEntry.route) {
                         popUpTo(Screen.CashIn.route) { inclusive = true }
                     }
                 },
@@ -122,39 +117,22 @@ fun PosNavHost() {
             )
         }
 
-        // ── Sell sub-graph: Register (order entry) → Payment share one SellViewModel ────
+        // ── Register (order entry) ──────────────────────────────────────────
         //
-        // There is no backend endpoint to reconstruct a draft invoice's line
-        // items, so the cart has to live in a ViewModel that survives
-        // navigating between these screens rather than a fresh instance per
-        // screen. Re-entering this route (popUpTo inclusive after payment)
-        // discards the graph's back stack entry and its ViewModelStore,
-        // which is what resets the cart for the next sale. The design bundle
-        // has no separate cart screen — the order pane lives alongside the
-        // product grid on one Register screen — so there's only one entry
-        // screen here now, not the earlier Catalog→Cart pair.
-        navigation(startDestination = Screen.OrderEntry.route, route = Screen.SellGraph.route) {
-            composable(Screen.OrderEntry.route) { backStackEntry ->
-                val sellViewModel = sellViewModel(navController, backStackEntry)
-                OrderEntryScreen(
-                    viewModel = sellViewModel,
-                    onProceedToPayment = { navController.navigate(Screen.Payment.route) },
-                    onSwitchUser = { navController.navigate(Screen.SwitchUser.route) },
-                    onCashUp = { navController.navigate(Screen.CashUp.route) },
-                )
-            }
-
-            composable(Screen.Payment.route) { backStackEntry ->
-                val sellViewModel = sellViewModel(navController, backStackEntry)
-                PaymentScreen(
-                    viewModel = sellViewModel,
-                    onPaymentComplete = { _ ->
-                        navController.navigate(Screen.SellGraph.route) {
-                            popUpTo(Screen.SellGraph.route) { inclusive = true }
-                        }
-                    },
-                )
-            }
+        // The modifier customise sheet and payment modal are both overlays on
+        // this one screen in the design bundle (see SellViewModel's class
+        // doc), not separate nav destinations — a fresh SellViewModel comes
+        // for free from the default hiltViewModel() scoping to this single
+        // back stack entry, and "New order" resets it in place
+        // (SellViewModel.completePaymentAndStartNewOrder()) rather than via a
+        // navigate-and-pop trick. The design bundle has no separate cart
+        // screen either — the order pane lives alongside the product grid on
+        // one Register screen — so there's only one entry point here.
+        composable(Screen.OrderEntry.route) {
+            OrderEntryScreen(
+                onSwitchUser = { navController.navigate(Screen.SwitchUser.route) },
+                onCashUp = { navController.navigate(Screen.CashUp.route) },
+            )
         }
 
         composable(Screen.SwitchUser.route) {
@@ -174,16 +152,6 @@ fun PosNavHost() {
     }
 }
 
-/** Resolves the SellViewModel shared by every screen in the "sell" sub-graph. */
-@Composable
-private fun sellViewModel(
-    navController: NavHostController,
-    backStackEntry: NavBackStackEntry,
-): SellViewModel {
-    val graphEntry = remember(backStackEntry) { navController.getBackStackEntry(Screen.SellGraph.route) }
-    return hiltViewModel(graphEntry)
-}
-
 /** After login/site-select: PIN set if the backend flagged is_pin_reset_required, else the register gate. */
 private fun navigateAfterAuth(navController: NavHostController, needsPinSetup: Boolean) {
     val target = if (needsPinSetup) Screen.PinSet.route else Screen.RegisterGate.route
@@ -200,8 +168,6 @@ sealed class Screen(val route: String) {
     object RegisterGate : Screen("register_gate")
     object CashIn : Screen("cash_in")
     object CashUp : Screen("cash_up")
-    object SellGraph : Screen("sell")
     object OrderEntry : Screen("order_entry")
-    object Payment : Screen("payment")
     object SwitchUser : Screen("switch_user")
 }

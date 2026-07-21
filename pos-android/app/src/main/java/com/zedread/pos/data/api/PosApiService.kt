@@ -86,6 +86,13 @@ interface PosApiService {
         @Query("site_id") siteId: String,
     ): List<CategoryDto>
 
+    /** GET /products/{id}/modifiers/detailed — a product's attached modifier groups, fully nested. */
+    @GET("products/{id}/modifiers/detailed")
+    suspend fun getProductModifiersDetailed(
+        @Header("Authorization") bearer: String,
+        @Path("id") productId: String,
+    ): List<ProductModifierGroupDto>
+
     // ── Invoices ─────────────────────────────────────────────────────────────
 
     /** POST /invoices — open a new draft invoice. No body: site/brand/register-session resolve from the token. */
@@ -110,6 +117,23 @@ interface PosApiService {
         @Path("lineItemId") lineItemId: String,
         @Body body: UpdateLineItemQuantityRequest,
     ): LineItemDto
+
+    /** GET /invoices/{id}/line-items/{lineItemId} — a line item with its attached modifiers. */
+    @GET("invoices/{id}/line-items/{lineItemId}")
+    suspend fun getLineItem(
+        @Header("Authorization") bearer: String,
+        @Path("id") invoiceId: String,
+        @Path("lineItemId") lineItemId: String,
+    ): LineItemDto
+
+    /** POST /invoices/{id}/line-items/{lineItemId}/modifiers — attach a modifier option to a line. */
+    @POST("invoices/{id}/line-items/{lineItemId}/modifiers")
+    suspend fun addLineItemModifier(
+        @Header("Authorization") bearer: String,
+        @Path("id") invoiceId: String,
+        @Path("lineItemId") lineItemId: String,
+        @Body body: AddModifierRequest,
+    ): LineModifierDto
 
     /** DELETE /invoices/{id}/line-items/{lineItemId} — remove a line from the order. */
     @DELETE("invoices/{id}/line-items/{lineItemId}")
