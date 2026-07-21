@@ -236,11 +236,14 @@ async def accept_invite(
             detail="Invite has expired",
         )
 
-    # Prevent duplicate users if someone calls accept twice in a race
+    # Prevent duplicate users if someone calls accept twice in a race.
+    # .scalars().first() rather than .scalar_one_or_none() - users.email is
+    # intentionally non-unique, so this is an existence check, not a lookup
+    # of one specific row.
     existing_user_result = await db.execute(
         select(User).where(User.email == invite.email)
     )
-    if existing_user_result.scalar_one_or_none() is not None:
+    if existing_user_result.scalars().first() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A POS user with this email already exists",

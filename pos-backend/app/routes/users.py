@@ -655,11 +655,14 @@ async def update_user(
     if body.email is not None:
         # Emails are case-insensitive for login — normalize before storing/comparing.
         new_email = normalize_email(body.email)
-        # Check for email conflict with another user
+        # Check for email conflict with another user. .scalars().first()
+        # rather than .scalar_one_or_none() - users.email is non-unique
+        # elsewhere by design, so more than one other row can already share
+        # the target email; this only needs to know whether any do.
         dup = await db.execute(
             select(User).where(func.lower(User.email) == new_email, User.id != user.id)
         )
-        if dup.scalar_one_or_none():
+        if dup.scalars().first():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
         user.email = new_email
 
