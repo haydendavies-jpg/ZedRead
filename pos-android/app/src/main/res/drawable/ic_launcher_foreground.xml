@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Placeholder monogram - a bold "Z" kept within the adaptive icon safe zone
+     (inner ~66dp of the 108dp canvas). Revisit with real brand artwork when
+     the design-bundle-exact visual pass happens. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="@color/ic_launcher_foreground"
+        android:pathData="M28,26 L80,26 L80,36 L46,76 L80,76 L80,86 L28,86 L28,76 L62,36 L28,36 Z" />
+</vector>

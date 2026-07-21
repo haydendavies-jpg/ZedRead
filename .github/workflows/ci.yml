@@ -90,3 +90,48 @@ jobs:
 
       - name: Type-check and build
         run: npm run build
+
+  # ── Android: debug APK build ─────────────────────────────────────────────────
+  #
+  # No gradlew is checked in yet (nothing in this repo has generated one —
+  # see ANDROID_POS_BUILD_PLAN.md), so gradle/actions/setup-gradle provisions
+  # Gradle itself, pinned to the version gradle-wrapper.properties targets,
+  # rather than falling back to whatever system `gradle` a runner image
+  # happens to ship (that drifts over time — a bare `gradle` call here
+  # first failed against a runner on Gradle 9.6.1, well past what AGP 8.7.3
+  # supports). Once gradlew is committed this job should switch to it, at
+  # which point setup-gradle auto-detects the wrapper's version instead.
+  android:
+    name: Android build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: pos-android
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build debug APK
+        run: gradle assembleDebug --console=plain
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: zedread-pos-debug-apk
+          path: pos-android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

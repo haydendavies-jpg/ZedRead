@@ -34,24 +34,26 @@ import com.zedread.pos.ui.viewmodel.SwitchUserState
 import com.zedread.pos.ui.viewmodel.SwitchUserViewModel
 
 /**
- * Allows a different operator to take over the POS terminal without logging the
- * device out. The new cashier verifies their PIN; the site JWT is unchanged.
+ * Doubles as ZedRead POS's "PIN entry" screen: lets a different operator take
+ * over this terminal (POST /auth/pos/pin/verify), or the current operator
+ * re-confirm their own identity, without a full email+password login.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SwitchUserScreen(
-    onSwitched: () -> Unit,
+    onSwitched: (needsPinSetup: Boolean) -> Unit,
     onCancel: () -> Unit,
     viewModel: SwitchUserViewModel = hiltViewModel(),
 ) {
     val state by viewModel.switchState.collectAsState()
+    val currentUserName by viewModel.currentUserName.collectAsState()
+    var email by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
 
     LaunchedEffect(state) {
-        if (state is SwitchUserState.Switched) {
-            viewModel.resetSwitchState()
-            onSwitched()
-        }
+        val switched = state as? SwitchUserState.Switched ?: return@LaunchedEffect
+        viewModel.resetSwitchState()
+        onSwitched(switched.needsPinSetup)
     }
 
     Scaffold(
@@ -70,8 +72,28 @@ fun SwitchUserScreen(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("Enter your PIN to start", style = MaterialTheme.typography.bodyLarge)
+            if (currentUserName != null) {
+                Text(
+                    "Currently signed in: $currentUserName",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(16.dp))
+            }
+
+            Text("Enter your email and PIN to start", style = MaterialTheme.typography.bodyLarge)
             Spacer(Modifier.height(24.dp))
+
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("Email") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(16.dp))
 
             OutlinedTextField(
                 value = pin,
@@ -86,8 +108,7 @@ fun SwitchUserScreen(
             Spacer(Modifier.height(8.dp))
 
             when (state) {
-                is SwitchUserState.InvalidPin -> Text("Incorrect PIN", color = MaterialTheme.colorScheme.error)
-                is SwitchUserState.MustResetPin -> Text("PIN reset required — please log in again", color = MaterialTheme.colorScheme.error)
+                is SwitchUserState.InvalidPin -> Text("Incorrect email or PIN", color = MaterialTheme.colorScheme.error)
                 is SwitchUserState.Error -> Text((state as SwitchUserState.Error).message, color = MaterialTheme.colorScheme.error)
                 else -> Unit
             }
@@ -95,8 +116,8 @@ fun SwitchUserScreen(
             Spacer(Modifier.height(24.dp))
 
             Button(
-                onClick = { viewModel.switchOperator(pin) },
-                enabled = pin.isNotBlank() && state !is SwitchUserState.Loading,
+                onClick = { viewModel.switchOperator(email.trim(), pin) },
+                enabled = email.isNotBlank() && pin.isNotBlank() && state !is SwitchUserState.Loading,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (state is SwitchUserState.Loading) CircularProgressIndicator(modifier = Modifier.height(20.dp))

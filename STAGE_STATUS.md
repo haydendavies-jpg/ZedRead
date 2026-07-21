@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-17 (Menu Studio — grid coordinate correctness fix + tab delete)
+Last updated: 2026-07-21 (Android auth/register-session slice — see ANDROID_POS_BUILD_PLAN.md)
 
 ---
 
@@ -17,7 +17,7 @@ Last updated: 2026-07-17 (Menu Studio — grid coordinate correctness fix + tab 
 | 7 — Invoices & Extended Catalog | 21–22 | ✅ Complete |
 | 8 — POS Menu Builder | 23 | ✅ Complete |
 | 9 — Product Model Extensions | 24 | ✅ Complete |
-| 10 — Android App | 25–26 | 🚧 In Progress (scaffolding only) |
+| 10 — Android App | 25–26 | 🚧 In Progress — see `ANDROID_POS_BUILD_PLAN.md` |
 
 Stage numbers 13–14 are retired — the Android phase is renumbered to 25–26 to make room for
 Stages 16–24, which were planned after Android scaffolding had already begun.
