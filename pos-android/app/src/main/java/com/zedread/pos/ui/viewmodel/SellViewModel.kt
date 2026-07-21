@@ -87,7 +87,7 @@ class SellViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 val invoiceId = currentInvoiceId
-                    ?: invoiceRepo.createInvoice().id.also { currentInvoiceId = it }
+                    ?: invoiceRepo.createInvoice().id.also { currentInvoiceId = it; issueTicketNumber() }
                 invoiceRepo.addLineItem(invoiceId, productId, quantity = 1)
             }
                 .onSuccess { item ->
@@ -98,7 +98,79 @@ class SellViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Change a line's quantity via the Register screen's qty stepper.
+     * Dropping to 0 removes the line entirely, same as tapping remove.
+     */
+    fun setLineQuantity(lineItemId: String, quantity: Int) {
+        if (quantity < 1) { removeLine(lineItemId); return }
+        val invoiceId = currentInvoiceId ?: return
+        _cartActionState.value = CartActionState.Loading
+        viewModelScope.launch {
+            runCatching { invoiceRepo.updateLineItemQuantity(invoiceId, lineItemId, quantity) }
+                .onSuccess { updated ->
+                    _lineItems.value = _lineItems.value.map { if (it.id == lineItemId) updated else it }
+                    _cartActionState.value = CartActionState.Idle
+                }
+                .onFailure { e -> _cartActionState.value = CartActionState.Error(e.message ?: "Failed to update quantity") }
+        }
+    }
+
+    /** Remove a line from the order. */
+    fun removeLine(lineItemId: String) {
+        val invoiceId = currentInvoiceId ?: return
+        _cartActionState.value = CartActionState.Loading
+        viewModelScope.launch {
+            runCatching { invoiceRepo.removeLineItem(invoiceId, lineItemId) }
+                .onSuccess {
+                    _lineItems.value = _lineItems.value.filterNot { it.id == lineItemId }
+                    if (_selectedLineItemId.value == lineItemId) _selectedLineItemId.value = null
+                    _cartActionState.value = CartActionState.Idle
+                }
+                .onFailure { e -> _cartActionState.value = CartActionState.Error(e.message ?: "Failed to remove item") }
+        }
+    }
+
     fun resetCartActionState() { _cartActionState.value = CartActionState.Idle }
+
+    // ── Order pane presentation state (Register screen) ────────────────────
+    //
+    // Ticket number and order type are visual/interaction fidelity for the
+    // design bundle's order pane — neither is backed by an Invoice field
+    // today (no invoice_type/ticket_number column), so they're kept as local
+    // UI state only. The ticket number resets with every new SellViewModel
+    // instance (a fresh sale), not persisted across app restarts.
+
+    private var ticketSeq = 0
+    private val _ticketNumber = MutableStateFlow<Int?>(null)
+    val ticketNumber: StateFlow<Int?> = _ticketNumber.asStateFlow()
+    private fun issueTicketNumber() { _ticketNumber.value = ++ticketSeq }
+
+    private val _orderType = MutableStateFlow(OrderType.DINE_IN)
+    val orderType: StateFlow<OrderType> = _orderType.asStateFlow()
+    fun selectOrderType(type: OrderType) { _orderType.value = type }
+
+    private val _selectedLineItemId = MutableStateFlow<String?>(null)
+    val selectedLineItemId: StateFlow<String?> = _selectedLineItemId.asStateFlow()
+    fun selectLine(lineItemId: String) {
+        _selectedLineItemId.value = if (_selectedLineItemId.value == lineItemId) null else lineItemId
+    }
+
+    /**
+     * Clears the order pane back to empty — the design bundle's "clear order"
+     * ✕ and Hold action. The invoice itself (if any items were added) is
+     * NOT voided or deleted here; it's simply left open/uncollected on the
+     * backend. There's no "recall a held order" list yet to bring it back —
+     * that's a real gap Hold leaves open, flagged rather than silently
+     * dropped.
+     */
+    fun clearOrder() {
+        currentInvoiceId = null
+        _lineItems.value = emptyList()
+        _ticketNumber.value = null
+        _selectedLineItemId.value = null
+        paidCents = 0L
+    }
 
     // ── Payment ──────────────────────────────────────────────────────────────
 
@@ -136,6 +208,12 @@ class SellViewModel @Inject constructor(
     }
 
     fun resetPaymentError() { if (_paymentState.value is PaymentFlowState.Error) _paymentState.value = PaymentFlowState.Idle }
+}
+
+/** Order pane segmented control — visual/local only, see the ticket/order-type note above. */
+enum class OrderType(val label: String) {
+    DINE_IN("Dine-in"),
+    TAKEAWAY("Takeaway"),
 }
 
 sealed class CartActionState {

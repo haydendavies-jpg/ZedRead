@@ -10,7 +10,7 @@ import com.zedread.pos.data.local.entity.ProductEntity
 /** Room database — caches catalog data for offline display. */
 @Database(
     entities = [ProductEntity::class, CategoryEntity::class],
-    version = 1,
+    version = 2, // + category_color/modifier_names, default_color — see DatabaseModule's fallbackToDestructiveMigration
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

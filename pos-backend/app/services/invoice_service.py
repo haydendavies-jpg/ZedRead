@@ -19,13 +19,15 @@ from datetime import datetime, timezone
 
 import structlog
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.audit_actions import (
     INVOICE_CREATED,
     INVOICE_DISCOUNT_APPLIED,
     INVOICE_LINE_ITEM_ADDED,
+    INVOICE_LINE_ITEM_QUANTITY_UPDATED,
+    INVOICE_LINE_ITEM_REMOVED,
     INVOICE_PAID,
     INVOICE_REFUNDED,
     INVOICE_VOIDED,
@@ -120,6 +122,12 @@ class AddModifierRequest(BaseModel):
     """Payload for adding a modifier to a line item."""
 
     modifier_option_id: uuid.UUID
+
+
+class UpdateLineItemQuantityRequest(BaseModel):
+    """Payload for changing a line item's quantity."""
+
+    quantity: int = Field(..., ge=1)
 
 
 class ApplyDiscountRequest(BaseModel):
@@ -419,6 +427,186 @@ async def add_line_item(
     await db.refresh(line)
     log.info("invoice.line_item.added", line_id=str(line.id), invoice_id=str(invoice.id))
     return line
+
+
+async def _get_line_item_or_404(
+    db: AsyncSession, invoice_id: uuid.UUID, line_item_id: uuid.UUID
+) -> InvoiceLineItem:
+    """Fetch a line item scoped to its parent invoice, or raise 404."""
+    result = await db.execute(
+        select(InvoiceLineItem).where(
+            InvoiceLineItem.id == line_item_id,
+            InvoiceLineItem.invoice_id == invoice_id,
+        )
+    )
+    line = result.scalar_one_or_none()
+    if line is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Line item not found")
+    return line
+
+
+async def _rebuild_tax_breakdown(db: AsyncSession, invoice: Invoice) -> None:
+    """
+    Rebuild invoice_tax_breakdowns from the invoice's current line items.
+
+    add_line_item() inserts one breakdown row per taxable line at creation
+    time; there is no FK from a breakdown row back to its line item, so a
+    quantity change or removal can't surgically patch the matching row.
+    Delete-and-reinsert keeps the same one-row-per-taxable-line shape
+    add_line_item() already produces, just recomputed from the current set
+    of lines instead of appended to incrementally.
+    """
+    await db.execute(delete(InvoiceTaxBreakdown).where(InvoiceTaxBreakdown.invoice_id == invoice.id))
+    items_result = await db.execute(
+        select(InvoiceLineItem).where(InvoiceLineItem.invoice_id == invoice.id)
+    )
+    for item in items_result.scalars().all():
+        if item.tax_cents <= 0 or item.quantity <= 0:
+            continue
+        # taxable_amount_cents = exclusive base = subtotal - tax, for inclusive
+        # lines; for exclusive lines tax_cents is 0 so this branch is unreached.
+        db.add(
+            InvoiceTaxBreakdown(
+                id=uuid.uuid4(),
+                invoice_id=invoice.id,
+                tax_rate_id=None,
+                tax_rate_name="Tax",
+                rate_percent=item.tax_rate_percent,
+                tax_model=item.tax_model,
+                taxable_amount_cents=item.subtotal_cents - item.tax_cents,
+                tax_amount_cents=item.tax_cents,
+            )
+        )
+    await db.flush()
+
+
+async def update_line_item_quantity(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    invoice_id: uuid.UUID,
+    line_item_id: uuid.UUID,
+    payload: UpdateLineItemQuantityRequest,
+    actor: User,
+) -> InvoiceLineItem:
+    """
+    Change a line item's quantity, rescaling its already-snapshotted per-unit price/tax.
+
+    Never re-fetches the product — per the snapshot rule, unit_price_cents and
+    tax_rate_percent/tax_model stay fixed at whatever they were when the line
+    was added; only the quantity-derived totals (subtotal_cents, tax_cents,
+    line_total_cents) change.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope for the invoice lookup.
+        invoice_id: Parent invoice.
+        line_item_id: Line item to update.
+        payload: The new quantity.
+        actor: The authenticated POS user.
+
+    Returns:
+        InvoiceLineItem: The updated line item.
+
+    Raises:
+        HTTPException: 404 if invoice or line item not found.
+        HTTPException: 409 if the invoice is not in an editable state.
+    """
+    invoice = await _get_invoice_or_404(db, brand_id, invoice_id)
+
+    if invoice.status not in (InvoiceStatus.DRAFT.value, InvoiceStatus.OPEN.value):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot modify line items on a paid or voided invoice",
+        )
+
+    line = await _get_line_item_or_404(db, invoice_id, line_item_id)
+
+    # Per-unit tax is constant across quantity changes — tax_cents was
+    # computed as (per-unit tax) × (original quantity) at creation, so this
+    # division is exact.
+    per_unit_tax_cents = line.tax_cents // line.quantity if line.quantity else 0
+    before_quantity = line.quantity
+
+    line.quantity = payload.quantity
+    line.subtotal_cents = line.unit_price_cents * payload.quantity
+    line.tax_cents = per_unit_tax_cents * payload.quantity
+    line.line_total_cents = line.subtotal_cents  # tax is embedded for both models, per add_line_item
+
+    await db.flush()
+    await _rebuild_tax_breakdown(db, invoice)
+    await _recompute_invoice_totals(db, invoice)
+
+    await log_action(
+        db=db,
+        action=INVOICE_LINE_ITEM_QUANTITY_UPDATED,
+        entity_type="invoice_line_item",
+        entity_id=str(line.id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"quantity": before_quantity},
+        after_state={"quantity": payload.quantity},
+    )
+
+    await db.commit()
+    await db.refresh(line)
+    log.info("invoice.line_item.quantity_updated", line_id=str(line.id), quantity=payload.quantity)
+    return line
+
+
+async def remove_line_item(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    invoice_id: uuid.UUID,
+    line_item_id: uuid.UUID,
+    actor: User,
+) -> None:
+    """
+    Remove a line item from an invoice and recompute totals.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope for the invoice lookup.
+        invoice_id: Parent invoice.
+        line_item_id: Line item to remove.
+        actor: The authenticated POS user.
+
+    Raises:
+        HTTPException: 404 if invoice or line item not found.
+        HTTPException: 409 if the invoice is not in an editable state.
+    """
+    invoice = await _get_invoice_or_404(db, brand_id, invoice_id)
+
+    if invoice.status not in (InvoiceStatus.DRAFT.value, InvoiceStatus.OPEN.value):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot modify line items on a paid or voided invoice",
+        )
+
+    line = await _get_line_item_or_404(db, invoice_id, line_item_id)
+    removed_state = {"product_name": line.product_name, "quantity": line.quantity}
+
+    # Modifiers cascade via invoice_line_modifiers.line_item_id ON DELETE CASCADE.
+    await db.delete(line)
+    await db.flush()
+    await _rebuild_tax_breakdown(db, invoice)
+    await _recompute_invoice_totals(db, invoice)
+
+    await log_action(
+        db=db,
+        action=INVOICE_LINE_ITEM_REMOVED,
+        entity_type="invoice_line_item",
+        entity_id=str(line_item_id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state=removed_state,
+    )
+
+    await db.commit()
+    log.info("invoice.line_item.removed", line_id=str(line_item_id), invoice_id=str(invoice_id))
 
 
 async def add_line_modifier(

@@ -2,8 +2,10 @@ package com.zedread.pos.data.api
 
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -99,6 +101,23 @@ interface PosApiService {
         @Path("id") invoiceId: String,
         @Body body: AddLineItemRequest,
     ): LineItemDto
+
+    /** PATCH /invoices/{id}/line-items/{lineItemId} — the Register screen's qty stepper. */
+    @PATCH("invoices/{id}/line-items/{lineItemId}")
+    suspend fun updateLineItemQuantity(
+        @Header("Authorization") bearer: String,
+        @Path("id") invoiceId: String,
+        @Path("lineItemId") lineItemId: String,
+        @Body body: UpdateLineItemQuantityRequest,
+    ): LineItemDto
+
+    /** DELETE /invoices/{id}/line-items/{lineItemId} — remove a line from the order. */
+    @DELETE("invoices/{id}/line-items/{lineItemId}")
+    suspend fun removeLineItem(
+        @Header("Authorization") bearer: String,
+        @Path("id") invoiceId: String,
+        @Path("lineItemId") lineItemId: String,
+    ): Response<Unit>
 
     /** POST /invoices/{id}/pay — record a payment against the invoice. */
     @POST("invoices/{id}/pay")

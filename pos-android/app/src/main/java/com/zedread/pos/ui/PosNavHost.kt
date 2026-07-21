@@ -19,8 +19,7 @@ import androidx.navigation.compose.rememberNavController
 import com.zedread.pos.ui.screens.auth.LoginScreen
 import com.zedread.pos.ui.screens.auth.PinSetScreen
 import com.zedread.pos.ui.screens.auth.SiteSelectorScreen
-import com.zedread.pos.ui.screens.cart.CartScreen
-import com.zedread.pos.ui.screens.catalog.CatalogScreen
+import com.zedread.pos.ui.screens.orderentry.OrderEntryScreen
 import com.zedread.pos.ui.screens.payment.PaymentScreen
 import com.zedread.pos.ui.screens.register.CashInScreen
 import com.zedread.pos.ui.screens.register.CashUpScreen
@@ -123,30 +122,25 @@ fun PosNavHost() {
             )
         }
 
-        // ── Sell sub-graph: Catalog → Cart → Payment share one SellViewModel ────
+        // ── Sell sub-graph: Register (order entry) → Payment share one SellViewModel ────
         //
         // There is no backend endpoint to reconstruct a draft invoice's line
         // items, so the cart has to live in a ViewModel that survives
-        // navigating between these three screens rather than a fresh instance
-        // per screen. Re-entering this route (popUpTo inclusive after payment)
+        // navigating between these screens rather than a fresh instance per
+        // screen. Re-entering this route (popUpTo inclusive after payment)
         // discards the graph's back stack entry and its ViewModelStore,
-        // which is what resets the cart for the next sale.
-        navigation(startDestination = Screen.Catalog.route, route = Screen.SellGraph.route) {
-            composable(Screen.Catalog.route) { backStackEntry ->
+        // which is what resets the cart for the next sale. The design bundle
+        // has no separate cart screen — the order pane lives alongside the
+        // product grid on one Register screen — so there's only one entry
+        // screen here now, not the earlier Catalog→Cart pair.
+        navigation(startDestination = Screen.OrderEntry.route, route = Screen.SellGraph.route) {
+            composable(Screen.OrderEntry.route) { backStackEntry ->
                 val sellViewModel = sellViewModel(navController, backStackEntry)
-                CatalogScreen(
-                    viewModel = sellViewModel,
-                    onProceedToCart = { navController.navigate(Screen.Cart.route) },
-                    onSwitchUser = { navController.navigate(Screen.SwitchUser.route) },
-                    onCashUp = { navController.navigate(Screen.CashUp.route) },
-                )
-            }
-
-            composable(Screen.Cart.route) { backStackEntry ->
-                val sellViewModel = sellViewModel(navController, backStackEntry)
-                CartScreen(
+                OrderEntryScreen(
                     viewModel = sellViewModel,
                     onProceedToPayment = { navController.navigate(Screen.Payment.route) },
+                    onSwitchUser = { navController.navigate(Screen.SwitchUser.route) },
+                    onCashUp = { navController.navigate(Screen.CashUp.route) },
                 )
             }
 
@@ -207,8 +201,7 @@ sealed class Screen(val route: String) {
     object CashIn : Screen("cash_in")
     object CashUp : Screen("cash_up")
     object SellGraph : Screen("sell")
-    object Catalog : Screen("catalog")
-    object Cart : Screen("cart")
+    object OrderEntry : Screen("order_entry")
     object Payment : Screen("payment")
     object SwitchUser : Screen("switch_user")
 }

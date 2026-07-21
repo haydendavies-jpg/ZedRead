@@ -15,7 +15,8 @@ here in a new session — read the Status section first, then the phase you're o
 | 1 | Android — Login, Site selector, PIN set/switch-user screens (self-service device claiming — no Device Setup screen) | ✅ Done |
 | 1 | Android — Register-session gate + start-of-day cash-in / end-of-day cash-up screens | ✅ Done |
 | 1 | Android — functional (non-exact-match) sell loop: browse → cart → pay | ✅ Done — see below |
-| 1 | Android — Register (order-entry) screen, exact match to design bundle | 🔲 Not started — functional but generic placeholder UI today |
+| 1 | Android — Register (order-entry) screen, exact match to design bundle | ✅ Done — see below |
+| 1 | Backend — invoice line-item quantity update / remove (qty stepper support) | ✅ Done |
 | 1 | Android — Modifier customise sheet, exact match | 🔲 Not started |
 | 1 | Android — Payment flow, exact match + Voucher tab/Split toggle | 🔶 Partial — Cash/Card + split work functionally, not styled; no Voucher tab |
 | 2 | Settings framework, idempotency, checksums, offline write-queue | 🔲 Not started |
@@ -23,16 +24,69 @@ here in a new session — read the Status section first, then the phase you're o
 | 4 | Table maps & floor service | 🔲 Not started |
 
 **Next up:** the portal side of Phase 1 is complete, and the Android app now has a functional
-end-to-end sell loop (device setup → login → till open → browse → cart → pay) plus the full till
-round-trip (cash-in at start of shift, cash-up at end of shift), verified by manual code review only
-(see "not verified against a real build" below — still true). What's left in Phase 1 is purely
-visual/UX and blocked on the design bundle: the exact-match Register screen and modifier sheet, and
-the Voucher tab + styled Split flow. **The design bundle itself
-(`design_handoff_zedread/ZedRead Register.dc.html` + its READMEs) is not present in this repository**
-— it was supplied to an earlier session as an upload, referenced throughout this plan, but never
-committed. Re-supply it (or a replacement reference) before starting the exact-match Register screen
-or modifier sheet; building "from memory" against the plan's prose description would drift from
-what the user actually approved.
+end-to-end sell loop (device setup → login → till open → browse → order → pay) plus the full till
+round-trip (cash-in at start of shift, cash-up at end of shift). The design bundle
+(`design_handoff_zedread/`) was re-supplied by the user and is now committed to this repository, and
+the Register (order-entry) screen has been rebuilt to match it exactly (see below). What's left in
+Phase 1 is the **modifier customise sheet** (exact match) and the **Payment flow**'s exact-match
+styling + Voucher tab/Split toggle — both still buildable now that the design bundle is in-repo.
+
+**What the exact-match Register screen slice shipped** (this session, branch
+`claude/next-stage-hl4xwg`): rebuilt the order-entry screen from
+`design_handoff_zedread/README.md`'s "Register (order entry)" spec — header, category rail, product
+grid, order pane — replacing the earlier generic `CatalogScreen`/`CartScreen` pair entirely (the
+design has no separate cart screen; the order pane sits beside the grid on one screen at all times).
+- **Backend**: the qty stepper needed primitives the invoice engine didn't have — `PATCH
+  /invoices/{id}/line-items/{lineItemId}` (rescales a line's quantity from its already-snapshotted
+  per-unit price/tax, never re-fetches the product) and `DELETE /invoices/{id}/line-items/{lineItemId}`
+  (removes a line, recomputes invoice totals), both in `invoice_service.py`/`routes/invoices.py`, each
+  gated to draft/open invoices (409 otherwise) and audited (`INVOICE_LINE_ITEM_QUANTITY_UPDATED`/
+  `INVOICE_LINE_ITEM_REMOVED`). `invoice_tax_breakdowns` has no FK back to the line item that produced
+  each row, so a quantity change or removal can't surgically patch one row — both new functions instead
+  call a new `_rebuild_tax_breakdown()` that deletes and reinserts the invoice's breakdown rows from its
+  current line items, keeping the same one-row-per-taxable-line shape `add_line_item()` already
+  produces. 8 new integration tests (quantity rescale + tax recompute, 404, 409-on-paid, audit rows,
+  for both routes) — full backend suite still 840/840 passing (up from 832, this session's 8 additions),
+  verified against a real local Postgres 16 instance with migrations applied through `0051`.
+- **Design tokens**: `Theme.kt` gained the full `README.md` "Shared design system" color set (light +
+  dark, both — the app now follows system dark mode automatically) as a `ZedReadColors` data class via
+  `LocalZedReadColors`, since several tokens (`surface2`, `border`, `accent-soft`, `green`) have no
+  matching Material3 colorScheme slot. Also added `parseHexColor()`/`contrastTextColor()` (the design's
+  "luminance test" rule for tile text color against an arbitrary category fill). **Font swap deferred**
+  — Public Sans / IBM Plex Sans / IBM Plex Mono would need the downloadable-fonts API (new Gradle
+  dependency + certificate config) and are left as system-default sans-serif for now, flagged as a
+  follow-up rather than risked unverified in this sandbox (no reachable Google Maven here — see below).
+- **`GET /products`/`GET /categories` already returned `category_color`/`modifier_names`/
+  `default_color`** (Stage 20/the Menu Studio redesign) but the Android DTOs and Room cache never
+  captured them — added to `ProductDto`/`CategoryDto`, `ProductEntity`/`CategoryEntity` (Room DB version
+  bumped to 2 — `fallbackToDestructiveMigration()` was already wired, so no migration needed, cache-only
+  data), and `CatalogRepository.refresh()`'s mapping. These power the tile/rail fill colors and the
+  "has modifiers" "+" badge.
+- **`OrderEntryScreen.kt`** (new package `ui/screens/orderentry/`, replacing `ui/screens/catalog/` +
+  `ui/screens/cart/`): header (title + selected-category subtitle — the mockup's venue-name subtitle
+  was placeholder sample text, replaced with something actually dynamic rather than hardcoded fake
+  copy), 200dp category rail (active row filled with the category's `default_color`, contrast text),
+  product grid (tile filled with `category_color`, text-only vs with-image variant by `photoUrl`
+  presence via Coil `AsyncImage`, "+" badge when `modifierNames` is non-blank), and the order pane
+  (ticket-number chip, order-type segmented control, line list with a working qty stepper + tap-to-
+  select highlight, totals footer, Hold + Pay). `SellViewModel` gained `setLineQuantity()`/`removeLine()`
+  (wired to the new backend routes), `clearOrder()` (the ✕/Hold action), and local-only `ticketNumber`/
+  `orderType`/`selectedLineItemId` state.
+  - **Two flagged gaps, both pre-existing limits the exact-match layout surfaces rather than causes**:
+    the order-type segmented control (Dine-in/Takeaway) and ticket number are **visual only** — no
+    `invoice_type`/ticket-number column exists on `Invoice` to persist them, and the ticket number
+    resets every app relaunch (in-memory counter, not persisted). **Hold** clears the order pane but
+    does not void/delete the underlying invoice — it's simply left open/uncollected server-side, since
+    there's no "recall a held order" list yet to bring it back to.
+  - Switch-operator and cash-up controls (previously on `CatalogScreen`'s `TopAppBar`) moved to icon
+    buttons on the new header — the design's real home for them is the persistent top nav bar
+    (`README-tables-floormap.md`, Phase 4 scope), so this is a functional stand-in, not the final
+    placement.
+- **Not verified against a real build** — same standing constraint as every prior Android slice: this
+  sandbox cannot reach Google's Maven repo (`gradle :app:compileDebugKotlin` still fails at AGP plugin
+  resolution, confirmed again this session), so relies on the repo's `Android build` CI job plus a
+  manual grep sweep for stale symbols (`CatalogScreen`, `CartScreen`, `Screen.Catalog`, `Screen.Cart` —
+  all confirmed zero remaining references) before merging with confidence.
 
 **What the end-of-day cash-up slice shipped** (this session, branch `claude/next-stage-hl4xwg`):
 a new `CashUpScreen.kt` mirrors `CashInScreen.kt`'s bulk-value-entry pattern — loads the terminal's
@@ -293,6 +347,9 @@ auth-rework note above for how this superseded the original device-paired shape)
   computed `expected_cash_cents`/`variance_cents`.
 - `POST /invoices` — now requires an open register session for the device (400 otherwise); response
   includes `register_session_id`.
+- `PATCH /invoices/{id}/line-items/{lineItemId}` `{quantity}` → updated line — the Register screen's
+  qty stepper.
+- `DELETE /invoices/{id}/line-items/{lineItemId}` → 204 — removes a line from the order.
 - `GET /register-session-reports` — portal/management report: filtered, paginated register-session
   list (see above). Not an Android-consumed endpoint — listed here since it completes the till
   round-trip Phase 1 needs before the report *page* can be built.
