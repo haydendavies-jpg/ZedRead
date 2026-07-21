@@ -41,13 +41,18 @@ async def _get_user_by_email(db: AsyncSession, email: str) -> User | None:
     Returns:
         User | None: The matching portal admin, or None if not found.
     """
+    # .scalars().first() rather than .scalar_one_or_none() - users.email is
+    # intentionally non-unique (migration 0031/0050), so more than one
+    # superadmin_role row can share an email; this only feeds a
+    # forgot-password request, where picking any one matching account and
+    # emailing its reset link is a safe outcome, not a crash.
     result = await db.execute(
         select(User).where(
             func.lower(User.email) == normalize_email(email),
             User.superadmin_role.isnot(None),
         )
     )
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
 async def refresh(db: AsyncSession, refresh_token: str) -> TokenResponse:

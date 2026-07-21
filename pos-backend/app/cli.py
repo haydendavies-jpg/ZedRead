@@ -68,11 +68,15 @@ async def _bootstrap_super_admin_async(non_interactive: bool = False) -> None:
     session_factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
     async with session_factory() as db:
-        # Guard: refuse to run if any Admin-role portal admin already exists
+        # Guard: refuse to run if any Admin-role portal admin already exists.
+        # Existence check only (.first(), not .scalar_one_or_none()) - more
+        # than one Admin-role row can exist (users.email is intentionally
+        # non-unique, so nothing prevents two), and this only needs to know
+        # whether at least one is there, not fetch a single specific row.
         existing = await db.execute(
             select(User).where(User.superadmin_role == SuperAdminRole.ADMIN.value)
         )
-        if existing.scalar_one_or_none() is not None:
+        if existing.scalars().first() is not None:
             log.info("bootstrap.skipped", reason="admin-role portal admin already exists")
             typer.echo("INFO: An Admin-role portal admin already exists — skipping bootstrap.")
             return  # Not an error when running from startup script
