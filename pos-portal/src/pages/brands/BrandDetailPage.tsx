@@ -16,12 +16,13 @@ import { ProductsPage } from '../management/ProductsPage'
 import { CategoriesPage } from '../management/CategoriesPage'
 import { ReportsPage } from '../management/ReportsPage'
 import { InvoicesPage } from '../management/InvoicesPage'
+import { RegisterSessionsPage } from '../management/RegisterSessionsPage'
 import { UsersPage } from '../management/UsersPage'
 import { MenuBuilderPage } from '../management/MenuBuilderPage'
 import { sessionInto } from '../../utils/impersonation'
 import type { Brand, Group } from '../../types'
 
-type Tab = 'overview' | 'products' | 'categories' | 'menu_builder' | 'reports' | 'invoices' | 'users'
+type Tab = 'overview' | 'products' | 'categories' | 'menu_builder' | 'reports' | 'invoices' | 'register_sessions' | 'users'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
@@ -30,6 +31,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'menu_builder', label: 'Menu Builder' },
   { id: 'reports', label: 'Reports' },
   { id: 'invoices', label: 'Invoices' },
+  { id: 'register_sessions', label: 'Register Sessions' },
   { id: 'users', label: 'Users & Access' },
 ]
 
@@ -119,6 +121,7 @@ export function BrandDetailPage() {
           {activeTab === 'menu_builder' && <MenuBuilderPage />}
           {activeTab === 'reports' && <ReportsPage />}
           {activeTab === 'invoices' && <InvoicesPage />}
+          {activeTab === 'register_sessions' && <RegisterSessionsPage />}
           {activeTab === 'users' && <UsersPage />}
         </div>
       </div>

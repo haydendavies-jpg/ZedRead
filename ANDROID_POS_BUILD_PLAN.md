@@ -9,8 +9,8 @@ here in a new session — read the Status section first, then the phase you're o
 |---|---|---|
 | 1 | Backend — two-step login, device pairing, license gating, register (till) sessions | ✅ Merged — [PR #92](https://github.com/haydendavies-jpg/ZedRead/pull/92) |
 | 1 | Backend — register-session portal report route | ✅ Done |
-| 1 | Portal — "POS - Site Assignment" toggle on Users edit page | 🔲 Not started |
-| 1 | Portal — Register Sessions report page | 🔲 Not started |
+| 1 | Portal — "POS - Site Assignment" toggle on Users edit page | ✅ Done |
+| 1 | Portal — Register Sessions report page | ✅ Done |
 | 1 | Android — project wiring (Retrofit/Hilt/Room/Nav) | 🔲 Not started |
 | 1 | Android — Login, PIN entry, Site selector screens | 🔲 Not started |
 | 1 | Android — Register (order-entry) screen, exact match | 🔲 Not started |
@@ -21,9 +21,9 @@ here in a new session — read the Status section first, then the phase you're o
 | 3 | Menu Studio → POS integration depth (recurring scheduling, menu selector) | 🔲 Not started |
 | 4 | Table maps & floor service | 🔲 Not started |
 
-**Next up:** the remaining Phase 1 items — the portal Register Sessions report *page* (the backend
-report route is done), the Users-page toggle, then the Android app itself (auth/PIN/site-selector
-screens first, since everything else depends on having a working login).
+**Next up:** the portal side of Phase 1 is now complete (Users-page toggle, Register Sessions report
+page). What's left is the Android app itself — auth/PIN/site-selector screens first, since everything
+else depends on having a working login.
 
 **What Phase 1's merged backend slice actually shipped** (PR #92, on top of migration `0049` —
 renumbered from `0048` during a merge-conflict resolution with main's concurrent `0048_drop_menus_table`):
@@ -88,9 +88,8 @@ takes payment — matching the design file exactly wherever it defines one.
   pattern) for a follow-up call that finalizes site, re-pairs the device, and issues the POS token.
   Add an active-**license** check (`License.status == 'active'` for the resolved site) before issuing
   any token — done via `POST /auth/pos/site-token`.
-- ✅ Add `is_pos_multi_site_enabled` to `User`. **Still open:** expose it as an editable toggle on the
-  management portal's Users edit page (labelled "POS - Site Assignment") — backend field exists,
-  portal UI doesn't yet.
+- ✅ Add `is_pos_multi_site_enabled` to `User`, and expose it as an editable toggle on the management
+  portal's Users edit page (labelled "POS - Site Assignment").
 - No changes needed to `GET /products`/`/categories`/`/modifiers` or the existing
   `GET /pos/menu-layout?site_id=` read contract (Stage 23) — Phase 1 sells against whatever layout is
   already published; multi-menu/default-scheduling is Phase 3.
@@ -110,8 +109,14 @@ takes payment — matching the design file exactly wherever it defines one.
   (`expected_cash_cents - opening_cash_cents`), variance, and who opened/closed each session. Uses
   the same `CatalogAccess`/`effective_brand_id`/site-scope-guard pattern `invoice_reports.py`
   established, so POS terminals, site-scope management users, brand/group-scope, and portal admin
-  callers are all scoped correctly. **Still open:** the portal report *page* — no new backend logic
-  needed, `RegisterSessionReportRow` already shapes everything `InvoicesPage`'s table pattern needs.
+  callers are all scoped correctly.
+- ✅ Portal report page — `RegisterSessionsPage.tsx`, reachable from the management nav and as a new
+  tab on the SuperAdmin's Brand detail page (same placement as `InvoicesPage`). Session volume is
+  small per the service docstring (one row per device per shift), so unlike Invoices this page
+  `fetchAll`s the brand/site's full list and filters client-side (status, terminal, date range) — no
+  server-side pagination needed. The terminal filter's options are derived from the loaded rows
+  rather than a separate device-list fetch, since `GET /pos-devices` is portal-admin-only and has no
+  brand/site scoping a management user could use.
 
 **Android** (none of this started yet)
 - Project wiring: Retrofit client, Hilt DI modules, Room DB, Compose nav graph (existing Stage 25
