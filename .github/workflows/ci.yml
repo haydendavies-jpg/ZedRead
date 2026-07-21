@@ -94,10 +94,13 @@ jobs:
   # ── Android: debug APK build ─────────────────────────────────────────────────
   #
   # No gradlew is checked in yet (nothing in this repo has generated one —
-  # see ANDROID_POS_BUILD_PLAN.md), so this calls the system `gradle` these
-  # runners ship with directly instead of `./gradlew`. Android Studio
-  # generates gradlew locally on first sync; once that's committed this job
-  # should switch to `./gradlew` for a version-pinned build.
+  # see ANDROID_POS_BUILD_PLAN.md), so gradle/actions/setup-gradle provisions
+  # Gradle itself, pinned to the version gradle-wrapper.properties targets,
+  # rather than falling back to whatever system `gradle` a runner image
+  # happens to ship (that drifts over time — a bare `gradle` call here
+  # first failed against a runner on Gradle 9.6.1, well past what AGP 8.7.3
+  # supports). Once gradlew is committed this job should switch to it, at
+  # which point setup-gradle auto-detects the wrapper's version instead.
   android:
     name: Android build
     runs-on: ubuntu-latest
@@ -118,14 +121,10 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Cache Gradle dependencies
-        uses: actions/cache@v4
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('pos-android/gradle/libs.versions.toml') }}
-          restore-keys: gradle-
+          gradle-version: "8.9"
 
       - name: Build debug APK
         run: gradle assembleDebug --console=plain
