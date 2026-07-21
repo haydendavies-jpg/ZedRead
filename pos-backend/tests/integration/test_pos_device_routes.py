@@ -9,11 +9,16 @@ Covers all five required scenarios per tests_CLAUDE.md:
 """
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
 from app.constants.audit_actions import DEVICE_DEREGISTERED, DEVICE_REGISTERED
+from app.models.access_profile_page_permission import AccessProfilePagePermission
 from app.models.audit_log import AuditLog
+from app.models.license import License
+from app.models.pos_device import PosDevice
+from app.models.site import Site
 
 
 # ── Happy path ────────────────────────────────────────────────────────────────
@@ -217,6 +222,177 @@ async def test_register_device_writes_audit_log(
 async def test_deregister_device_writes_audit_log(client, db, portal_auth_headers, test_device):
     """POST /pos-devices/{id}/deregister writes a DEVICE_DEREGISTERED audit row."""
     await client.post(f"/pos-devices/{test_device.id}/deregister", headers=portal_auth_headers)
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_device.id),
+            AuditLog.action == DEVICE_DEREGISTERED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.after_state["is_active"] is False
+
+
+# ── GET /pos-devices/management (scoped list) ──────────────────────────────────
+
+
+async def test_list_devices_management_returns_200(client, mgmt_auth_headers, test_device):
+    """GET /pos-devices/management returns 200 with devices in the caller's scope."""
+    response = await client.get("/pos-devices/management", headers=mgmt_auth_headers)
+
+    assert response.status_code == 200
+    ids = [d["id"] for d in response.json()]
+    assert str(test_device.id) in ids
+
+
+async def test_list_devices_management_no_token_returns_403(client):
+    """GET /pos-devices/management without a token returns 403."""
+    response = await client.get("/pos-devices/management")
+    assert response.status_code == 403
+
+
+async def test_list_devices_management_site_scope_excludes_other_sites(
+    client, db, mgmt_auth_headers, test_site, test_brand, test_license
+):
+    """A site-scope caller never sees a device registered to a different site."""
+    other_site = Site(
+        id=uuid.uuid4(),
+        brand_id=test_brand.id,
+        name="Other Site",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+        address_street="9 Other Street",
+        address_state="NSW",
+        address_postcode="2000",
+    )
+    db.add(other_site)
+    await db.flush()
+
+    other_license = License(
+        id=uuid.uuid4(),
+        site_id=other_site.id,
+        plan_name="starter",
+        status="active",
+        monthly_fee_cents=0,
+        is_trial=False,
+        max_devices=1,
+        starts_at=datetime.now(tz=timezone.utc),
+        expires_at=datetime.now(tz=timezone.utc) + timedelta(days=365),
+    )
+    db.add(other_license)
+
+    other_device = PosDevice(
+        id=uuid.uuid4(),
+        site_id=other_site.id,
+        license_id=other_license.id,
+        device_name="Other Site Terminal",
+        device_token="other-site-token-xyz",
+        is_active=True,
+    )
+    db.add(other_device)
+    await db.commit()
+
+    response = await client.get("/pos-devices/management", headers=mgmt_auth_headers)
+
+    assert response.status_code == 200
+    ids = [d["id"] for d in response.json()]
+    assert str(other_device.id) not in ids
+
+
+# ── POST /pos-devices/{id}/release ─────────────────────────────────────────────
+
+
+async def test_release_device_without_permission_returns_403(client, mgmt_auth_headers, test_device):
+    """A management caller whose access profile lacks the 'devices' page permission is denied."""
+    response = await client.post(f"/pos-devices/{test_device.id}/release", headers=mgmt_auth_headers)
+    assert response.status_code == 403
+
+
+async def test_release_device_with_permission_succeeds(
+    client, db, mgmt_auth_headers, test_manager_profile, test_device
+):
+    """A management caller granted the 'devices' page permission can release a device in scope."""
+    db.add(AccessProfilePagePermission(id=uuid.uuid4(), access_profile_id=test_manager_profile.id, page_key="devices"))
+    await db.commit()
+
+    response = await client.post(f"/pos-devices/{test_device.id}/release", headers=mgmt_auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["is_active"] is False
+
+
+async def test_release_device_outside_site_scope_returns_403(
+    client, db, mgmt_auth_headers, test_manager_profile, test_brand
+):
+    """A site-scope caller cannot release a device registered to a different site, even with permission."""
+    db.add(AccessProfilePagePermission(id=uuid.uuid4(), access_profile_id=test_manager_profile.id, page_key="devices"))
+
+    other_site = Site(
+        id=uuid.uuid4(),
+        brand_id=test_brand.id,
+        name="Other Site",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+        address_street="9 Other Street",
+        address_state="NSW",
+        address_postcode="2000",
+    )
+    db.add(other_site)
+    await db.flush()
+
+    other_license = License(
+        id=uuid.uuid4(),
+        site_id=other_site.id,
+        plan_name="starter",
+        status="active",
+        monthly_fee_cents=0,
+        is_trial=False,
+        max_devices=1,
+        starts_at=datetime.now(tz=timezone.utc),
+        expires_at=datetime.now(tz=timezone.utc) + timedelta(days=365),
+    )
+    db.add(other_license)
+
+    other_device = PosDevice(
+        id=uuid.uuid4(),
+        site_id=other_site.id,
+        license_id=other_license.id,
+        device_name="Other Site Terminal",
+        device_token="other-site-token-abc",
+        is_active=True,
+    )
+    db.add(other_device)
+    await db.commit()
+
+    response = await client.post(f"/pos-devices/{other_device.id}/release", headers=mgmt_auth_headers)
+    assert response.status_code == 403
+
+
+async def test_release_device_pos_access_forbidden(client, pos_auth_headers, test_device):
+    """A raw POS terminal session can never release a device seat."""
+    response = await client.post(f"/pos-devices/{test_device.id}/release", headers=pos_auth_headers)
+    assert response.status_code == 403
+
+
+async def test_release_device_portal_admin_always_permitted(client, portal_auth_headers, test_device):
+    """A portal admin (superadmin) may release any device, regardless of page permissions."""
+    response = await client.post(f"/pos-devices/{test_device.id}/release", headers=portal_auth_headers)
+    assert response.status_code == 200
+    assert response.json()["is_active"] is False
+
+
+async def test_release_device_writes_audit_log(
+    client, db, mgmt_auth_headers, test_manager_profile, test_device
+):
+    """A successful release writes a DEVICE_DEREGISTERED audit row attributed to the caller."""
+    db.add(AccessProfilePagePermission(id=uuid.uuid4(), access_profile_id=test_manager_profile.id, page_key="devices"))
+    await db.commit()
+
+    await client.post(f"/pos-devices/{test_device.id}/release", headers=mgmt_auth_headers)
 
     result = await db.execute(
         select(AuditLog).where(

@@ -35,6 +35,7 @@ async def test_create_license_returns_201(client, portal_auth_headers, test_site
         "site_id": str(test_site.id),
         "plan_name": "starter",
         "monthly_fee_cents": 9900,
+        "max_devices": 3,
         **_future_dates(),
     }
     response = await client.post("/licenses/", json=payload, headers=portal_auth_headers)
@@ -45,6 +46,7 @@ async def test_create_license_returns_201(client, portal_auth_headers, test_site
     assert body["plan_name"] == "starter"
     assert body["status"] == "active"
     assert body["monthly_fee_cents"] == 9900
+    assert body["max_devices"] == 3
 
 
 async def test_list_licenses_returns_200(client, portal_auth_headers, test_license):
@@ -76,6 +78,18 @@ async def test_update_license_plan_name(client, portal_auth_headers, test_licens
     assert response.json()["plan_name"] == "pro"
 
 
+async def test_update_license_max_devices(client, portal_auth_headers, test_license):
+    """PATCH /licenses/{id} updates the seat capacity."""
+    response = await client.patch(
+        f"/licenses/{test_license.id}",
+        json={"max_devices": 5},
+        headers=portal_auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["max_devices"] == 5
+
+
 async def test_disable_and_enable_license(client, portal_auth_headers, test_license):
     """POST /licenses/{id}/disable then /enable toggles status correctly."""
     r1 = await client.post(f"/licenses/{test_license.id}/disable", headers=portal_auth_headers)
@@ -98,7 +112,7 @@ async def test_list_licenses_no_token_returns_403(client):
 
 async def test_create_license_no_token_returns_403(client, test_site):
     """POST /licenses without a token returns 403."""
-    payload = {"site_id": str(test_site.id), "plan_name": "starter", "monthly_fee_cents": 0, **_future_dates()}
+    payload = {"site_id": str(test_site.id), "plan_name": "starter", "monthly_fee_cents": 0, "max_devices": 1, **_future_dates()}
     response = await client.post("/licenses/", json=payload)
     assert response.status_code == 403
 
@@ -108,14 +122,34 @@ async def test_create_license_no_token_returns_403(client, test_site):
 
 async def test_create_license_missing_site_id_returns_422(client, portal_auth_headers):
     """POST /licenses without site_id returns 422."""
-    payload = {"plan_name": "starter", "monthly_fee_cents": 9900, **_future_dates()}
+    payload = {"plan_name": "starter", "monthly_fee_cents": 9900, "max_devices": 1, **_future_dates()}
     response = await client.post("/licenses/", json=payload, headers=portal_auth_headers)
     assert response.status_code == 422
 
 
 async def test_create_license_missing_plan_name_returns_422(client, portal_auth_headers, test_site):
     """POST /licenses without plan_name returns 422."""
-    payload = {"site_id": str(test_site.id), "monthly_fee_cents": 9900, **_future_dates()}
+    payload = {"site_id": str(test_site.id), "monthly_fee_cents": 9900, "max_devices": 1, **_future_dates()}
+    response = await client.post("/licenses/", json=payload, headers=portal_auth_headers)
+    assert response.status_code == 422
+
+
+async def test_create_license_missing_max_devices_returns_422(client, portal_auth_headers, test_site):
+    """POST /licenses without max_devices returns 422."""
+    payload = {"site_id": str(test_site.id), "plan_name": "starter", "monthly_fee_cents": 9900, **_future_dates()}
+    response = await client.post("/licenses/", json=payload, headers=portal_auth_headers)
+    assert response.status_code == 422
+
+
+async def test_create_license_zero_max_devices_returns_422(client, portal_auth_headers, test_site):
+    """POST /licenses with max_devices=0 returns 422 — at least one seat is required."""
+    payload = {
+        "site_id": str(test_site.id),
+        "plan_name": "starter",
+        "monthly_fee_cents": 9900,
+        "max_devices": 0,
+        **_future_dates(),
+    }
     response = await client.post("/licenses/", json=payload, headers=portal_auth_headers)
     assert response.status_code == 422
 
@@ -127,6 +161,7 @@ async def test_create_license_expires_before_starts_returns_422(client, portal_a
         "site_id": str(test_site.id),
         "plan_name": "starter",
         "monthly_fee_cents": 0,
+        "max_devices": 1,
         "starts_at": now.isoformat(),
         "expires_at": (now - timedelta(days=1)).isoformat(),
     }
@@ -139,14 +174,14 @@ async def test_create_license_expires_before_starts_returns_422(client, portal_a
 
 async def test_create_license_unknown_site_returns_404(client, portal_auth_headers):
     """POST /licenses with a non-existent site_id returns 404."""
-    payload = {"site_id": str(uuid.uuid4()), "plan_name": "starter", "monthly_fee_cents": 0, **_future_dates()}
+    payload = {"site_id": str(uuid.uuid4()), "plan_name": "starter", "monthly_fee_cents": 0, "max_devices": 1, **_future_dates()}
     response = await client.post("/licenses/", json=payload, headers=portal_auth_headers)
     assert response.status_code == 404
 
 
 async def test_create_duplicate_license_returns_409(client, portal_auth_headers, test_site, test_license):
     """POST /licenses for a site that already has a license returns 409."""
-    payload = {"site_id": str(test_site.id), "plan_name": "pro", "monthly_fee_cents": 0, **_future_dates()}
+    payload = {"site_id": str(test_site.id), "plan_name": "pro", "monthly_fee_cents": 0, "max_devices": 1, **_future_dates()}
     response = await client.post("/licenses/", json=payload, headers=portal_auth_headers)
     assert response.status_code == 409
 
@@ -179,6 +214,7 @@ async def test_create_license_writes_audit_log(client, db, portal_auth_headers, 
         "site_id": str(test_site.id),
         "plan_name": "audit-plan",
         "monthly_fee_cents": 4900,
+        "max_devices": 1,
         **_future_dates(),
     }
     response = await client.post("/licenses/", json=payload, headers=portal_auth_headers)

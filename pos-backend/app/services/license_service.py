@@ -145,6 +145,7 @@ async def create_license(
         is_trial=payload.is_trial,
         starts_at=payload.starts_at,
         expires_at=payload.expires_at,
+        max_devices=payload.max_devices,
     )
     db.add(lic)
 
@@ -161,6 +162,7 @@ async def create_license(
             "plan_name": lic.plan_name,
             "status": lic.status,
             "monthly_fee_cents": lic.monthly_fee_cents,
+            "max_devices": lic.max_devices,
         },
     )
 
@@ -194,7 +196,12 @@ async def update_license(
     """
     lic = await _get_or_404(db, license_id)
 
-    before = {"plan_name": lic.plan_name, "monthly_fee_cents": lic.monthly_fee_cents, "expires_at": lic.expires_at.isoformat()}
+    before = {
+        "plan_name": lic.plan_name,
+        "monthly_fee_cents": lic.monthly_fee_cents,
+        "expires_at": lic.expires_at.isoformat(),
+        "max_devices": lic.max_devices,
+    }
 
     if payload.plan_name is not None:
         lic.plan_name = payload.plan_name
@@ -207,8 +214,15 @@ async def update_license(
                 detail="expires_at must be after starts_at",
             )
         lic.expires_at = payload.expires_at
+    if payload.max_devices is not None:
+        lic.max_devices = payload.max_devices
 
-    after = {"plan_name": lic.plan_name, "monthly_fee_cents": lic.monthly_fee_cents, "expires_at": lic.expires_at.isoformat()}
+    after = {
+        "plan_name": lic.plan_name,
+        "monthly_fee_cents": lic.monthly_fee_cents,
+        "expires_at": lic.expires_at.isoformat(),
+        "max_devices": lic.max_devices,
+    }
 
     await log_action(
         db=db,

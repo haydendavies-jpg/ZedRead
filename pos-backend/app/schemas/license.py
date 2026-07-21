@@ -15,6 +15,7 @@ class LicenseCreate(BaseModel):
     is_trial: bool = False
     starts_at: datetime
     expires_at: datetime
+    max_devices: int = Field(..., ge=1, description="Seat capacity for self-service POS device claims")
 
 
 class LicenseUpdate(BaseModel):
@@ -23,6 +24,7 @@ class LicenseUpdate(BaseModel):
     plan_name: str | None = Field(default=None, min_length=1, max_length=100)
     monthly_fee_cents: int | None = Field(default=None, ge=0)
     expires_at: datetime | None = None
+    max_devices: int | None = Field(default=None, ge=1)
 
 
 class LicenseResponse(BaseModel):
@@ -38,5 +40,6 @@ class LicenseResponse(BaseModel):
     is_trial: bool
     starts_at: datetime
     expires_at: datetime
+    max_devices: int
     created_at: datetime
     updated_at: datetime
