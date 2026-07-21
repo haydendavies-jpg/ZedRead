@@ -1,0 +1,1259 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics="">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+  body{margin:0;font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;background:#faf7f2;transition:background .25s}
+  ::selection{background:#554C44;color:#fff}
+  a{color:#554C44;text-decoration:none}
+  a:hover{color:#403933}
+  .navitem{display:flex;align-items:center;gap:11px;padding:9px 14px;border-radius:7px;font:500 13.5px 'IBM Plex Sans',sans-serif;color:var(--nav-text,rgba(255,255,255,.82));cursor:pointer}
+  .navitem:hover{background:var(--nav-hover,rgba(255,255,255,.12))}
+  .navitem.active{background:var(--nav-active-bg,rgba(255,255,255,.18));color:var(--nav-active-text,#fff)}
+  .navsec{font:600 10.5px 'IBM Plex Sans',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--nav-sec,rgba(255,255,255,.55));padding:18px 14px 8px}
+  .pill{display:inline-flex;align-items:center;gap:6px;background:var(--surface2,#f0ece3);color:var(--muted,#6b6259);font:500 12px 'IBM Plex Sans',sans-serif;padding:7px 12px;border-radius:6px;white-space:nowrap;cursor:pointer}
+  .tab{display:flex;align-items:center;gap:6px;color:var(--muted,#8a8177);font:500 13px 'IBM Plex Sans',sans-serif;padding:8px 14px;border-radius:7px;cursor:pointer}
+  .tab .cnt{background:var(--surface2,#f0ece3);padding:1px 7px;border-radius:10px;font:600 11px 'IBM Plex Sans',sans-serif}
+  .tab.active{background:var(--accent-soft,rgba(85,76,68,.1));color:var(--accent-text,#554C44);font-weight:600}
+  .tab.active .cnt{background:var(--accent-soft2,rgba(85,76,68,.16))}
+  .grow{display:grid;grid-template-columns:38px 0.85fr 1.55fr 1fr 1fr 0.7fr 0.85fr 1.35fr 46px;align-items:stretch}
+  .hcell{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 14px;height:42px;border-right:1px solid var(--divider,rgba(36,31,26,.07));font:600 11px 'IBM Plex Sans',sans-serif;color:var(--faint,#8a8177);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+  .hcell .srt{color:var(--faint,#c2b9ab);font-size:11px;opacity:.7}
+  .hcell .flt{color:var(--faint,#cfc7bb);font-size:10px;opacity:.7}
+  .gcell{display:flex;align-items:center;padding:0 14px;height:52px;border-right:1px solid var(--divider,rgba(36,31,26,.06));font:400 13.5px 'IBM Plex Sans',sans-serif;color:var(--text,#241f1a);white-space:nowrap;overflow:hidden}
+  .grow:hover .gcell{background:var(--divider,rgba(36,31,26,.02))}
+  .cbox{display:inline-flex;align-items:center;border:1px solid var(--input-border,rgba(36,31,26,.16));border-radius:5px;padding:4px 10px;font:500 12px 'IBM Plex Sans',sans-serif;color:var(--text,#3c352d);background:var(--surface,#fff);white-space:nowrap}
+  .obox{display:flex;align-items:center;width:100%;border:1px dashed var(--input-border,rgba(36,31,26,.22));border-radius:5px;padding:5px 10px;font:400 12.5px 'IBM Plex Sans',sans-serif;color:var(--faint,#b0a798);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .obox.filled{border-color:var(--accent,rgba(85,76,68,.35));color:var(--text,#241f1a)}
+  .drop{display:flex;align-items:center;justify-content:space-between;width:100%;gap:8px}
+  .chev{color:var(--faint,#b7ad9d);font-size:11px}
+  .chk{width:16px;height:16px;border:1.5px solid var(--chk,#cfc7bb);border-radius:3px;background:var(--surface,#fff);flex:none}
+  .chk.on{background:var(--accent,#554C44);border-color:var(--accent,#554C44);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px}
+  .sub .gcell{color:var(--muted,#6b6259)}
+  .taxfree{color:var(--green,#2F4034)}
+  .card{background:var(--surface,#fff);border:1px solid var(--border,rgba(36,31,26,.08));border-radius:10px;display:flex;flex-direction:column;overflow:hidden}
+  .cardtitle{font-family:'Source Serif 4',serif;font-weight:600;font-size:16px;color:var(--text,#241f1a)}
+  .mini{border:1px solid var(--input-border,rgba(36,31,26,.16));border-radius:5px;padding:2px 8px;font:500 12px 'IBM Plex Mono',monospace;color:var(--text,#241f1a);background:var(--surface,#fff);min-width:20px;text-align:center}
+  .oprow{display:flex;align-items:center;gap:10px;padding:7px 0}
+  .drag{color:var(--faint,#c2b9ab);font-size:12px;letter-spacing:-2px;cursor:grab}
+  .price{border:1px solid var(--input-border,rgba(36,31,26,.16));border-radius:5px;padding:3px 8px;font:500 12.5px 'IBM Plex Mono',monospace;color:var(--text,#241f1a);background:var(--surface,#fff);text-align:right;width:52px}
+  .addopt{color:var(--green,#2F4034);font:600 12.5px 'IBM Plex Sans',sans-serif;cursor:pointer;padding:6px 0}
+  .cardfoot{background:var(--divider,rgba(36,31,26,.03));border-top:1px solid var(--border,rgba(36,31,26,.06));padding:11px 18px;font:400 11.5px 'IBM Plex Sans',sans-serif;color:var(--muted,#8a8177)}
+  .xbtn{color:var(--faint,#c2b9ab);cursor:pointer;font-size:13px}
+  .seg{display:flex;background:var(--toggle-track,#efe9df);border-radius:8px;padding:3px}
+  .seg .on{background:var(--toggle-thumb,#fff);color:var(--text,#241f1a);font:600 13px 'IBM Plex Sans',sans-serif;padding:6px 16px;border-radius:6px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+  .seg .off{color:var(--muted,#8a8177);font:500 13px 'IBM Plex Sans',sans-serif;padding:6px 16px;border-radius:6px;cursor:pointer}
+  .grpcard{background:var(--surface,#fff);border:1px solid var(--border,rgba(36,31,26,.08));border-radius:10px;overflow:visible}
+  .grphead{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--divider,rgba(36,31,26,.07));background:var(--divider,rgba(36,31,26,.025));border-radius:10px 10px 0 0}
+  .grpname{font:600 11px 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:var(--faint,#8a8177)}
+  .grptag{font-family:'Source Serif 4',serif;font-weight:700;font-size:15px;color:var(--text,#241f1a)}
+  .catrow{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--divider,rgba(36,31,26,.05));cursor:pointer}
+  .catrow:last-child{border-bottom:none}
+  .catrow:hover{background:var(--divider,rgba(36,31,26,.02))}
+  .catrow.sel{background:var(--accent-soft,rgba(85,76,68,.06))}
+  .catname{font:500 13.5px 'IBM Plex Sans',sans-serif;color:var(--text,#241f1a)}
+  .catcnt{font:400 12px 'IBM Plex Sans',sans-serif;color:var(--faint,#a39a8c)}
+  .miniassign{margin-left:auto;display:flex;align-items:center;gap:6px;border:1px solid var(--input-border,rgba(36,31,26,.14));border-radius:6px;padding:4px 9px;font:500 11.5px 'IBM Plex Sans',sans-serif;color:var(--muted,#6b6259);background:var(--surface,#fff)}
+  .bulkbar{position:sticky;bottom:18px;margin:6px auto 0;max-width:640px;display:flex;align-items:center;gap:14px;background:var(--text,#241f1a);color:#fff;border-radius:11px;padding:12px 16px;box-shadow:0 8px 30px rgba(36,31,26,.28)}
+  .bulkbtn{display:flex;align-items:center;gap:7px;background:#554C44;color:#fff;font:600 12.5px 'IBM Plex Sans',sans-serif;padding:8px 14px;border-radius:7px;cursor:pointer;position:relative}
+  .bulkclear{font:500 12.5px 'IBM Plex Sans',sans-serif;color:rgba(255,255,255,.7);cursor:pointer}
+  .menu{position:absolute;bottom:calc(100% + 8px);left:0;min-width:190px;background:var(--surface,#fff);border:1px solid var(--border,rgba(36,31,26,.1));border-radius:9px;box-shadow:0 12px 34px rgba(36,31,26,.22);padding:5px;z-index:20;max-height:260px;overflow:auto}
+  .menuitem{display:flex;align-items:center;justify-content:space-between;padding:9px 11px;border-radius:6px;font:500 12.5px 'IBM Plex Sans',sans-serif;color:var(--text,#241f1a);cursor:pointer}
+  .menuitem:hover{background:var(--accent-soft,rgba(85,76,68,.1));color:var(--accent-text,#554C44)}
+  .menuhead{font:600 10px 'IBM Plex Sans',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--faint,#a39a8c);padding:8px 11px 4px}
+  .addbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--input-border,rgba(36,31,26,.18));border-radius:7px;padding:7px 12px;font:600 12px 'IBM Plex Sans',sans-serif;color:var(--muted,#6b6259);background:var(--surface,#fff);cursor:pointer;white-space:nowrap}
+  .addbtn:hover{border-color:var(--accent,rgba(85,76,68,.5));color:var(--accent-text,#554C44)}
+  .addform{display:flex;align-items:center;gap:12px;background:var(--surface,#fff);border:1px solid var(--accent,rgba(85,76,68,.4));border-radius:10px;padding:12px 16px;margin-bottom:16px}
+  .addlabel{font:600 11px 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-text,#554C44);white-space:nowrap}
+  .addinput{flex:1;min-width:120px;border:1px solid var(--input-border,rgba(36,31,26,.18));border-radius:6px;padding:8px 11px;font:500 13px 'IBM Plex Sans',sans-serif;color:var(--text,#241f1a);background:var(--bg,#faf7f2);outline:none}
+  .addinput:focus{border-color:var(--accent,#554C44)}
+  .addselect{border:1px solid var(--input-border,rgba(36,31,26,.18));border-radius:6px;padding:8px 11px;font:500 12.5px 'IBM Plex Sans',sans-serif;color:var(--text,#241f1a);background:var(--bg,#faf7f2);outline:none;cursor:pointer}
+  .addcancel{font:500 12.5px 'IBM Plex Sans',sans-serif;color:var(--muted,#8a8177);cursor:pointer;padding:8px 10px}
+  .addconfirm{background:#554C44;color:#fff;font:600 12.5px 'IBM Plex Sans',sans-serif;padding:8px 15px;border-radius:7px;cursor:pointer;white-space:nowrap}
+  .combotrigger{padding-bottom:2px}
+  .linkchip{display:inline-flex;align-items:center;gap:5px;background:var(--accent-soft2,rgba(85,76,68,.16));color:var(--accent-text,#554C44);border:none;border-radius:20px;padding:2px 8px;font:600 10.5px 'IBM Plex Sans',sans-serif;white-space:nowrap;cursor:pointer;user-select:none}
+  .lgwrap{border-left:2px solid var(--accent,rgba(85,76,68,.35));margin:2px 0 4px 6px;padding-left:12px;display:flex;flex-direction:column;gap:8px}
+  .lgbox{background:var(--surface,#fff);border:1px solid var(--border,rgba(36,31,26,.1));border-radius:8px;padding:9px 11px}
+  .lghead{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+  .lgtag{display:inline-flex;align-items:center;font:600 9px 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-text,#554C44);background:var(--accent-soft,rgba(85,76,68,.1));border-radius:4px;padding:2px 6px}
+  .lgname{font:700 12px 'IBM Plex Sans',sans-serif;color:var(--text,#241f1a)}
+  .lgrule{margin-left:auto;font:400 10.5px 'IBM Plex Sans',sans-serif;color:var(--faint,#a39a8c)}
+  .lgopt{display:flex;align-items:center;justify-content:space-between;padding:3px 0;font:400 12px 'IBM Plex Sans',sans-serif;color:var(--muted,#6b6259)}
+  .lgprice{font:500 11px 'IBM Plex Mono',monospace;color:var(--text,#241f1a)}
+  .ghostlink{display:flex;align-items:center;gap:6px;border:1px dashed var(--input-border,rgba(36,31,26,.2));border-radius:6px;padding:6px 10px;font:600 11px 'IBM Plex Sans',sans-serif;color:var(--muted,#8a8177);cursor:pointer}
+  .ghostlink:hover{border-color:var(--accent,rgba(85,76,68,.5));color:var(--accent-text,#554C44)}
+  /* POS layout builder */
+  .posrail{width:196px;flex:none;background:var(--surface,#fff);border-right:1px solid var(--border,rgba(36,31,26,.08));padding:16px 12px;display:flex;flex-direction:column;gap:4px;overflow:auto}
+  .railcap{font:600 10.5px 'IBM Plex Sans',sans-serif;letter-spacing:.13em;text-transform:uppercase;color:var(--faint,#a39a8c);padding:4px 8px 8px}
+  .pospage{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;font:600 13px 'IBM Plex Sans',sans-serif;color:var(--muted,#6b6259);cursor:pointer;border:1px solid transparent}
+  .pospage:hover{background:var(--divider,rgba(36,31,26,.04))}
+  .pospage.active{background:var(--accent-soft,rgba(85,76,68,.1));color:var(--accent-text,#554C44);border-color:var(--accent,rgba(85,76,68,.22))}
+  .pospage.drop{outline:2px dashed var(--accent,#554C44);outline-offset:2px;background:var(--accent-soft,rgba(85,76,68,.12))}
+  .pagedot{width:11px;height:11px;border-radius:3px;flex:none}
+  .pagecnt{margin-left:auto;font:500 11px 'IBM Plex Sans',sans-serif;color:var(--faint,#a39a8c)}
+  .crumb{display:flex;align-items:center;gap:9px;font:600 14px 'IBM Plex Sans',sans-serif}
+  .crumbseg{cursor:pointer;color:var(--muted,#8a8177)}
+  .crumbseg:hover{color:var(--accent-text,#554C44)}
+  .crumbseg.here{color:var(--text,#241f1a)}
+  .posgrid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;grid-auto-rows:92px;grid-auto-flow:row dense}
+  .tile{position:relative;border-radius:12px;padding:11px 12px;display:flex;flex-direction:column;justify-content:space-between;cursor:pointer;user-select:none;overflow:hidden;box-shadow:0 1px 2px rgba(36,31,26,.12);touch-action:none}
+  .tile.sel{box-shadow:0 0 0 3px var(--bg,#faf7f2),0 0 0 5px var(--accent,#554C44)}
+  .tlabel{font:600 13.5px 'IBM Plex Sans',sans-serif;line-height:1.2;overflow:hidden}
+  .tprice{font:500 11.5px 'IBM Plex Mono',monospace;opacity:.92}
+  .tcheck{position:absolute;top:6px;right:6px;width:19px;height:19px;border-radius:50%;background:var(--accent,#554C44);color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+  .rz{position:absolute;bottom:1px;right:2px;width:16px;height:16px;cursor:nwse-resize;display:flex;align-items:flex-end;justify-content:flex-end;opacity:.65;font-size:12px;line-height:1}
+  .folder{background:var(--surface2,#f0ece3);border:1px solid var(--border,rgba(36,31,26,.1));color:var(--text,#241f1a)}
+  .folder.drop{outline:2px dashed var(--accent,#554C44);outline-offset:2px}
+  .fopen{position:absolute;top:6px;right:6px;width:23px;height:23px;border-radius:6px;background:rgba(36,31,26,.1);display:flex;align-items:center;justify-content:center;font-size:12px;cursor:pointer;color:var(--muted,#6b6259)}
+  .fopen:hover{background:var(--accent-soft2,rgba(85,76,68,.2));color:var(--accent-text,#554C44)}
+  .faccent{height:5px;border-radius:3px;width:32px;margin-bottom:2px}
+  .tempty{border:1.5px dashed var(--input-border,rgba(36,31,26,.2));border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--faint,#b0a798);font-size:22px;cursor:pointer;background:transparent}
+  .tempty:hover{border-color:var(--accent,#554C44);color:var(--accent-text,#554C44)}
+  .sw{width:22px;height:22px;border-radius:6px;border:1px solid rgba(0,0,0,.12);cursor:pointer;display:inline-block;flex:none}
+  .swsm{width:27px;height:27px;border-radius:7px;cursor:pointer;border:2px solid transparent;flex:none}
+  .swsm.on{border-color:var(--text,#241f1a)}
+  .popover{position:absolute;top:calc(100% + 8px);left:0;z-index:40;background:var(--surface,#fff);border:1px solid var(--border,rgba(36,31,26,.12));border-radius:10px;box-shadow:0 12px 34px rgba(36,31,26,.22);padding:13px;width:216px}
+  .inspector{width:296px;flex:none;background:var(--surface,#fff);border-left:1px solid var(--border,rgba(36,31,26,.08));padding:20px;overflow:auto;display:flex;flex-direction:column;gap:18px}
+  .inslabel{font:600 10.5px 'IBM Plex Sans',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--faint,#a39a8c)}
+  .insinput,.insselect{width:100%;border:1px solid var(--input-border,rgba(36,31,26,.18));border-radius:7px;padding:9px 11px;font:500 13px 'IBM Plex Sans',sans-serif;color:var(--text,#241f1a);background:var(--bg,#faf7f2);outline:none;box-sizing:border-box}
+  .insinput:focus,.insselect:focus{border-color:var(--accent,#554C44)}
+  .stepper{display:flex;align-items:center;border:1px solid var(--input-border,rgba(36,31,26,.18));border-radius:7px;overflow:hidden}
+  .stepbtn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted,#6b6259);font-size:17px;background:var(--surface,#fff)}
+  .stepbtn:hover{background:var(--divider,rgba(36,31,26,.05))}
+  .stepval{flex:1;text-align:center;font:600 13px 'IBM Plex Mono',monospace;color:var(--text,#241f1a)}
+  .dragghost{position:fixed;z-index:120;pointer-events:none;background:var(--text,#241f1a);color:#fff;padding:9px 15px;border-radius:9px;font:600 12.5px 'IBM Plex Sans',sans-serif;box-shadow:0 12px 34px rgba(0,0,0,.32)}
+  /* menus table */
+  .mrow{display:grid;grid-template-columns:2.5fr 1.25fr 1.25fr 0.7fr 1fr 2fr;align-items:center;border-bottom:1px solid var(--divider,rgba(36,31,26,.06))}
+  .mcell{padding:15px 16px;font:400 13.5px 'IBM Plex Sans',sans-serif;color:var(--text,#241f1a);display:flex;align-items:center;gap:8px;min-width:0}
+  .mhead .mcell{font:600 11px 'IBM Plex Sans',sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--faint,#8a8177);padding-top:14px;padding-bottom:14px}
+  .spill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;font:600 11px 'IBM Plex Sans',sans-serif;white-space:nowrap}
+  .mact{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--input-border,rgba(36,31,26,.16));border-radius:7px;padding:6px 10px;font:600 11.5px 'IBM Plex Sans',sans-serif;color:var(--muted,#6b6259);background:var(--surface,#fff);cursor:pointer;white-space:nowrap}
+  .mact:hover{border-color:var(--accent,rgba(85,76,68,.5));color:var(--accent-text,#554C44)}
+  .mact.pri{background:#554C44;color:#fff;border-color:#554C44}
+  .mact.pri:hover{color:#fff;background:#403933}
+  .lrow{display:grid;grid-template-columns:2fr 1.1fr 1.7fr 1.3fr 1.3fr 1.6fr;align-items:center;border-bottom:1px solid var(--divider,rgba(36,31,26,.06))}
+  .lrow:not(.lhead){cursor:pointer}
+  .lrow:not(.lhead):hover{background:var(--divider,rgba(36,31,26,.025))}
+  .lcell{padding:15px 16px;font:400 13px 'IBM Plex Sans',sans-serif;color:var(--text,#241f1a);display:flex;align-items:center;gap:8px;min-width:0}
+  .lhead .lcell{font:600 11px 'IBM Plex Sans',sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--faint,#8a8177)}
+  .timewin{font:600 12.5px 'IBM Plex Mono',monospace;color:var(--text,#241f1a);white-space:nowrap}
+  .daychip{font:600 10px 'IBM Plex Sans',sans-serif;letter-spacing:.05em;color:var(--muted,#6b6259);background:var(--surface2,#f0ece3);border-radius:5px;padding:2px 7px;align-self:flex-start}
+  .backlink{font:600 12.5px 'IBM Plex Sans',sans-serif;color:var(--accent-text,#554C44);cursor:pointer;white-space:nowrap}
+  .backlink:hover{opacity:.75}
+  .datebig{font:500 12.5px 'IBM Plex Sans',sans-serif;color:var(--text,#241f1a);white-space:nowrap}
+  .datesub{font:400 11px 'IBM Plex Sans',sans-serif;color:var(--faint,#a39a8c)}
+</style>
+</helmet>
+
+<div ref="{{ rootRef }}" style="width:100%;overflow-x:auto;background:var(--bg,#faf7f2);min-height:100vh">
+<div style="display:flex;width:100%;min-width:1500px;min-height:100vh;background:var(--bg,#faf7f2)">
+
+  <!-- SIDEBAR -->
+  <div style="width: 220px; flex: none; border-right: 1px solid var(--sidebar-border,rgba(0,0,0,.14)); padding: 20px 12px; display: flex; flex-direction: column; background-color: var(--sidebar,#554C44)">
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 10px 22px">
+      <div style="font-family:'Source Serif 4',serif;font-weight:700;font-size:18px;color:var(--sidebar-fg,#fff)">ZedRead</div>
+    </div>
+
+    <div class="navitem"><span style="width:16px;text-align:center">◆</span>Dashboard</div>
+    <div class="navitem"><span style="width:16px;text-align:center">▤</span>Orders</div>
+    <div class="{{ navMenusClass }}" onClick="{{ goMenus }}"><span style="width:16px;text-align:center">▦</span>Menus</div>
+    <div class="{{ navStudioClass }}" onClick="{{ goStudio }}"><span style="width:16px;text-align:center">▣</span>Menu Studio</div>
+    <div class="navitem"><span style="width:16px;text-align:center">▥</span>Reporting</div>
+    <div class="navitem"><span style="width:16px;text-align:center">$</span>Payment Summary</div>
+
+    <div class="navsec">Admin</div>
+    <div class="navitem"><span style="width:16px;text-align:center">⚙</span>Manage Catalog</div>
+    <div class="navitem"><span style="width:16px;text-align:center">▧</span>Blackout Dates</div>
+    <div class="navitem"><span style="width:16px;text-align:center">✉</span>Invite Users</div>
+    <div class="navitem"><span style="width:16px;text-align:center">◈</span>Manage Users</div>
+
+    <div style="flex:1"></div>
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 10px;border-top:1px solid var(--sidebar-line,rgba(255,255,255,.16));margin-top:10px">
+      <div style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.16);color:var(--sidebar-fg,#fff);font:600 12px 'IBM Plex Sans',sans-serif;display:flex;align-items:center;justify-content:center;flex:none">M</div>
+      <div style="flex:1">
+        <div style="font:500 12.5px 'IBM Plex Sans',sans-serif;color:var(--sidebar-fg,#fff)">Maya R.</div>
+        <div style="font:400 11px 'IBM Plex Sans',sans-serif;color:var(--sidebar-fg-dim,rgba(255,255,255,.72))">Manager</div>
+      </div>
+      <div onClick="{{ toggleTheme }}" title="Toggle theme" style="width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--sidebar-fg,#fff);border:1px solid var(--sidebar-ctrl-border,rgba(255,255,255,.3));font-size:14px">{{ themeIcon }}</div>
+    </div>
+  </div>
+
+  <!-- CONTENT -->
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+
+  <!-- ============ MENU STUDIO ============ -->
+  <sc-if value="{{ isStudio }}" hint-placeholder-val="{{ true }}">
+
+    <!-- TOP BAR -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 28px;border-bottom:1px solid var(--border,rgba(36,31,26,.08));white-space:nowrap">
+      <div style="display:flex;align-items:center;gap:16px;white-space:nowrap">
+        <div>
+          <div style="font-family:'Source Serif 4',serif;font-weight:700;font-size:22px;color:var(--text,#241f1a);line-height:1.1">Menu Studio</div>
+          <div style="font:500 11px 'IBM Plex Sans',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--faint,#a39a8c);margin-top:2px">Café — All Day · Main Kitchen</div>
+        </div>
+        <div class="seg">
+          <div class="{{ tableSegClass }}" onClick="{{ showTable }}">Table</div>
+          <div class="{{ posSegClass }}" onClick="{{ showPos }}">POS Layout</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;white-space:nowrap">
+        <div style="display:flex;align-items:center;gap:6px;font:500 12.5px 'IBM Plex Sans',sans-serif;color:var(--green,#2F4034);margin-right:6px">
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--green,#2F4034)"></span>Saved
+        </div>
+        <div class="pill">History</div>
+        <div class="pill">Export</div>
+        <div class="pill">Import</div>
+        <div style="color: #fff; font: 600 13px 'IBM Plex Sans',sans-serif; padding: 8px 16px; border-radius: 7px; cursor: pointer; background-color: #554C44">Publish</div>
+      </div>
+    </div>
+
+    <!-- ===== TABLE LAYOUT ===== -->
+    <sc-if value="{{ isTableLayout }}" hint-placeholder-val="{{ true }}">
+
+    <!-- SUB HEADER -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 28px;border-bottom:1px solid var(--border,rgba(36,31,26,.08))">
+      <div style="display:flex;align-items:center;gap:6px">
+        <div class="{{ tabProductsClass }}" onClick="{{ tabProducts }}">Products<span class="cnt">35</span></div>
+        <div class="{{ tabModifiersClass }}" onClick="{{ tabModifiers }}">Modifiers<span class="cnt">9</span></div>
+        <div class="{{ tabCategoriesClass }}" onClick="{{ tabCategories }}">Categories<span class="cnt">{{ catCount }}</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="display:flex;align-items:center;gap:8px;background:var(--surface,#fff);border:1px solid var(--input-border,rgba(36,31,26,.12));border-radius:7px;padding:8px 14px;color:var(--faint,#a39a8c);font:400 13px 'IBM Plex Sans',sans-serif;width:240px">⌕ {{ searchLabel }}</div>
+        <div class="pill">{{ archiveLabel }}</div>
+        <div style="color: #fff; font: 600 13px 'IBM Plex Sans',sans-serif; padding: 8px 16px; border-radius: 7px; cursor: pointer; background-color: #554C44" onClick="{{ newAction }}">{{ newLabel }}</div>
+      </div>
+    </div>
+
+    <!-- PRODUCTS TABLE -->
+    <sc-if value="{{ isProducts }}" hint-placeholder-val="{{ true }}">
+      <div style="flex:1;overflow:auto;padding:0 0 28px">
+        <div class="grow" style="border-bottom:1px solid var(--border,rgba(36,31,26,.1));position:sticky;top:0;background:var(--bg,#faf7f2);z-index:2">
+          <div class="hcell" style="justify-content:center;padding:0"><span class="chk"></span></div>
+          <div class="hcell">Product ID <span class="srt">↕</span></div>
+          <div class="hcell">Product <span class="srt">↕</span></div>
+          <div class="hcell"><span>Category <span class="srt">↕</span></span><span class="flt">▾</span></div>
+          <div class="hcell"><span>Rep. group <span class="srt">↕</span></span><span class="flt">▾</span></div>
+          <div class="hcell">Price <span class="srt">↕</span></div>
+          <div class="hcell"><span>Tax <span class="srt">↕</span></span><span class="flt">▾</span></div>
+          <div class="hcell">Modifiers</div>
+          <div class="hcell" style="border-right:none"></div>
+        </div>
+        <sc-for list="{{ products }}" as="p" hint-placeholder-count="12">
+          <div class="{{ p.rowClass }}" style="border-bottom:1px solid var(--divider,rgba(36,31,26,.06))">
+            <div class="gcell" style="justify-content:center;padding:0"><span class="chk"></span></div>
+            <div class="gcell" style="color:var(--muted,#6b6259);font-family:'IBM Plex Mono',monospace;font-size:12.5px">{{ p.plu }}</div>
+            <div class="gcell" style="font-weight:500">{{ p.namePrefix }}{{ p.name }}</div>
+            <div class="gcell"><span class="cbox"><span class="pagedot" style="width:9px;height:9px;margin-right:7px;background:{{ p.catColor }}"></span>{{ p.category }}</span></div>
+            <div class="gcell"><span class="drop"><span style="color:var(--muted,#6b6259);overflow:hidden;text-overflow:ellipsis">{{ p.rep }}</span><span class="chev">⌄</span></span></div>
+            <div class="gcell" style="justify-content:flex-end;font-variant-numeric:tabular-nums">{{ p.price }}</div>
+            <div class="gcell"><span class="drop"><span class="{{ p.taxClass }}">{{ p.tax }}</span><span class="chev">⌄</span></span></div>
+            <div class="gcell"><span class="{{ p.optClass }}">{{ p.opts }}</span></div>
+            <div class="gcell" style="justify-content:center;border-right:none;color:var(--faint,#c2b9ab);cursor:pointer">🗑</div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- MODIFIERS CARDS -->
+    <sc-if value="{{ isModifiers }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;overflow:auto;padding:24px 28px 40px">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:18px">
+          <sc-for list="{{ modifiers }}" as="m" hint-placeholder-count="8">
+            <div class="card">
+              <div style="padding:16px 18px 4px">
+                <div style="display:flex;align-items:flex-start;justify-content:space-between">
+                  <div class="cardtitle">{{ m.name }}</div>
+                  <div style="display:flex;gap:11px;align-items:center"><span class="xbtn">⧉</span><span class="xbtn">✕</span></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:14px;margin:14px 0 6px">
+                  <div style="display:flex;align-items:center;gap:7px"><span class="{{ m.reqClass }}">{{ m.reqMark }}</span><span style="font:400 12.5px 'IBM Plex Sans',sans-serif;color:var(--muted,#6b6259)">Required</span></div>
+                  <div style="display:flex;align-items:center;gap:6px"><span style="font:400 12px 'IBM Plex Sans',sans-serif;color:var(--faint,#a39a8c)">Min</span><span class="mini">{{ m.min }}</span></div>
+                  <div style="display:flex;align-items:center;gap:6px"><span style="font:400 12px 'IBM Plex Sans',sans-serif;color:var(--faint,#a39a8c)">Max</span><span class="mini">{{ m.max }}</span></div>
+                </div>
+              </div>
+              <div style="padding:2px 18px 14px;flex:1;border-top:1px solid var(--divider,rgba(36,31,26,.06));margin-top:6px">
+                <sc-for list="{{ m.options }}" as="o" hint-placeholder-count="3">
+                  <div class="{{ o.wrapClass }}">
+                    <div class="oprow">
+                      <span class="drag">⠿</span>
+                      <span style="flex:1;font:400 13px 'IBM Plex Sans',sans-serif;color:var(--text,#241f1a);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ o.name }}</span>
+                      <sc-if value="{{ o.hasLink }}" hint-placeholder-val="{{ false }}">
+                        <span class="linkchip" onClick="{{ o.toggle }}">🔗 {{ o.linkCount }} <span style="font-size:9px">{{ o.chev }}</span></span>
+                      </sc-if>
+                      <span style="font:500 12px 'IBM Plex Sans',sans-serif;color:var(--faint,#a39a8c)">+$</span>
+                      <span class="price">{{ o.price }}</span>
+                      <span class="xbtn">✕</span>
+                    </div>
+                    <sc-if value="{{ o.open }}" hint-placeholder-val="{{ false }}">
+                      <div class="lgwrap">
+                        <sc-for list="{{ o.linked }}" as="lg" hint-placeholder-count="2">
+                          <div class="lgbox">
+                            <div class="lghead">
+                              <span class="lgtag">↳ Linked</span>
+                              <span class="lgname">{{ lg.name }}</span>
+                              <span class="lgrule">{{ lg.rule }}</span>
+                            </div>
+                            <sc-for list="{{ lg.options }}" as="lo" hint-placeholder-count="2">
+                              <div class="lgopt"><span>{{ lo.name }}</span><span class="lgprice">+{{ lo.price }}</span></div>
+                            </sc-for>
+                          </div>
+                        </sc-for>
+                        <div class="ghostlink">+ Link another group</div>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+                <div class="addopt">+ Add option</div>
+              </div>
+              <div class="cardfoot">▸ Used by {{ m.usedBy }}</div>
+            </div>
+          </sc-for>
+          <div style="border:1.5px dashed var(--input-border,rgba(36,31,26,.22));border-radius:10px;min-height:240px;display:flex;align-items:center;justify-content:center;color:var(--muted,#8a8177);font:600 13.5px 'IBM Plex Sans',sans-serif;cursor:pointer">+ New option set</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- CATEGORIES -->
+    <sc-if value="{{ isCategories }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;overflow:auto;padding:22px 28px 28px">
+        <div style="max-width:680px;margin:0 auto">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:14px">
+            <div style="font:400 12.5px 'IBM Plex Sans',sans-serif;color:var(--muted,#6b6259)">Each category has a default button colour used across POS layouts. Grouped by reporting group.</div>
+            <div style="display:flex;align-items:center;gap:14px;flex:none">
+              <div class="addbtn" onClick="{{ startAddGroup }}">+ Reporting group</div>
+              <div style="display:flex;align-items:center;gap:7px;font:500 12.5px 'IBM Plex Sans',sans-serif;color:var(--muted,#6b6259);cursor:pointer" onClick="{{ toggleSelectAll }}">
+                <span class="{{ allSelClass }}">{{ allSelMark }}</span>Select all
+              </div>
+            </div>
+          </div>
+
+          <sc-if value="{{ adding }}" hint-placeholder-val="{{ false }}">
+            <div class="addform">
+              <span class="addlabel">{{ addTitle }}</span>
+              <input class="addinput" value="{{ draftName }}" onChange="{{ onDraftName }}" placeholder="{{ addPlaceholder }}">
+              <sc-if value="{{ addingCat }}" hint-placeholder-val="{{ false }}">
+                <select class="addselect" value="{{ draftGroupVal }}" onChange="{{ onDraftGroup }}">
+                  <sc-for list="{{ groupOptions }}" as="o" hint-placeholder-count="4">
+                    <option value="{{ o.value }}">{{ o.label }}</option>
+                  </sc-for>
+                </select>
+              </sc-if>
+              <div style="flex:1"></div>
+              <div class="addcancel" onClick="{{ cancelAdd }}">Cancel</div>
+              <div class="addconfirm" onClick="{{ commitAdd }}">{{ addConfirm }}</div>
+            </div>
+          </sc-if>
+
+          <sc-for list="{{ catGroups }}" as="g" hint-placeholder-count="3">
+            <div class="grpcard" style="margin-bottom:16px">
+              <div class="grphead">
+                <span class="{{ g.headChkClass }}" onClick="{{ g.toggleGroup }}">{{ g.headMark }}</span>
+                <span class="{{ g.tagClass }}">{{ g.label }}</span>
+                <span class="grpname" style="margin-left:2px">{{ g.sub }}</span>
+                <span style="margin-left:auto;font:400 12px 'IBM Plex Sans',sans-serif;color:var(--faint,#a39a8c)">{{ g.countLabel }}</span>
+              </div>
+              <sc-for list="{{ g.rows }}" as="c" hint-placeholder-count="3">
+                <div class="{{ c.rowClass }}" onClick="{{ c.toggle }}">
+                  <span class="{{ c.chkClass }}">{{ c.mark }}</span>
+                  <span style="position:relative;display:flex;align-items:center">
+                    <span class="sw" style="background:{{ c.color }}" onClick="{{ c.openColor }}" title="Category colour"></span>
+                    <sc-if value="{{ c.colorOpen }}" hint-placeholder-val="{{ false }}">
+                      <div class="popover" onClick="{{ c.stop }}">
+                        <div class="inslabel" style="margin-bottom:9px">Category colour</div>
+                        <div style="display:flex;flex-wrap:wrap;gap:8px">
+                          <sc-for list="{{ c.palette }}" as="sw" hint-placeholder-count="10">
+                            <span class="{{ sw.cls }}" style="background:{{ sw.color }}" onClick="{{ sw.pick }}"></span>
+                          </sc-for>
+                        </div>
+                        <label style="display:flex;align-items:center;gap:9px;margin-top:13px;cursor:pointer;font:500 12px 'IBM Plex Sans',sans-serif;color:var(--muted,#6b6259)">
+                          <input type="color" value="{{ c.color }}" onInput="{{ c.custom }}" style="width:30px;height:30px;border:none;background:none;padding:0;cursor:pointer">Custom…
+                        </label>
+                      </div>
+                    </sc-if>
+                  </span>
+                  <span class="catname">{{ c.name }}</span>
+                  <span class="catcnt">· {{ c.count }}</span>
+                  <span class="miniassign">{{ c.groupLabel }} <span class="chev">⌄</span></span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-for>
+
+          <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}">
+            <div class="bulkbar">
+              <span style="font:600 13px 'IBM Plex Sans',sans-serif">{{ selCount }} selected</span>
+              <div style="flex:1"></div>
+              <div class="bulkbtn" onClick="{{ toggleMenu }}">
+                Assign to reporting group <span class="chev" style="color:#fff">⌄</span>
+                <sc-if value="{{ menuOpen }}" hint-placeholder-val="{{ false }}">
+                  <div class="menu">
+                    <div class="menuhead">Reporting groups</div>
+                    <sc-for list="{{ groupMenu }}" as="mi" hint-placeholder-count="4">
+                      <div class="menuitem" onClick="{{ mi.assign }}"><span>{{ mi.name }}</span><span class="catcnt">{{ mi.count }}</span></div>
+                    </sc-for>
+                    <div class="menuitem" style="color:var(--faint,#a39a8c);border-top:1px solid var(--divider,rgba(36,31,26,.07));margin-top:3px" onClick="{{ unassign }}">Unassign</div>
+                  </div>
+                </sc-if>
+              </div>
+              <span class="bulkclear" onClick="{{ clearSel }}">Clear</span>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </sc-if>
+
+    </sc-if>
+    <!-- ===== end table layout ===== -->
+
+    <!-- ===== POS LAYOUT ===== -->
+    <sc-if value="{{ isPos }}" hint-placeholder-val="{{ false }}">
+
+    <!-- POS layouts list -->
+    <sc-if value="{{ isPosList }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:15px 28px;border-bottom:1px solid var(--border,rgba(36,31,26,.08));gap:16px">
+        <div style="font:400 12.5px 'IBM Plex Sans',sans-serif;color:var(--muted,#6b6259)">Choose a POS layout to edit. Each layout shows or hides on the register based on its active times and days.</div>
+        <div style="display:flex;gap:8px;align-items:center;flex:none">
+          <div class="pill">⤢ Import</div>
+          <div class="pill" onClick="{{ togglePosSched }}">◷ Schedule publish</div>
+          <div style="background:#554C44;color:#fff;font:600 13px 'IBM Plex Sans',sans-serif;padding:8px 16px;border-radius:7px;cursor:pointer">+ New layout</div>
+        </div>
+      </div>
+      <sc-if value="{{ posSchedOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;gap:14px;padding:14px 28px;background:var(--accent-soft,rgba(168,32,64,.07));border-bottom:1px solid var(--divider,rgba(36,31,26,.06))">
+          <span class="addlabel">Schedule POS publish</span>
+          <span style="font:400 12px 'IBM Plex Sans',sans-serif;color:var(--muted,#6b6259)">Push all layout changes live at:</span>
+          <input type="datetime-local" value="{{ posSchedDraft }}" onChange="{{ onPosSchedDraft }}" style="border:1px solid var(--input-border,rgba(36,31,26,.2));border-radius:6px;padding:7px 10px;font:500 12.5px 'IBM Plex Sans',sans-serif;color:var(--text,#241f1a);background:var(--surface,#fff);outline:none">
+          <div style="flex:1"></div>
+          <div class="addcancel" onClick="{{ togglePosSched }}">Cancel</div>
+          <div class="addconfirm" onClick="{{ togglePosSched }}">Schedule publish</div>
+        </div>
+      </sc-if>
+      <div style="flex:1;overflow:auto;padding:24px 28px 40px">
+        <div style="max-width:1180px;margin:0 auto;background:var(--surface,#fff);border:1px solid var(--border,rgba(36,31,26,.08));border-radius:12px;overflow:hidden">
+          <div class="lrow lhead" style="background:var(--divider,rgba(36,31,26,.03))">
+            <div class="lcell">Layout</div>
+            <div class="lcell">Status</div>
+            <div class="lcell">Active time</div>
+            <div class="lcell">Last published</div>
+            <div class="lcell">Last edited</div>
+            <div class="lcell" style="justify-content:flex-end">Actions</div>
+          </div>
+          <sc-for list="{{ posLayoutRows }}" as="L" hint-placeholder-count="5">
+            <div class="lrow" onClick="{{ L.edit }}">
+              <div class="lcell">
+                <span class="pagedot" style="width:10px;height:10px;background:{{ L.color }}"></span>
+                <div style="min-width:0">
+                  <div style="font:600 14px 'IBM Plex Sans',sans-serif;color:var(--text,#241f1a);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ L.name }}</div>
+                  <div style="font:400 11.5px 'IBM Plex Sans',sans-serif;color:var(--faint,#a39a8c)">{{ L.buttons }} buttons</div>
+                </div>
+              </div>
+              <div class="lcell"><span class="spill" style="{{ L.pillStyle }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ L.dotColor }}"></span>{{ L.pillTxt }}</span></div>
+              <div class="lcell">
+                <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+                  <span class="timewin">{{ L.timeLabel }}</span>
+                  <span class="daychip">{{ L.days }}</span>
+                </div>
+              </div>
+              <div class="lcell"><div style="min-width:0"><div class="datebig">{{ L.pubDate }}</div><div class="datesub">{{ L.pubTime }}</div></div></div>
+              <div class="lcell"><div style="min-width:0"><div class="datebig">{{ L.editDate }}</div><div class="datesub">{{ L.editTime }}</div></div></div>
+              <div class="lcell" style="justify-content:flex-end;flex-wrap:wrap;gap:6px">
+                <span class="mact pri" onClick="{{ L.edit }}">Edit</span>
+                <span class="mact" onClick="{{ L.duplicate }}">⧉ Duplicate</span>
+                <span class="mact" onClick="{{ L.exportL }}">⒓ Export</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- POS grid editor -->
+    <sc-if value="{{ isPosEditor }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;display:flex;min-height:0;min-width:0">
+
+        <!-- rail: pages -->
+        <div class="posrail">
+          <div class="railcap">Tabs</div>
+          <sc-for list="{{ posRail }}" as="pg" hint-placeholder-count="5">
+            <div class="{{ pg.cls }}" data-drop="{{ pg.dropAttr }}" onClick="{{ pg.select }}">
+              <span class="pagedot" style="background:{{ pg.color }}"></span>{{ pg.name }}<span class="pagecnt">{{ pg.cnt }}</span>
+            </div>
+          </sc-for>
+          <div class="addbtn" style="margin-top:10px;justify-content:center" onClick="{{ addPage }}">+ Add tab</div>
+          <div style="flex:1"></div>
+          <div style="font:400 11px 'IBM Plex Sans',sans-serif;color:var(--faint,#a39a8c);padding:10px 8px;line-height:1.5">Click a button to select. Shift-click adds more. Drag onto a page or tab to move.</div>
+        </div>
+
+        <!-- center: grid -->
+        <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border,rgba(36,31,26,.08))">
+            <div class="crumb">
+              <span class="backlink" onClick="{{ backToList }}">‹ Layouts</span>
+              <span style="color:var(--faint,#c2b9ab)">›</span>
+              <sc-for list="{{ crumbs }}" as="cr" hint-placeholder-count="1">
+                <span class="{{ cr.cls }}" onClick="{{ cr.go }}">{{ cr.name }}</span>
+                <sc-if value="{{ cr.showSep }}" hint-placeholder-val="{{ false }}"><span style="color:var(--faint,#c2b9ab)">›</span></sc-if>
+              </sc-for>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center">
+              <div class="addbtn" onClick="{{ addFolder }}">+ Tab</div>
+              <div class="addbtn" onClick="{{ addRow }}">+ Row</div>
+            </div>
+          </div>
+
+          <div style="flex:1;overflow:auto;padding:22px 24px 30px;position:relative">
+            <div class="posgrid" ref="{{ gridRef }}">
+              <sc-for list="{{ posTiles }}" as="t" hint-placeholder-count="14">
+                <sc-if value="{{ t.empty }}" hint-placeholder-val="{{ false }}">
+                  <div class="tempty" style="{{ t.style }}" onClick="{{ t.onAdd }}">+</div>
+                </sc-if>
+                <sc-if value="{{ t.notEmpty }}" hint-placeholder-val="{{ true }}">
+                  <div class="{{ t.wrapClass }}" style="{{ t.style }}" data-drop="{{ t.dropAttr }}" onPointerDown="{{ t.onPress }}">
+                    <sc-if value="{{ t.folder }}" hint-placeholder-val="{{ false }}"><div class="faccent" style="{{ t.accentStyle }}"></div></sc-if>
+                    <div class="tlabel">{{ t.label }}</div>
+                    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:6px">
+                      <span class="tprice">{{ t.price }}</span>
+                      <span style="font:500 10px 'IBM Plex Sans',sans-serif;opacity:.72">{{ t.count }}</span>
+                    </div>
+                    <sc-if value="{{ t.checkShow }}" hint-placeholder-val="{{ false }}"><div class="tcheck">✓</div></sc-if>
+                    <sc-if value="{{ t.folder }}" hint-placeholder-val="{{ false }}"><div class="fopen" onPointerDown="{{ t.stopPress }}" onClick="{{ t.onOpen }}">⤢</div></sc-if>
+                    <sc-if value="{{ t.showResize }}" hint-placeholder-val="{{ false }}"><div class="rz" onPointerDown="{{ t.onResize }}">⟌</div></sc-if>
+                  </div>
+                </sc-if>
+              </sc-for>
+            </div>
+
+            <!-- multi-select bar -->
+            <sc-if value="{{ hasMultiSel }}" hint-placeholder-val="{{ false }}">
+              <div class="bulkbar" style="max-width:840px">
+                <span style="font:600 13px 'IBM Plex Sans',sans-serif">{{ posSelCount }} selected</span>
+                <div style="display:flex;align-items:center;gap:7px">
+                  <sc-for list="{{ barSwatches }}" as="sw" hint-placeholder-count="8">
+                    <span class="sw" style="background:{{ sw.color }}" onClick="{{ sw.pick }}"></span>
+                  </sc-for>
+                  <label class="sw" style="background:conic-gradient(from 0deg,#e74c3c,#f1c40f,#2ecc71,#3498db,#9b59b6,#e74c3c);position:relative;overflow:hidden">
+                    <input type="color" onInput="{{ onCustomColor }}" style="position:absolute;inset:0;opacity:0;cursor:pointer">
+                  </label>
+                </div>
+                <div style="width:1px;height:22px;background:rgba(255,255,255,.2)"></div>
+                <div class="bulkbtn" onClick="{{ toggleMoveMenu }}">
+                  Move to <span class="chev" style="color:#fff">⌄</span>
+                  <sc-if value="{{ moveMenuOpen }}" hint-placeholder-val="{{ false }}">
+                    <div class="menu" style="min-width:210px">
+                      <div class="menuhead">Move into tab / page</div>
+                      <sc-for list="{{ moveTargets }}" as="mt" hint-placeholder-count="3">
+                        <div class="menuitem" onClick="{{ mt.go }}">{{ mt.name }}</div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+                <div class="bulkbtn" onClick="{{ groupSel }}">Group into tab</div>
+                <div class="bulkbtn" style="background:transparent;border:1px solid rgba(255,255,255,.28)" onClick="{{ deleteSel }}">Delete</div>
+                <span class="bulkclear" onClick="{{ clearPosSel }}">Clear</span>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+
+        <!-- inspector: single select -->
+        <sc-if value="{{ hasOneSel }}" hint-placeholder-val="{{ false }}">
+          <div class="inspector">
+            <div>
+              <div class="inslabel" style="margin-bottom:8px">Preview</div>
+              <div class="tile" style="{{ insp.previewStyle }};height:74px;box-shadow:none;cursor:default">
+                <sc-if value="{{ insp.isFolder }}" hint-placeholder-val="{{ false }}"><div class="faccent" style="{{ insp.accentStyle }}"></div></sc-if>
+                <div class="tlabel">{{ insp.label }}</div>
+                <span class="tprice">{{ insp.price }}</span>
+              </div>
+            </div>
+
+            <sc-if value="{{ insp.isProduct }}" hint-placeholder-val="{{ true }}">
+              <div>
+                <div class="inslabel" style="margin-bottom:7px">Linked product</div>
+                <select class="insselect" value="{{ insp.linkVal }}" onChange="{{ insp.onLink }}">
+                  <option value="">Choose product…</option>
+                  <sc-for list="{{ linkOptions }}" as="o" hint-placeholder-count="6">
+                    <option value="{{ o.value }}">{{ o.label }}</option>
+                  </sc-for>
+                </select>
+                <div style="font:400 11.5px 'IBM Plex Sans',sans-serif;color:var(--faint,#a39a8c);margin-top:7px">Category · {{ insp.cat }}</div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ insp.isFolder }}" hint-placeholder-val="{{ false }}">
+              <div>
+                <div class="inslabel" style="margin-bottom:7px">Tab name</div>
+                <input class="insinput" value="{{ insp.label }}" onChange="{{ insp.onRename }}">
+                <div class="mact" style="margin-top:11px;justify-content:center" onClick="{{ insp.open }}">Open tab ⤢</div>
+              </div>
+            </sc-if>
+
+            <div>
+              <div class="inslabel" style="margin-bottom:9px">Colour</div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px">
+                <sc-for list="{{ insp.swatches }}" as="sw" hint-placeholder-count="10">
+                  <span class="{{ sw.cls }}" style="background:{{ sw.color }}" onClick="{{ sw.pick }}"></span>
+                </sc-for>
+              </div>
+              <div style="display:flex;align-items:center;gap:14px;margin-top:13px">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font:500 12px 'IBM Plex Sans',sans-serif;color:var(--muted,#6b6259)"><input type="color" value="{{ insp.customVal }}" onInput="{{ insp.onCustom }}" style="width:30px;height:30px;border:none;background:none;padding:0;cursor:pointer">Custom</label>
+                <sc-if value="{{ insp.isProduct }}" hint-placeholder-val="{{ true }}"><span style="font:600 12px 'IBM Plex Sans',sans-serif;color:var(--accent-text,#554C44);cursor:pointer" onClick="{{ insp.useDefault }}">Category default</span></sc-if>
+              </div>
+            </div>
+
+            <div>
+              <div class="inslabel" style="margin-bottom:9px">Size (grid cells)</div>
+              <div style="display:flex;gap:12px">
+                <div style="flex:1"><div style="font:400 11px 'IBM Plex Sans',sans-serif;color:var(--faint,#a39a8c);margin-bottom:5px">Width</div><div class="stepper"><span class="stepbtn" onClick="{{ insp.wDec }}">−</span><span class="stepval">{{ insp.w }}</span><span class="stepbtn" onClick="{{ insp.wInc }}">+</span></div></div>
+                <div style="flex:1"><div style="font:400 11px 'IBM Plex Sans',sans-serif;color:var(--faint,#a39a8c);margin-bottom:5px">Height</div><div class="stepper"><span class="stepbtn" onClick="{{ insp.hDec }}">−</span><span class="stepval">{{ insp.h }}</span><span class="stepbtn" onClick="{{ insp.hInc }}">+</span></div></div>
+              </div>
+              <div style="font:400 11px 'IBM Plex Sans',sans-serif;color:var(--faint,#a39a8c);margin-top:9px">Or drag the ⟌ corner of a button on the grid.</div>
+            </div>
+
+            <div style="flex:1"></div>
+            <div class="mact" style="justify-content:center;border-color:var(--accent,rgba(85,76,68,.4));color:var(--accent-text,#554C44)" onClick="{{ insp.del }}">Delete button</div>
+          </div>
+        </sc-if>
+
+      </div>
+    </sc-if>
+
+    </sc-if>
+    <!-- ===== end pos layout ===== -->
+
+  </sc-if>
+  <!-- ============ end menu studio ============ -->
+
+  <!-- ============ MENUS TABLE ============ -->
+  <sc-if value="{{ isMenus }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 28px;border-bottom:1px solid var(--border,rgba(36,31,26,.08))">
+      <div>
+        <div style="font-family:'Source Serif 4',serif;font-weight:700;font-size:22px;color:var(--text,#241f1a);line-height:1.1">Menus</div>
+        <div style="font:500 11px 'IBM Plex Sans',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--faint,#a39a8c);margin-top:2px">ZedRead Café · 5 menus</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="pill">⤒ Import menu</div>
+        <div style="background:#554C44;color:#fff;font:600 13px 'IBM Plex Sans',sans-serif;padding:8px 16px;border-radius:7px;cursor:pointer">+ New menu</div>
+      </div>
+    </div>
+    <div style="flex:1;overflow:auto;padding:24px 28px 40px">
+      <div style="max-width:1120px;margin:0 auto;background:var(--surface,#fff);border:1px solid var(--border,rgba(36,31,26,.08));border-radius:12px;overflow:hidden">
+        <div class="mrow mhead" style="background:var(--divider,rgba(36,31,26,.03))">
+          <div class="mcell">Menu</div>
+          <div class="mcell">Status</div>
+          <div class="mcell">Assigned to</div>
+          <div class="mcell">Products</div>
+          <div class="mcell">Updated</div>
+          <div class="mcell" style="justify-content:flex-end">Actions</div>
+        </div>
+        <sc-for list="{{ menusRows }}" as="m" hint-placeholder-count="5">
+          <div class="mrow">
+            <div class="mcell">
+              <div style="min-width:0">
+                <div style="font:600 14px 'IBM Plex Sans',sans-serif;color:var(--text,#241f1a);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.name }}</div>
+                <div style="font:400 11.5px 'IBM Plex Sans',sans-serif;color:var(--faint,#a39a8c)">{{ m.note }}</div>
+              </div>
+            </div>
+            <div class="mcell">
+              <span class="spill" style="{{ m.pillStyle }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ m.dotColor }}"></span>{{ m.pillTxt }}</span>
+              <sc-if value="{{ m.isSched }}" hint-placeholder-val="{{ false }}"><span style="font:500 11px 'IBM Plex Sans',sans-serif;color:var(--faint,#a39a8c)">{{ m.schedAt }}</span></sc-if>
+            </div>
+            <div class="mcell" style="color:var(--muted,#6b6259)">{{ m.assigned }}</div>
+            <div class="mcell" style="font-variant-numeric:tabular-nums;color:var(--muted,#6b6259)">{{ m.products }}</div>
+            <div class="mcell" style="color:var(--muted,#6b6259)">{{ m.updated }}</div>
+            <div class="mcell" style="justify-content:flex-end;flex-wrap:wrap;gap:6px">
+              <sc-if value="{{ m.isDraft }}" hint-placeholder-val="{{ false }}"><span class="mact pri" onClick="{{ m.publish }}">Publish</span></sc-if>
+              <sc-if value="{{ m.isDraft }}" hint-placeholder-val="{{ false }}"><span class="mact" onClick="{{ m.schedule }}">◷ Schedule</span></sc-if>
+              <sc-if value="{{ m.isSched }}" hint-placeholder-val="{{ false }}"><span class="mact pri" onClick="{{ m.publish }}">Publish now</span></sc-if>
+              <sc-if value="{{ m.isSched }}" hint-placeholder-val="{{ false }}"><span class="mact" onClick="{{ m.cancelSched }}">Cancel</span></sc-if>
+              <span class="mact" onClick="{{ m.duplicate }}">⧉ Duplicate</span>
+              <span class="mact">⤓ Export</span>
+            </div>
+          </div>
+          <sc-if value="{{ m.scheduling }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--accent-soft,rgba(168,32,64,.07));border-bottom:1px solid var(--divider,rgba(36,31,26,.06))">
+              <span class="addlabel">Schedule publish</span>
+              <input type="datetime-local" value="{{ scheduleDraft }}" onChange="{{ onScheduleDraft }}" style="border:1px solid var(--input-border,rgba(36,31,26,.2));border-radius:6px;padding:7px 10px;font:500 12.5px 'IBM Plex Sans',sans-serif;color:var(--text,#241f1a);background:var(--surface,#fff);outline:none">
+              <div style="flex:1"></div>
+              <div class="addcancel" onClick="{{ scheduleCancel }}">Cancel</div>
+              <div class="addconfirm" onClick="{{ scheduleConfirm }}">Schedule publish</div>
+            </div>
+          </sc-if>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+  <!-- ============ end menus table ============ -->
+
+  </div>
+</div>
+
+<sc-if value="{{ dragging }}" hint-placeholder-val="{{ false }}">
+  <div class="dragghost" style="{{ ghostStyle }}">Moving {{ posSelCount }} button(s)</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1500,&quot;height&quot;:940}}">
+const THEMES = {
+  light: {
+    '--bg':'#faf7f2','--sidebar':'#554C44','--surface':'#ffffff','--surface2':'#f0ece3',
+    '--sidebar-border':'rgba(0,0,0,.14)','--sidebar-fg':'#ffffff','--sidebar-fg-dim':'rgba(255,255,255,.72)',
+    '--nav-text':'rgba(255,255,255,.82)','--nav-hover':'rgba(255,255,255,.12)','--nav-active-bg':'rgba(255,255,255,.18)','--nav-active-text':'#ffffff','--nav-sec':'rgba(255,255,255,.55)',
+    '--sidebar-line':'rgba(255,255,255,.16)','--sidebar-ctrl-border':'rgba(255,255,255,.3)',
+    '--border':'rgba(36,31,26,.08)','--divider':'rgba(36,31,26,.06)','--input-border':'rgba(36,31,26,.16)',
+    '--text':'#241f1a','--muted':'#6b6259','--faint':'#a39a8c',
+    '--accent':'#554C44','--accent-text':'#403933','--accent-soft':'rgba(85,76,68,.1)','--accent-soft2':'rgba(85,76,68,.16)',
+    '--green':'#2F4034','--chk':'#cfc7bb','--toggle-track':'#efe9df','--toggle-thumb':'#ffffff',
+  },
+  dark: {
+    '--bg':'#1a1613','--sidebar':'#332e29','--surface':'#241d16','--surface2':'#26201a',
+    '--sidebar-border':'rgba(0,0,0,.35)','--sidebar-fg':'#f6ebee','--sidebar-fg-dim':'rgba(246,235,238,.62)',
+    '--nav-text':'rgba(246,235,238,.76)','--nav-hover':'rgba(255,255,255,.09)','--nav-active-bg':'rgba(255,255,255,.14)','--nav-active-text':'#ffffff','--nav-sec':'rgba(246,235,238,.46)',
+    '--sidebar-line':'rgba(255,255,255,.12)','--sidebar-ctrl-border':'rgba(255,255,255,.22)',
+    '--border':'rgba(255,255,255,.07)','--divider':'rgba(255,255,255,.05)','--input-border':'rgba(255,255,255,.14)',
+    '--text':'#efe9e0','--muted':'#a89f92','--faint':'#6f685e',
+    '--accent':'#554C44','--accent-text':'#c2b6a8','--accent-soft':'rgba(85,76,68,.18)','--accent-soft2':'rgba(85,76,68,.26)',
+    '--green':'#8fbf9c','--chk':'#6f685e','--toggle-track':'#2a251f','--toggle-thumb':'#3a332b',
+  },
+};
+
+const PALETTE = ['#554C44','#C56A1A','#B8892B','#4E7A51','#2E6F7E','#3B5A8C','#6B4E8C','#9C3D5A','#7A5C3E','#5A5550'];
+const CAT_COLORS = { COFFEE:'#7A5C3E','WS COFFEE':'#5A5550',DRINKS:'#2E6F7E',BAKERY:'#C56A1A',DOUGHNUTS:'#9C3D5A',CINNABONS:'#B8892B',BREAKFAST:'#4E7A51',LUNCH:'#3B5A8C',RETAIL:'#6B4E8C' };
+
+function textOn(hex){
+  if(!hex || hex[0] !== '#') return '#fff';
+  const c = hex.slice(1);
+  const r = parseInt(c.slice(0,2),16), g = parseInt(c.slice(2,4),16), b = parseInt(c.slice(4,6),16);
+  const L = (0.299*r + 0.587*g + 0.114*b)/255;
+  return L > 0.62 ? '#241f1a' : '#ffffff';
+}
+
+let TID = 0;
+const tid = () => 't' + (++TID);
+const T = (o) => Object.assign({ id: tid(), w:1, h:1, color:null }, o);
+const E = () => ({ id: tid(), kind:'empty', w:1, h:1, color:null });
+
+const PRODUCTS = [
+  { name:'Flat White', category:'COFFEE', rep:'BEVERAGE', price:'5.00', tax:'GST 10%', free:false, plu:'9868549', opts:'MILK' },
+  { name:'Cappuccino', category:'COFFEE', rep:'BEVERAGE', price:'5.00', tax:'GST 10%', free:false, plu:'9969625', opts:'MILK' },
+  { name:'Espresso', category:'COFFEE', rep:'BEVERAGE', price:'4.40', tax:'GST 10%', free:false, plu:'9969626', opts:'MILK' },
+  { name:'Macchiato', category:'COFFEE', rep:'BEVERAGE', price:'4.40', tax:'GST 10%', free:false, plu:'9969910', opts:'None' },
+  { name:'Latte', category:'COFFEE', rep:'BEVERAGE', price:'5.00', tax:'GST 10%', free:false, plu:'9969918', opts:'MILK' },
+  { name:'Long Black', category:'COFFEE', rep:'BEVERAGE', price:'4.60', tax:'GST 10%', free:false, plu:'9969915', opts:'None' },
+  { name:'Chai Latte', category:'COFFEE', rep:'BEVERAGE', price:'5.50', tax:'GST 10%', free:false, plu:'9868220', opts:'MILK' },
+  { name:'Mocha', category:'COFFEE', rep:'BEVERAGE', price:'5.50', tax:'GST 10%', free:false, plu:'9868221', opts:'MILK' },
+  { name:'Piccolo', category:'COFFEE', rep:'BEVERAGE', price:'4.60', tax:'GST 10%', free:false, plu:'9868222', opts:'None' },
+  { name:'Iced Long Black', category:'COFFEE', rep:'BEVERAGE', price:'5.50', tax:'GST 10%', free:false, plu:'9971230', opts:'None' },
+  { name:'Cold Brew', category:'COFFEE', rep:'BEVERAGE', price:'6.00', tax:'GST 10%', free:false, plu:'9971231', opts:'None' },
+  { name:'Iced Latte', category:'COFFEE', rep:'BEVERAGE', price:'6.00', tax:'GST 10%', free:false, plu:'9971232', opts:'MILK' },
+  { name:'Hot Chocolate', category:'DRINKS', rep:'BEVERAGE', price:'5.00', tax:'GST 10%', free:false, plu:'9868560', opts:'None' },
+  { name:'Orange Juice', category:'DRINKS', rep:'BEVERAGE', price:'5.00', tax:'Free', free:true, plu:'9868551', opts:'None' },
+  { name:'Banana Bread', category:'BAKERY', rep:'FOOD', price:'6.50', tax:'Free', free:true, plu:'9052848', opts:'None' },
+  { name:'Almond Croissant', category:'BAKERY', rep:'FOOD', price:'6.00', tax:'GST 10%', free:false, plu:'9969630', opts:'None' },
+  { name:'Doughnut - Nutella', category:'DOUGHNUTS', rep:'FOOD', price:'7.70', tax:'GST 10%', free:false, plu:'9969631', opts:'DOUGHNUT EXTRA' },
+  { name:'Cinnabon', category:'CINNABONS', rep:'FOOD', price:'6.90', tax:'GST 10%', free:false, plu:'9969640', opts:'None' },
+  { name:'Bacon & Egg Roll', category:'BREAKFAST', rep:'FOOD', price:'11.50', tax:'GST 10%', free:false, plu:'9969650', opts:'BREAD' },
+  { name:'Avo Smash', category:'BREAKFAST', rep:'FOOD', price:'16.00', tax:'GST 10%', free:false, plu:'9969651', opts:'ADD-ONS' },
+  { name:'Chicken Wrap', category:'LUNCH', rep:'FOOD', price:'14.50', tax:'GST 10%', free:false, plu:'9969660', opts:'None' },
+  { name:'Caesar Salad', category:'LUNCH', rep:'FOOD', price:'15.00', tax:'GST 10%', free:false, plu:'9969661', opts:'None' },
+  { name:'Keep Cup', category:'RETAIL', rep:'RETAIL', price:'18.00', tax:'GST 10%', free:false, plu:'9969670', opts:'None' },
+  { name:'Bean Bag 1kg', category:'RETAIL', rep:'RETAIL', price:'42.00', tax:'GST 10%', free:false, plu:'9969671', opts:'None' },
+];
+
+function posSeed(){
+  return [
+    { id:'p_fav', name:'Favourites', color:'#554C44', tiles:[
+      T({kind:'product',label:'Flat White',cat:'COFFEE',price:'5.00'}),
+      T({kind:'product',label:'Cappuccino',cat:'COFFEE',price:'5.00'}),
+      T({kind:'product',label:'Latte',cat:'COFFEE',price:'5.00'}),
+      T({kind:'product',label:'Long Black',cat:'COFFEE',price:'4.60'}),
+      T({kind:'folder',label:'Iced Drinks',color:'#2E6F7E',tiles:[
+        T({kind:'product',label:'Iced Long Black',cat:'COFFEE',price:'5.50'}),
+        T({kind:'product',label:'Cold Brew',cat:'COFFEE',price:'6.00'}),
+        T({kind:'product',label:'Iced Latte',cat:'COFFEE',price:'6.00'}),
+        E(),E(),E(),
+      ]}),
+      T({kind:'product',label:'Banana Bread',cat:'BAKERY',price:'6.50'}),
+      T({kind:'product',label:'Almond Croissant',cat:'BAKERY',price:'6.00'}),
+      T({kind:'folder',label:'Add-ons',color:'#B8892B',tiles:[
+        T({kind:'product',label:'Extra Shot',cat:'COFFEE',price:'0.55'}),
+        T({kind:'product',label:'Oat Milk',cat:'COFFEE',price:'0.60'}),
+        E(),E(),
+      ]}),
+      E(),E(),E(),E(),
+    ]},
+    { id:'p_coffee', name:'Coffee', color:'#7A5C3E', tiles:[
+      T({kind:'product',label:'Espresso',cat:'COFFEE',price:'4.40'}),
+      T({kind:'product',label:'Macchiato',cat:'COFFEE',price:'4.40'}),
+      T({kind:'product',label:'Piccolo',cat:'COFFEE',price:'4.60'}),
+      T({kind:'product',label:'Mocha',cat:'COFFEE',price:'5.50'}),
+      T({kind:'product',label:'Chai Latte',cat:'COFFEE',price:'5.50'}),
+      T({kind:'product',label:'Hot Chocolate',cat:'DRINKS',price:'5.00'}),
+      T({kind:'folder',label:'Milk Alt',color:'#4E7A51',tiles:[
+        T({kind:'product',label:'Soy',cat:'COFFEE',price:'0.55'}),
+        T({kind:'product',label:'Oat',cat:'COFFEE',price:'0.60'}),
+        T({kind:'product',label:'Almond',cat:'COFFEE',price:'0.60'}),
+        E(),E(),E(),
+      ]}),
+      E(),E(),E(),E(),E(),
+    ]},
+    { id:'p_food', name:'Food', color:'#C56A1A', tiles:[
+      T({kind:'product',label:'Banana Bread',cat:'BAKERY',price:'6.50'}),
+      T({kind:'product',label:'Almond Croissant',cat:'BAKERY',price:'6.00'}),
+      T({kind:'product',label:'Doughnut - Nutella',cat:'DOUGHNUTS',price:'7.70'}),
+      T({kind:'product',label:'Cinnabon',cat:'CINNABONS',price:'6.90'}),
+      T({kind:'folder',label:'Breakfast',color:'#4E7A51',tiles:[
+        T({kind:'product',label:'Bacon & Egg Roll',cat:'BREAKFAST',price:'11.50'}),
+        T({kind:'product',label:'Avo Smash',cat:'BREAKFAST',price:'16.00'}),
+        E(),E(),
+      ]}),
+      T({kind:'folder',label:'Lunch',color:'#3B5A8C',tiles:[
+        T({kind:'product',label:'Chicken Wrap',cat:'LUNCH',price:'14.50'}),
+        T({kind:'product',label:'Caesar Salad',cat:'LUNCH',price:'15.00'}),
+        E(),E(),
+      ]}),
+      E(),E(),E(),E(),
+    ]},
+    { id:'p_drinks', name:'Cold Drinks', color:'#2E6F7E', tiles:[
+      T({kind:'product',label:'Orange Juice',cat:'DRINKS',price:'5.00'}),
+      T({kind:'product',label:'Iced Latte',cat:'COFFEE',price:'6.00'}),
+      T({kind:'product',label:'Cold Brew',cat:'COFFEE',price:'6.00'}),
+      E(),E(),E(),E(),E(),E(),
+    ]},
+    { id:'p_retail', name:'Retail', color:'#6B4E8C', tiles:[
+      T({kind:'product',label:'Keep Cup',cat:'RETAIL',price:'18.00'}),
+      T({kind:'product',label:'Bean Bag 1kg',cat:'RETAIL',price:'42.00'}),
+      E(),E(),E(),E(),
+    ]},
+  ];
+}
+
+class Component extends DCLogic {
+  state = {
+    screen:'studio', theme:'light', tab:'products', layout:'table',
+    sel:{}, menuOpen:false, comboOpen:{},
+    repGroups:['BEVERAGE','FOOD','RETAIL','WHOLESALE','CATERING','STAFF','PACKAGING','OTHER'],
+    adding:null, draftName:'', draftGroup:null, catColorOpen:null,
+    cats:[
+      { name:'COFFEE', count:'12 products', group:'BEVERAGE' },
+      { name:'WS COFFEE', count:'2 products', group:'BEVERAGE' },
+      { name:'DRINKS', count:'4 products', group:'BEVERAGE' },
+      { name:'BAKERY', count:'6 products', group:'FOOD' },
+      { name:'DOUGHNUTS', count:'5 products', group:'FOOD' },
+      { name:'CINNABONS', count:'3 products', group:'FOOD' },
+      { name:'BREAKFAST', count:'3 products', group:'FOOD' },
+      { name:'LUNCH', count:'4 products', group:'FOOD' },
+      { name:'RETAIL', count:'2 products', group:'RETAIL' },
+      { name:'MISC', count:'1 product', group:null },
+      { name:'SPECIALS', count:'2 products', group:null },
+    ].map(c => ({ ...c, color: CAT_COLORS[c.name] || '#5A5550' })),
+    posPages: posSeed(), posPageIdx:0, posPath:[], posSel:{}, moveMenuOpen:false,
+    posView:'list', editingLayout:0, posSchedOpen:false, posSchedDraft:'',
+    posLayouts:[
+      { id:'l1', name:'Café — All Day', color:'#554C44', buttons:34, status:'published', pubDate:'12 Jul 2026', pubTime:'6:02 AM', editDate:'13 Jul 2026', editTime:'9:14 AM', allDay:true, start:'', end:'', days:'Every day' },
+      { id:'l2', name:'Breakfast', color:'#4E7A51', buttons:18, status:'published', pubDate:'12 Jul 2026', pubTime:'6:30 AM', editDate:'12 Jul 2026', editTime:'8:41 PM', allDay:false, start:'7:00 AM', end:'11:00 AM', days:'Every day' },
+      { id:'l3', name:'Lunch', color:'#3B5A8C', buttons:22, status:'unpublished', pubDate:'—', pubTime:'never published', editDate:'13 Jul 2026', editTime:'10:22 AM', allDay:false, start:'11:00 AM', end:'3:00 PM', days:'Mon–Fri' },
+      { id:'l4', name:'Weekend Brunch', color:'#C56A1A', buttons:20, status:'unpublished', pubDate:'5 Jul 2026', pubTime:'8:00 AM', editDate:'11 Jul 2026', editTime:'4:12 PM', allDay:false, start:'8:00 AM', end:'2:00 PM', days:'Sat–Sun' },
+      { id:'l5', name:'Happy Hour', color:'#6B4E8C', buttons:9, status:'published', pubDate:'10 Jul 2026', pubTime:'3:30 PM', editDate:'10 Jul 2026', editTime:'3:28 PM', allDay:false, start:'3:00 PM', end:'6:00 PM', days:'Every day' },
+    ],
+    dragging:false, dragPos:{x:0,y:0}, dragOverId:null,
+    menus:[
+      { id:'m1', name:'Café — All Day', note:'Primary in-store menu', status:'published', assigned:'All 3 registers', products:35, updated:'2 hours ago', scheduleAt:null },
+      { id:'m2', name:'Breakfast', note:'6:30 – 11:00 am', status:'scheduled', assigned:'Front counter', products:18, updated:'Yesterday', scheduleAt:'Mon 6:30 AM' },
+      { id:'m3', name:'Wholesale', note:'B2B pricing tier', status:'draft', assigned:'Not assigned', products:12, updated:'3 days ago', scheduleAt:null },
+      { id:'m4', name:'Weekend Brunch', note:'Sat–Sun specials', status:'draft', assigned:'Not assigned', products:22, updated:'1 week ago', scheduleAt:null },
+      { id:'m5', name:'Catering', note:'Pre-order platters', status:'published', assigned:'Online only', products:9, updated:'2 weeks ago', scheduleAt:null },
+    ],
+    schedulingId:null, scheduleDraft:'',
+  };
+  rootRef = React.createRef();
+  gridRef = React.createRef();
+
+  // ---- categories ----
+  setGroup(group){ this.setState(s => ({ cats: s.cats.map(c => s.sel[c.name] ? { ...c, group } : c), sel:{}, menuOpen:false })); }
+  toggleCat(name){ this.setState(s => ({ sel:{ ...s.sel, [name]:!s.sel[name] } })); }
+  setCatColor(name,color){ this.setState(s => ({ cats: s.cats.map(c => c.name===name ? { ...c, color } : c) })); }
+  commitAdd(){
+    this.setState(s => {
+      const name = (s.draftName || '').trim().toUpperCase();
+      if(!name) return {};
+      if(s.adding === 'cat'){
+        if(s.cats.some(c => c.name===name)) return { adding:null, draftName:'' };
+        return { cats:[...s.cats, { name, count:'0 products', group:s.draftGroup, color:'#5A5550' }], adding:null, draftName:'', draftGroup:null };
+      }
+      const repGroups = s.repGroups.includes(name) ? s.repGroups : [...s.repGroups, name];
+      return { repGroups, adding:null, draftName:'' };
+    });
+  }
+
+  // ---- POS helpers ----
+  curNode(pages){
+    let node = pages[this.state.posPageIdx];
+    for(const fid of this.state.posPath){ node = node.tiles.find(t => t.id===fid); }
+    return node;
+  }
+  mutate(cb, extra){
+    const pages = JSON.parse(JSON.stringify(this.state.posPages));
+    const node = this.curNode(pages);
+    cb(node, pages);
+    this.setState(Object.assign({ posPages: pages }, extra || {}));
+  }
+  findCurTile(id){ const node = this.curNode(this.state.posPages); return node.tiles.find(t => t.id===id); }
+  editLayout(i){ this.setState({ posView:'editor', editingLayout:i, posPageIdx:0, posPath:[], posSel:{} }); }
+  backToList(){ this.setState({ posView:'list', posSel:{}, posPath:[] }); }
+  dupLayout(i){ this.setState(s => { const L = s.posLayouts[i]; const copy = { ...L, id:'l'+Date.now(), name:L.name+' (copy)', status:'unpublished', pubDate:'—', pubTime:'never published', editDate:'Just now', editTime:'' }; const arr = [...s.posLayouts]; arr.splice(i+1,0,copy); return { posLayouts:arr }; }); }
+
+  selectPage(i){ this.setState({ posPageIdx:i, posPath:[], posSel:{}, catColorOpen:null, moveMenuOpen:false }); }
+  drill(id){ this.setState(s => ({ posPath:[...s.posPath, id], posSel:{}, moveMenuOpen:false })); }
+  crumbGo(len){ this.setState(s => ({ posPath: s.posPath.slice(0, len), posSel:{}, moveMenuOpen:false })); }
+  addPage(){ this.setState(s => { const pages = JSON.parse(JSON.stringify(s.posPages)); pages.push({ id:'p_'+tid(), name:'New Page', color: PALETTE[pages.length % PALETTE.length], tiles:[E(),E(),E(),E(),E(),E()] }); return { posPages: pages, posPageIdx: pages.length-1, posPath:[], posSel:{} }; }); }
+  addRow(){ this.mutate(node => { for(let i=0;i<6;i++) node.tiles.push(E()); }); }
+  addFolder(){ this.mutate(node => { node.tiles.push(T({ kind:'folder', label:'New Tab', color:'#5A5550', tiles:[E(),E(),E()] })); }); }
+  fillEmpty(id){ this.mutate(node => { const t = node.tiles.find(x => x.id===id); if(t){ t.kind='product'; t.label='Set product'; t.cat=null; t.price=''; t.color=null; } }, { posSel:{ [id]:true }, catColorOpen:null }); }
+
+  toggleSel(id){ this.setState(s => ({ posSel:{ ...s.posSel, [id]:!s.posSel[id] }, catColorOpen:null })); }
+  clearPosSel(){ this.setState({ posSel:{}, moveMenuOpen:false }); }
+  setTileSize(id,w,h){ this.mutate(node => { const t = node.tiles.find(x => x.id===id); if(t){ t.w=w; t.h=h; } }); }
+  setTileColor(id,color){ this.mutate(node => { const t = node.tiles.find(x => x.id===id); if(t) t.color=color; }); }
+  renameTile(id,val){ this.mutate(node => { const t = node.tiles.find(x => x.id===id); if(t) t.label=val; }); }
+  setTileProduct(id,name){ const p = PRODUCTS.find(x => x.name===name); this.mutate(node => { const t = node.tiles.find(x => x.id===id); if(t && p){ t.label=p.name; t.cat=p.category; t.price=p.price; } }); }
+  recolor(color){ this.mutate(node => { node.tiles.forEach(t => { if(this.state.posSel[t.id] && t.kind!=='empty') t.color=color; }); }); }
+  deleteSel(){ this.mutate(node => { node.tiles = node.tiles.filter(t => !this.state.posSel[t.id]); }, { posSel:{} }); }
+  groupSel(){
+    this.mutate(node => {
+      const sel = this.state.posSel;
+      const moving = node.tiles.filter(t => sel[t.id] && t.kind!=='empty');
+      if(!moving.length) return;
+      const ids = new Set(moving.map(t => t.id));
+      node.tiles = node.tiles.filter(t => !ids.has(t.id));
+      node.tiles.push(T({ kind:'folder', label:'New Tab', color:'#5A5550', tiles:[...moving, E()] }));
+    }, { posSel:{}, moveMenuOpen:false });
+  }
+  dropOn(code){
+    if(!code) return;
+    const [k,val] = code.split(':');
+    this.mutate((node,pages) => {
+      const sel = this.state.posSel;
+      const ids = new Set(node.tiles.filter(t => sel[t.id] && t.kind!=='empty').map(t => t.id));
+      if(k==='f') ids.delete(val);
+      const moving = node.tiles.filter(t => ids.has(t.id));
+      if(!moving.length) return;
+      node.tiles = node.tiles.filter(t => !ids.has(t.id));
+      let target = null;
+      if(k==='f') target = node.tiles.find(t => t.id===val);
+      else if(k==='p') target = pages[parseInt(val,10)];
+      if(target){ target.tiles = target.tiles || []; target.tiles.push(...moving); }
+    }, { posSel:{}, moveMenuOpen:false, dragOverId:null });
+  }
+
+  beginPress(e,id){
+    if(e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    const self = this;
+    const start = { x:e.clientX, y:e.clientY };
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+    let moved = false;
+    const move = (ev) => {
+      if(!moved && Math.hypot(ev.clientX-start.x, ev.clientY-start.y) > 5){
+        moved = true;
+        self.setState(s => s.posSel[id] ? { dragging:true } : { dragging:true, posSel:{ ...s.posSel, [id]:true } });
+      }
+      if(moved){
+        const el = document.elementFromPoint(ev.clientX, ev.clientY);
+        const dt = el && el.closest ? el.closest('[data-drop]') : null;
+        const code = dt ? dt.getAttribute('data-drop') : null;
+        self.setState({ dragPos:{ x:ev.clientX, y:ev.clientY }, dragOverId: code || null });
+      }
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      if(!moved){
+        if(additive) self.toggleSel(id);
+        else self.setState(s => ({ posSel: (Object.keys(s.posSel).length===1 && s.posSel[id]) ? {} : { [id]:true }, catColorOpen:null }));
+      } else {
+        const code = self.state.dragOverId;
+        if(code) self.dropOn(code);
+        self.setState({ dragging:false, dragOverId:null });
+      }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+
+  startResize(e,id){
+    e.stopPropagation(); e.preventDefault();
+    const grid = this.gridRef.current; if(!grid) return;
+    const rect = grid.getBoundingClientRect();
+    const cols = 6, gap = 10, rowH = 92;
+    const cellW = (rect.width - gap*(cols-1)) / cols;
+    const t = this.findCurTile(id); if(!t) return;
+    const startW = t.w || 1, startH = t.h || 1;
+    const sx = e.clientX, sy = e.clientY;
+    const move = (ev) => {
+      const dw = Math.round((ev.clientX - sx) / (cellW + gap));
+      const dh = Math.round((ev.clientY - sy) / (rowH + gap));
+      const w = Math.min(cols, Math.max(1, startW + dw));
+      const h = Math.min(4, Math.max(1, startH + dh));
+      this.setTileSize(id, w, h);
+    };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+
+  // ---- menus ----
+  publish(id){ this.setState(s => ({ menus: s.menus.map(m => m.id===id ? { ...m, status:'published', scheduleAt:null, updated:'Just now' } : m), schedulingId:null })); }
+  duplicate(id){ this.setState(s => { const i = s.menus.findIndex(m => m.id===id); const src = s.menus[i]; const copy = { ...src, id:'m'+Date.now(), name:src.name+' (copy)', status:'draft', scheduleAt:null, updated:'Just now' }; const menus = [...s.menus]; menus.splice(i+1,0,copy); return { menus }; }); }
+  scheduleOpen(id){ this.setState({ schedulingId:id, scheduleDraft:'' }); }
+  scheduleCancel(){ this.setState({ schedulingId:null }); }
+  cancelSchedule(id){ this.setState(s => ({ menus: s.menus.map(m => m.id===id ? { ...m, status:'draft', scheduleAt:null } : m) })); }
+  scheduleConfirm(){
+    this.setState(s => {
+      const d = s.scheduleDraft; let label = 'soon';
+      if(d){ const dt = new Date(d); if(!isNaN(dt.getTime())) label = dt.toLocaleString([], { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
+      return { menus: s.menus.map(m => m.id===s.schedulingId ? { ...m, status:'scheduled', scheduleAt:label } : m), schedulingId:null, scheduleDraft:'' };
+    });
+  }
+
+  componentDidMount(){ this.applyTheme(); }
+  componentDidUpdate(){ this.applyTheme(); }
+  applyTheme(){
+    const el = this.rootRef.current; if(!el) return;
+    const t = THEMES[this.state.theme];
+    for(const k in t) el.style.setProperty(k, t[k]);
+    document.body.style.background = t['--bg'];
+  }
+
+  renderVals(){
+    const s = this.state;
+    const { theme, screen, tab, layout, sel, menuOpen, comboOpen, cats, repGroups, adding, draftName, draftGroup, catColorOpen } = s;
+    const catColorMap = {}; cats.forEach(c => catColorMap[c.name] = c.color);
+
+    const products = PRODUCTS.slice(0,13).map(p => {
+      const hasOpts = p.opts && p.opts !== 'None';
+      return { ...p, namePrefix:'', rowClass:'grow', taxClass: p.free ? 'taxfree' : '', opts: hasOpts ? p.opts : 'None', optClass: hasOpts ? 'obox filled' : 'obox', catColor: catColorMap[p.category] || '#5A5550' };
+    });
+
+    const modifiers = [
+      { name:'Meal Deal', required:false, min:'0', max:'1', usedBy:'3 products', options:[
+        { name:'Just the item', price:'0.00' },
+        { name:'Make it a combo', price:'4.50', linked:[
+          { name:'Combo Side', rule:'choose 1', options:[ { name:'Fries', price:'0.00' },{ name:'Garden salad', price:'1.50' },{ name:'Potato wedges', price:'1.00' } ] },
+          { name:'Combo Drink', rule:'choose 1', options:[ { name:'Soft drink', price:'0.00' },{ name:'Fresh juice', price:'1.00' } ] },
+        ] } ] },
+      { name:'Milk', required:false, min:'0', max:'0', usedBy:'4 products', options:[ { name:'Soy milk', price:'0.55' },{ name:'Oat milk', price:'0.60' },{ name:'Almond milk', price:'0.60' } ] },
+      { name:'Coffee Type', required:true, min:'1', max:'1', usedBy:'1 product', options:[ { name:'Single shot', price:'0.00' },{ name:'Double shot', price:'0.50' } ] },
+      { name:'Doughnut Extra', required:false, min:'0', max:'2', usedBy:'1 product', options:[ { name:'Extra icing', price:'1.00' },{ name:'Nutella drizzle', price:'1.50' } ] },
+      { name:'Syrup', required:false, min:'0', max:'3', usedBy:'6 products', options:[ { name:'Vanilla', price:'0.60' },{ name:'Caramel', price:'0.60' },{ name:'Hazelnut', price:'0.60' } ] },
+      { name:'Bread', required:true, min:'1', max:'1', usedBy:'3 products', options:[ { name:'Sourdough', price:'0.00' },{ name:'Multigrain', price:'0.00' },{ name:'Gluten free', price:'1.00' } ] },
+      { name:'Size', required:true, min:'1', max:'1', usedBy:'8 products', options:[ { name:'Regular', price:'0.00' },{ name:'Large', price:'0.80' } ] },
+      { name:'Extras', required:false, min:'0', max:'4', usedBy:'2 products', options:[ { name:'Extra shot', price:'0.55' },{ name:'Whipped cream', price:'0.50' } ] },
+      { name:'Temperature', required:true, min:'1', max:'1', usedBy:'5 products', options:[ { name:'Hot', price:'0.00' },{ name:'Iced', price:'0.50' } ] },
+    ].map(m => ({
+      ...m, reqClass: m.required ? 'chk on' : 'chk', reqMark: m.required ? '✓' : '',
+      options: m.options.map(o => {
+        const key = m.name + '::' + o.name;
+        const hasLink = !!(o.linked && o.linked.length);
+        const open = !!comboOpen[key];
+        return { ...o, hasLink, open, wrapClass: hasLink ? 'combotrigger' : '', linkCount: hasLink ? o.linked.length : '', chev: open ? '▾' : '▸', toggle: () => this.setState(st => ({ comboOpen:{ ...st.comboOpen, [key]:!st.comboOpen[key] } })), linked: hasLink ? o.linked : [] };
+      }),
+    }));
+
+    // categories grouping
+    const buildRow = (c) => ({
+      name:c.name, count:c.count, color:c.color, groupLabel: c.group || 'Unassigned',
+      rowClass: sel[c.name] ? 'catrow sel' : 'catrow',
+      chkClass: sel[c.name] ? 'chk on' : 'chk', mark: sel[c.name] ? '✓' : '',
+      toggle: () => this.toggleCat(c.name),
+      colorOpen: catColorOpen === c.name,
+      openColor: (e) => { if(e && e.stopPropagation) e.stopPropagation(); this.setState(st => ({ catColorOpen: st.catColorOpen===c.name ? null : c.name })); },
+      stop: (e) => { if(e && e.stopPropagation) e.stopPropagation(); },
+      custom: (e) => this.setCatColor(c.name, e.target.value),
+      palette: catColorOpen === c.name ? PALETTE.map(col => ({ color:col, cls: c.color===col ? 'swsm on' : 'swsm', pick: (e) => { if(e && e.stopPropagation) e.stopPropagation(); this.setCatColor(c.name, col); } })) : [],
+    });
+    const unassigned = cats.filter(c => !c.group);
+    const orderedGroups = repGroups.filter(g => cats.some(c => c.group===g));
+    const catGroups = [];
+    if(unassigned.length){
+      const rows = unassigned.map(buildRow);
+      const allOn = rows.every(r => sel[r.name]);
+      catGroups.push({ label:'Unassigned', sub:'no reporting group', tagClass:'grptag', countLabel: unassigned.length+' categories', headChkClass: allOn ? 'chk on' : 'chk', headMark: allOn ? '✓' : '', toggleGroup: () => this.setState(st => { const ns = { ...st.sel }; unassigned.forEach(c => ns[c.name] = !allOn); return { sel:ns }; }), rows });
+    }
+    orderedGroups.forEach(g => {
+      const members = cats.filter(c => c.group===g);
+      const rows = members.map(buildRow);
+      const allOn = rows.every(r => sel[r.name]);
+      catGroups.push({ label:g, sub:'reporting group', tagClass:'grptag', countLabel: members.length+' categories', headChkClass: allOn ? 'chk on' : 'chk', headMark: allOn ? '✓' : '', toggleGroup: () => this.setState(st => { const ns = { ...st.sel }; members.forEach(c => ns[c.name] = !allOn); return { sel:ns }; }), rows });
+    });
+    const selNames = cats.filter(c => sel[c.name]).map(c => c.name);
+    const allSel = cats.length > 0 && selNames.length === cats.length;
+    const groupMenu = repGroups.map(g => ({ name:g, count: cats.filter(c => c.group===g).length+'', assign: () => this.setGroup(g) }));
+    const groupOptions = [{ value:'', label:'Unassigned' }, ...repGroups.map(g => ({ value:g, label:g }))];
+
+    // ---- POS ----
+    const page = s.posPages[s.posPageIdx];
+    let node = page; for(const fid of s.posPath){ node = node.tiles.find(t => t.id===fid); }
+    const curTiles = node.tiles;
+    const posSel = s.posSel;
+    const curIds = new Set(curTiles.map(t => t.id));
+    const selIds = Object.keys(posSel).filter(id => posSel[id] && curIds.has(id));
+
+    const posRail = s.posPages.map((pg,i) => ({ name:pg.name, color:pg.color, cnt: pg.tiles.filter(t => t.kind!=='empty').length, cls: 'pospage' + (i===s.posPageIdx ? ' active' : '') + (s.dragOverId==='p:'+i ? ' drop' : ''), dropAttr:'p:'+i, select: () => this.selectPage(i) }));
+
+    const crumbs = [{ name: page.name, cls: 'crumbseg' + (s.posPath.length===0 ? ' here' : ''), go: () => this.crumbGo(0), showSep: s.posPath.length>0 }];
+    let acc = page;
+    s.posPath.forEach((fid,idx) => { acc = acc.tiles.find(t => t.id===fid); crumbs.push({ name: acc.label, cls:'crumbseg' + (idx===s.posPath.length-1 ? ' here' : ''), go: () => this.crumbGo(idx+1), showSep: idx < s.posPath.length-1 }); });
+
+    const posTiles = curTiles.map(t => {
+      if(t.kind==='empty') return { id:t.id, empty:true, notEmpty:false, folder:false, checkShow:false, showResize:false, style:'grid-column:span '+(t.w||1), onAdd: () => this.fillEmpty(t.id) };
+      const isF = t.kind==='folder';
+      const base = t.color || (isF ? null : (catColorMap[t.cat] || '#5A5550'));
+      const selc = !!posSel[t.id];
+      const style = 'grid-column:span '+(t.w||1)+';grid-row:span '+(t.h||1) + (isF ? '' : (';background:'+base+';color:'+textOn(base)));
+      return {
+        id:t.id, empty:false, notEmpty:true, folder:isF,
+        label:t.label, price: t.price ? ('$'+t.price) : '',
+        count: isF ? (t.tiles.filter(x => x.kind!=='empty').length + ' items') : '',
+        wrapClass: 'tile' + (isF ? ' folder' : '') + (selc ? ' sel' : '') + (s.dragOverId==='f:'+t.id ? ' drop' : ''),
+        style, accentStyle: isF ? ('background:'+(t.color || 'var(--accent,#554C44)')) : '',
+        checkShow: selc, showResize: selc,
+        dropAttr: isF ? ('f:'+t.id) : null,
+        onPress: (e) => this.beginPress(e, t.id),
+        onOpen: isF ? () => this.drill(t.id) : null,
+        stopPress: (e) => { if(e && e.stopPropagation) e.stopPropagation(); if(e && e.preventDefault) e.preventDefault(); },
+        onResize: (e) => this.startResize(e, t.id),
+      };
+    });
+
+    const barSwatches = PALETTE.map(col => ({ color:col, pick: () => this.recolor(col) }));
+    const moveTargets = curTiles.filter(t => t.kind==='folder').map(f => ({ name:'↳  '+f.label, go: () => this.dropOn('f:'+f.id) }))
+      .concat(s.posPages.map((p,i) => ({ name:'Page · '+p.name, go: () => this.dropOn('p:'+i) })));
+
+    const oneId = selIds.length===1 ? selIds[0] : null;
+    const oneTile = oneId ? curTiles.find(t => t.id===oneId) : null;
+    const hasOneSel = !!oneTile;
+    let insp = {};
+    if(oneTile){
+      const t = oneTile; const isF = t.kind==='folder';
+      const base = t.color || (isF ? '#5A5550' : (catColorMap[t.cat] || '#5A5550'));
+      insp = {
+        isFolder:isF, isProduct:!isF, label:t.label, price: t.price ? ('$'+t.price) : '',
+        previewStyle: 'background:' + (isF ? 'var(--surface2,#f0ece3)' : base) + ';color:' + (isF ? 'var(--text,#241f1a)' : textOn(base)),
+        accentStyle: 'background:' + (t.color || 'var(--accent,#554C44)'),
+        swatches: PALETTE.map(col => ({ color:col, cls: t.color===col ? 'swsm on' : 'swsm', pick: () => this.setTileColor(t.id, col) })),
+        onCustom: (e) => this.setTileColor(t.id, e.target.value), customVal: base,
+        useDefault: () => this.setTileColor(t.id, null),
+        linkVal: t.label, onLink: (e) => this.setTileProduct(t.id, e.target.value), cat: t.cat || '—',
+        w: t.w || 1, h: t.h || 1,
+        wDec: () => this.setTileSize(t.id, Math.max(1,(t.w||1)-1), t.h||1),
+        wInc: () => this.setTileSize(t.id, Math.min(6,(t.w||1)+1), t.h||1),
+        hDec: () => this.setTileSize(t.id, t.w||1, Math.max(1,(t.h||1)-1)),
+        hInc: () => this.setTileSize(t.id, t.w||1, Math.min(4,(t.h||1)+1)),
+        onRename: (e) => this.renameTile(t.id, e.target.value),
+        open: isF ? () => this.drill(t.id) : null,
+        del: () => this.deleteSel(),
+      };
+    }
+
+    // ---- menus ----
+    const pill = {
+      published:{ t:'Live', bg:'rgba(47,64,52,.14)', c:'var(--green,#2F4034)', d:'var(--green,#2F4034)' },
+      scheduled:{ t:'Scheduled', bg:'rgba(197,106,26,.16)', c:'#b06a1a', d:'#c56a1a' },
+      draft:{ t:'Draft', bg:'var(--surface2,#f0ece3)', c:'var(--muted,#6b6259)', d:'var(--faint,#a39a8c)' },
+    };
+    const menusRows = s.menus.map(m => { const p = pill[m.status]; return { ...m, pillTxt:p.t, pillStyle:'background:'+p.bg+';color:'+p.c, dotColor:p.d, isDraft: m.status==='draft', isSched: m.status==='scheduled', isPub: m.status==='published', schedAt: m.scheduleAt || '', scheduling: s.schedulingId===m.id, publish: () => this.publish(m.id), schedule: () => this.scheduleOpen(m.id), cancelSched: () => this.cancelSchedule(m.id), duplicate: () => this.duplicate(m.id) }; });
+
+    const pillL = {
+      published:{ t:'Published', bg:'rgba(47,64,52,.14)', c:'var(--green,#2F4034)', d:'var(--green,#2F4034)' },
+      unpublished:{ t:'Unpublished', bg:'var(--surface2,#f0ece3)', c:'var(--muted,#6b6259)', d:'var(--faint,#a39a8c)' },
+    };
+    const posLayoutRows = s.posLayouts.map((L,i) => { const p = pillL[L.status]; return {
+      name:L.name, color:L.color, buttons:L.buttons, days:L.days,
+      timeLabel: L.allDay ? 'All day' : (L.start + ' – ' + L.end),
+      pubDate:L.pubDate, pubTime:L.pubTime, editDate:L.editDate, editTime:L.editTime,
+      pillTxt:p.t, pillStyle:'background:'+p.bg+';color:'+p.c, dotColor:p.d,
+      edit:(e)=>{ if(e&&e.stopPropagation)e.stopPropagation(); this.editLayout(i); },
+      duplicate:(e)=>{ if(e&&e.stopPropagation)e.stopPropagation(); this.dupLayout(i); },
+      exportL:(e)=>{ if(e&&e.stopPropagation)e.stopPropagation(); },
+    }; });
+
+    return {
+      rootRef: this.rootRef, gridRef: this.gridRef,
+      isPosList: layout==='pos' && s.posView==='list',
+      isPosEditor: layout==='pos' && s.posView==='editor',
+      posLayoutRows, backToList: () => this.backToList(),
+      posSchedOpen: s.posSchedOpen, posSchedDraft: s.posSchedDraft,
+      togglePosSched: () => this.setState(st => ({ posSchedOpen: !st.posSchedOpen })),
+      onPosSchedDraft: (e) => this.setState({ posSchedDraft: e.target.value }),
+      themeIcon: theme==='light' ? '☾' : '☀',
+      toggleTheme: () => this.setState(st => ({ theme: st.theme==='light' ? 'dark' : 'light' })),
+      // screens
+      isStudio: screen==='studio', isMenus: screen==='menus',
+      navStudioClass: screen==='studio' ? 'navitem active' : 'navitem',
+      navMenusClass: screen==='menus' ? 'navitem active' : 'navitem',
+      goStudio: () => this.setState({ screen:'studio' }),
+      goMenus: () => this.setState({ screen:'menus' }),
+      // layout seg
+      tableSegClass: layout==='table' ? 'on' : 'off',
+      posSegClass: layout==='pos' ? 'on' : 'off',
+      showTable: () => this.setState({ layout:'table' }),
+      showPos: () => this.setState({ layout:'pos' }),
+      isTableLayout: layout==='table', isPos: layout==='pos',
+      // table tabs
+      tabProducts: () => this.setState({ tab:'products' }),
+      tabModifiers: () => this.setState({ tab:'modifiers' }),
+      tabCategories: () => this.setState({ tab:'categories' }),
+      tabProductsClass: tab==='products' ? 'tab active' : 'tab',
+      tabModifiersClass: tab==='modifiers' ? 'tab active' : 'tab',
+      tabCategoriesClass: tab==='categories' ? 'tab active' : 'tab',
+      isProducts: tab==='products', isModifiers: tab==='modifiers', isCategories: tab==='categories',
+      catCount: cats.length, catGroups, groupMenu, groupOptions,
+      adding: !!adding, addingCat: adding==='cat',
+      addTitle: adding==='group' ? 'New reporting group' : 'New category',
+      addPlaceholder: adding==='group' ? 'Reporting group name' : 'Category name',
+      addConfirm: adding==='group' ? 'Create group' : 'Create category',
+      draftName, draftGroupVal: draftGroup || '',
+      onDraftName: (e) => this.setState({ draftName: e.target.value }),
+      onDraftGroup: (e) => this.setState({ draftGroup: e.target.value || null }),
+      startAddGroup: () => this.setState({ adding:'group', draftName:'' }),
+      cancelAdd: () => this.setState({ adding:null, draftName:'' }),
+      commitAdd: () => this.commitAdd(),
+      newAction: () => { if(tab==='categories') this.setState({ adding:'cat', draftName:'', draftGroup:null }); },
+      hasSel: selNames.length>0, selCount: selNames.length, menuOpen,
+      toggleMenu: () => this.setState(st => ({ menuOpen:!st.menuOpen })),
+      clearSel: () => this.setState({ sel:{}, menuOpen:false }),
+      unassign: () => this.setGroup(null),
+      allSelClass: allSel ? 'chk on' : 'chk', allSelMark: allSel ? '✓' : '',
+      toggleSelectAll: () => this.setState(st => { if(allSel) return { sel:{} }; const ns = {}; cats.forEach(c => ns[c.name] = true); return { sel:ns }; }),
+      searchLabel: tab==='modifiers' ? 'Search option sets and modifiers' : tab==='categories' ? 'Search categories' : 'Search products — name, ID',
+      archiveLabel: tab==='modifiers' ? 'Archived Sets' : 'Archived Products',
+      newLabel: tab==='modifiers' ? '+ New option set' : tab==='categories' ? '+ New category' : '+ New product',
+      products, modifiers,
+      // POS
+      posRail, crumbs, posTiles, barSwatches, moveTargets,
+      addPage: () => this.addPage(), addRow: () => this.addRow(), addFolder: () => this.addFolder(),
+      hasMultiSel: selIds.length>=2, posSelCount: selIds.length,
+      hasOneSel, insp, linkOptions: PRODUCTS.map(p => ({ value:p.name, label:p.name })),
+      moveMenuOpen: s.moveMenuOpen, toggleMoveMenu: () => this.setState(st => ({ moveMenuOpen:!st.moveMenuOpen })),
+      groupSel: () => this.groupSel(), deleteSel: () => this.deleteSel(), clearPosSel: () => this.clearPosSel(),
+      onCustomColor: (e) => this.recolor(e.target.value),
+      dragging: s.dragging, ghostStyle: 'left:'+(s.dragPos.x+16)+'px;top:'+(s.dragPos.y+14)+'px',
+      // menus
+      menusRows, scheduleDraft: s.scheduleDraft,
+      onScheduleDraft: (e) => this.setState({ scheduleDraft: e.target.value }),
+      scheduleConfirm: () => this.scheduleConfirm(), scheduleCancel: () => this.scheduleCancel(),
+    };
+  }
+}
+</script>
+</body>
+</html>
