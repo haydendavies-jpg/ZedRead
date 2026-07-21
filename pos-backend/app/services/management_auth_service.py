@@ -476,17 +476,33 @@ async def login(db: AsyncSession, payload: LoginRequest) -> UnifiedLoginResponse
         )
 
     # ── No row matched — consistent 401, never reveal whether the email exists ──
-    entity_id = str(candidates[0].id) if candidates else payload.email
-    await log_action(
-        db=db,
-        action=AUTH_LOGIN_FAILED,
-        entity_type="user",
-        entity_id=entity_id,
-        actor_type=ActorType.USER,
-        actor_id=None,
-        actor_email=payload.email,
-        actor_name=None,
-    )
+    # A candidate carrying superadmin_role (regardless of whether its password
+    # check passed) logs as a portal-admin-flavoured failure; otherwise it's a
+    # management-flavoured failure — mirrors the pre-merge two-table check.
+    superadmin_candidate = next((c for c in candidates if c.superadmin_role is not None), None)
+    if superadmin_candidate is not None:
+        await log_action(
+            db=db,
+            action=AUTH_LOGIN_FAILED,
+            entity_type="user",
+            entity_id=str(superadmin_candidate.id),
+            actor_type=ActorType.USER,
+            actor_id=None,
+            actor_email=payload.email,
+            actor_name=None,
+        )
+    else:
+        entity_id = str(candidates[0].id) if candidates else payload.email
+        await log_action(
+            db=db,
+            action=MGMT_LOGIN_FAILED,
+            entity_type="user",
+            entity_id=entity_id,
+            actor_type=ActorType.USER,
+            actor_id=None,
+            actor_email=payload.email,
+            actor_name=None,
+        )
     await db.commit()
     log.warning("auth.portal.login.failed", email=payload.email, reason="not_found_or_bad_pw")
     raise HTTPException(

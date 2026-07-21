@@ -105,7 +105,7 @@ current list before writing tests — it grows with each stage):
 | `db` | `AsyncSession` that rolls back after each test, function-scoped |
 | `client` | httpx `AsyncClient` against the app on the test DB, function-scoped |
 | `test_group` / `test_brand` / `test_site` | Created hierarchy rows (each under the previous) |
-| `test_superadmin` | An Admin-role `superadmins` row |
+| `test_superadmin` | A `users` row with `superadmin_role="admin"` (no tenant scope) |
 | `portal_auth_headers` | `Authorization` header dict for `test_superadmin` JWT |
 | `test_user` | A `users` row scoped to `test_brand` |
 | `test_access_profile` / `test_manager_profile` | `access_profiles` rows for `test_brand` |
