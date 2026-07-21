@@ -1226,6 +1226,36 @@ ImportError/circular-import regressions), `alembic heads` (confirms a single val
 
 ---
 
+### Users edit page — "POS - Site Assignment" toggle ✅
+
+User request: expose `users.is_pos_multi_site_enabled` (already on the model and consumed by
+`pos_auth_service.login()` since it gates the POS site-selector prompt) on the admin portal's Users
+edit page — it had a column and login-time behaviour but no read/write path anywhere in the API or
+portal.
+
+**Deliverables:**
+- [x] `schemas/user.py`: `UserOut` gained `is_pos_multi_site_enabled: bool = False`; `UserUpdate`
+  gained `is_pos_multi_site_enabled: bool | None = None` (optional — the existing
+  `model_fields_set` sentinel pattern already used for `backend_role`/`superadmin_role`
+  distinguishes "not supplied" from an explicit value).
+- [x] `routes/users.py`: `_attach_sites()` and `create_user()`'s response now populate the field;
+  `update_user()` applies it only when the key is present in the request body, and its `USER_UPDATED`
+  audit row's `after_state` now includes the new value (no new audit action — this folds into the
+  existing generic user-edit audit like the name/email fields do).
+- [x] `types/index.ts`'s `User` interface gained `is_pos_multi_site_enabled: boolean`.
+- [x] `pages/UsersPage.tsx`: the edit modal's "User Details" section gained a "POS - Site Assignment"
+  checkbox (with the same behaviour description as the model's docstring) between the Portal Role
+  select and the password field; `editMutation` now always sends the current toggle state alongside
+  the other fields.
+- [x] Tests: `test_users_routes.py` gained `test_update_user_pos_multi_site_enabled_toggle_writes_audit`
+  and `test_update_user_omits_pos_multi_site_enabled_leaves_unchanged`.
+
+**Known limitations:** no reachable Postgres in this environment — verified via `ast.parse` on the
+touched Python files and the portal's `tsc --noEmit` (clean). The new tests were not executed against
+a live database; a future session with Postgres available should run them.
+
+---
+
 ## Phase 9 — Product Model Extensions
 
 ### Stage 24 — Product Extensions ✅

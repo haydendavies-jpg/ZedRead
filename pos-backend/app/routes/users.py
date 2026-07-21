@@ -168,6 +168,7 @@ async def _attach_sites(
             backend_role=u.backend_role,
             superadmin_role=u.superadmin_role,
             is_active=u.is_active,
+            is_pos_multi_site_enabled=u.is_pos_multi_site_enabled,
             site_grants=grants_by_user.get(u.id, []),
             has_portal_access=u.id in portal_capable,
         )
@@ -366,6 +367,7 @@ async def create_user(
         backend_role=user.backend_role,
         superadmin_role=user.superadmin_role,
         is_active=user.is_active,
+        is_pos_multi_site_enabled=user.is_pos_multi_site_enabled,
         site_grants=[],
         has_portal_access=False,
     )
@@ -631,7 +633,7 @@ async def update_user(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(get_current_superadmin),
 ):
-    """Edit a User's name, email, backend_role, superadmin_role, and/or password. Requires portal JWT."""
+    """Edit a User's name, email, backend_role, superadmin_role, POS site assignment, and/or password. Requires portal JWT."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -736,6 +738,10 @@ async def update_user(
             )
         user.superadmin_role = body.superadmin_role
 
+    # POS - Site Assignment — same "not supplied" sentinel as backend_role/superadmin_role
+    if "is_pos_multi_site_enabled" in body.model_fields_set and body.is_pos_multi_site_enabled is not None:
+        user.is_pos_multi_site_enabled = body.is_pos_multi_site_enabled
+
     await log_action(
         db=db,
         actor_id=actor.id,
@@ -745,7 +751,12 @@ async def update_user(
         entity_type="user",
         entity_id=str(user.id),
         before_state=before,
-        after_state={"name": user.name, "email": user.email, "backend_role": user.backend_role},
+        after_state={
+            "name": user.name,
+            "email": user.email,
+            "backend_role": user.backend_role,
+            "is_pos_multi_site_enabled": user.is_pos_multi_site_enabled,
+        },
     )
 
     await db.commit()
