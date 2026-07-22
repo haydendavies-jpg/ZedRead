@@ -6,6 +6,9 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
@@ -128,9 +131,25 @@ fun parseHexColor(hex: String): Color {
     return runCatching { Color(0xFF000000 or clean.toLong(16)) }.getOrDefault(Color(0xFF5A5550))
 }
 
+/**
+ * Manual theme override for the top nav bar's ☾/☀ toggle
+ * (README-tables-floormap.md's "Top Navigation Bar" section). Null follows
+ * the system setting (the app's prior, only behavior); a explicit
+ * true/false pins it regardless of the device theme.
+ *
+ * Deliberately a plain global `mutableStateOf`, not a persisted
+ * DataStore/Hilt-backed preference — this is a single-activity kiosk app
+ * with one always-running process, and no other per-device UI preference
+ * exists yet to justify standing up a persistence path for. Resets to
+ * "follow system" on process death, same as before this toggle existed.
+ */
+object ThemeState {
+    var darkOverride by mutableStateOf<Boolean?>(null)
+}
+
 @Composable
 fun ZedReadTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+    val dark = ThemeState.darkOverride ?: isSystemInDarkTheme()
     val zedColors = if (dark) DarkZedReadColors else LightZedReadColors
     CompositionLocalProvider(LocalZedReadColors provides zedColors) {
         MaterialTheme(

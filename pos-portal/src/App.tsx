@@ -30,6 +30,7 @@ import { ProductsPage } from './pages/management/ProductsPage'
 import { ModifiersPage } from './pages/management/ModifiersPage'
 import { CategoriesPage } from './pages/management/CategoriesPage'
 import { MenuBuilderPage } from './pages/management/MenuBuilderPage'
+import { TableMapsPage } from './pages/management/TableMapsPage'
 import { MenuStudioPage } from './pages/management/MenuStudioPage'
 import { ReportsPage } from './pages/management/ReportsPage'
 import { InvoicesPage } from './pages/management/InvoicesPage'
@@ -172,6 +173,7 @@ export default function App() {
               <Route path="management/modifiers" element={<ModifiersPage />} />
               <Route path="management/categories" element={<CategoriesPage />} />
               <Route path="management/menu-builder" element={<MenuBuilderPage />} />
+              <Route path="management/table-maps" element={<TableMapsPage />} />
               <Route path="management/reports" element={<ReportsPage />} />
               <Route path="management/invoices" element={<InvoicesPage />} />
               <Route path="management/invoices/:invoiceId" element={<InvoiceDetailPage />} />

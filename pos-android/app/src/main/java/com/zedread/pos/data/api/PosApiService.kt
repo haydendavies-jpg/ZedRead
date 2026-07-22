@@ -179,4 +179,66 @@ interface PosApiService {
         @Header("Authorization") bearer: String,
         @Query("search") search: String?,
     ): List<SettingDto>
+
+    // ── Table maps & floor service (Android POS Phase 4) ───────────────────
+
+    /** GET /pos/table-map?site_id= — every published floor map for the site, with live table status. */
+    @GET("pos/table-map")
+    suspend fun getTableMap(
+        @Header("Authorization") bearer: String,
+        @Query("site_id") siteId: String,
+    ): List<PosTableMapDetailDto>
+
+    /** POST /pos/dining-tables/{id}/seat — opens a new occupancy session. */
+    @POST("pos/dining-tables/{id}/seat")
+    suspend fun seatDiningTable(
+        @Header("Authorization") bearer: String,
+        @Path("id") diningTableId: String,
+        @Body body: SeatTableRequestBody,
+    ): TableSessionDto
+
+    /**
+     * POST /pos/dining-tables/{id}/reserve — response_model=None (a bare
+     * `null` JSON body on success). Wrapped in Response<Unit> for the same
+     * reason [removeLineItem] is — Moshi/Retrofit's nullable-suspend-return
+     * detection can't be trusted for a legitimate empty/null body.
+     */
+    @POST("pos/dining-tables/{id}/reserve")
+    suspend fun reserveDiningTable(
+        @Header("Authorization") bearer: String,
+        @Path("id") diningTableId: String,
+        @Body body: ReserveTableRequestBody,
+    ): Response<Unit>
+
+    /** POST /pos/table-sessions/{id}/order — mark a seated table's session as ordered. */
+    @POST("pos/table-sessions/{id}/order")
+    suspend fun markTableOrdered(
+        @Header("Authorization") bearer: String,
+        @Path("id") sessionId: String,
+        @Body body: TableActionRequestBody,
+    ): TableSessionDto
+
+    /** POST /pos/table-sessions/{id}/bill — mark a table's session as needing its bill. */
+    @POST("pos/table-sessions/{id}/bill")
+    suspend fun markTableBill(
+        @Header("Authorization") bearer: String,
+        @Path("id") sessionId: String,
+        @Body body: TableActionRequestBody,
+    ): TableSessionDto
+
+    /** POST /pos/table-sessions/{id}/merge — bidirectionally merge two open sessions. */
+    @POST("pos/table-sessions/{id}/merge")
+    suspend fun mergeTableSessions(
+        @Header("Authorization") bearer: String,
+        @Path("id") sessionId: String,
+        @Body body: MergeTableRequestBody,
+    ): TableSessionDto
+
+    /** POST /pos/table-sessions/{id}/clear — close a session, returning the table to 'open'. */
+    @POST("pos/table-sessions/{id}/clear")
+    suspend fun clearTableSession(
+        @Header("Authorization") bearer: String,
+        @Path("id") sessionId: String,
+        @Body body: TableActionRequestBody,
+    ): TableSessionDto
 }

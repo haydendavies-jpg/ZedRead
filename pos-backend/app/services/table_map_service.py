@@ -289,8 +289,13 @@ async def duplicate_table_map(db: AsyncSession, brand_id: uuid.UUID, table_map_i
         )
         db.add(new_shape)
         if shape.kind in TABLE_SHAPE_KINDS:
-            # new_shape.id is already known (client-generated uuid4 above) —
-            # no flush needed before referencing it in the FK below
+            # The client-generated id is known ahead of the INSERT, but the
+            # FK constraint is checked against the row's actual presence at
+            # INSERT time — flush new_shape first so its row exists before
+            # the dependent DiningTable insert executes (the two use_alter'd
+            # FK constraints from migration 0056 aren't picked up by
+            # SQLAlchemy's automatic dependency-sort between these tables).
+            await db.flush()
             db.add(DiningTable(id=uuid.uuid4(), table_map_shape_id=new_shape.id, site_id=new_map.site_id))
 
     await log_action(
