@@ -50,10 +50,10 @@ was explicitly ruled out (Android randomizes/blocks it for privacy). `pos_device
 login and sent alongside `device_token`; `pos_auth_service` now falls back to a hardware_id lookup
 when no token is presented, re-linking a returning physical device instead of silently claiming a
 new seat. See `STAGE_STATUS.md` "License editing for Admin/Master User + hardware-anchored device
-tracking" for the full deliverable list — the 109 tests directly covering this slice pass against a
-real local Postgres 16, portal `npm run build` clean; the Android-side change (`AuthRepository`
-reading `ANDROID_ID`) is source-only, same "no reachable Gradle build in this sandbox" caveat as
-everything else here.
+tracking" for the full deliverable list — the 109 tests directly covering this slice, and the full
+suite (904/904, up from 889), pass against a real local Postgres 16; portal `npm run build` clean;
+the Android-side change (`AuthRepository` reading `ANDROID_ID`) is source-only, same "no reachable
+Gradle build in this sandbox" caveat as everything else here.
 
 **What the Phase 2 backend/portal slice shipped** (this session): the first three items of Phase 2's
 build order, fully tested against a real Postgres instance — see `STAGE_STATUS.md` "Android POS

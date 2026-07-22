@@ -1442,13 +1442,11 @@ reinstall, which is exactly the gap this closes).
       `test_pos_auth_routes.py` gained hardware_id recovery coverage (same-site recovery, recovery
       under a fully-claimed license — no new seat consumed, audit row, learning a hardware_id from a
       known token, unknown hardware_id still claims fresh) — all 109 tests across
-      `test_license_routes.py`/`test_pos_auth_routes.py`/`test_pos_device_routes.py` passing against a
-      real local Postgres 16 instance with migrations applied through `0054`. A full-suite regression
-      run was kicked off in the same session to confirm no knock-on effect elsewhere; see this file's
-      latest commit history / STAGE_STATUS for the confirmed full-suite count if this note is still
-      here unedited. Portal `npm run build` (tsc + vite) verified clean. Android changes are source-only
-      — the Gradle build is still blocked in every sandbox this project has run in
-      (`ANDROID_POS_BUILD_PLAN.md`).
+      `test_license_routes.py`/`test_pos_auth_routes.py`/`test_pos_device_routes.py` passing, and the
+      full suite 904/904 passing (up from 889), verified against a real local Postgres 16 instance
+      with migrations applied through `0054`. Portal `npm run build` (tsc + vite) verified clean.
+      Android changes are source-only — the Gradle build is still blocked in every sandbox this
+      project has run in (`ANDROID_POS_BUILD_PLAN.md`).
 
 ---
 
