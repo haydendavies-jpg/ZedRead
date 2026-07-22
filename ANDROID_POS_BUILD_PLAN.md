@@ -19,15 +19,68 @@ here in a new session — read the Status section first, then the phase you're o
 | 1 | Backend — invoice line-item quantity update / remove (qty stepper support) | ✅ Done |
 | 1 | Android — Modifier customise sheet, exact match | ✅ Done — see below |
 | 1 | Android — Payment flow, exact match + Voucher tab/Split toggle | ✅ Done — see below |
+| 1 | Android — user-testing feedback round (cash-up logout, keyboard/IME, immersive system bars, PIN-only switch-user) | ✅ Done — see below |
 | 2 | Settings framework, idempotency, checksums, offline write-queue | 🔲 Not started |
 | 3 | Menu Studio → POS integration depth (recurring scheduling, menu selector) | 🔲 Not started |
 | 4 | Table maps & floor service | 🔲 Not started |
 
-**Next up:** Phase 1 is now functionally complete on both backend and Android — the design bundle's
-Register screen, modifier customise sheet, and payment flow (incl. the flagged Voucher tab and Split
-toggle) are all built exact-match. What's left before calling Phase 1 fully done is verification: a
-real Gradle build + emulator run (still blocked in this sandbox, see below) and manual exercise of the
-till round-trip end to end. Phase 2 (settings framework, idempotency, offline write-queue) is next.
+**Next up:** Phase 1 is functionally complete on both backend and Android, including a round of fixes
+from real on-device testing. What's left before calling Phase 1 fully done is verification: a real
+Gradle build + emulator run (still blocked in this sandbox, see below) and manual exercise of the till
+round-trip end to end. One item from this round's feedback is still open pending user input — see
+"colour branding" below. Phase 2 (settings framework, idempotency, offline write-queue) is next.
+
+**What the user-testing feedback round shipped** (this session, on top of the modifier sheet + payment
+flow slice below): six issues reported from exercising the real app, addressed —
+- **Cash-up no longer forces logout.** `CashUpScreen`'s post-close screen previously offered only a
+  "Log Out" button as its sole next action (`RegisterSessionViewModel.logout()`/`loggedOut`, both now
+  removed — dead once their only caller was gone). It now just says "Done" and returns to
+  `RegisterGate` (which prompts cash-in for the next shift since no session is open) — the operator
+  stays logged in on the device. Logging out is a separate, explicit action that belongs in a future
+  Settings screen (Phase 2, not built yet), not something cash-up should force.
+- **Keyboard no longer covers input fields.** `windowSoftInputMode="adjustResize"` alone doesn't resize
+  an edge-to-edge window (`enableEdgeToEdge()`, already in use) the way it did pre-edge-to-edge — none
+  of the six screens with text fields (Login, PinSet, SwitchUser, CashIn, CashUp, the payment modal's
+  split-amount/voucher-reference fields) applied `Modifier.imePadding()`. Added it to each; the one
+  Scaffold-based screen (SwitchUser) also got `contentWindowInsets = WindowInsets(0.dp)` to opt out of
+  Scaffold's own (version-dependent) inset handling first, avoiding a double-padding risk.
+- **System status/nav bars hidden.** `MainActivity` now hides system bars immersively on create and
+  re-hides on every `onWindowFocusChanged(true)` (a transient reveal via edge-swipe, or returning from
+  recents/another app, both clear the hidden state) — `WindowInsetsControllerCompat.hide(systemBars())`
+  with `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`. A POS terminal has no business showing the clock,
+  notifications, or a back/home/recents bar during a sale.
+- **Switch-operator asks for a PIN only, not email.** Real POS terminals overwhelmingly support this
+  (Square, Toast, Lightspeed) — staff shouldn't re-type an email every time they take over the
+  terminal. Backend: `PINVerifyRequest.email` is now optional; supplying it keeps the original
+  single-account check (still used by the inline manager-authorisation prompt, which needs a
+  *specific* manager, not "any staff"), omitting it (`_pin_candidates_by_site()`, new) checks the PIN
+  against every active user holding a site-scoped grant at `site_id` instead — the same "fail closed on
+  an unresolved collision" policy the email-scoped path (`_pin_candidates_by_email()`, extracted
+  unchanged from the original function) already applied to its own multi-identity case, now also
+  covering two different staff independently picking the same PIN. `PINVerifyResponse` gained a
+  nullable `email` field so a PIN-only switch can still persist which account is now active locally
+  (`users.email` itself is nullable — auto-created Master Users have none). 4 new backend tests
+  (PIN-only happy path, wrong PIN, audit log, same-PIN collision → 403); full suite 856/856 passing.
+  Android: `SwitchUserScreen` dropped its email field entirely; `AuthRepository.verifyPin()` split into
+  `verifyPinAndSwitch(pin)` (adopts the result as the active session — switch-user) and
+  `verifyPinOnly(email, pin)` (no session change — manager auth) — the shared implementation
+  previously had `authorizeManager()` silently *also* adopt the manager's session on every call despite
+  its own docstring's "does not change the active cashier session" claim, a latent bug now fixed as
+  part of the same split (the inline manager-auth prompt isn't wired to any screen yet, so this was
+  unreachable in practice, but would have bitten the moment it was).
+- **Modifier comboing confirmed out of scope, not a bug.** Nested/linked modifier groups
+  (`modifier_option_group_links`) are a Menu Studio (portal catalog admin) feature only — the Register
+  screen's modifier sheet spec (`ZedRead Register.dc.html`) has no comboing UI, and no phase in this
+  plan schedules it for the POS runtime. Confirmed via a grep sweep of this file before disregarding,
+  per the report's own "if that's a later phase, disregard" framing.
+- **Colour branding — not actionable without more input.** Reported: "red buttons backgrounds have
+  been replaced with new colour branding." `Theme.kt`'s colours were checked against
+  `design_handoff_zedread/README.md`'s own documented palette and match it exactly (including the
+  `#A82040` accent red used for primary buttons via Material3's `primary` → `accent` mapping, so
+  standard `Button()`s already render correctly under the *current* documented design) — there's no
+  implementation drift to fix here. Nothing in the repository indicates what the new colour actually
+  is (no updated design file, logo, or style guide committed). Flagged rather than guessed; needs an
+  actual hex value (or a reference to sample one from) before this can be addressed.
 
 **What the modifier sheet + payment flow slice shipped** (this session): the two remaining Phase 1
 Android pieces, plus three backend fixes surfaced while wiring them up.

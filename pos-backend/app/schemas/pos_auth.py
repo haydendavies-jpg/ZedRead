@@ -98,9 +98,16 @@ class PINVerifyRequest(BaseModel):
 
     Used when a different user wants to take over the terminal without the
     current user logging out (e.g. manager override at the cashier screen).
+
+    email is optional: the real switch-operator flow asks staff for a PIN
+    only, matching real POS terminal conventions (no re-typing an email each
+    time) — omitting it verifies the PIN against every active user granted
+    at site_id instead of one disambiguated account. Supplying it keeps the
+    original, slightly cheaper single-account check for any caller that
+    already knows which user is switching in.
     """
 
-    email: EmailStr
+    email: EmailStr | None = None
     pin: str = Field(
         ...,
         min_length=4,
@@ -124,13 +131,17 @@ class PINVerifyResponse(BaseModel):
     Response returned on successful PIN verification.
 
     Issues a fresh POS access token so the incoming user becomes the active
-    session without requiring a full email+password login.
+    session without requiring a full email+password login. email is included
+    so a caller that verified by PIN alone (no email in the request) can
+    still persist which account is now active locally — nullable since
+    users.email itself is nullable (e.g. an auto-created Master User).
     """
 
     access_token: str
     token_type: str = "bearer"
     user_id: uuid.UUID
     user_name: str
+    email: EmailStr | None
     access_profile_name: str
     is_pin_reset_required: bool
 

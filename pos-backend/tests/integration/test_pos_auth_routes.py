@@ -891,6 +891,108 @@ async def test_pin_verify_duplicate_email_superadmin_row_resolves_pos_user(
     assert response.json()["user_id"] == str(test_user.id)
 
 
+# ── PIN verify — no email (switch-operator PIN-only) ────────────────────────────
+
+
+async def test_pin_verify_by_site_without_email_returns_200(
+    client, db, pos_auth_headers, test_user, test_site, test_access_grant
+):
+    """Omitting email checks the PIN against every active user granted at site_id."""
+    await client.post("/auth/pos/pin/set", json={"pin": "1234"}, headers=pos_auth_headers)
+
+    response = await client.post(
+        "/auth/pos/pin/verify",
+        json={"pin": "1234", "site_id": str(test_site.id)},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["user_id"] == str(test_user.id)
+    assert body["user_name"] == "Test POS User"
+
+
+async def test_pin_verify_by_site_wrong_pin_returns_401(
+    client, pos_auth_headers, test_user, test_site, test_access_grant
+):
+    """Omitting email still fails closed on a wrong PIN."""
+    await client.post("/auth/pos/pin/set", json={"pin": "1234"}, headers=pos_auth_headers)
+
+    response = await client.post(
+        "/auth/pos/pin/verify",
+        json={"pin": "9999", "site_id": str(test_site.id)},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid PIN"
+
+
+async def test_pin_verify_by_site_writes_audit_log(
+    client, db, pos_auth_headers, test_user, test_site, test_access_grant
+):
+    """A successful no-email PIN verify still writes a POS_PIN_VERIFIED audit row."""
+    await client.post("/auth/pos/pin/set", json={"pin": "1234"}, headers=pos_auth_headers)
+
+    await client.post(
+        "/auth/pos/pin/verify",
+        json={"pin": "1234", "site_id": str(test_site.id)},
+    )
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_user.id),
+            AuditLog.action == POS_PIN_VERIFIED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.actor_id == test_user.id
+
+
+async def test_pin_verify_by_site_collision_returns_403(
+    client, db, pos_auth_headers, test_user, test_site, test_access_profile, test_access_grant
+):
+    """Two different users at the same site sharing a PIN fails closed rather than guessing."""
+    await client.post("/auth/pos/pin/set", json={"pin": "1234"}, headers=pos_auth_headers)
+
+    other_user = User(
+        id=uuid.uuid4(),
+        group_id=test_user.group_id,
+        brand_id=test_user.brand_id,
+        name="Other POS User",
+        email="otherposuser@test.com",
+        password_hash=hash_password("OtherPassword456!"),
+        is_active=True,
+    )
+    db.add(other_user)
+    await db.flush()
+
+    other_grant = UserAccessGrant(
+        id=uuid.uuid4(),
+        user_id=other_user.id,
+        site_id=test_site.id,
+        access_profile_id=test_access_profile.id,
+        granted_by_id=None,
+        is_active=True,
+    )
+    db.add(other_grant)
+    await db.flush()
+
+    other_pin = UserPIN(
+        id=uuid.uuid4(),
+        user_id=other_user.id,
+        pin_hash=hash_password("1234"),
+        is_pin_reset_required=False,
+    )
+    db.add(other_pin)
+    await db.commit()
+
+    response = await client.post(
+        "/auth/pos/pin/verify",
+        json={"pin": "1234", "site_id": str(test_site.id)},
+    )
+
+    assert response.status_code == 403
+
+
 # ── Login missing fields ──────────────────────────────────────────────────────
 
 

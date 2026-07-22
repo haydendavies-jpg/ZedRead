@@ -68,14 +68,19 @@ data class PinSetRequest(
 /**
  * POST /auth/pos/pin/verify request — unauthenticated switch-user check.
  *
- * Verifies [email]'s PIN and issues them a fresh session; used both to swap
- * the active operator on an already-unlocked terminal and to re-confirm the
- * current operator's identity. deviceToken carries device context forward
+ * Verifies [pin] and issues a fresh session; used both to swap the active
+ * operator on an already-unlocked terminal and to re-confirm the current
+ * operator's identity. [email] is optional — the switch-operator flow asks
+ * for a PIN only (matching real POS terminal conventions), which the
+ * backend resolves against every active user granted at [siteId] instead of
+ * one disambiguated account; supplying it keeps the cheaper single-account
+ * check for callers that already know who's switching in (e.g. the inline
+ * manager-authorisation prompt). deviceToken carries device context forward
  * so the switched-in session still gates on this terminal's register session.
  */
 @JsonClass(generateAdapter = true)
 data class PinVerifyRequest(
-    val email: String,
+    val email: String?,
     val pin: String,
     @Json(name = "site_id") val siteId: String,
     @Json(name = "device_token") val deviceToken: String?,
@@ -88,6 +93,7 @@ data class PinVerifyResponseDto(
     @Json(name = "token_type") val tokenType: String = "bearer",
     @Json(name = "user_id") val userId: String,
     @Json(name = "user_name") val userName: String,
+    val email: String?,
     @Json(name = "access_profile_name") val accessProfileName: String,
     @Json(name = "is_pin_reset_required") val isPinResetRequired: Boolean,
 )

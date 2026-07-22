@@ -96,17 +96,6 @@ class RegisterSessionViewModel @Inject constructor(
                 .onFailure { e -> _cashUpState.value = CashUpState.Error(e.message ?: "Failed to close the till") }
         }
     }
-
-    private val _loggedOut = MutableStateFlow(false)
-    val loggedOut: StateFlow<Boolean> = _loggedOut.asStateFlow()
-
-    /** End the shift: log the operator out once the till is closed. The device stays paired. */
-    fun logout() {
-        viewModelScope.launch {
-            authRepository.logout()
-            _loggedOut.value = true
-        }
-    }
 }
 
 sealed class RegisterGateState {

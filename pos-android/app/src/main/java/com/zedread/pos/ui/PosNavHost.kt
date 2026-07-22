@@ -108,9 +108,13 @@ fun PosNavHost() {
         composable(Screen.CashUp.route) {
             CashUpScreen(
                 onDone = {
-                    // End of shift: the till is closed and the operator logged out —
-                    // clear the whole back stack so Back can't return to a stale sale.
-                    navController.navigate(Screen.Login.route) {
+                    // End of shift: the till is closed but the operator stays logged in
+                    // on this device — logout is a separate, explicit action (Settings,
+                    // not built yet), not something cash-up forces. Land back on the
+                    // gate, which will prompt cash-in for the next shift since no
+                    // session is open; clear the whole back stack so Back can't return
+                    // to the stale, now-closed sale.
+                    navController.navigate(Screen.RegisterGate.route) {
                         popUpTo(navController.graph.id) { inclusive = true }
                     }
                 },

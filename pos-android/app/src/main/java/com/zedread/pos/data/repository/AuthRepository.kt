@@ -88,24 +88,40 @@ class AuthRepository @Inject constructor(
     }
 
     /**
-     * Verify [email]'s PIN and adopt the returned session as the active one —
-     * used for switch-user (a different operator takes over) and for
-     * re-confirming the currently signed-in operator's identity.
+     * Verify [pin] and adopt the returned session as the active one — used
+     * for switch-user, where a different operator takes over the terminal
+     * with a PIN alone (no email prompt) or the currently signed-in operator
+     * re-confirms their own identity. The backend resolves the account by
+     * checking every active user granted at this site against the PIN.
      */
-    suspend fun verifyPin(email: String, pin: String): PinVerifyResponseDto {
+    suspend fun verifyPinAndSwitch(pin: String): PinVerifyResponseDto {
+        val response = callVerifyPin(email = null, pin = pin)
         val siteId = tokenStore.siteId.firstOrNull() ?: error("No active site")
-        val deviceToken = tokenStore.deviceToken.firstOrNull()
-        val response = api.verifyPin(PinVerifyRequest(email, pin, siteId, deviceToken))
         tokenStore.saveSession(
             accessToken = response.accessToken,
             siteId = siteId,
             siteName = tokenStore.siteName.firstOrNull().orEmpty(),
             userId = response.userId,
             userName = response.userName,
-            email = email,
+            email = response.email.orEmpty(),
             accessProfileName = response.accessProfileName,
         )
         return response
+    }
+
+    /**
+     * Verify a specific [email]'s PIN without changing the terminal's active
+     * session — used by the inline manager-authorisation prompt (approve
+     * void/refund/discount), which only needs a yes/no on "did a manager
+     * approve this", not to log that manager in as the active operator.
+     */
+    suspend fun verifyPinOnly(email: String, pin: String): PinVerifyResponseDto =
+        callVerifyPin(email = email, pin = pin)
+
+    private suspend fun callVerifyPin(email: String?, pin: String): PinVerifyResponseDto {
+        val siteId = tokenStore.siteId.firstOrNull() ?: error("No active site")
+        val deviceToken = tokenStore.deviceToken.firstOrNull()
+        return api.verifyPin(PinVerifyRequest(email, pin, siteId, deviceToken))
     }
 
     // ── Session state / logout ──────────────────────────────────────────────
