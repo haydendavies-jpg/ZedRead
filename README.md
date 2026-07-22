@@ -22,13 +22,44 @@ Multi-tenant POS platform. The hierarchy is **Group → Brand → Site**. A Grou
 
 ## Build phases
 
+Ten phases across 26 stages. Stages 13–14 (the original Android phase numbers) are retired — Android
+was renumbered to Stages 25–26 to make room for the catalog/reporting/permissions work in Stages
+16–24. See `ROADMAP.md` for the full per-phase breakdown.
+
 | Phase | Stages | Deliverable | Status |
 |---|---|---|---|
 | 1 — Foundation & Portal | 1–6 | Super admin portal, hierarchy management, license management | ✅ Complete |
 | 2 — POS Catalog | 7–9 | POS auth, product catalog, variants, modifiers, combos | ✅ Complete |
 | 3 — Transactions | 10–12 | Invoice engine, payments, reporting | ✅ Complete |
-| 4 — Android App | 13–14 | Complete POS Android application | 🚧 In Progress |
-| 5 — Identity & Permissions Redesign | 15 | SuperAdmin/User rename, 5-role model (`ROLE_MODEL.md`) | 🚧 In Progress |
+| 4 — Identity & Permissions Redesign | 15 | SuperAdmin/User rename, 5-role model (`ROLE_MODEL.md`) | ✅ Complete |
+| 5 — Catalog Foundations | 16–18 | Reporting groups, delegated user creation, permissions UI | ✅ Complete |
+| 6 — Catalog Data & Table UX | 19–20 | Bulk XLSX import/export, inline edit, filters, columns | ✅ Complete |
+| 7 — Invoices & Extended Catalog | 21–22 | Invoice detail/PDF/XLSX reporting + change log; Variants/Combos portal pages | ✅ Complete |
+| 8 — POS Menu Builder | 23 | Graphical menu layout prototype + publish pipeline | ✅ Complete |
+| 9 — Product Model Extensions | 24 | Product code, print name, open item | ✅ Complete |
+| 10 — Android App | 25–26 | Kotlin + Jetpack Compose POS application | 🚧 In Progress — see below |
+
+### Android build plan status
+
+Stage 25/26's original scaffolding-only outline has been superseded by a detailed 4-phase build plan
+in [`ANDROID_POS_BUILD_PLAN.md`](ANDROID_POS_BUILD_PLAN.md), built directly from a supplied
+high-fidelity design bundle and expanded with register/till sessions, settings, offline sync,
+menu-scheduling depth, and table maps. Current snapshot (see that file for the authoritative,
+per-screen status table):
+
+| Phase | Area | State |
+|---|---|---|
+| 1 | Backend — two-step login, device pairing, license gating, register (till) sessions | ✅ Merged |
+| 1 | Android — device setup, login, site selector, PIN/switch-user, register-session gate + cash-in | ✅ Done |
+| 1 | Android — functional (non-exact-match) sell loop: browse → cart → pay | ✅ Done |
+| 1 | Android — exact-match Register screen, modifier sheet, Voucher tab/styled Split, end-of-day cash-up | 🔲 Not started / partial |
+| 2 | Settings framework, idempotency, checksums, offline write-queue | 🔲 Not started |
+| 3 | Menu Studio → POS integration depth (recurring scheduling, menu selector) | 🔲 Not started |
+| 4 | Table maps & floor service | 🔲 Not started |
+
+Not yet verified against a real build — this sandbox cannot reach Google's Maven repo to resolve the
+Android Gradle Plugin, so changes were checked by manual code review only. Needs a real compile +
+emulator run before merging with confidence.
 
 ## Stage summary
 
@@ -96,7 +127,8 @@ npm run dev
 | `DATA_MODEL.md` | All database tables, relationships, and design reasoning |
 | `DECISIONS.md` | Architecture Decision Records — key choices and why |
 | `STAGE_STATUS.md` | Per-stage build checklist — what is done, in progress, and upcoming |
-| `ROADMAP.md` | Phase breakdown and post-Phase 4 backlog |
+| `ROADMAP.md` | Phase breakdown and post-Phase 10 backlog |
+| `ANDROID_POS_BUILD_PLAN.md` | Durable status record for the Android app's 4-phase build plan — read this first when picking up Android work |
 | `CLAUDE.md` | Project rules (absolute — all contributors must read) |
 | `pos-backend/app/CLAUDE.md` | Backend code style and FastAPI patterns |
 | `tests/CLAUDE.md` | Testing rules |
