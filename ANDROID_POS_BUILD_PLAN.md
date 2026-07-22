@@ -20,7 +20,9 @@ here in a new session — read the Status section first, then the phase you're o
 | 1 | Android — Modifier customise sheet, exact match | ✅ Done — see below |
 | 1 | Android — Payment flow, exact match + Voucher tab/Split toggle | ✅ Done — see below |
 | 1 | Android — user-testing feedback round (cash-up logout, keyboard/IME, immersive system bars, PIN-only switch-user) | ✅ Done — see below |
-| 2 | Settings framework, idempotency, checksums, offline write-queue | 🔲 Not started |
+| 2 | Backend — settings framework, idempotency, checksum verification | ✅ Done — see below |
+| 2 | Portal — Settings management page | ✅ Done |
+| 2 | Android — Settings screen, offline write-queue, sync indicator, invoice search | 🔲 Not started |
 | 3 | Menu Studio → POS integration depth (recurring scheduling, menu selector) | 🔲 Not started |
 | 4 | Table maps & floor service | 🔲 Not started |
 
@@ -28,7 +30,27 @@ here in a new session — read the Status section first, then the phase you're o
 from real on-device testing. What's left before calling Phase 1 fully done is verification: a real
 Gradle build + emulator run (still blocked in this sandbox, see below) and manual exercise of the till
 round-trip end to end. One item from this round's feedback is still open pending user input — see
-"colour branding" below. Phase 2 (settings framework, idempotency, offline write-queue) is next.
+"colour branding" below. Phase 2's backend foundations (settings framework, idempotency, checksum
+verification — items 1–3 of that phase's build order) are done, per this session's own guidance to
+stop there rather than leave the offline queue half-built. Next: Phase 2 items 4–7 (Android Settings
+screen, denomination-grid cash-in/cash-up variant, offline write-queue, sync indicator, invoice
+search) — see "What the Phase 2 backend/portal slice shipped" below and `STAGE_STATUS.md`'s "Android
+POS Phase 2" entry for full detail.
+
+**What the Phase 2 backend/portal slice shipped** (this session): the first three items of Phase 2's
+build order, fully tested against a real Postgres instance — see `STAGE_STATUS.md` "Android POS
+Phase 2 — Settings, Idempotency & Checksum Verification" for the complete deliverable list. In brief:
+a `setting_values` table (site-scoped, brand-level fallback, migration `0052`) backed by a code-defined
+catalog (`app/constants/settings.py`, mirroring `app/constants/pages.py`'s pattern) seeded with
+`cash_in_mode` and `hide_variance_on_close`, exposed via `GET/PUT/DELETE /settings` (management,
+gated by the pre-existing `site_settings` page permission) and a read-only `GET /pos/settings`; a
+`client_ref` idempotency key (migration `0053`) deduping `POST /invoices`, `POST .../pay`, and
+`POST /register-sessions/open`/`.../close`; and a SHA-256 checksum (`app/utils/checksum.py`) verified
+server-side and echoed back, computed for an invoice at the **pay** call (once its line items/totals/
+payments are actually known — an invoice is built up incrementally, unlike a register session's
+single-call open/close) and for a register session at open and again at close. Portal gained
+`SettingsPage.tsx`. 33 new backend tests, full suite 889/889 passing (up from 856); `npm run build`
+verified clean.
 
 **What the user-testing feedback round shipped** (this session, on top of the modifier sheet + payment
 flow slice below): six issues reported from exercising the real app, addressed —

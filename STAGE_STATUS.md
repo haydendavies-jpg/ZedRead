@@ -1330,6 +1330,65 @@ first when picking this phase back up.
 - [ ] Error handling + offline sync reconciliation
 - [ ] APK build + signing configuration — CI produces an unsigned debug APK; release signing not set up
 
+### Android POS Phase 2 — Settings, Idempotency & Checksum Verification (backend + portal) ✅
+
+Backend foundations from `ANDROID_POS_BUILD_PLAN.md`'s Phase 2 ("operational continuity") — items
+1–3 of that phase's build order. Android-side consumption (Settings screen, offline write-queue,
+sync indicator, invoice search) is **not** part of this slice — see "Next up" below.
+
+**Deliverables:**
+- [x] **Settings framework** — new `setting_values` table (migration `0052`), site-scoped with the
+      brand-level fallback resolved in the service layer (a brand-level row has `site_id` NULL; two
+      partial unique indexes enforce at most one row per brand-default and per site-override). The
+      catalog of valid setting keys (label/category/type/options/default) is code-defined in
+      `app/constants/settings.py` — mirrors `app/constants/pages.py`'s pattern — so it's searchable
+      by name/label/category without a migration as the catalog grows. Four typed value kinds
+      (`boolean`/`datetime`/`single_select`/`multi_select`) validated server-side against each
+      setting's catalog entry. Seeded with the two settings Phase 1's cash-in/cash-up screens are
+      already waiting on: `cash_in_mode` (`bulk`|`denomination`) and `hide_variance_on_close`
+      (boolean) — proving the pattern end to end rather than shipping an empty framework.
+      `GET/PUT/DELETE /settings` (management/portal, gated by the pre-existing `site_settings` page
+      permission from `app/constants/pages.py`'s App Configuration category) and a read-only
+      `GET /pos/settings` (POS terminal, resolves for the caller's own site) both return the same
+      `SettingOut` shape (definition + `brand_value`/`site_value`/`effective_value`) with an optional
+      `search` query param. Portal gained `SettingsPage.tsx` (site selector, search, per-row inline
+      edit by type, Reset-to-fallback) under a new "Settings" nav entry.
+- [x] **Idempotency** — a client-generated `client_ref` (a UUID minted on-device at write time),
+      deduped via new nullable unique columns: `invoices.client_ref` (`POST /invoices`),
+      `payments.client_ref` (`POST /invoices/{id}/pay`), and `register_sessions.client_ref` +
+      `register_sessions.close_client_ref` — two separate columns since one session row is written to
+      twice by two independent idempotent calls (open, then close). A retried write carrying a
+      `client_ref` that already landed returns the original row (or, for pay/close, the invoice/
+      session's current state) instead of raising the "already exists" error that row would otherwise
+      hit (409 on a second `/invoices/open`, 409 on paying twice, 400 on closing twice) or creating a
+      duplicate. Migration `0053`.
+- [x] **Checksum verification** — a SHA-256 hex digest (`app/utils/checksum.py`) over each entity's
+      canonical JSON payload, re-verified server-side against a client-supplied value with a 422 on
+      mismatch, and always echoed back in the response (the field is the *server's own* computed
+      digest, not just a pass-through) so the device can confirm what was actually stored. For an
+      invoice this covers line items/totals/payments — computed at the **pay** call rather than
+      invoice creation, since a POS sale is built up incrementally (draft → add lines → pay) and the
+      full state the plan's "line items/totals/payments" wording describes isn't known until then;
+      each payment is keyed by its own `client_ref` (known to the device before the call that creates
+      it) rather than its server-generated id, so the device can compute a matching digest for the
+      payment it's about to submit without a round trip first. For a register session this covers
+      counts/totals, computed independently at **open** and again (overwriting) at **close**, which
+      already are self-contained, single-call events.
+- [x] Backend tests — `tests/integration/test_settings_routes.py` (catalog resolution, search,
+      brand/site override precedence, `site_settings` permission gating, 404/422 validation, audit
+      logs for `SETTING_UPDATED`/`SETTING_RESET`) and `tests/integration/test_offline_sync.py`
+      (client_ref dedup — one row, one audit row — for invoice creation/payment/session open/close;
+      checksum accept-when-correct with the echoed digest asserted; checksum-mismatch 422 for
+      invoice pay, session open, and session close). Full suite 889/889 passing (up from 856),
+      verified against a real local Postgres 16 instance with migrations applied through `0053`.
+- [x] Portal `npm run build` (tsc + vite) verified clean with the new `SettingsPage.tsx`.
+
+**Next up:** Android-side consumption — items 4–7 of the Phase 2 build order (Settings screen,
+denomination-grid cash-in/cash-up variant, offline write-queue/WorkManager outbox, the
+Offline·N-pending sync indicator and panel, invoice search/history) — plus the usual "not verified
+against a real build" caveat once that Android work starts (this sandbox still can't reach Google's
+Maven repo).
+
 ---
 
 ## Cross-Cutting — Always Active
