@@ -29,24 +29,41 @@ class RegisterSessionRepository @Inject constructor(
     }
 
     /** Open a new session (start-of-day cash-in) with the device-local time now. */
-    suspend fun openSession(openingCashCents: Long): RegisterSessionDto =
+    suspend fun openSession(openingCashCents: Long, clientRef: String? = null): RegisterSessionDto =
         api.openRegisterSession(
             requireBearer(),
             RegisterSessionOpenRequest(
                 openedAt = OffsetDateTime.now().toString(),
                 openingCashCents = openingCashCents,
+                clientRef = clientRef,
             ),
         )
 
+    /** Open a session using an already-known device-local opened-at time — the outbox worker replaying a queued open. */
+    suspend fun openSession(openedAtIso: String, openingCashCents: Long, clientRef: String?): RegisterSessionDto =
+        api.openRegisterSession(
+            requireBearer(),
+            RegisterSessionOpenRequest(openedAt = openedAtIso, openingCashCents = openingCashCents, clientRef = clientRef),
+        )
+
     /** Close a session (end-of-day cash-up) with the device-local time now. */
-    suspend fun closeSession(sessionId: String, closingCashCents: Long): RegisterSessionDto =
+    suspend fun closeSession(sessionId: String, closingCashCents: Long, clientRef: String? = null): RegisterSessionDto =
         api.closeRegisterSession(
             requireBearer(),
             sessionId,
             RegisterSessionCloseRequest(
                 closedAt = OffsetDateTime.now().toString(),
                 closingCashCents = closingCashCents,
+                clientRef = clientRef,
             ),
+        )
+
+    /** Close a session using an already-known device-local closed-at time — the outbox worker replaying a queued close. */
+    suspend fun closeSession(sessionId: String, closedAtIso: String, closingCashCents: Long, clientRef: String?): RegisterSessionDto =
+        api.closeRegisterSession(
+            requireBearer(),
+            sessionId,
+            RegisterSessionCloseRequest(closedAt = closedAtIso, closingCashCents = closingCashCents, clientRef = clientRef),
         )
 
     private suspend fun requireBearer(): String {

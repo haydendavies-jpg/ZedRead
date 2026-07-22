@@ -25,7 +25,7 @@ here in a new session — read the Status section first, then the phase you're o
 | 1 | Backend/Android — hardware-anchored device recognition (`pos_devices.hardware_id`, survives reinstall) | ✅ Done — see below |
 | — | Portal — brand-scoped License & Billing page (seat editing for Admin/Master User, not just SuperAdmin) | ✅ Done — see below |
 | 2 | Android — Settings screen + denomination-grid cash-in/cash-up variant | ✅ Done — see below |
-| 2 | Android — offline write-queue, sync indicator, invoice search | 🔲 Not started |
+| 2 | Android — offline write-queue, sync indicator, invoice search | ✅ Done — see below |
 | 3 | Menu Studio → POS integration depth (recurring scheduling, menu selector) | 🔲 Not started |
 | 4 | Table maps & floor service | 🔲 Not started |
 
@@ -33,15 +33,37 @@ here in a new session — read the Status section first, then the phase you're o
 from real on-device testing. What's left before calling Phase 1 fully done is verification: a real
 Gradle build + emulator run (still blocked in this sandbox, see below) and manual exercise of the till
 round-trip end to end. One item from this round's feedback is still open pending user input — see
-"colour branding" below. Phase 2's backend foundations (settings framework, idempotency, checksum
-verification — items 1–3 of that phase's build order) are done. Item 4 (Android Settings screen +
-denomination-grid cash-in/cash-up variant) is also done, proving the settings pattern end to end on
-Android — see "What the Phase 2 Android settings slice shipped" below. Next: Phase 2 items 5–7
-(offline write-queue, sync indicator, invoice search) — deliberately not started this session per
-this plan's own "stop after #4 rather than leaving the offline queue half-built" guidance; the
-write-queue needs a new WorkManager dependency and a Room outbox schema that deserve their own
-focused session rather than a partial cut. See `STAGE_STATUS.md`'s "Android POS Phase 2" entries for
-full detail.
+"colour branding" below. Phase 2 is now fully built end to end: the backend foundations (settings
+framework, idempotency, checksum verification — items 1–3), the Android Settings screen +
+denomination-grid cash-in/cash-up variant (item 4), and — this session — the offline write-queue,
+sync indicator, and invoice search (items 5–7). See "What the Phase 2 offline write-queue slice
+shipped" below and `STAGE_STATUS.md`'s "Android POS Phase 2" entries for full detail. Phase 2 as a
+whole is not yet verified against a real build/emulator (same standing constraint as every Android
+slice) — that, plus Phase 1's own pending verification, are the two things blocking calling either
+phase "done" with full confidence. Next up after that verification pass: Phase 3 (Menu Studio → POS
+integration depth) or Phase 4 (table maps), neither started.
+
+**What the Phase 2 offline write-queue slice shipped** (this session): items 5–7 of Phase 2's build
+order — see `STAGE_STATUS.md`'s "Android POS Phase 2 — Offline write-queue, sync indicator & invoice
+search" entry for the full deliverable list. In brief: a new Room `outbox_items` table (migration via
+an explicit `MIGRATION_2_3`, not the catalog tables' destructive fallback — this data must survive an
+app update) storing one row per **complete sale or register-session event**, not one row per API
+call — a sale bundles its line items/modifiers/payment so `OutboxSyncWorker` can replay it as
+create → each line → pay in one pass using the real invoice id straight from `create`, without a
+separate local-to-server id mapping table. New `androidx.work`/`androidx.hilt:hilt-work` Gradle
+dependencies power the drain: a 15-minute periodic constrained job as the fallback, plus an immediate
+one-time request fired at enqueue time and by the sync panel's manual "Sync now". Checksums are
+deliberately **not** computed on-device for either a sale (tax rules aren't reproducible client-side)
+or a register-session open (its checksum needs the PosDevice's own server UUID, which the client is
+never given) — `client_ref` alone already makes a retry safe, which is exactly what the optional
+checksum field was designed to allow skipping. `SellViewModel`/`RegisterSessionViewModel` fall back to
+local-only mode only when nothing for the sale/session exists server-side yet (avoids a
+duplicate-invoice risk for a sale that drops offline mid-ring — flagged as a known, deliberate gap). A
+new `SyncStatusBadge`/`SyncPanel` (mounted persistently on the Register screen, never blocking) and
+`InvoiceSearchScreen` (reading a new `invoice_cache` Room table, filterable by status/payment method/
+date range, offline-capable) round it out. **Not verified against a real build** — flagged in detail
+in `STAGE_STATUS.md`, same standing constraint as every prior slice, with extra care taken on the new
+WorkManager dependency's version/coordinates since this sandbox can't confirm they resolve.
 
 **What the Phase 2 Android settings slice shipped** (this session): `GET /pos/settings` consumed
 for the first time — a new `SettingDto`/`PosApiService.getSettings()` (mirrors `SettingOut` exactly;
@@ -593,25 +615,30 @@ and the guarantee that no sale is ever lost to a bad connection.
   existing `log_action()` wraps these service calls same as everything else).
 
 **Android**
-- **Settings** screen: searchable list of boolean/datetime/dropdown/multiselect rows.
-- Extend Phase 1's **start-of-day cash-in** / **end-of-day cash-up** screens: add the
+- ✅ **Settings** screen: searchable list of boolean/datetime/dropdown/multiselect rows.
+- ✅ Extend Phase 1's **start-of-day cash-in** / **end-of-day cash-up** screens: add the
   denomination-grid variant (toggled by the cash-in-mode setting) alongside the existing bulk-value
   entry, and make the variance line hideable per the hide-variance setting.
-- **Offline write-queue**: local Room outbox for pending invoices and register-session events (each
-  tagged with its idempotency key and checksum), drained by a WorkManager job constrained to
+- ✅ **Offline write-queue**: local Room outbox for pending invoices and register-session events (each
+  tagged with a client-generated idempotency key), drained by a WorkManager job constrained to
   `NetworkType.CONNECTED`, retrying with backoff but **never expiring or discarding** an item — matches
   the explicit "hold indefinitely until a connection is established" requirement. On reconnect the
   worker runs a **cycling resync pass**; a manual **"Sync now"** action forces an immediate pass.
-  Till/register-session running totals count queued-but-unsynced invoices immediately, not after the
-  portal round-trip.
-- **Offline / pending-sync indicator**: persistent, unobtrusive status badge ("Offline · N pending" /
+  Till/register-session state and the invoice-search cache reflect queued-but-unsynced work
+  immediately, not after the round trip. **Checksum deliberately omitted** on-device (both the sale
+  and register-session-open payloads depend on values the client can't reproduce or was never given —
+  see `STAGE_STATUS.md`'s "Android POS Phase 2 — Offline write-queue…" entry for the full reasoning);
+  `client_ref` alone already makes a retry safe. **Scope note**: a sale only falls back to offline
+  mode when it fails on its very first action (nothing exists server-side yet) — one that drops
+  offline mid-ring surfaces the existing error state instead, to avoid risking a duplicate invoice.
+- ✅ **Offline / pending-sync indicator**: persistent, unobtrusive status badge ("Offline · N pending" /
   "Synced") visible from Register at all times — never a blocking modal, staff keep selling while
   offline. Tapping it opens a **sync panel**: per-item status, a **plain-language** failure reason
-  when something genuinely fails (checksum mismatch, server rejection — worded for a non-technical
-  cashier, not an error code), and the manual "Sync now" action.
-- **Invoice search/history**: filterable (date range, status, payment method) list reading the local
+  when something genuinely fails (server rejection — worded for a non-technical cashier, not an error
+  code), and the manual "Sync now" action.
+- ✅ **Invoice search/history**: filterable (date range, status, payment method) list reading the local
   Room cache so it works offline; results show synced/pending state per item. Nav entry point
-  alongside Cash Up/Settings.
+  alongside Cash Up/Settings (a History icon on the Register header).
 
 ---
 

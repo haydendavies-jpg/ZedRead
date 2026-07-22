@@ -16,6 +16,7 @@ import androidx.navigation.compose.rememberNavController
 import com.zedread.pos.ui.screens.auth.LoginScreen
 import com.zedread.pos.ui.screens.auth.PinSetScreen
 import com.zedread.pos.ui.screens.auth.SiteSelectorScreen
+import com.zedread.pos.ui.screens.invoicesearch.InvoiceSearchScreen
 import com.zedread.pos.ui.screens.orderentry.OrderEntryScreen
 import com.zedread.pos.ui.screens.register.CashInScreen
 import com.zedread.pos.ui.screens.register.CashUpScreen
@@ -138,11 +139,18 @@ fun PosNavHost() {
                 onSwitchUser = { navController.navigate(Screen.SwitchUser.route) },
                 onCashUp = { navController.navigate(Screen.CashUp.route) },
                 onSettings = { navController.navigate(Screen.Settings.route) },
+                onInvoiceSearch = { navController.navigate(Screen.InvoiceSearch.route) },
             )
         }
 
         composable(Screen.Settings.route) {
             SettingsScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(Screen.InvoiceSearch.route) {
+            InvoiceSearchScreen(
                 onBack = { navController.popBackStack() },
             )
         }
@@ -183,4 +191,5 @@ sealed class Screen(val route: String) {
     object OrderEntry : Screen("order_entry")
     object SwitchUser : Screen("switch_user")
     object Settings : Screen("settings")
+    object InvoiceSearch : Screen("invoice_search")
 }
