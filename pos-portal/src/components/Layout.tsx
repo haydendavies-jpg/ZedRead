@@ -24,6 +24,7 @@ const SUPER_ADMIN_ONLY_NAV = [
 /** Nav items shown to all management users. Tax is admin-only (see Tax Templates). */
 const MGMT_NAV = [
   { to: '/management/menu-studio', label: 'Menu Studio' },
+  { to: '/management/table-maps', label: 'Table Maps' },
   { to: '/management/reports', label: 'Reports' },
   { to: '/management/invoices', label: 'Invoices' },
   { to: '/management/register-sessions', label: 'Register Sessions' },

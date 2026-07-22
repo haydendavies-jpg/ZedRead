@@ -490,6 +490,53 @@ export interface PublishResult {
   warnings: PublishWarning[]
 }
 
+// ── Table maps & floor service (Android POS Phase 4) ────────────────────────────
+
+/** Seatable table shapes each get a 1:1 dining_tables row; decor shapes never do. */
+export type TableShapeKind = 'stool' | 'round' | 'rect'
+export type DecorShapeKind = 'zone' | 'bar_counter' | 'entrance' | 'wall'
+export type TableMapShapeKind = TableShapeKind | DecorShapeKind
+
+/** A placed shape, as stored — authoring data only, no live status (see TableMapShapeOut). */
+export interface TableMapShape {
+  id: string
+  table_map_id: string
+  kind: TableMapShapeKind
+  label: string
+  /** Percentage (0-100) of the stage's fixed-aspect-ratio canvas — not pixels or grid cells. */
+  x: number
+  y: number
+  w: number
+  h: number
+  color: string | null
+  is_locked: boolean
+  dashed: boolean
+  sort_order: number
+  /** Set only for table-kind shapes (stool/round/rect) — read-only/informational here. */
+  dining_table_id: string | null
+}
+
+export interface TableMap {
+  id: string
+  brand_id: string
+  site_id: string
+  name: string
+  sort_order: number
+  is_published: boolean
+  published_at: string | null
+  /** Snap-to-grid pitch, interpreted as a percentage-of-stage grid (positions are already 0-100 floats). */
+  grid_size: number
+  is_grid_locked: boolean
+  is_active: boolean
+  shape_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface TableMapDetail extends TableMap {
+  shapes: TableMapShape[]
+}
+
 // ── Access grant types ────────────────────────────────────────────────────────
 
 export interface AccessProfile {

@@ -6,6 +6,9 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
@@ -128,9 +131,47 @@ fun parseHexColor(hex: String): Color {
     return runCatching { Color(0xFF000000 or clean.toLong(16)) }.getOrDefault(Color(0xFF5A5550))
 }
 
+/**
+ * Manual theme override for the top nav bar's ☾/☀ toggle
+ * (README-tables-floormap.md's "Top Navigation Bar" section). Null follows
+ * the system setting (the app's prior, only behavior); a explicit
+ * true/false pins it regardless of the device theme.
+ *
+ * Deliberately a plain global `mutableStateOf`, not a persisted
+ * DataStore/Hilt-backed preference — this is a single-activity kiosk app
+ * with one always-running process, and no other per-device UI preference
+ * exists yet to justify standing up a persistence path for. Resets to
+ * "follow system" on process death, same as before this toggle existed.
+ */
+object ThemeState {
+    var darkOverride by mutableStateOf<Boolean?>(null)
+}
+
+/**
+ * Table-tile fill/border/accent per README-tables-floormap.md's "Status"
+ * token group (Android POS Phase 4, Tables / Floor Map screen). These are a
+ * fixed semantic set — the design bundle's own token list only lists one
+ * set, not a light/dark pair — and have no direct match in [ZedReadColors]'
+ * Material-mapped roles, so they're kept as their own small lookup rather
+ * than overloading e.g. `accent` for two different meanings.
+ */
+data class TableStatusStyle(val accent: Color, val fill: Color, val border: Color)
+
+/**
+ * Resolves a [PosDiningTableStatusDto]-shaped status string to its tile
+ * colors. [status] is null/"open"/"seated"/"ordered"/"bill" — null means
+ * "open" per that DTO's own doc comment.
+ */
+fun tableStatusStyle(status: String?): TableStatusStyle = when (status) {
+    "seated" -> TableStatusStyle(accent = Color(0xFF3B5A8C), fill = Color(0x143B5A8C), border = Color(0x663B5A8C))
+    "ordered" -> TableStatusStyle(accent = Color(0xFFC56A1A), fill = Color(0x14C56A1A), border = Color(0x66C56A1A))
+    "bill" -> TableStatusStyle(accent = Color(0xFFA82040), fill = Color(0x14A82040), border = Color(0x6BA82040))
+    else -> TableStatusStyle(accent = Color(0xFFA39A8C), fill = Color(0xFFF0ECE3), border = Color(0xFFF0ECE3))
+}
+
 @Composable
 fun ZedReadTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+    val dark = ThemeState.darkOverride ?: isSystemInDarkTheme()
     val zedColors = if (dark) DarkZedReadColors else LightZedReadColors
     CompositionLocalProvider(LocalZedReadColors provides zedColors) {
         MaterialTheme(

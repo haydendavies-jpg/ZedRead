@@ -1654,6 +1654,96 @@ a site at once.
 
 ---
 
+### Android POS Phase 4 — Table maps & floor service (backend + portal + Android) ✅
+
+New scope beyond the original Stage 25/26 description — table maps are authored on the portal
+(reusing the Menu Studio POS Layout grid editor's pattern) while the device only renders published
+ones and drives live status, per `README-tables-floormap.md`.
+
+**Backend:**
+- [x] `table_maps`/`table_map_shapes` (migration `0056`) — portal-authored floor layouts, mirroring
+      `menu_layouts`/`menu_buttons`'s position/size/publish shape. A shape's `kind` is either a
+      seatable table (`stool`/`round`/`rect`, each gets a 1:1 `dining_tables` row created alongside
+      it) or purely decorative (`zone`/`bar_counter`/`entrance`/`wall`, never linked to a table) —
+      `app/constants/table_map.py`'s `TABLE_SHAPE_KINDS`/`DECOR_SHAPE_KINDS` is the single source of
+      truth other modules validate `kind` against.
+- [x] `dining_tables`/`table_sessions` live-status layer. `table_sessions.status` is one of
+      `seated`/`ordered`/`bill` — deliberately no stored `open` value; an unoccupied table is
+      `dining_tables.active_session_id IS NULL`, not a session row carrying a status of `open`.
+      Clearing a table sets `closed_at` on its session rather than deleting the row (history
+      preserved); a new seating creates a fresh `table_sessions` row. Reservation fields
+      (`reserved_at`/`reservation_label`) live on `dining_tables`, not sessions.
+- [x] `invoices.table_session_id` (migration `0057`, nullable) — the Register hand-off ("Open
+      order →"). `create_invoice()`/`InvoiceCreateRequest`/`InvoiceResponse` thread it through.
+- [x] `GET /pos/table-map?site_id=` — mirrors `GET /pos/menu-layout?site_id=`'s dual POS/management
+      auth convention. Returns every published map for the site with each table-kind shape's live
+      status joined in (`PosDiningTableStatus`).
+- [x] Status-mutation routes (all `/pos`, POS JWT): `POST /pos/dining-tables/{id}/seat` (opens a
+      session; `client_ref`/checksum idempotency, matching Phase 2's established pattern — the only
+      one of these that needs it, since it's the row-creating call), `.../reserve`, and
+      `POST /pos/table-sessions/{id}/order`, `.../bill`, `.../merge` (bidirectional), `.../clear`.
+- [x] Management CRUD under `/table-maps` (portal/management JWT only, mirroring
+      `routes/menu_layouts.py`'s `_require_management` convention): map CRUD, publish/unpublish,
+      duplicate, and shape CRUD (`POST`/`PATCH`/`DELETE /table-maps/{id}/shapes[/{shape_id}]`).
+- [x] New `table_maps` page-permission key (Product & Menus category, PRO/ENTERPRISE license tiers),
+      gated portal-side only, matching `menu_layouts`' own convention (not route-enforced).
+- [x] Bug found by CI and fixed: `duplicate_table_map`'s per-shape `DiningTable` insert raced ahead
+      of its new shape's own row — the two `use_alter`'d circular FK constraints migration `0056`
+      needs (`table_map_shapes` <-> `dining_tables` <-> `table_sessions`) aren't picked up by
+      SQLAlchemy's automatic insert dependency-sort the way a plain FK would be, so an explicit
+      `db.flush()` between the two `db.add()` calls was required.
+- [x] 33 new tests (`tests/integration/test_table_map_routes.py`) — map/shape CRUD, publish/
+      unpublish visibility on the POS contract, every status-mutation route including its audit-log
+      row and idempotency (a repeated `seat` with the same `client_ref` doesn't double-write). Full
+      suite 942/942 passing against real Postgres 16 through migration `0057`.
+
+**Portal:**
+- [x] `TableMapsPage.tsx` (`/management/table-maps`) — a list view (site filter, publish/unpublish,
+      duplicate, delete, "+ New map") plus a canvas editor. Unlike `MenuBuilderPage.tsx`'s discrete
+      6-column grid (menu buttons are grid-cell-sized), table shapes are free-form — the editor
+      adapts MenuBuilderPage's pointer-based drag/resize-with-live-preview *technique* to continuous
+      `x`/`y`/`w`/`h` percentages of the stage instead of grid cells.
+- [x] `grid_size` is read as a percent-of-stage snap pitch, applied to x/y/w/h when
+      `is_grid_locked` is on; unlocked allows free positioning. Zoom scales the stage's explicit
+      pixel dimensions (not a CSS `transform`) so percentage-positioned children scale cleanly.
+- [x] Site selection in the create-map modal and list filter reuses `DevicesPage.tsx`'s existing
+      `<select>`-from-`fetchAll<Site>` pattern (a real dropdown) rather than `MenuBuilderPage`'s
+      raw-UUID-paste fallback for scopes with no site picker.
+- [x] Shape authoring: an add-shape toolbar for all 7 kinds, a single-selection inspector (label,
+      colour via `ColorSwatchPicker`, lock toggle, dashed toggle for zones, delete) — full
+      multi-select bulk actions were judged out of scope for this page (table maps don't need
+      `MenuBuilderPage`'s bulk recolor/group/move machinery).
+- [x] `npm run build` verified clean.
+
+**Android — Tables/Floor Map screen + persistent top nav:**
+- [x] `TablesScreen.kt` — floor tabs (one per published map, ordered by `sort_order`), a map canvas
+      rendering zone/decorative shapes as backdrops and table tiles positioned by stage-relative
+      percentages (shape-specific sizing per the README's stool/round/rect pixel values, scaled to
+      the measured Compose stage), a status legend, and a selection bar with detail chips computed
+      client-side from `seated_at`/`last_touch_at` timestamps (no server-computed "minutes elapsed"
+      field). The full merge-arm/tap-to-complete/cancel flow with a 1600ms auto-dismiss toast,
+      matching `README-tables-floormap.md`'s interaction spec. Polls `GET /pos/table-map` every 8s
+      while the screen is visible.
+- [x] `MainScaffold`/`TopNavBar` — the first screen in this app needing chrome shared across routes.
+      Register/Tables/Online nav items (Online is a disabled, non-interactive placeholder — no real
+      delivery/pickup feature is in scope anywhere in this project), a theme toggle, and a static
+      avatar showing the operator's initial. Wraps both the Register and Tables nav destinations
+      without disturbing `OrderEntryScreen`'s existing `hiltViewModel()` scoping; tab switching uses
+      the standard Navigation-Compose save/restoreState pattern so an in-progress cart survives a
+      trip to Tables and back.
+- [x] Selection-bar primary action is status-dependent: an **open** table (no session) shows
+      "Seat table →" (a covers-count dialog, then `POST .../seat`); a **seated/ordered/bill** table
+      shows **"Open order →"**, which navigates into Register with `tableSessionId` as a nav arg —
+      threaded into `SellViewModel` via `SavedStateHandle` and passed to its invoice-creation call
+      sites only on the first invoice of a fresh sell session (mirrors how `client_ref` is already
+      scoped there).
+- [x] **Not verified against a real build** — same standing constraint as every prior Android slice
+      (no reachable Google Maven in this sandbox). Checked manually: brace/paren balance on every
+      new/changed file and a cross-reference of every new type/import against its definition. Relies
+      on the repo's `Android build` CI job for the real compile check.
+
+---
+
 ## Cross-Cutting — Always Active
 
 | Concern | Status |

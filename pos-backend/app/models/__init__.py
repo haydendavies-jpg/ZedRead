@@ -5,6 +5,7 @@ from app.models.access_profile_page_permission import AccessProfilePagePermissio
 from app.models.audit_log import AuditLog
 from app.models.brand import Brand
 from app.models.category import Category
+from app.models.dining_table import DiningTable
 from app.models.email_template import EmailTemplate
 from app.models.group import Group
 from app.models.invoice import Invoice
@@ -34,6 +35,9 @@ from app.models.register_session import RegisterSession
 from app.models.reporting_group import ReportingGroup
 from app.models.setting_value import SettingValue
 from app.models.site import Site
+from app.models.table_map import TableMap
+from app.models.table_map_shape import TableMapShape
+from app.models.table_session import TableSession
 from app.models.tax_category import TaxCategory
 from app.models.tax_rate import TaxRate
 from app.models.tax_template import TaxTemplate
@@ -49,6 +53,7 @@ __all__ = [
     "AuditLog",
     "Brand",
     "Category",
+    "DiningTable",
     "EmailTemplate",
     "Group",
     "Invoice",
@@ -78,6 +83,9 @@ __all__ = [
     "ReportingGroup",
     "SettingValue",
     "Site",
+    "TableMap",
+    "TableMapShape",
+    "TableSession",
     "TaxCategory",
     "TaxRate",
     "TaxTemplate",

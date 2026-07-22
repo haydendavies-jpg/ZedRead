@@ -29,9 +29,11 @@ class InvoiceRepository @Inject constructor(
      * Open a new draft invoice — site/brand/register-session resolve
      * server-side from the token. [clientRef], when supplied, dedupes a
      * retried create against the outbox sync worker's own idempotency key.
+     * [tableSessionId] is the Tables screen's "Open order →" handoff (Android
+     * POS Phase 4) — attaches the invoice to that table's open occupancy.
      */
-    suspend fun createInvoice(clientRef: String? = null): InvoiceDto =
-        api.createInvoice(requireBearer(), InvoiceCreateBody(clientRef))
+    suspend fun createInvoice(clientRef: String? = null, tableSessionId: String? = null): InvoiceDto =
+        api.createInvoice(requireBearer(), InvoiceCreateBody(clientRef, tableSessionId))
 
     /** This site's invoice history, most recent first — backfills the local search cache. */
     suspend fun listInvoices(skip: Int = 0, limit: Int = 200): List<InvoiceDto> =

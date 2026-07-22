@@ -85,7 +85,13 @@ async def create_site_invoice(
     """
     session = await get_open_session_or_400(db, access.device)
     invoice = await create_invoice(
-        db, access.user.brand_id, access.site.id, access.user, session.id, payload.client_ref
+        db,
+        access.user.brand_id,
+        access.site.id,
+        access.user,
+        session.id,
+        payload.client_ref,
+        payload.table_session_id,
     )
     return InvoiceResponse.model_validate(invoice)
 

@@ -287,10 +287,13 @@ data class InvoiceDto(
  * POST /invoices request. All fields optional — site/brand/register-session
  * resolve server-side from the caller's POS token (see InvoiceCreateRequest
  * in app/services/invoice_service.py); [clientRef] dedupes a retried create.
+ * [tableSessionId] is the Android POS Phase 4 Tables screen's "Open order →"
+ * handoff — attaches the new invoice to that table's open occupancy.
  */
 @JsonClass(generateAdapter = true)
 data class InvoiceCreateBody(
     @Json(name = "client_ref") val clientRef: String? = null,
+    @Json(name = "table_session_id") val tableSessionId: String? = null,
 )
 
 /**
@@ -384,4 +387,103 @@ data class SettingDto(
     @Json(name = "brand_value") val brandValue: Any?,
     @Json(name = "site_value") val siteValue: Any?,
     @Json(name = "effective_value") val effectiveValue: Any?,
+)
+
+// ── Table maps & floor service (Android POS Phase 4) ────────────────────────
+//
+// Mirrors app/schemas/table_map.py's POS consumption contract exactly.
+// Fields the editor-only TableMapDetail/TableMapOut schemas carry but this
+// screen never reads (published_at, created_at, updated_at, ...) are simply
+// omitted from these DTOs — Moshi ignores unmapped JSON keys, so there's no
+// need to declare them just to discard them.
+
+/**
+ * A placed shape from GET /pos/table-map, joined with its live DiningTable/
+ * TableSession status when [kind] is a seatable table shape (stool/round/
+ * rect) — decorative shapes (zone/bar_counter/entrance/wall) carry the same
+ * fields but every status field stays null. Mirrors PosDiningTableStatus.
+ *
+ * [status] null means "open" (no session) — see TableSession's backend
+ * docstring; non-null is one of "seated"/"ordered"/"bill".
+ */
+@JsonClass(generateAdapter = true)
+data class PosDiningTableStatusDto(
+    val id: String,
+    val kind: String,
+    val label: String,
+    val x: Double,
+    val y: Double,
+    val w: Double,
+    val h: Double,
+    val color: String?,
+    val dashed: Boolean,
+    @Json(name = "sort_order") val sortOrder: Int,
+    @Json(name = "dining_table_id") val diningTableId: String?,
+    val status: String?,
+    @Json(name = "session_id") val sessionId: String?,
+    val covers: Int?,
+    @Json(name = "seated_at") val seatedAt: String?,
+    @Json(name = "last_touch_at") val lastTouchAt: String?,
+    @Json(name = "server_user_id") val serverUserId: String?,
+    @Json(name = "server_name") val serverName: String?,
+    @Json(name = "merge_partner_session_id") val mergePartnerSessionId: String?,
+    @Json(name = "merge_partner_label") val mergePartnerLabel: String?,
+    @Json(name = "reserved_at") val reservedAt: String?,
+    @Json(name = "reservation_label") val reservationLabel: String?,
+)
+
+/** GET /pos/table-map's per-map response — one published floor map for the site. Mirrors PosTableMapDetail. */
+@JsonClass(generateAdapter = true)
+data class PosTableMapDetailDto(
+    val id: String,
+    val name: String,
+    @Json(name = "sort_order") val sortOrder: Int,
+    val shapes: List<PosDiningTableStatusDto>,
+)
+
+/** POST /pos/dining-tables/{id}/seat request. */
+@JsonClass(generateAdapter = true)
+data class SeatTableRequestBody(
+    val covers: Int,
+    @Json(name = "server_user_id") val serverUserId: String? = null,
+    @Json(name = "client_ref") val clientRef: String? = null,
+)
+
+/** POST /pos/dining-tables/{id}/reserve request. */
+@JsonClass(generateAdapter = true)
+data class ReserveTableRequestBody(
+    @Json(name = "reservation_label") val reservationLabel: String,
+    @Json(name = "reserved_at") val reservedAt: String,
+)
+
+/** POST /pos/table-sessions/{id}/merge request. */
+@JsonClass(generateAdapter = true)
+data class MergeTableRequestBody(
+    @Json(name = "partner_session_id") val partnerSessionId: String,
+)
+
+/**
+ * Shared body for the order/bill/clear transition routes — each backend
+ * schema (OrderTableRequest/BillTableRequest/ClearTableRequest) is
+ * independently declared but identical in shape (an optional checksum this
+ * client never populates, same as PaymentRequest's own unused checksum
+ * field), so one Kotlin type covers all three call sites.
+ */
+@JsonClass(generateAdapter = true)
+data class TableActionRequestBody(
+    val checksum: String? = null,
+)
+
+/** Live status mutation response — mirrors TableSessionOut. */
+@JsonClass(generateAdapter = true)
+data class TableSessionDto(
+    val id: String,
+    @Json(name = "dining_table_id") val diningTableId: String,
+    val status: String,
+    val covers: Int,
+    @Json(name = "seated_at") val seatedAt: String,
+    @Json(name = "last_touch_at") val lastTouchAt: String,
+    @Json(name = "server_user_id") val serverUserId: String?,
+    @Json(name = "merge_partner_session_id") val mergePartnerSessionId: String?,
+    @Json(name = "closed_at") val closedAt: String?,
 )

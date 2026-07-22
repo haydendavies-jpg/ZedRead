@@ -198,3 +198,22 @@ REGISTER_SESSION_CLOSED = "register_session.closed"
 # ── Android POS Phase 2 — settings framework ─────────────────────────────────
 SETTING_UPDATED = "setting.updated"  # A brand- or site-level override was created/changed
 SETTING_RESET = "setting.reset"      # An override was cleared, reverting to the fallback
+
+# ── Android POS Phase 4 — table maps & floor service ─────────────────────────
+TABLE_MAP_CREATED = "table_map.created"
+TABLE_MAP_UPDATED = "table_map.updated"
+TABLE_MAP_DELETED = "table_map.deleted"  # Soft delete — is_active=False, see TableMap docstring
+TABLE_MAP_DUPLICATED = "table_map.duplicated"
+TABLE_MAP_PUBLISHED = "table_map.published"
+TABLE_MAP_UNPUBLISHED = "table_map.unpublished"
+TABLE_MAP_SHAPE_ADDED = "table_map_shape.added"
+TABLE_MAP_SHAPE_UPDATED = "table_map_shape.updated"
+TABLE_MAP_SHAPE_REMOVED = "table_map_shape.removed"
+
+# Live floor-service status mutations (POS terminal writes)
+TABLE_SESSION_SEATED = "table_session.seated"
+TABLE_SESSION_ORDERED = "table_session.ordered"
+TABLE_SESSION_BILLED = "table_session.billed"
+TABLE_SESSION_MERGED = "table_session.merged"
+TABLE_SESSION_CLEARED = "table_session.cleared"
+DINING_TABLE_RESERVED = "dining_table.reserved"
