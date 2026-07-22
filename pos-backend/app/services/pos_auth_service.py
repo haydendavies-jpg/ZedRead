@@ -742,6 +742,92 @@ async def set_pin(
     log.info("pos_auth.pin.set.complete", user_id=str(user.id))
 
 
+async def _pin_candidates_by_email(
+    db: AsyncSession, email: str, pin: str, site_id: uuid.UUID
+) -> list[tuple[User, UserPIN, AccessProfile]]:
+    """
+    Resolve PIN-verify candidates when the caller supplies an email.
+
+    email disambiguates directly when more than one row shares it (see
+    _get_users_by_email) — first find every candidate whose own PIN
+    matches, then narrow to the one that also holds an active grant for
+    this exact site.
+
+    Args:
+        db: Active database session.
+        email: The incoming user's email.
+        pin: The plaintext PIN to verify.
+        site_id: The site the terminal is operating at.
+
+    Returns:
+        list[tuple[User, UserPIN, AccessProfile]]: Zero, one, or more
+            candidates that both match the PIN and hold an active grant at
+            site_id — the caller treats anything but exactly one as a
+            failure (none found, or an unresolved collision).
+    """
+    candidates = await _get_users_by_email(db, email)
+    pin_matches: list[tuple[User, UserPIN]] = []
+    for candidate in candidates:
+        if not candidate.is_active:
+            continue
+        pin_result = await db.execute(select(UserPIN).where(UserPIN.user_id == candidate.id))
+        candidate_pin = pin_result.scalar_one_or_none()
+        if candidate_pin is not None and await verify_password_async(pin, candidate_pin.pin_hash):
+            pin_matches.append((candidate, candidate_pin))
+
+    site_matches: list[tuple[User, UserPIN, AccessProfile]] = []
+    for candidate, candidate_pin in pin_matches:
+        grant_and_profile = await _get_active_grant_with_profile(db, candidate.id, site_id)
+        if grant_and_profile is not None:
+            _grant, profile = grant_and_profile
+            site_matches.append((candidate, candidate_pin, profile))
+    return site_matches
+
+
+async def _pin_candidates_by_site(
+    db: AsyncSession, site_id: uuid.UUID, pin: str
+) -> list[tuple[User, UserPIN, AccessProfile]]:
+    """
+    Resolve PIN-verify candidates by site alone, with no email supplied.
+
+    Real POS terminals overwhelmingly support switching the active operator
+    by PIN alone (staff don't re-type an email each time) — every active
+    user holding a site-scoped grant on site_id is a candidate, and each is
+    tried against the PIN in turn. If two staff at the same site happen to
+    have chosen the same PIN, this surfaces as a collision (more than one
+    match) and the caller fails closed rather than guessing — the same
+    policy _pin_candidates_by_email() already applies to its own
+    multi-identity collision case.
+
+    Args:
+        db: Active database session.
+        site_id: The site the terminal is operating at.
+        pin: The plaintext PIN to verify.
+
+    Returns:
+        list[tuple[User, UserPIN, AccessProfile]]: Every active,
+            site-granted user whose PIN matches.
+    """
+    result = await db.execute(
+        select(User, UserAccessGrant, AccessProfile)
+        .join(UserAccessGrant, UserAccessGrant.user_id == User.id)
+        .join(AccessProfile, AccessProfile.id == UserAccessGrant.access_profile_id)
+        .where(
+            UserAccessGrant.site_id == site_id,
+            UserAccessGrant.scope == "site",
+            UserAccessGrant.is_active == True,  # noqa: E712
+            User.is_active == True,  # noqa: E712
+        )
+    )
+    site_matches: list[tuple[User, UserPIN, AccessProfile]] = []
+    for user, _grant, profile in result.all():
+        pin_result = await db.execute(select(UserPIN).where(UserPIN.user_id == user.id))
+        user_pin = pin_result.scalar_one_or_none()
+        if user_pin is not None and await verify_password_async(pin, user_pin.pin_hash):
+            site_matches.append((user, user_pin, profile))
+    return site_matches
+
+
 async def verify_pin(
     db: AsyncSession,
     payload: PINVerifyRequest,
@@ -752,13 +838,16 @@ async def verify_pin(
     Used when a different staff member wants to take over an active terminal
     session without a full email+password login. The outgoing user's session
     remains in the DB (ended_at is not set — the terminal manages that via
-    the logout route added in Stage 7.4).
+    the logout route added in Stage 7.4). email is optional: supplying it
+    disambiguates directly (_pin_candidates_by_email); omitting it checks
+    the PIN against every active user granted at site_id instead
+    (_pin_candidates_by_site) — the switch-operator flow only asks for a PIN.
 
     Writes an audit log row on both success and failure.
 
     Args:
         db: Active database session.
-        payload: Email, PIN, and site_id of the incoming user.
+        payload: PIN and site_id of the incoming user, plus an optional email.
 
     Returns:
         PINVerifyResponse: Fresh access token, user info, and profile name.
@@ -766,37 +855,33 @@ async def verify_pin(
     Raises:
         HTTPException: 401 if the PIN is wrong or the user/grant does not exist.
     """
-    log.info("pos_auth.pin.verify.attempt", email=payload.email, site_id=str(payload.site_id))
+    if payload.email:
+        log.info("pos_auth.pin.verify.attempt", email=payload.email, site_id=str(payload.site_id))
+        # Throttle PIN guessing against a single account — PINs are only 4–6 digits
+        check_rate_limit(
+            f"pos_pin:{payload.email.lower()}",
+            max_attempts=_PIN_MAX_ATTEMPTS,
+            window_seconds=_PIN_WINDOW_SECONDS,
+        )
+        site_matches = await _pin_candidates_by_email(db, payload.email, payload.pin, payload.site_id)
+        failure_entity_id = payload.email
+    else:
+        log.info("pos_auth.pin.verify.attempt", site_id=str(payload.site_id))
+        # No account to key the throttle on — bucket by site/terminal instead.
+        check_rate_limit(
+            f"pos_pin_site:{payload.site_id}",
+            max_attempts=_PIN_MAX_ATTEMPTS,
+            window_seconds=_PIN_WINDOW_SECONDS,
+        )
+        site_matches = await _pin_candidates_by_site(db, payload.site_id, payload.pin)
+        failure_entity_id = str(payload.site_id)
 
-    # Throttle PIN guessing against a single account — PINs are only 4–6 digits
-    check_rate_limit(
-        f"pos_pin:{payload.email.lower()}",
-        max_attempts=_PIN_MAX_ATTEMPTS,
-        window_seconds=_PIN_WINDOW_SECONDS,
-    )
-
-    # payload.site_id disambiguates directly when more than one row shares
-    # this email (see _get_users_by_email) — first find every candidate
-    # whose own PIN matches, then narrow to the one that also holds an
-    # active grant for this exact site, instead of resolving "the" user by
-    # email alone.
-    candidates = await _get_users_by_email(db, payload.email)
-    pin_matches: list[tuple[User, UserPIN]] = []
-    for candidate in candidates:
-        if not candidate.is_active:
-            continue
-        pin_result = await db.execute(select(UserPIN).where(UserPIN.user_id == candidate.id))
-        candidate_pin = pin_result.scalar_one_or_none()
-        if candidate_pin is not None and await verify_password_async(payload.pin, candidate_pin.pin_hash):
-            pin_matches.append((candidate, candidate_pin))
-
-    if not pin_matches:
-        entity_id = str(candidates[0].id) if len(candidates) == 1 else payload.email
+    if not site_matches:
         await log_action(
             db=db,
             action=POS_LOGIN_FAILED,
             entity_type="user",
-            entity_id=entity_id,
+            entity_id=failure_entity_id,
             actor_type=ActorType.USER,
             actor_id=None,
             actor_email=payload.email,
@@ -804,22 +889,12 @@ async def verify_pin(
             after_state={"site_id": str(payload.site_id), "reason": "invalid_pin"},
         )
         await db.commit()
-        log.warning("pos_auth.pin.verify.failed", email=payload.email)
+        log.warning("pos_auth.pin.verify.failed", site_id=str(payload.site_id))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid PIN",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    # Narrow the PIN-valid candidates to the one that can access this site.
-    # Zero means none of them can; more than one means the same PIN was
-    # independently set on multiple accounts that can both access it — an
-    # unresolved multi-identity collision, so this fails rather than guesses.
-    site_matches = []
-    for candidate, candidate_pin in pin_matches:
-        candidate_grant = await _get_active_grant_with_profile(db, candidate.id, payload.site_id)
-        if candidate_grant is not None:
-            site_matches.append((candidate, candidate_pin, candidate_grant))
 
     if len(site_matches) != 1:
         raise HTTPException(
@@ -827,9 +902,7 @@ async def verify_pin(
             detail="No active access grant for this site",
         )
 
-    user, pin_record, grant_and_profile = site_matches[0]
-
-    _grant, access_profile = grant_and_profile
+    user, pin_record, access_profile = site_matches[0]
 
     # Carry device context forward when the caller supplies it, so a
     # switched-in user's session still gates on the terminal's register
@@ -873,6 +946,7 @@ async def verify_pin(
         access_token=access_token,
         user_id=user.id,
         user_name=user.name,
+        email=user.email,
         access_profile_name=access_profile.name,
         is_pin_reset_required=pin_record.is_pin_reset_required,
     )

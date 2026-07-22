@@ -15,9 +15,12 @@ import javax.inject.Inject
  * Drives the switch-user flow (change cashier without full device logout)
  * and the inline manager auth prompt (approve void/refund actions).
  *
- * Both call POST /auth/pos/pin/verify, which is unauthenticated and keyed by
- * email — there is no PIN-only lookup, so both flows must know which
- * account's PIN they're checking.
+ * Both call POST /auth/pos/pin/verify, but differently: switch-user asks for
+ * a PIN alone (the backend checks it against every active user granted at
+ * this site — real POS terminals don't make staff re-type an email each
+ * time) and adopts the result as the terminal's active session; manager
+ * auth still supplies a specific email (it's authorising a particular
+ * manager, not "any staff") and never changes the active session.
  */
 @HiltViewModel
 class SwitchUserViewModel @Inject constructor(
@@ -39,13 +42,14 @@ class SwitchUserViewModel @Inject constructor(
     val switchState: StateFlow<SwitchUserState> = _switchState.asStateFlow()
 
     /**
-     * Verify [email]'s PIN and adopt their session as the terminal's active one.
+     * Verify [pin] against every active user granted at this site and adopt
+     * whichever one matches as the terminal's active session.
      * [needsPinSetup] on success mirrors PinVerifyResponse.is_pin_reset_required.
      */
-    fun switchOperator(email: String, pin: String) {
+    fun switchOperator(pin: String) {
         _switchState.value = SwitchUserState.Loading
         viewModelScope.launch {
-            runCatching { authRepo.verifyPin(email, pin) }
+            runCatching { authRepo.verifyPinAndSwitch(pin) }
                 .onSuccess { resp -> _switchState.value = SwitchUserState.Switched(resp.isPinResetRequired) }
                 .onFailure { e -> _switchState.value = pinFailureToSwitchState(e) }
         }
@@ -65,7 +69,7 @@ class SwitchUserViewModel @Inject constructor(
     fun authorizeManager(managerEmail: String, managerPin: String) {
         _inlineAuthState.value = InlineAuthState.Loading
         viewModelScope.launch {
-            runCatching { authRepo.verifyPin(managerEmail, managerPin) }
+            runCatching { authRepo.verifyPinOnly(managerEmail, managerPin) }
                 .onSuccess { _inlineAuthState.value = InlineAuthState.Authorised }
                 .onFailure { e ->
                     _inlineAuthState.value = if (e is HttpException && e.code() == 401) {

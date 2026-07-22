@@ -3,9 +3,11 @@ package com.zedread.pos.ui.screens.switchuser
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -36,7 +38,8 @@ import com.zedread.pos.ui.viewmodel.SwitchUserViewModel
 /**
  * Doubles as ZedRead POS's "PIN entry" screen: lets a different operator take
  * over this terminal (POST /auth/pos/pin/verify), or the current operator
- * re-confirm their own identity, without a full email+password login.
+ * re-confirm their own identity, with a PIN alone — matching real POS
+ * terminal conventions, no email prompt.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,7 +50,6 @@ fun SwitchUserScreen(
 ) {
     val state by viewModel.switchState.collectAsState()
     val currentUserName by viewModel.currentUserName.collectAsState()
-    var email by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
 
     LaunchedEffect(state) {
@@ -63,12 +65,17 @@ fun SwitchUserScreen(
                 navigationIcon = { TextButton(onClick = onCancel) { Text("Cancel") } },
             )
         },
+        // Handle the IME inset explicitly below instead of via Scaffold's own
+        // default (version-dependent whether it includes ime) — avoids
+        // double-padding when the keyboard opens.
+        contentWindowInsets = WindowInsets(0.dp),
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .padding(innerPadding)
-                .padding(32.dp)
-                .fillMaxSize(),
+                .fillMaxSize()
+                .imePadding()
+                .padding(32.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -81,19 +88,8 @@ fun SwitchUserScreen(
                 Spacer(Modifier.height(16.dp))
             }
 
-            Text("Enter your email and PIN to start", style = MaterialTheme.typography.bodyLarge)
+            Text("Enter your PIN to start", style = MaterialTheme.typography.bodyLarge)
             Spacer(Modifier.height(24.dp))
-
-            OutlinedTextField(
-                value = email,
-                onValueChange = { email = it },
-                label = { Text("Email") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Spacer(Modifier.height(16.dp))
 
             OutlinedTextField(
                 value = pin,
@@ -108,7 +104,7 @@ fun SwitchUserScreen(
             Spacer(Modifier.height(8.dp))
 
             when (state) {
-                is SwitchUserState.InvalidPin -> Text("Incorrect email or PIN", color = MaterialTheme.colorScheme.error)
+                is SwitchUserState.InvalidPin -> Text("Incorrect PIN", color = MaterialTheme.colorScheme.error)
                 is SwitchUserState.Error -> Text((state as SwitchUserState.Error).message, color = MaterialTheme.colorScheme.error)
                 else -> Unit
             }
@@ -116,8 +112,8 @@ fun SwitchUserScreen(
             Spacer(Modifier.height(24.dp))
 
             Button(
-                onClick = { viewModel.switchOperator(email.trim(), pin) },
-                enabled = email.isNotBlank() && pin.isNotBlank() && state !is SwitchUserState.Loading,
+                onClick = { viewModel.switchOperator(pin) },
+                enabled = pin.isNotBlank() && state !is SwitchUserState.Loading,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (state is SwitchUserState.Loading) CircularProgressIndicator(modifier = Modifier.height(20.dp))

@@ -1289,7 +1289,8 @@ first when picking this phase back up.
 - [x] `PosNavHost.kt` navigation graph
 - [x] Backend: Migration `0011` adds access grants table extensions for management access
 - [x] POS login screen (email + password) — functionally wired, not yet styled to the design bundle
-- [x] PIN entry — folded into `SwitchUserScreen` (email + PIN) rather than a separate screen
+- [x] PIN entry — folded into `SwitchUserScreen` (PIN only, no email — matches real POS terminal
+      conventions) rather than a separate screen
 - [x] Site selector screen (for users with multi-site access)
 - [x] Self-service license-seat device claiming (migration `0051`, PR #110) — replaced the
       admin-pre-registration + Device Setup screen flow this stage originally shipped with. A terminal
@@ -1316,11 +1317,15 @@ first when picking this phase back up.
       (running remaining-due, "Add another payment"). Backend `pay_invoice()` split-payment bug fixed —
       see `ANDROID_POS_BUILD_PLAN.md`.
 - [ ] Docket/receipt printing (`printing/` module scaffolded)
-- [x] Switch user flow (PIN re-entry without full logout)
+- [x] Switch user flow (PIN-only re-entry without full logout)
 - [x] End-of-day cash-up screen (`CashUpScreen.kt`) — closes the register session, shows the
-      computed Expected/Counted/Variance summary, logs the operator out. Entry point is a "Cash up"
-      icon on `CatalogScreen`'s top bar for now (no account/nav menu exists yet — that's
-      design-bundle-dependent, see `ANDROID_POS_BUILD_PLAN.md`).
+      computed Expected/Counted/Variance summary, then returns to the register gate for the next
+      shift; does NOT log the operator out (logout is a separate, explicit action reserved for a
+      future Settings screen). Entry point is a "Cash up" icon on `CatalogScreen`'s top bar for now
+      (no account/nav menu exists yet — that's design-bundle-dependent, see `ANDROID_POS_BUILD_PLAN.md`).
+- [x] Kiosk-style immersive UI: `MainActivity` hides the system status/nav bars (re-hidden on every
+      focus regain); every screen with a text field applies `Modifier.imePadding()` so the soft
+      keyboard doesn't cover inputs — see `ANDROID_POS_BUILD_PLAN.md`'s "user-testing feedback round".
 - [ ] Invoice history screen
 - [ ] Error handling + offline sync reconciliation
 - [ ] APK build + signing configuration — CI produces an unsigned debug APK; release signing not set up
@@ -1353,3 +1358,5 @@ first when picking this phase back up.
 | Line modifier price is a flat per-line addition, not scaled by quantity | `invoice_line_modifiers` has no quantity dimension — one row per (line, modifier); `add_line_modifier()`/`_recompute_invoice_totals()` add `price_delta_cents` once regardless of the line's `quantity` | Medium |
 | Tax compound edge cases (PST on GST): not validated | `tax_calculation_service.py` | Medium |
 | Accounting/journal integration for refunds | Not started | Future |
+| Android accent colour update pending an actual hex value from the user ("new colour branding" reported in testing, not yet supplied) | `Theme.kt` currently matches `design_handoff_zedread/README.md`'s documented `#A82040` exactly | Medium |
+| Inline manager-authorisation prompt (`InlineAuthPrompt.kt`) exists but isn't wired to any screen | Android, void/refund/discount elevated-privilege approval | Low |

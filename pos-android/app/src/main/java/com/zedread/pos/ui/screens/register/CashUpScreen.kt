@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -34,9 +35,11 @@ import com.zedread.pos.ui.viewmodel.RegisterSessionViewModel
 /**
  * End-of-day cash-up: bulk-value entry only for Phase 1 — the
  * denomination-breakdown variant and the hide-variance option are both
- * Phase 2 settings. Closes this terminal's open till session and logs the
- * operator out (POST /register-sessions/{id}/close); the device stays
- * paired for the next shift.
+ * Phase 2 settings. Closes this terminal's open till session
+ * (POST /register-sessions/{id}/close); the operator stays logged in and the
+ * device stays paired for the next shift — logging out is a separate,
+ * explicit action that belongs in Settings (not built yet), not something
+ * cash-up should force.
  */
 @Composable
 fun CashUpScreen(
@@ -44,15 +47,14 @@ fun CashUpScreen(
     viewModel: RegisterSessionViewModel = hiltViewModel(),
 ) {
     val state by viewModel.cashUpState.collectAsState()
-    val loggedOut by viewModel.loggedOut.collectAsState()
     var amount by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) { viewModel.loadForCashUp() }
-    LaunchedEffect(loggedOut) { if (loggedOut) onDone() }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .imePadding()
             .padding(32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -104,8 +106,8 @@ fun CashUpScreen(
 
                 Spacer(Modifier.height(32.dp))
 
-                Button(onClick = { viewModel.logout() }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Log Out")
+                Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) {
+                    Text("Done")
                 }
             }
 
