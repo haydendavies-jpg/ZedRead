@@ -14,7 +14,11 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from app.constants.audit_actions import LICENSE_CREATED, LICENSE_DISABLED, LICENSE_ENABLED, LICENSE_UPDATED
+from app.models.access_profile_page_permission import AccessProfilePagePermission
 from app.models.audit_log import AuditLog
+from app.models.brand import Brand
+from app.models.license import License
+from app.models.site import Site
 
 
 def _future_dates() -> dict:
@@ -276,3 +280,196 @@ async def test_enable_license_writes_audit_log(client, db, portal_auth_headers, 
     )
     row = result.scalar_one()
     assert row.after_state["status"] == "active"
+
+
+# ── GET /licenses/management (scoped list) ─────────────────────────────────────
+
+
+async def test_list_licenses_management_without_permission_returns_403(
+    client, mgmt_auth_headers, test_license
+):
+    """A management caller whose access profile lacks 'license_billing' is denied."""
+    response = await client.get("/licenses/management", headers=mgmt_auth_headers)
+    assert response.status_code == 403
+
+
+async def test_list_licenses_management_with_permission_returns_200(
+    client, db, mgmt_auth_headers, test_manager_profile, test_license
+):
+    """A management caller granted 'license_billing' sees licenses in their brand."""
+    db.add(
+        AccessProfilePagePermission(
+            id=uuid.uuid4(), access_profile_id=test_manager_profile.id, page_key="license_billing"
+        )
+    )
+    await db.commit()
+
+    response = await client.get("/licenses/management", headers=mgmt_auth_headers)
+
+    assert response.status_code == 200
+    ids = [l["id"] for l in response.json()]
+    assert str(test_license.id) in ids
+
+
+async def test_list_licenses_management_no_token_returns_403(client):
+    """GET /licenses/management without a token returns 403."""
+    response = await client.get("/licenses/management")
+    assert response.status_code == 403
+
+
+async def test_list_licenses_management_excludes_other_brands(
+    client, db, mgmt_auth_headers, test_manager_profile, test_group
+):
+    """A brand/site-scope caller never sees a license belonging to a different brand."""
+    db.add(
+        AccessProfilePagePermission(
+            id=uuid.uuid4(), access_profile_id=test_manager_profile.id, page_key="license_billing"
+        )
+    )
+
+    other_brand = Brand(
+        id=uuid.uuid4(),
+        group_id=test_group.id,
+        name="Other Brand",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+    )
+    db.add(other_brand)
+    await db.flush()
+
+    other_site = Site(
+        id=uuid.uuid4(),
+        brand_id=other_brand.id,
+        name="Other Site",
+        is_active=True,
+        timezone="Australia/Sydney",
+        currency="AUD",
+        country="AU",
+        address_street="9 Other Street",
+        address_state="NSW",
+        address_postcode="2000",
+    )
+    db.add(other_site)
+    await db.flush()
+
+    other_license = License(
+        id=uuid.uuid4(),
+        site_id=other_site.id,
+        plan_name="starter",
+        status="active",
+        monthly_fee_cents=0,
+        is_trial=False,
+        max_devices=1,
+        starts_at=datetime.now(tz=timezone.utc),
+        expires_at=datetime.now(tz=timezone.utc) + timedelta(days=365),
+    )
+    db.add(other_license)
+    await db.commit()
+
+    response = await client.get("/licenses/management", headers=mgmt_auth_headers)
+
+    assert response.status_code == 200
+    ids = [l["id"] for l in response.json()]
+    assert str(other_license.id) not in ids
+
+
+# ── PATCH /licenses/management/{id} (seat capacity only) ───────────────────────
+
+
+async def test_update_license_management_without_permission_returns_403(
+    client, mgmt_auth_headers, test_license
+):
+    """A management caller lacking 'license_billing' cannot edit seat capacity."""
+    response = await client.patch(
+        f"/licenses/management/{test_license.id}", json={"max_devices": 5}, headers=mgmt_auth_headers
+    )
+    assert response.status_code == 403
+
+
+async def test_update_license_management_with_permission_succeeds(
+    client, db, mgmt_auth_headers, test_manager_profile, test_license
+):
+    """A management caller granted 'license_billing' can update seat capacity."""
+    db.add(
+        AccessProfilePagePermission(
+            id=uuid.uuid4(), access_profile_id=test_manager_profile.id, page_key="license_billing"
+        )
+    )
+    await db.commit()
+
+    response = await client.patch(
+        f"/licenses/management/{test_license.id}", json={"max_devices": 5}, headers=mgmt_auth_headers
+    )
+
+    assert response.status_code == 200
+    assert response.json()["max_devices"] == 5
+
+
+async def test_update_license_management_cannot_change_commercial_terms(
+    client, db, mgmt_auth_headers, test_manager_profile, test_license
+):
+    """The management schema has no plan_name/monthly_fee_cents/expires_at field to change them with."""
+    db.add(
+        AccessProfilePagePermission(
+            id=uuid.uuid4(), access_profile_id=test_manager_profile.id, page_key="license_billing"
+        )
+    )
+    await db.commit()
+
+    response = await client.patch(
+        f"/licenses/management/{test_license.id}",
+        json={"max_devices": 5, "plan_name": "enterprise", "monthly_fee_cents": 999999},
+        headers=mgmt_auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["max_devices"] == 5
+    assert body["plan_name"] == test_license.plan_name
+    assert body["monthly_fee_cents"] == test_license.monthly_fee_cents
+
+
+async def test_update_license_management_writes_audit_log(
+    client, db, mgmt_auth_headers, test_manager_profile, test_license
+):
+    """A successful management seat-capacity update writes a LICENSE_UPDATED row attributed to the caller."""
+    db.add(
+        AccessProfilePagePermission(
+            id=uuid.uuid4(), access_profile_id=test_manager_profile.id, page_key="license_billing"
+        )
+    )
+    await db.commit()
+
+    await client.patch(
+        f"/licenses/management/{test_license.id}", json={"max_devices": 5}, headers=mgmt_auth_headers
+    )
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_license.id),
+            AuditLog.action == LICENSE_UPDATED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.after_state["max_devices"] == 5
+
+
+async def test_update_license_management_pos_access_forbidden(client, pos_auth_headers, test_license):
+    """A raw POS terminal session can never edit a license."""
+    response = await client.patch(
+        f"/licenses/management/{test_license.id}", json={"max_devices": 5}, headers=pos_auth_headers
+    )
+    assert response.status_code == 403
+
+
+async def test_update_license_management_portal_admin_always_permitted(
+    client, portal_auth_headers, test_license
+):
+    """A portal admin (superadmin) may edit any license via the management route too."""
+    response = await client.patch(
+        f"/licenses/management/{test_license.id}", json={"max_devices": 5}, headers=portal_auth_headers
+    )
+    assert response.status_code == 200
+    assert response.json()["max_devices"] == 5

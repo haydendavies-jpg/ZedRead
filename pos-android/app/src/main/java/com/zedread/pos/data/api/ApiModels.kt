@@ -14,13 +14,22 @@ import com.squareup.moshi.JsonClass
 // resulting token in PosLoginResponseDto.deviceToken for the client to
 // persist. device_name is only used if a brand-new device is claimed.
 
-/** POST /auth/pos/login request body. */
+/**
+ * POST /auth/pos/login request body.
+ *
+ * hardwareId is Settings.Secure.ANDROID_ID — a stable OS-level identifier
+ * that survives an app reinstall, unlike deviceToken (which lives in this
+ * app's own storage and is wiped with it). Sent alongside deviceToken so
+ * the backend can recognise a returning physical device that lost its
+ * token, instead of silently claiming a new license seat.
+ */
 @JsonClass(generateAdapter = true)
 data class LoginRequest(
     val email: String,
     val password: String,
     @Json(name = "device_name") val deviceName: String,
     @Json(name = "device_token") val deviceToken: String?,
+    @Json(name = "hardware_id") val hardwareId: String?,
 )
 
 /** POST /auth/pos/site-token request body — finalizes a multi-site login. */
@@ -30,6 +39,7 @@ data class SiteTokenRequest(
     val password: String,
     @Json(name = "device_name") val deviceName: String,
     @Json(name = "device_token") val deviceToken: String?,
+    @Json(name = "hardware_id") val hardwareId: String?,
     @Json(name = "site_id") val siteId: String,
 )
 

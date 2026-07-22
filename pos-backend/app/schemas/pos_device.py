@@ -13,6 +13,9 @@ class PosDeviceRegister(BaseModel):
     license_id: uuid.UUID
     device_name: str = Field(..., min_length=1, max_length=255)
     device_token: str = Field(..., min_length=8, max_length=255, description="Unique hardware token from the device")
+    hardware_id: str | None = Field(
+        default=None, max_length=255, description="Stable OS-level hardware identifier (Android ID), if known"
+    )
 
 
 class PosDeviceResponse(BaseModel):
@@ -25,5 +28,6 @@ class PosDeviceResponse(BaseModel):
     license_id: uuid.UUID
     device_name: str
     device_token: str
+    hardware_id: str | None
     is_active: bool
     registered_at: datetime

@@ -144,6 +144,7 @@ export function DevicesPage() {
               <tr>
                 <th>Device</th>
                 {!fixedSiteId && <th>Site</th>}
+                <th>Hardware ID</th>
                 <th>Registered</th>
                 <th>Status</th>
                 <th>Actions</th>
@@ -154,6 +155,9 @@ export function DevicesPage() {
                 <tr key={d.id}>
                   <td className="font-medium">{d.device_name}</td>
                   {!fixedSiteId && <td className="text-[var(--zr-muted)]">{siteName(d.site_id)}</td>}
+                  <td className="font-mono text-xs text-[var(--zr-muted)]" title={d.hardware_id ?? undefined}>
+                    {d.hardware_id ? `${d.hardware_id.slice(0, 12)}…` : '—'}
+                  </td>
                   <td className="text-[var(--zr-muted)]">{new Date(d.registered_at).toLocaleDateString()}</td>
                   <td><StatusBadge status={d.is_active ? 'active' : 'inactive'} /></td>
                   <td className="zr-cell-pad">
@@ -173,7 +177,7 @@ export function DevicesPage() {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={fixedSiteId ? 4 : 5} className="text-center text-[var(--zr-faint)] py-8">
+                  <td colSpan={fixedSiteId ? 5 : 6} className="text-center text-[var(--zr-faint)] py-8">
                     {devices.length === 0 ? 'No devices registered yet.' : 'No devices match the current filters.'}
                   </td>
                 </tr>

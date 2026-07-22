@@ -52,6 +52,13 @@ class PosDevice(Base):
         unique=True,
         comment="Unique token used to authenticate POS login calls from this device",
     )
+    hardware_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        unique=True,
+        comment="Stable OS-level hardware identifier (Android ID) — recognises a returning "
+        "physical device across app reinstalls, when device_token itself has been wiped",
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
