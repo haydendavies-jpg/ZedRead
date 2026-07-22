@@ -52,6 +52,8 @@ DEVICE_REGISTERED = "device.registered"
 DEVICE_DEREGISTERED = "device.deregistered"
 DEVICE_REPAIRED = "device.repaired"
 DEVICE_TOKEN_RECOVERED = "device.token_recovered"
+DEVICE_RENAMED = "device.renamed"
+DEVICE_DELETED = "device.deleted"
 
 # ── Phase 2 / Stage 7 — POS Authentication ───────────────────────────────────
 POS_LOGIN_SUCCESS = "pos_auth.login.success"

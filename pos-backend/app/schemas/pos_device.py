@@ -18,6 +18,12 @@ class PosDeviceRegister(BaseModel):
     )
 
 
+class PosDeviceUpdate(BaseModel):
+    """Payload for PATCH /pos-devices/{id} and PATCH /pos-devices/management/{id} — rename a device."""
+
+    device_name: str = Field(..., min_length=1, max_length=255)
+
+
 class PosDeviceResponse(BaseModel):
     """Serialised PosDevice returned by all /pos-devices routes."""
 
@@ -31,3 +37,15 @@ class PosDeviceResponse(BaseModel):
     hardware_id: str | None
     is_active: bool
     registered_at: datetime
+
+
+class PosDeviceDeleteResponse(BaseModel):
+    """Response for DELETE /pos-devices/{id} — a hard delete, summarising what was cascaded."""
+
+    id: uuid.UUID
+    register_sessions_deleted: int = Field(
+        ..., description="Register sessions belonging to this device that were deleted to allow it"
+    )
+    invoices_detached: int = Field(
+        ..., description="Invoices whose register_session_id was cleared because their session was deleted"
+    )

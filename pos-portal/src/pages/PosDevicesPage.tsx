@@ -68,6 +68,58 @@ export function PosDevicesPage() {
     onError: invalidate,
   })
 
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/pos-devices/${id}`),
+    onSuccess: () => {
+      setDeleteError(null)
+      invalidate()
+    },
+    onError: (e: unknown) => {
+      invalidate()
+      const msg = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
+      setDeleteError(msg ?? 'Failed to delete device.')
+    },
+  })
+
+  const handleDelete = (d: PosDevice) => {
+    if (
+      confirm(
+        `Permanently delete "${d.device_name}"? This cannot be undone — any register sessions on ` +
+          `this device are deleted too (invoices that reference them are kept, just detached).`,
+      )
+    ) {
+      deleteMutation.mutate(d.id)
+    }
+  }
+
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+
+  const renameMutation = useMutation({
+    mutationFn: ({ id, device_name }: { id: string; device_name: string }) =>
+      api.patch(`/pos-devices/${id}`, { device_name }),
+    onSuccess: () => {
+      invalidate()
+      setRenamingId(null)
+    },
+    onError: invalidate,
+  })
+
+  const startRename = (d: PosDevice) => {
+    setRenamingId(d.id)
+    setRenameDraft(d.device_name)
+  }
+
+  const commitRename = (id: string) => {
+    const trimmed = renameDraft.trim()
+    if (trimmed) {
+      renameMutation.mutate({ id, device_name: trimmed })
+    } else {
+      setRenamingId(null)
+    }
+  }
+
   const siteName = (id: string) => sites.find((s) => s.id === id)?.name ?? id.slice(0, 8)
 
   const sitesLicenses = (siteId: string) => licenses.filter((l) => l.site_id === siteId)
@@ -122,6 +174,8 @@ export function PosDevicesPage() {
         </button>
       </div>
 
+      {deleteError && <p className="text-sm text-red-600 mb-2">{deleteError}</p>}
+
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <select
           value={siteFilter}
@@ -174,7 +228,29 @@ export function PosDevicesPage() {
             <tbody>
               {filtered.map((d) => (
                 <tr key={d.id}>
-                  <td className="font-medium">{d.device_name}</td>
+                  <td className="zr-cell-pad">
+                    {renamingId === d.id ? (
+                      <input
+                        autoFocus
+                        value={renameDraft}
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        onBlur={() => commitRename(d.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitRename(d.id)
+                          if (e.key === 'Escape') setRenamingId(null)
+                        }}
+                        className="w-40 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      />
+                    ) : (
+                      <button
+                        onClick={() => startRename(d)}
+                        title="Click to rename"
+                        className="font-medium hover:underline text-left"
+                      >
+                        {d.device_name}
+                      </button>
+                    )}
+                  </td>
                   <td className="text-[var(--zr-muted)]">{siteName(d.site_id)}</td>
                   <td className="zr-cell-pad">
                     <button
@@ -191,16 +267,26 @@ export function PosDevicesPage() {
                   <td className="text-[var(--zr-muted)]">{new Date(d.registered_at).toLocaleDateString()}</td>
                   <td><StatusBadge status={d.is_active ? 'active' : 'inactive'} /></td>
                   <td className="zr-cell-pad">
-                    {d.is_active ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {d.is_active ? (
+                        <button
+                          onClick={() => deregisterMutation.mutate(d.id)}
+                          className="text-red-600 hover:underline text-xs"
+                        >
+                          Deregister
+                        </button>
+                      ) : (
+                        <span className="text-xs text-[var(--zr-faint)]">Deregistered</span>
+                      )}
                       <button
-                        onClick={() => deregisterMutation.mutate(d.id)}
-                        className="text-red-600 hover:underline text-xs"
+                        onClick={() => handleDelete(d)}
+                        disabled={deleteMutation.isPending}
+                        title="Permanently delete this device record"
+                        className="text-red-800 hover:underline text-xs disabled:opacity-50"
                       >
-                        Deregister
+                        Delete
                       </button>
-                    ) : (
-                      <span className="text-xs text-[var(--zr-faint)]">Deregistered</span>
-                    )}
+                    </div>
                   </td>
                 </tr>
               ))}

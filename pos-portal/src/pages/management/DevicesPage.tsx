@@ -65,6 +65,38 @@ export function DevicesPage() {
     },
   })
 
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+
+  const renameMutation = useMutation({
+    mutationFn: ({ id, device_name }: { id: string; device_name: string }) =>
+      api.patch(`/pos-devices/management/${id}`, { device_name }),
+    onSuccess: () => {
+      setActionError(null)
+      qc.invalidateQueries({ queryKey: ['management-devices'] })
+      setRenamingId(null)
+    },
+    onError: (e: unknown) => {
+      qc.invalidateQueries({ queryKey: ['management-devices'] })
+      const msg = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
+      setActionError(msg ?? 'Failed to rename device.')
+    },
+  })
+
+  const startRename = (d: PosDevice) => {
+    setRenamingId(d.id)
+    setRenameDraft(d.device_name)
+  }
+
+  const commitRename = (id: string) => {
+    const trimmed = renameDraft.trim()
+    if (trimmed) {
+      renameMutation.mutate({ id, device_name: trimmed })
+    } else {
+      setRenamingId(null)
+    }
+  }
+
   const siteName = (id: string) => sites.find((s) => s.id === id)?.name ?? id.slice(0, 8)
 
   const filtered = devices.filter((d) => {
@@ -153,7 +185,29 @@ export function DevicesPage() {
             <tbody>
               {filtered.map((d) => (
                 <tr key={d.id}>
-                  <td className="font-medium">{d.device_name}</td>
+                  <td className="zr-cell-pad">
+                    {renamingId === d.id ? (
+                      <input
+                        autoFocus
+                        value={renameDraft}
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        onBlur={() => commitRename(d.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitRename(d.id)
+                          if (e.key === 'Escape') setRenamingId(null)
+                        }}
+                        className="w-40 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      />
+                    ) : (
+                      <button
+                        onClick={() => startRename(d)}
+                        title="Click to rename"
+                        className="font-medium hover:underline text-left"
+                      >
+                        {d.device_name}
+                      </button>
+                    )}
+                  </td>
                   {!fixedSiteId && <td className="text-[var(--zr-muted)]">{siteName(d.site_id)}</td>}
                   <td className="font-mono text-xs text-[var(--zr-muted)]" title={d.hardware_id ?? undefined}>
                     {d.hardware_id ? `${d.hardware_id.slice(0, 12)}…` : '—'}
