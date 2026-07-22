@@ -1,6 +1,8 @@
 package com.zedread.pos.ui.screens.invoicesearch
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,14 +14,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenu
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -132,8 +131,15 @@ fun InvoiceSearchScreen(
     }
 }
 
-/** A labelled dropdown select — replaces the earlier horizontally-scrolling pill row for each filter. */
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * A labelled dropdown select — replaces the earlier horizontally-scrolling
+ * pill row for each filter. A plain [DropdownMenu] anchored to a clickable
+ * bordered row, not [androidx.compose.material3.ExposedDropdownMenuBox] —
+ * that component's own `ExposedDropdownMenu` doesn't resolve against this
+ * project's pinned Compose BOM (2024.12.01 / Material3 1.3.1), confirmed by
+ * a real CI compile failure; this is the same proven pattern already used
+ * by MenuSelectorRow/SettingsScreen's SingleSelectEditor elsewhere in the app.
+ */
 @Composable
 private fun <T> FilterDropdown(
     modifier: Modifier = Modifier,
@@ -142,21 +148,29 @@ private fun <T> FilterDropdown(
     selected: T,
     onSelect: (T) -> Unit,
 ) {
+    val colors = LocalZedReadColors.current
     var expanded by remember { mutableStateOf(false) }
     val selectedText = options.firstOrNull { it.first == selected }?.second.orEmpty()
 
-    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = modifier) {
-        OutlinedTextField(
-            value = selectedText,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text(label) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-        )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { (value, text) ->
-                DropdownMenuItem(text = { Text(text) }, onClick = { onSelect(value); expanded = false })
+    Column(modifier = modifier) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = colors.faint)
+        Box {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(width = 1.dp, color = colors.inputBorder, shape = RoundedCornerShape(8.dp))
+                    .clickable { expanded = true }
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(selectedText, style = MaterialTheme.typography.bodyMedium, color = colors.text)
+                Text("▾", color = colors.muted)
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { (value, text) ->
+                    DropdownMenuItem(text = { Text(text) }, onClick = { onSelect(value); expanded = false })
+                }
             }
         }
     }
