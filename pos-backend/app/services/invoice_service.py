@@ -35,12 +35,14 @@ from app.constants.audit_actions import (
     INVOICE_VOIDED,
 )
 from app.constants.statuses import ActorType, InvoiceStatus, InvoiceType
+from app.models.dining_table import DiningTable
 from app.models.invoice import Invoice
 from app.models.invoice_line_item import InvoiceLineItem
 from app.models.invoice_line_modifier import InvoiceLineModifier
 from app.models.invoice_tax_breakdown import InvoiceTaxBreakdown
 from app.models.modifier_option import ModifierOption
 from app.models.payment import Payment
+from app.models.table_session import TableSession
 from app.models.user import User
 from app.models.product import Product
 from app.services.audit_service import log_action
@@ -64,6 +66,7 @@ class InvoiceResponse(BaseModel):
     site_id: uuid.UUID
     created_by_id: uuid.UUID | None
     register_session_id: uuid.UUID | None
+    table_session_id: uuid.UUID | None = None
     invoice_type: str
     status: str
     subtotal_cents: int
@@ -162,11 +165,19 @@ class InvoiceCreateRequest(BaseModel):
 
     All fields optional — site/brand/register-session resolve server-side
     from the caller's POS token, this only carries the offline-sync
-    idempotency key.
+    idempotency key and (Android POS Phase 4) an optional table-session
+    handoff.
     """
 
     client_ref: str | None = Field(
         None, description="Client-generated idempotency key — a retried create with the same value is deduped"
+    )
+    table_session_id: uuid.UUID | None = Field(
+        None,
+        description=(
+            "Attach this order to a table's open occupancy (the Tables screen's "
+            "'Open order →' handoff) — validated to belong to the caller's own site"
+        ),
     )
 
 
@@ -326,6 +337,35 @@ async def list_invoices(
     return list(result.scalars().all())
 
 
+async def _validate_table_session_or_400(db: AsyncSession, site_id: uuid.UUID, table_session_id: uuid.UUID) -> None:
+    """
+    Raise 400 unless table_session_id resolves to an open session on a table at this site.
+
+    Args:
+        db: Active database session.
+        site_id: The invoice's site — the table session's table must belong to it.
+        table_session_id: The table session to attach the new invoice to.
+
+    Raises:
+        HTTPException: 400 if the session does not exist, is already closed,
+            or belongs to a table at a different site.
+    """
+    result = await db.execute(
+        select(TableSession)
+        .join(DiningTable, DiningTable.id == TableSession.dining_table_id)
+        .where(
+            TableSession.id == table_session_id,
+            TableSession.closed_at.is_(None),
+            DiningTable.site_id == site_id,
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="table_session_id does not resolve to an open table session at this site",
+        )
+
+
 async def create_invoice(
     db: AsyncSession,
     brand_id: uuid.UUID,
@@ -333,6 +373,7 @@ async def create_invoice(
     actor: User,
     register_session_id: uuid.UUID,
     client_ref: str | None = None,
+    table_session_id: uuid.UUID | None = None,
 ) -> Invoice:
     """
     Create a DRAFT invoice for a site.
@@ -352,10 +393,17 @@ async def create_invoice(
             register_session_service.get_open_session_or_400() before
             calling create_invoice(), so a sale is never orphaned from a shift.
         client_ref: Optional client-generated idempotency key.
+        table_session_id: Optional table occupancy to attach this order to
+            (Android POS Phase 4's "Open order →" handoff) — validated to
+            belong to an open session on a table at this site.
 
     Returns:
         Invoice: The newly created (or, on a deduped retry, the
             already-existing) draft invoice.
+
+    Raises:
+        HTTPException: 400 if table_session_id is supplied but does not
+            resolve to an open session at this site.
     """
     if client_ref is not None:
         existing_result = await db.execute(select(Invoice).where(Invoice.client_ref == client_ref))
@@ -364,12 +412,16 @@ async def create_invoice(
             log.info("invoice.create.deduped", client_ref=client_ref)
             return existing
 
+    if table_session_id is not None:
+        await _validate_table_session_or_400(db, site_id, table_session_id)
+
     invoice = Invoice(
         id=uuid.uuid4(),
         brand_id=brand_id,
         site_id=site_id,
         created_by_id=actor.id,
         register_session_id=register_session_id,
+        table_session_id=table_session_id,
         invoice_type=InvoiceType.SALE.value,
         status=InvoiceStatus.DRAFT.value,
         client_ref=client_ref,
@@ -389,6 +441,7 @@ async def create_invoice(
             "site_id": str(site_id),
             "status": InvoiceStatus.DRAFT.value,
             "register_session_id": str(register_session_id),
+            "table_session_id": str(table_session_id) if table_session_id else None,
         },
     )
 

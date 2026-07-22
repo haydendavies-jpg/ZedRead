@@ -108,6 +108,17 @@ class Invoice(Base):
             "register_session_service.get_open_session_or_404()."
         ),
     )
+    table_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("table_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment=(
+            "The table occupancy this order is attached to (Android POS Phase 4's "
+            "'Open order →' handoff from the Tables screen into Register) — NULL for "
+            "counter-service sales with no table context."
+        ),
+    )
     refund_of_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("invoices.id", ondelete="SET NULL"),
