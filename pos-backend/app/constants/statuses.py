@@ -112,6 +112,20 @@ class PageCategory(str, Enum):
     CUSTOMERS_LOYALTY = "customers_loyalty"
 
 
+class SettingType(str, Enum):
+    """
+    Value types supported by the POS settings framework (Android POS Phase 2).
+
+    Drives both server-side value validation (settings_service._validate_value)
+    and how the portal/Android settings screens render each row's control.
+    """
+
+    BOOLEAN = "boolean"
+    DATETIME = "datetime"
+    SINGLE_SELECT = "single_select"
+    MULTI_SELECT = "multi_select"
+
+
 class GrantScope(str, Enum):
     """
     Scope level of a UserAccessGrant.

@@ -193,3 +193,7 @@ MENU_BUTTON_MOVED = "menu_button.moved"
 # ── Android POS Phase 1 — register (till) sessions ───────────────────────────
 REGISTER_SESSION_OPENED = "register_session.opened"
 REGISTER_SESSION_CLOSED = "register_session.closed"
+
+# ── Android POS Phase 2 — settings framework ─────────────────────────────────
+SETTING_UPDATED = "setting.updated"  # A brand- or site-level override was created/changed
+SETTING_RESET = "setting.reset"      # An override was cleared, reverting to the fallback
