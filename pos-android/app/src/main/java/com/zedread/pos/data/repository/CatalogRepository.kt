@@ -42,6 +42,7 @@ class CatalogRepository @Inject constructor(
         val products = api.getProducts(bearer, siteId).map { dto ->
             ProductEntity(
                 id = dto.id,
+                ref = dto.ref,
                 categoryId = dto.categoryId,
                 name = dto.name,
                 description = dto.description,

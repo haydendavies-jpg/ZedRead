@@ -117,6 +117,12 @@ function LayoutsList({ brandId, onOpen }: { brandId: string; onOpen: (id: string
     onSuccess: invalidateList,
     onError: onActionError,
   })
+  const setDefault = useMutation({
+    mutationFn: ({ id, isDefault }: { id: string; isDefault: boolean }) =>
+      api.patch(`/menu-layouts/${id}`, { is_default: isDefault }, { params }),
+    onSuccess: invalidateList,
+    onError: onActionError,
+  })
 
   return (
     <div className="space-y-4">
@@ -173,6 +179,11 @@ function LayoutsList({ brandId, onOpen }: { brandId: string; onOpen: (id: string
                     <span className={`zr-pill ${layout.is_published ? 'zr-pill--live' : 'zr-pill--draft'}`}>
                       {layout.is_published ? 'Published' : 'Unpublished'}
                     </span>
+                    {layout.is_default && (
+                      <span className="zr-pill zr-pill--live ml-1" title={`Scheduled default for its ${layout.scope === 'site' ? 'site' : 'brand'} scope`}>
+                        ★ Default
+                      </span>
+                    )}
                     {layout.scheduled_publish_at && (
                       <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
                         Scheduled {new Date(layout.scheduled_publish_at).toLocaleString()}
@@ -212,6 +223,13 @@ function LayoutsList({ brandId, onOpen }: { brandId: string; onOpen: (id: string
                       </button>
                       <button onClick={() => setHoursLayout(layout)} className="px-2.5 py-1.5 border border-gray-300 dark:border-gray-600 text-xs font-semibold text-gray-600 dark:text-gray-300 rounded-md">
                         ◷ Hours
+                      </button>
+                      <button
+                        onClick={() => setDefault.mutate({ id: layout.id, isDefault: !layout.is_default })}
+                        title={`Sets exactly one default per ${layout.scope === 'site' ? 'site' : 'brand'} — clears any other default in the same scope`}
+                        className="px-2.5 py-1.5 border border-gray-300 dark:border-gray-600 text-xs font-semibold text-gray-600 dark:text-gray-300 rounded-md"
+                      >
+                        {layout.is_default ? '★ Unset default' : '☆ Set default'}
                       </button>
                       {layout.scheduled_publish_at ? (
                         <button onClick={() => cancelSchedule.mutate(layout.id)} className="px-2.5 py-1.5 border border-gray-300 dark:border-gray-600 text-xs font-semibold text-gray-600 dark:text-gray-300 rounded-md">

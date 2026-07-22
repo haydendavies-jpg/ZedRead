@@ -33,6 +33,7 @@ from app.schemas.menu_layout import (
     MenuTabOut,
     MenuTabsReorder,
     MenuTabUpdate,
+    PosMenuLayoutDetail,
     PublishResult,
 )
 from app.services import menu_builder_service
@@ -480,20 +481,21 @@ async def group_menu_buttons_into_tab(
 # ── POS consumption contract ──────────────────────────────────────────────────
 
 
-@pos_router.get("/menu-layout", response_model=list[MenuLayoutDetail], status_code=status.HTTP_200_OK)
+@pos_router.get("/menu-layout", response_model=list[PosMenuLayoutDetail], status_code=status.HTTP_200_OK)
 async def get_pos_menu_layout(
     site_id: uuid.UUID = Query(..., description="Site to resolve published menu layouts for"),
     access: CatalogAccess = Depends(resolve_catalog_access),
     db: AsyncSession = Depends(get_db),
-) -> list[MenuLayoutDetail]:
+) -> list[PosMenuLayoutDetail]:
     """
     Publish contract for the Android app: every currently-active published layout visible to a site.
 
     Includes brand-wide published layouts and any site-specific published
     layout for site_id — more than one may be returned at once (e.g. per-site
     or day-part menus), filtered further by each layout's own active-time/
-    day-of-week window. Android-side consumption is out of scope for this
-    stage; this route builds the contract only.
+    day-of-week window. Powers the Register header's menu selector: staff
+    can switch among any returned layout, with is_effective_default marking
+    which one the schedule currently favours.
     """
     if access.pos_access:
         _assert_site_scope(site_id, access.pos_access.site.id)
@@ -506,4 +508,7 @@ async def get_pos_menu_layout(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site not found")
 
     layouts = await menu_builder_service.get_published_menu_layouts_for_site(db, site)
-    return [_to_detail(data) for data in layouts]
+    return [
+        PosMenuLayoutDetail(**_to_detail(data).model_dump(), is_effective_default=data["is_effective_default"])
+        for data in layouts
+    ]

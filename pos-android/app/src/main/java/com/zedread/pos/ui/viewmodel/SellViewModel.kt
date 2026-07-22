@@ -4,18 +4,22 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zedread.pos.data.api.LineItemDto
 import com.zedread.pos.data.api.LineModifierDto
+import com.zedread.pos.data.api.PosMenuLayoutDto
 import com.zedread.pos.data.api.ProductModifierGroupDto
 import com.zedread.pos.data.local.entity.CategoryEntity
 import com.zedread.pos.data.local.entity.ProductEntity
 import com.zedread.pos.data.repository.CatalogRepository
 import com.zedread.pos.data.repository.InvoiceRepository
+import com.zedread.pos.data.repository.MenuLayoutRepository
 import com.zedread.pos.data.repository.OutboxRepository
 import com.zedread.pos.data.sync.OutboxSaleLine
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -61,6 +65,7 @@ class SellViewModel @Inject constructor(
     private val catalogRepo: CatalogRepository,
     private val invoiceRepo: InvoiceRepository,
     private val outboxRepo: OutboxRepository,
+    private val menuLayoutRepo: MenuLayoutRepository,
 ) : ViewModel() {
 
     // ── Category / product browsing ─────────────────────────────────────────
@@ -75,10 +80,70 @@ class SellViewModel @Inject constructor(
 
     fun selectCategory(categoryId: String?) { _selectedCategoryId.value = categoryId }
 
+    // ── Menu selector (Phase 3 — Menu Studio -> POS integration depth) ──────
+    //
+    // Lists every currently-active published layout for the site
+    // (GET /pos/menu-layout) so staff can switch which one filters the
+    // product grid below. isEffectiveDefault (server-resolved: a site's own
+    // daypart default takes precedence over the brand-wide one) marks the
+    // schedule-active choice; selecting anything else is a manual override,
+    // exposed via [isMenuManualOverride] so the UI can distinguish the two.
+    // A layout with no product buttons at all (or none selected) falls back
+    // to showing the full unfiltered catalog below, same as before this
+    // selector existed. Declared ahead of [products] since its combine()
+    // reads these flows at construction time — property initializers run in
+    // declaration order, so referencing them before this point would read
+    // an unset backing field.
+
+    private val _menuLayouts = MutableStateFlow<List<PosMenuLayoutDto>>(emptyList())
+    val menuLayouts: StateFlow<List<PosMenuLayoutDto>> = _menuLayouts.asStateFlow()
+
+    private val _selectedMenuLayoutId = MutableStateFlow<String?>(null)
+    val selectedMenuLayoutId: StateFlow<String?> = _selectedMenuLayoutId.asStateFlow()
+
+    val isMenuManualOverride: StateFlow<Boolean> =
+        combine(_selectedMenuLayoutId, _menuLayouts) { selectedId, layouts ->
+            selectedId != null && selectedId != layouts.firstOrNull { it.isEffectiveDefault }?.id
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Staff picking a layout from the menu selector — a manual override until the next completed sale. */
+    fun selectMenuLayout(layoutId: String?) { _selectedMenuLayoutId.value = layoutId }
+
+    /**
+     * Re-fetch the site's active layouts.
+     *
+     * [forceDefaultSelection] is true only right after a completed
+     * transaction — it discards whatever was manually selected and re-picks
+     * the schedule's own default at that moment, per the "reverts after a
+     * completed transaction" requirement. On a plain refresh (app launch,
+     * pull-to-refresh) the current selection is kept if it's still among
+     * the active set, falling back to the default only if it's gone.
+     * Failure is silent — the grid already falls back to the unfiltered
+     * catalog when no layout resolves, so a network hiccup here never
+     * blocks a sale.
+     */
+    fun refreshMenuLayouts(forceDefaultSelection: Boolean = false) {
+        viewModelScope.launch {
+            runCatching { menuLayoutRepo.getMenuLayouts() }
+                .onSuccess { layouts ->
+                    _menuLayouts.value = layouts
+                    val keepCurrent = !forceDefaultSelection && layouts.any { it.id == _selectedMenuLayoutId.value }
+                    if (!keepCurrent) {
+                        _selectedMenuLayoutId.value = layouts.firstOrNull { it.isEffectiveDefault }?.id
+                    }
+                }
+        }
+    }
+
+    private val categoryFilteredProducts: Flow<List<ProductEntity>> =
+        _selectedCategoryId.flatMapLatest { catId -> catalogRepo.observeProducts(catId) }
+
+    /** Category-filtered products, further narrowed to the selected menu layout's product_refs, if any. */
     val products: StateFlow<List<ProductEntity>> =
-        _selectedCategoryId
-            .flatMapLatest { catId -> catalogRepo.observeProducts(catId) }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        combine(categoryFilteredProducts, _selectedMenuLayoutId, _menuLayouts) { catalogProducts, layoutId, layouts ->
+            val refs = layouts.firstOrNull { it.id == layoutId }?.productRefs
+            if (refs.isNullOrEmpty()) catalogProducts else catalogProducts.filter { it.ref in refs }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -97,7 +162,7 @@ class SellViewModel @Inject constructor(
         }
     }
 
-    init { refresh() }
+    init { refresh(); refreshMenuLayouts() }
 
     // ── Cart (the current sale's invoice) ───────────────────────────────────
 
@@ -613,7 +678,12 @@ class SellViewModel @Inject constructor(
     }
 
     /** "New order" action from the Done screen — resets the sale and closes the modal. */
-    fun completePaymentAndStartNewOrder() { clearOrder() }
+    fun completePaymentAndStartNewOrder() {
+        clearOrder()
+        // Re-resolve the schedule and drop back to its own default, discarding
+        // any manual menu-selector override for the sale that just finished.
+        refreshMenuLayouts(forceDefaultSelection = true)
+    }
 }
 
 /** Order pane segmented control — visual/local only, see the ticket/order-type note above. */

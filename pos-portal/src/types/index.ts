@@ -462,6 +462,8 @@ export interface MenuLayout {
   /** 0=Monday .. 6=Sunday. */
   active_days: number[]
   scheduled_publish_at: string | null
+  /** Scheduled/default layout for its scope (brand-wide fallback, or a site's own override). */
+  is_default: boolean
   button_count: number
   created_at: string
   updated_at: string
@@ -469,6 +471,11 @@ export interface MenuLayout {
 
 export interface MenuLayoutDetail extends MenuLayout {
   tabs: MenuTab[]
+}
+
+export interface PosMenuLayoutDetail extends MenuLayoutDetail {
+  /** True only for the one layout the schedule currently favours among those returned. */
+  is_effective_default: boolean
 }
 
 export interface PublishWarning {

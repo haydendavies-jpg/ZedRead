@@ -19,6 +19,7 @@ from app.constants.audit_actions import (
     MENU_BUTTON_ADDED,
     MENU_LAYOUT_CREATED,
     MENU_LAYOUT_PUBLISHED,
+    MENU_LAYOUT_UPDATED,
     MENU_TAB_CREATED,
 )
 from app.models.audit_log import AuditLog
@@ -456,3 +457,124 @@ async def test_pos_menu_layout_wrong_site_returns_403(client, pos_auth_headers):
     """GET /pos/menu-layout with a site_id other than the POS token's own site returns 403."""
     response = await client.get(f"/pos/menu-layout?site_id={uuid.uuid4()}", headers=pos_auth_headers)
     assert response.status_code == 403
+
+
+# ── Phase 3 — scheduled default (menu selector) ────────────────────────────────
+
+
+async def test_pos_menu_layout_marks_site_default_over_brand_default(
+    client, db, pos_auth_headers, test_brand, test_site
+):
+    """A site's own is_default layout wins as is_effective_default over a brand-wide default."""
+    from app.models.menu_layout import MenuLayout
+
+    brand_default = MenuLayout(
+        id=uuid.uuid4(), brand_id=test_brand.id, site_id=None, scope="brand",
+        name="Brand Default", is_published=True, is_default=True,
+    )
+    site_default = MenuLayout(
+        id=uuid.uuid4(), brand_id=test_brand.id, site_id=test_site.id, scope="site",
+        name="Site Default", is_published=True, is_default=True,
+    )
+    db.add_all([brand_default, site_default])
+    await db.commit()
+
+    response = await client.get(f"/pos/menu-layout?site_id={test_site.id}", headers=pos_auth_headers)
+    assert response.status_code == 200
+    by_name = {l["name"]: l for l in response.json()}
+    assert by_name["Site Default"]["is_effective_default"] is True
+    assert by_name["Brand Default"]["is_effective_default"] is False
+
+
+async def test_pos_menu_layout_no_default_when_none_marked(client, db, pos_auth_headers, test_brand, test_site):
+    """No layout is flagged is_effective_default when nothing is marked is_default."""
+    from app.models.menu_layout import MenuLayout
+
+    layout = MenuLayout(
+        id=uuid.uuid4(), brand_id=test_brand.id, site_id=None, scope="brand",
+        name="Plain Menu", is_published=True,
+    )
+    db.add(layout)
+    await db.commit()
+
+    response = await client.get(f"/pos/menu-layout?site_id={test_site.id}", headers=pos_auth_headers)
+    assert response.status_code == 200
+    assert all(l["is_effective_default"] is False for l in response.json())
+
+
+async def test_set_layout_default_clears_other_site_scope_default(client, db, mgmt_auth_headers, test_brand, test_site):
+    """PATCH /menu-layouts/{id} with is_default=True clears is_default on other layouts in the same site scope."""
+    from app.models.menu_layout import MenuLayout
+
+    first = MenuLayout(
+        id=uuid.uuid4(), brand_id=test_brand.id, site_id=test_site.id, scope="site",
+        name="Lunch", is_default=True,
+    )
+    second = MenuLayout(
+        id=uuid.uuid4(), brand_id=test_brand.id, site_id=test_site.id, scope="site",
+        name="Dinner", is_default=False,
+    )
+    db.add_all([first, second])
+    await db.commit()
+
+    response = await client.patch(
+        f"/menu-layouts/{second.id}",
+        json={"is_default": True},
+        params={"brand_id": str(test_brand.id)},
+        headers=mgmt_auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["is_default"] is True
+
+    await db.refresh(first)
+    assert first.is_default is False
+
+
+async def test_set_layout_default_does_not_clear_other_scope(client, db, mgmt_auth_headers, test_brand, test_site):
+    """A site-scope default and a brand-scope default don't clear each other — different scope groupings."""
+    from app.models.menu_layout import MenuLayout
+
+    brand_layout = MenuLayout(
+        id=uuid.uuid4(), brand_id=test_brand.id, site_id=None, scope="brand",
+        name="Brand Menu", is_default=True,
+    )
+    site_layout = MenuLayout(
+        id=uuid.uuid4(), brand_id=test_brand.id, site_id=test_site.id, scope="site",
+        name="Site Menu", is_default=False,
+    )
+    db.add_all([brand_layout, site_layout])
+    await db.commit()
+
+    response = await client.patch(
+        f"/menu-layouts/{site_layout.id}",
+        json={"is_default": True},
+        params={"brand_id": str(test_brand.id)},
+        headers=mgmt_auth_headers,
+    )
+    assert response.status_code == 200
+
+    await db.refresh(brand_layout)
+    assert brand_layout.is_default is True
+
+
+async def test_set_layout_default_writes_audit_log(client, db, mgmt_auth_headers, test_brand):
+    """Setting is_default writes a MENU_LAYOUT_UPDATED audit row with before/after state."""
+    from app.models.menu_layout import MenuLayout
+
+    layout = MenuLayout(id=uuid.uuid4(), brand_id=test_brand.id, site_id=None, scope="brand", name="Main")
+    db.add(layout)
+    await db.commit()
+
+    response = await client.patch(
+        f"/menu-layouts/{layout.id}",
+        json={"is_default": True},
+        params={"brand_id": str(test_brand.id)},
+        headers=mgmt_auth_headers,
+    )
+    assert response.status_code == 200
+
+    audit = await db.execute(
+        select(AuditLog).where(AuditLog.entity_id == str(layout.id), AuditLog.action == MENU_LAYOUT_UPDATED)
+    )
+    log_row = audit.scalar_one()
+    assert log_row.after_state["is_default"] is True

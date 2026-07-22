@@ -22,7 +22,7 @@ import com.zedread.pos.data.local.entity.ProductEntity
  */
 @Database(
     entities = [ProductEntity::class, CategoryEntity::class, OutboxItemEntity::class, InvoiceCacheEntity::class],
-    version = 3, // + outbox_items, invoice_cache (Android POS Phase 2 offline write-queue)
+    version = 4, // + products.ref (Android POS Phase 3 menu selector — matches menu_buttons.product_ref)
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

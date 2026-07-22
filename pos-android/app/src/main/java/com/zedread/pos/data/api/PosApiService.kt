@@ -93,6 +93,13 @@ interface PosApiService {
         @Path("id") productId: String,
     ): List<ProductModifierGroupDto>
 
+    /** GET /pos/menu-layout?site_id= — every currently-active published menu layout visible to the site. */
+    @GET("pos/menu-layout")
+    suspend fun getMenuLayouts(
+        @Header("Authorization") bearer: String,
+        @Query("site_id") siteId: String,
+    ): List<PosMenuLayoutDto>
+
     // ── Invoices ─────────────────────────────────────────────────────────────
 
     /**

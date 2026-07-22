@@ -1583,6 +1583,77 @@ reinstall, which is exactly the gap this closes).
 
 ---
 
+### Android POS Phase 3 — Menu Studio -> POS integration depth (scheduled default + menu selector) ✅
+
+Moves from "one published layout" to the multi-menu, scheduled-default behavior originally
+described. Re-scoped against current code first, per the build plan's own flag: the standalone
+`menus` entity referenced in the original Phase 3 text was already removed (see "Menus tab removal"
+above) — its draft/schedule/publish lifecycle lives directly on `menu_layouts`, which already had
+active-time/day-of-week scheduling from Phase 2's grid editor. The only missing piece was a way to
+pick **which** currently-active layout is the schedule's own default when more than one applies to
+a site at once.
+
+**Backend:**
+- [x] `menu_layouts.is_default` (migration `0055`) — marks a layout as the scheduled/default choice
+      within its own scope: at most one `scope='site'` layout per `site_id`, and at most one
+      `scope='brand'` layout per `brand_id`, enforced in `menu_builder_service._clear_other_default_layouts()`
+      (mirrors `access_grant_service.set_default_grant`'s clear-siblings convention — no audit row
+      for the cleared siblings, only for the target layout's own change). Exposed via the existing
+      `PATCH /menu-layouts/{id}` (`MenuLayoutUpdate.is_default`), no new route needed.
+- [x] `get_published_menu_layouts_for_site()` / `GET /pos/menu-layout` now also resolve
+      `is_effective_default` per layout — computed per request, not the stored column directly: a
+      site's own `is_default` site-scope layout takes precedence over the brand-wide `is_default`
+      fallback (`_resolve_effective_default_layout_id()`), so a site opting into its own daypart
+      default isn't overridden by the brand default. New `PosMenuLayoutDetail` response schema
+      (`schemas/menu_layout.py`) carries the extra field without touching `MenuLayoutDetail`, which
+      the portal grid editor still uses unchanged.
+- [x] Portal: `MenuBuilderPage.tsx`'s layouts list gained a "★ Default" status pill and a
+      "☆ Set default / ★ Unset default" row action (`PATCH .../is_default`) — this is the
+      "assign-to-site" / default-marking control the plan flagged as needing confirmation; scope/
+      site assignment itself needed no new UI, `menu_layouts` already publishes per brand/site scope
+      from Phase 2.
+- [x] Tests: `test_menu_layout_routes.py` gained 5 new tests — POS contract marks the site-scope
+      default over the brand-scope default, no layout flagged when none is marked, `PATCH` sets
+      `is_default` and clears a same-scope sibling, a site-scope and brand-scope default don't clear
+      each other (different scope groupings), and the `MENU_LAYOUT_UPDATED` audit row carries
+      `is_default` in `after_state`. Full suite passing against a real local Postgres 16 instance
+      with migrations applied through `0055`; portal `npm run build` (tsc + vite) verified clean.
+
+**Android — Menu selector (Register header, near the category rail):**
+- [x] `GET /pos/menu-layout?site_id=` consumed for the first time (Stage 23 had only built the
+      contract; nothing on Android called it before this slice) — new `PosMenuLayoutDto`/
+      `PosMenuTabDto`/`PosMenuButtonDto` (`ApiModels.kt`), trimmed to only what the selector needs:
+      which layouts are available, `isEffectiveDefault`, and — flattened recursively across every
+      tab including nested folder tabs via `PosMenuLayoutDto.productRefs` — the set of `product_ref`
+      values the layout includes. New `MenuLayoutRepository` (not Room-cached, unlike the product
+      catalog — re-fetched on demand so "which layout the schedule favours right now" stays
+      accurate). `ProductDto`/`ProductEntity` gained `ref` (Room DB bumped 3 -> 4 via a real
+      `MIGRATION_3_4`, not `fallbackToDestructiveMigration` — a destructive rebuild on this hop would
+      also wipe `outbox_items`/`invoice_cache`, which must survive an app update; existing cached rows
+      get an empty `ref`, corrected on the very next catalog refresh, which already runs on launch).
+- [x] `SellViewModel` gained the selector's state machine: `menuLayouts`/`selectedMenuLayoutId`/
+      `isMenuManualOverride` (true whenever the staff-picked layout isn't the one `isEffectiveDefault`
+      resolves to) and `selectMenuLayout()`. `products` is now `combine()`d against the selected
+      layout's `productRefs` — a layout with no product buttons (or nothing selected) leaves the grid
+      unfiltered, same as before this slice, so a brand that hasn't adopted Menu Studio layouts sees
+      no behavior change. `completePaymentAndStartNewOrder()` calls `refreshMenuLayouts(forceDefaultSelection
+      = true)`, re-resolving the schedule and dropping any manual override back to the schedule's own
+      default the moment a sale completes, per the phase's own requirement.
+- [x] `OrderEntryScreen.kt` gained `MenuSelectorRow` — a dropdown pill above the category rail
+      (renders nothing when the site has no active layouts) showing the selected layout's colour dot
+      and name, a "SCHEDULED" label that switches to "MANUAL" the moment staff pick anything else,
+      and a `DropdownMenu` listing every active layout (★ marking the schedule's own default) plus an
+      "All items" option to clear the filter.
+- [x] **Not verified against a real build** — same standing constraint as every prior Android slice
+      (this sandbox has no reachable Google Maven). Checked manually: every new/changed file's braces/
+      parens balance, every new type/import cross-referenced against its definition, and a property-
+      declaration-order fix applied to `SellViewModel` (the menu-selector `StateFlow`s had to move
+      ahead of `products`, which reads them in its own `combine()` at construction time — a forward
+      reference there would read an uninitialized backing field). Relies on the repo's `Android build`
+      CI job for the real compile check.
+
+---
+
 ## Cross-Cutting — Always Active
 
 | Concern | Status |

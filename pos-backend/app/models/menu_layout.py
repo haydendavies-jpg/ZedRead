@@ -30,6 +30,14 @@ class MenuLayout(Base):
     scheduled_publish_at is the separate "Schedule publish" bulk action (Menu
     Studio redesign, Phase 2) — persisted only; nothing auto-fires it yet
     (same known limitation as the Menus entity's own schedule field).
+
+    is_default (Phase 3) marks this layout as the scheduled/default choice
+    within its own scope — at most one scope='site' layout per site_id, and
+    at most one scope='brand' layout per brand_id, enforced in
+    menu_builder_service rather than a DB constraint. The POS resolves a
+    site's own is_default site-scope layout ahead of the brand-wide
+    is_default fallback when more than one active layout is published at
+    once (see get_published_menu_layouts_for_site).
     """
 
     __tablename__ = "menu_layouts"
@@ -119,6 +127,12 @@ class MenuLayout(Base):
         DateTime(timezone=True),
         nullable=True,
         comment="'Schedule publish' bulk action target time — persisted only, see class docstring",
+    )
+    is_default: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="Scheduled/default layout within its scope — see class docstring",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
