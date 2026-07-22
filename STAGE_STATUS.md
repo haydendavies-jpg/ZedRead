@@ -1618,7 +1618,8 @@ Two follow-up requests: (1) editing a device's display name, which had no update
       401 for non-SuperAdmin callers, 404, a no-history device deleted outright, a real
       session+invoice cascade asserting the session is gone and the invoice survives with
       `register_session_id` cleared, and the `DEVICE_DELETED` audit row) — 38/38 passing in this
-      file, full suite unaffected. Portal `npm run build` (tsc + vite) verified clean.
+      file, and the full suite 918/918 passing (up from 904), verified against a real local
+      Postgres 16 instance. Portal `npm run build` (tsc + vite) verified clean.
 
 ---
 
