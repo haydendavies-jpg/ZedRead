@@ -76,6 +76,38 @@ async def list_licenses(
     return list(result.scalars().all())
 
 
+async def list_licenses_for_brand(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    site_id: uuid.UUID | None = None,
+    skip: int = 0,
+    limit: int = 200,
+) -> list[License]:
+    """
+    List licenses within a brand, optionally narrowed to one site.
+
+    Backs the management portal's brand-scoped License & Billing page (as
+    opposed to the superadmin-only list_licenses() above, which sees every
+    license) — mirrors pos_device_service.list_devices_for_brand.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand to scope the listing to.
+        site_id: Optional site filter within the brand.
+        skip: Number of rows to skip.
+        limit: Maximum rows to return.
+
+    Returns:
+        list[License]: Matching licenses, most recently created first.
+    """
+    query = select(License).join(Site, Site.id == License.site_id).where(Site.brand_id == brand_id)
+    if site_id is not None:
+        query = query.where(License.site_id == site_id)
+    query = query.order_by(License.created_at.desc()).offset(skip).limit(limit)
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
 async def get_license(db: AsyncSession, license_id: uuid.UUID) -> License:
     """
     Fetch a single license by ID.

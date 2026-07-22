@@ -1391,6 +1391,67 @@ Maven repo).
 
 ---
 
+### License editing for Admin/Master User + hardware-anchored device tracking ✅
+
+Two user requests, addressed together since both touch the license/device pairing surface: (1) the
+`license_billing` page permission (`app/constants/pages.py`, already granted to Master User/Admin by
+default per `ROLE_MODEL.md` §6) had no route wired to it at all — `/licenses` was 100% SuperAdmin-only
+— so a brand-scoped Admin had a permission slot but nothing it gated; (2) device tracking across app
+reinstalls. MAC address was explicitly ruled out: modern Android randomizes the Wi-Fi MAC per network
+for privacy and blocks apps from reading the real hardware MAC without root, so it would never
+reliably match the same terminal twice, let alone survive a reinstall.
+
+**License editing:**
+- [x] New `LicenseManagementUpdate` schema (`schemas/license.py`) exposes only `max_devices` —
+      commercial terms (`plan_name`, `monthly_fee_cents`, `expires_at`) and status transitions
+      (disable/enable) stay SuperAdmin-only via the existing `/licenses/{id}` routes, per explicit
+      user decision.
+- [x] `license_service.list_licenses_for_brand()` (mirrors `pos_device_service.list_devices_for_brand`).
+- [x] Three new `routes/licenses.py` routes — `GET /licenses/management` (brand/site-scoped list),
+      `GET /licenses/management/{id}`, `PATCH /licenses/management/{id}` — gated by the
+      `license_billing` page permission plus site/brand scope, mirroring `pos_devices.py`'s
+      `_assert_release_permitted` pattern exactly (`_assert_license_billing_page_granted` for the
+      list, `_assert_license_management_permitted` for the single-resource read/write). A portal
+      admin (SuperAdmin) may always use these too.
+- [x] Portal: new brand/site-scoped `pages/management/LicenseBillingPage.tsx` (read-only plan/fee/
+      expiry/status, inline click-to-edit seat count — the existing admin-portal `LicensesPage.tsx`'s
+      seat-edit UI, restricted) under a new "License & Billing" nav entry / `/management/license-billing`
+      route.
+
+**Device tracking (hardware-anchored, not MAC):** `pos_devices.hardware_id` (migration `0054`,
+nullable/unique) stores a stable OS-level identifier — Android's `Settings.Secure.ANDROID_ID`,
+captured fresh from the OS on every login rather than cached — separate from the existing
+`device_token` (a server-issued secret that lives in the app's own storage and is wiped by a
+reinstall, which is exactly the gap this closes).
+- [x] `pos_auth_service._resolve_or_claim_device()`: resolution now falls back to a hardware_id
+      lookup (`_get_device_by_hardware_id()`, active-only, mirrors `_get_device_by_token()`) whenever
+      the terminal presents no device_token — a terminal that lost its token via reinstall but still
+      reports the same hardware_id is recognised and re-linked to its existing `PosDevice` row
+      (writing the new `DEVICE_TOKEN_RECOVERED` audit action) instead of silently consuming a fresh
+      license seat. A device row also learns/refreshes its `hardware_id` opportunistically whenever a
+      token-authenticated login reports one it didn't have yet, so a *future* token loss can still be
+      recovered. `POSLoginRequest`/`POSSiteTokenRequest` gained an optional `hardware_id` field.
+- [x] `PosDevice`/`PosDeviceResponse`/`PosDeviceRegister` gained `hardware_id`; surfaced (truncated,
+      full value on hover) as a new column on both `pages/PosDevicesPage.tsx` (SuperAdmin) and
+      `pages/management/DevicesPage.tsx`.
+- [x] Android: `AuthRepository` reads `Settings.Secure.ANDROID_ID` via an injected `@ApplicationContext`
+      and sends it as `hardware_id` on both `/auth/pos/login` and `/auth/pos/site-token` calls
+      (`LoginRequest`/`SiteTokenRequest` DTOs in `ApiModels.kt`).
+- [x] Tests: `test_license_routes.py` gained a full management-route section (permission gate, brand/
+      site scoping, seat-only edit, commercial-terms immutability, audit log, POS/portal-admin access);
+      `test_pos_auth_routes.py` gained hardware_id recovery coverage (same-site recovery, recovery
+      under a fully-claimed license — no new seat consumed, audit row, learning a hardware_id from a
+      known token, unknown hardware_id still claims fresh) — all 109 tests across
+      `test_license_routes.py`/`test_pos_auth_routes.py`/`test_pos_device_routes.py` passing against a
+      real local Postgres 16 instance with migrations applied through `0054`. A full-suite regression
+      run was kicked off in the same session to confirm no knock-on effect elsewhere; see this file's
+      latest commit history / STAGE_STATUS for the confirmed full-suite count if this note is still
+      here unedited. Portal `npm run build` (tsc + vite) verified clean. Android changes are source-only
+      — the Gradle build is still blocked in every sandbox this project has run in
+      (`ANDROID_POS_BUILD_PLAN.md`).
+
+---
+
 ## Cross-Cutting — Always Active
 
 | Concern | Status |

@@ -198,6 +198,7 @@ async def register_device(
         license_id=payload.license_id,
         device_name=payload.device_name,
         device_token=payload.device_token,
+        hardware_id=payload.hardware_id,
         is_active=True,
     )
     db.add(device)
