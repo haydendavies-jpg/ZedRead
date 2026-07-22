@@ -7,6 +7,7 @@ import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -179,4 +180,17 @@ interface PosApiService {
         @Header("Authorization") bearer: String,
         @Query("search") search: String?,
     ): List<SettingDto>
+
+    /**
+     * PUT /settings/{key} — "Save as default": push a locally-edited setting
+     * back to become this site's backend override. Server-gated to a
+     * Manager-tier-or-above POS access profile (403 otherwise) — see
+     * app/routes/settings.py's _POS_SETTINGS_WRITE_PROFILE_NAMES.
+     */
+    @PUT("settings/{key}")
+    suspend fun updateSetting(
+        @Header("Authorization") bearer: String,
+        @Path("key") key: String,
+        @Body body: SettingUpdateRequest,
+    ): SettingDto
 }

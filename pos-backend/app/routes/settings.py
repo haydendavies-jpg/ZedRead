@@ -11,6 +11,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants.statuses import SystemAccessProfile
 from app.database import get_db
 from app.schemas.setting import SettingOut, SettingUpdateRequest
 from app.services import access_profile_service, settings_service
@@ -18,6 +19,19 @@ from app.utils.dependencies import CatalogAccess, POSAccess, resolve_access, res
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 pos_router = APIRouter(prefix="/pos", tags=["pos"])
+
+# A POS terminal may push its own site's settings back to become the
+# backend default ("Save as default") only when the operator's POS access
+# profile is one of these three named system tiers. Deliberately an explicit
+# allow-list rather than access_grant_service.role_rank()'s ladder: that
+# helper ranks an unrecognised (custom) profile name at Admin tier by
+# design — the safe default for its own use case (a delegation ceiling,
+# where under-ranking a legitimate senior custom role is the bigger risk)
+# but the wrong direction here, where an unverified custom profile should
+# NOT be assumed capable of overwriting a site's backend settings.
+_POS_SETTINGS_WRITE_PROFILE_NAMES = frozenset(
+    {SystemAccessProfile.MASTER.value, SystemAccessProfile.ADMIN.value, SystemAccessProfile.MANAGER.value}
+)
 
 
 async def _assert_settings_permitted(
@@ -31,9 +45,11 @@ async def _assert_settings_permitted(
     "site_settings" page permission and be scoped to the target site — a
     site-scope caller may only touch their own site (or the brand-level
     default, target_site_id=None is allowed through since a brand default
-    isn't site-specific and mgmt.brand already pins the brand). A raw POS
-    terminal session may never manage settings — it only reads via
-    GET /pos/settings.
+    isn't site-specific and mgmt.brand already pins the brand). A POS
+    terminal session (pos_access) may push a "Save as default" override for
+    its own site only, and only when its access profile is Manager tier or
+    above (see _POS_SETTINGS_WRITE_PROFILE_NAMES) — Staff/Reporting Only,
+    and any custom (non-system) profile, still only read via GET /pos/settings.
 
     Args:
         db: Active database session.
@@ -48,7 +64,14 @@ async def _assert_settings_permitted(
         return
 
     if access.pos_access is not None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        if access.pos_access.access_profile.name not in _POS_SETTINGS_WRITE_PROFILE_NAMES:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        if target_site_id is not None and target_site_id != access.pos_access.site.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: setting outside your site",
+            )
+        return
 
     mgmt = access.mgmt_access
     assert mgmt is not None  # exactly one of the three CatalogAccess members is set

@@ -39,6 +39,7 @@ class TokenStore @Inject constructor(
         private val KEY_USER_NAME = stringPreferencesKey("user_name")
         private val KEY_EMAIL = stringPreferencesKey("email")
         private val KEY_ACCESS_PROFILE_NAME = stringPreferencesKey("access_profile_name")
+        private val KEY_DEVICE_NAME = stringPreferencesKey("device_name")
     }
 
     /** Emit this terminal's paired device token, or null if never paired. */
@@ -59,12 +60,26 @@ class TokenStore @Inject constructor(
     /** Emit the signed-in operator's email — needed to re-verify their PIN. */
     val email: Flow<String?> = context.dataStore.data.map { it[KEY_EMAIL] }
 
+    /** Emit the signed-in operator's POS access profile name (e.g. "Manager", "Staff"). */
+    val accessProfileName: Flow<String?> = context.dataStore.data.map { it[KEY_ACCESS_PROFILE_NAME] }
+
+    /** Emit this terminal's own admin-configured name (PosDevice.device_name) — shown in the persistent top nav. */
+    val deviceName: Flow<String?> = context.dataStore.data.map { it[KEY_DEVICE_NAME] }
+
     /** Persist this terminal's claimed/re-paired device token. Independent of any operator session. */
     suspend fun saveDeviceToken(deviceToken: String) {
         context.dataStore.edit { prefs -> prefs[KEY_DEVICE_TOKEN] = deviceToken }
     }
 
-    /** Persist a freshly issued operator session after login/site-select/switch. */
+    /**
+     * Persist a freshly issued operator session after login/site-select/switch.
+     *
+     * [deviceName] is only known on a real login/site-select response
+     * (POSLoginResponse.device_name) — switch-user's PinVerifyResponse
+     * doesn't re-resolve the device, so that call site omits it (default
+     * null) and the previously-stored name is left untouched, same as the
+     * device pairing itself not changing on a switch.
+     */
     suspend fun saveSession(
         accessToken: String,
         siteId: String,
@@ -73,6 +88,7 @@ class TokenStore @Inject constructor(
         userName: String,
         email: String,
         accessProfileName: String,
+        deviceName: String? = null,
     ) {
         context.dataStore.edit { prefs ->
             prefs[KEY_ACCESS] = accessToken
@@ -82,6 +98,7 @@ class TokenStore @Inject constructor(
             prefs[KEY_USER_NAME] = userName
             prefs[KEY_EMAIL] = email
             prefs[KEY_ACCESS_PROFILE_NAME] = accessProfileName
+            if (deviceName != null) prefs[KEY_DEVICE_NAME] = deviceName
         }
     }
 
@@ -95,6 +112,7 @@ class TokenStore @Inject constructor(
             prefs.remove(KEY_USER_NAME)
             prefs.remove(KEY_EMAIL)
             prefs.remove(KEY_ACCESS_PROFILE_NAME)
+            prefs.remove(KEY_DEVICE_NAME)
         }
     }
 }

@@ -67,6 +67,7 @@ data class PosLoginResponseDto(
     @Json(name = "is_pin_reset_required") val isPinResetRequired: Boolean?,
     @Json(name = "available_sites") val availableSites: List<SiteOptionDto>?,
     @Json(name = "device_token") val deviceToken: String?,
+    @Json(name = "device_name") val deviceName: String?,
 )
 
 /** POST /auth/pos/pin/set request — the caller's own new PIN (4-6 digits). */
@@ -198,6 +199,27 @@ data class ProductModifierOptionDto(
     val name: String,
     @Json(name = "price_delta_cents") val priceDeltaCents: Long,
     @Json(name = "display_order") val displayOrder: Int,
+    // "Comboing" — one level deep, mirrors LinkedGroupOut. Selecting this
+    // option expands into each of these nested groups on the sheet.
+    @Json(name = "linked_groups") val linkedGroups: List<LinkedGroupDto> = emptyList(),
+)
+
+/** One flat option belonging to a linked (combo) group — no further nesting. Mirrors LinkedGroupOptionOut. */
+@JsonClass(generateAdapter = true)
+data class LinkedGroupOptionDto(
+    val id: String,
+    val name: String,
+    @Json(name = "price_delta_cents") val priceDeltaCents: Long,
+)
+
+/** A modifier group linked from an option ("comboing"), with its own active options. Mirrors LinkedGroupOut. */
+@JsonClass(generateAdapter = true)
+data class LinkedGroupDto(
+    val id: String,
+    val name: String,
+    @Json(name = "min_selections") val minSelections: Int,
+    @Json(name = "max_selections") val maxSelections: Int,
+    val options: List<LinkedGroupOptionDto>,
 )
 
 @JsonClass(generateAdapter = true)
@@ -222,26 +244,44 @@ data class CategoryDto(
 // ── Menu layouts (Phase 3 — Menu Studio -> POS integration depth) ──────────
 //
 // Mirrors PosMenuLayoutDetail / MenuTabOut / MenuButtonOut in
-// app/schemas/menu_layout.py, trimmed to only the fields the Register
-// screen's menu selector needs: which layouts are available, which one the
-// schedule currently favours (isEffectiveDefault), and — flattened
-// recursively across every tab, including nested folder tabs — the set of
-// product refs the layout includes, used to filter the product grid.
-// Everything else about a layout (tabs-as-rail navigation, button
-// size/position/colour) is the portal grid editor's own concern, not
-// reproduced on the POS.
+// app/schemas/menu_layout.py — full enough to actually render the Register
+// grid from the layout's own tabs/buttons (rail + dense 6-column tile grid,
+// folder tiles opening a nested tab), matching the portal grid editor's own
+// data model rather than only filtering the category-based grid by ref.
+// grid_col/grid_row are null until a button has been explicitly dragged to
+// a cell in the portal editor — MenuGridPacking.kt dense-packs the rest,
+// mirroring the portal's own `grid-auto-flow: dense` CSS behaviour.
 
-/** One button within a menu tab — only the fields needed to resolve included product_refs. */
+/** One button within a menu tab. */
 @JsonClass(generateAdapter = true)
 data class PosMenuButtonDto(
+    val id: String,
     val kind: String,
     @Json(name = "product_ref") val productRef: String?,
+    @Json(name = "child_tab_id") val childTabId: String?,
+    val width: Int,
+    val height: Int,
+    val color: String?,
+    @Json(name = "display_order") val displayOrder: Int,
+    @Json(name = "grid_col") val gridCol: Int?,
+    @Json(name = "grid_row") val gridRow: Int?,
+    @Json(name = "product_name") val productName: String?,
+    @Json(name = "price_cents") val priceCents: Long?,
+    @Json(name = "is_active") val isActive: Boolean?,
+    @Json(name = "category_color") val categoryColor: String?,
+    @Json(name = "product_photo_url") val productPhotoUrl: String?,
+    @Json(name = "child_tab_name") val childTabName: String?,
+    @Json(name = "child_tab_button_count") val childTabButtonCount: Int?,
 )
 
-/** One tab within a menu layout, with its buttons — tabs.buttons(kind='product') are what get filtered on. */
+/** One tab within a menu layout, with its ordered buttons. Tabs are a flat list linked by parentTabId, not a nested tree. */
 @JsonClass(generateAdapter = true)
 data class PosMenuTabDto(
     val id: String,
+    @Json(name = "parent_tab_id") val parentTabId: String?,
+    val name: String,
+    val color: String?,
+    @Json(name = "display_order") val displayOrder: Int,
     val buttons: List<PosMenuButtonDto>,
 )
 
@@ -254,12 +294,16 @@ data class PosMenuLayoutDto(
     @Json(name = "is_effective_default") val isEffectiveDefault: Boolean,
     val tabs: List<PosMenuTabDto>,
 ) {
-    /** Every distinct product_ref referenced by a product button anywhere in this layout (any nesting depth). */
+    /** Every distinct product_ref referenced by a product button anywhere in this layout (any tab). */
     val productRefs: Set<String>
         get() = tabs.flatMap { it.buttons }
             .filter { it.kind == "product" }
             .mapNotNull { it.productRef }
             .toSet()
+
+    /** The rail — every tab with no parent. */
+    val topLevelTabs: List<PosMenuTabDto>
+        get() = tabs.filter { it.parentTabId == null }.sortedBy { it.displayOrder }
 }
 
 // ── Invoices ──────────────────────────────────────────────────────────────
@@ -272,6 +316,7 @@ data class PosMenuLayoutDto(
 @JsonClass(generateAdapter = true)
 data class InvoiceDto(
     val id: String,
+    val ref: String,
     val status: String,
     @Json(name = "subtotal_cents") val subtotalCents: Long,
     @Json(name = "tax_cents") val taxCents: Long,
@@ -384,4 +429,11 @@ data class SettingDto(
     @Json(name = "brand_value") val brandValue: Any?,
     @Json(name = "site_value") val siteValue: Any?,
     @Json(name = "effective_value") val effectiveValue: Any?,
+)
+
+/** PUT /settings/{key} request body — see PosApiService.updateSetting. */
+@JsonClass(generateAdapter = true)
+data class SettingUpdateRequest(
+    val value: Any?,
+    @Json(name = "site_id") val siteId: String?,
 )

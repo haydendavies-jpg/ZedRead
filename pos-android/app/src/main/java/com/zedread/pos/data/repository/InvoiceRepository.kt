@@ -83,7 +83,8 @@ class InvoiceRepository @Inject constructor(
         paymentMethod: String?,
         fromMillis: Long?,
         toMillis: Long?,
-    ): Flow<List<InvoiceCacheEntity>> = invoiceCacheDao.search(status, paymentMethod, fromMillis, toMillis)
+        refQuery: String?,
+    ): Flow<List<InvoiceCacheEntity>> = invoiceCacheDao.search(status, paymentMethod, fromMillis, toMillis, refQuery)
 
     /**
      * Backfill the local cache from `GET /invoices` — other devices' sales,
@@ -98,6 +99,7 @@ class InvoiceRepository @Inject constructor(
             remote.map { dto ->
                 InvoiceCacheEntity(
                     id = dto.id,
+                    ref = dto.ref,
                     status = dto.status,
                     totalCents = dto.totalCents,
                     createdAtMillis = dto.createdAt?.let { OffsetDateTime.parse(it).toInstant().toEpochMilli() }

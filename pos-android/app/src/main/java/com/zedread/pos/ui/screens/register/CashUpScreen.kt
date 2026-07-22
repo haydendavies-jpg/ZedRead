@@ -32,8 +32,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.zedread.pos.data.repository.CASH_IN_MODE_DENOMINATION
+import com.zedread.pos.ui.components.PosTopBar
 import com.zedread.pos.ui.viewmodel.CashUpState
 import com.zedread.pos.ui.viewmodel.RegisterSessionViewModel
+import com.zedread.pos.ui.viewmodel.SyncViewModel
+import com.zedread.pos.ui.viewmodel.TopBarViewModel
 
 /**
  * End-of-day cash-up: bulk-total entry, or the same per-denomination
@@ -45,14 +48,25 @@ import com.zedread.pos.ui.viewmodel.RegisterSessionViewModel
  * device stays paired for the next shift — logging out is a separate,
  * explicit action reserved for the Settings screen, not something cash-up
  * should force.
+ *
+ * [onCancel] backs out to Register — only offered before the till is
+ * actually closed (Ready/ReadyOffline/Error states). Previously there was no
+ * way back at all once this screen was entered, even by mistake — flagged
+ * in user testing.
  */
 @Composable
 fun CashUpScreen(
     onDone: () -> Unit,
+    onCancel: () -> Unit,
     viewModel: RegisterSessionViewModel = hiltViewModel(),
+    syncViewModel: SyncViewModel = hiltViewModel(),
+    topBarViewModel: TopBarViewModel = hiltViewModel(),
 ) {
     val state by viewModel.cashUpState.collectAsState()
     val cashSettings by viewModel.cashSettings.collectAsState()
+    val deviceName by topBarViewModel.deviceName.collectAsState()
+    val isOnline by syncViewModel.isOnline.collectAsState()
+    val pendingCount by syncViewModel.pendingCount.collectAsState()
     var amount by remember { mutableStateOf("") }
     var denominationTotalCents by remember { mutableStateOf(0L) }
 
@@ -65,15 +79,28 @@ fun CashUpScreen(
     val enteredCents = if (isDenominationMode) denominationTotalCents else dollarsToCents(amount)
     val hasEntry = if (isDenominationMode) denominationTotalCents > 0 else amount.isNotBlank()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding()
-            .verticalScroll(rememberScrollState())
-            .padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
+    // Backing out is only safe before the till is actually closed — once
+    // Closed/ClosedPendingSync, the close already happened server-side.
+    val canCancel = state is CashUpState.Ready || state is CashUpState.ReadyOffline || state is CashUpState.Error
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        PosTopBar(
+            title = deviceName ?: "Register",
+            subtitle = "End of Day",
+            onBack = if (canCancel) onCancel else null,
+            isOnline = isOnline,
+            pendingCount = pendingCount,
+            onSyncClick = {},
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
         when (val current = state) {
             is CashUpState.Ready -> {
                 Text("End of Day", style = MaterialTheme.typography.headlineMedium)
@@ -210,6 +237,7 @@ fun CashUpScreen(
             }
 
             else -> CircularProgressIndicator()
+        }
         }
     }
 }

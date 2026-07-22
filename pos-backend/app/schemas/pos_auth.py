@@ -76,7 +76,11 @@ class POSLoginResponse(BaseModel):
     available_grants selection pattern. Exactly one of the two shapes is
     populated, never both. device_token is the (possibly newly-claimed or
     re-paired) terminal token the client must persist locally and echo back
-    on every subsequent login/site-token/pin-verify call.
+    on every subsequent login/site-token/pin-verify call. device_name is the
+    resolved PosDevice's own stored name (portal-admin-editable, distinct
+    from whatever this client happened to submit as its own device_name at
+    claim time) — the Register header shows this instead of a generic
+    "Register" title.
     """
 
     access_token: str | None = None
@@ -89,6 +93,7 @@ class POSLoginResponse(BaseModel):
     is_pin_reset_required: bool | None = None
     available_sites: list[SiteOption] | None = None
     device_token: str | None = None
+    device_name: str | None = None
 
 
 class PINSetRequest(BaseModel):

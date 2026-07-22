@@ -120,6 +120,7 @@ fun PosNavHost() {
                         popUpTo(navController.graph.id) { inclusive = true }
                     }
                 },
+                onCancel = { navController.popBackStack() },
             )
         }
 

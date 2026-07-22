@@ -586,6 +586,7 @@ async def _finalize_login(
         access_profile_name=access_profile.name,
         is_pin_reset_required=is_pin_reset_required,
         device_token=device.device_token,
+        device_name=device.device_name,
     )
 
 

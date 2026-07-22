@@ -255,6 +255,56 @@ async def test_list_product_modifiers_detailed_returns_options(
     assert data[0]["options"][0]["price_delta_cents"] == 70
 
 
+async def test_list_product_modifiers_detailed_includes_linked_groups(
+    client, pos_auth_headers, test_product
+):
+    """GET /products/{id}/modifiers/detailed nests an option's comboing links, one level deep."""
+    group_id = await _create_group(client, pos_auth_headers, "Burger Type", max_selections=1)
+    opt_resp = await client.post(
+        f"/modifier-groups/{group_id}/options",
+        json={"name": "Combo", "price_delta_cents": 300},
+        headers=pos_auth_headers,
+    )
+    option_id = opt_resp.json()["id"]
+
+    side_group_id = await _create_group(client, pos_auth_headers, "Choose a Side", max_selections=1)
+    side_opt_resp = await client.post(
+        f"/modifier-groups/{side_group_id}/options",
+        json={"name": "Fries", "price_delta_cents": 0},
+        headers=pos_auth_headers,
+    )
+    assert side_opt_resp.status_code == 201
+    side_option_id = side_opt_resp.json()["id"]
+
+    link_resp = await client.post(
+        f"/modifier-options/{option_id}/links",
+        json={"linked_group_id": side_group_id, "display_order": 0},
+        headers=pos_auth_headers,
+    )
+    assert link_resp.status_code == 201
+
+    attach_resp = await client.post(
+        f"/products/{test_product.id}/modifiers",
+        json={"modifier_group_id": group_id, "display_order": 0},
+        headers=pos_auth_headers,
+    )
+    assert attach_resp.status_code == 201
+
+    resp = await client.get(
+        f"/products/{test_product.id}/modifiers/detailed", headers=pos_auth_headers
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    option = data[0]["options"][0]
+    assert option["id"] == option_id
+    assert len(option["linked_groups"]) == 1
+    linked = option["linked_groups"][0]
+    assert linked["id"] == side_group_id
+    assert linked["name"] == "Choose a Side"
+    assert len(linked["options"]) == 1
+    assert linked["options"][0]["id"] == side_option_id
+
+
 async def test_list_product_modifiers_detailed_excludes_unattached_groups(
     client, pos_auth_headers, test_product
 ):

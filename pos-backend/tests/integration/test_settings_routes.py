@@ -11,6 +11,7 @@ Covers:
 """
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select
@@ -18,6 +19,8 @@ from sqlalchemy import select
 from app.constants.audit_actions import SETTING_RESET, SETTING_UPDATED
 from app.models.access_profile_page_permission import AccessProfilePagePermission
 from app.models.audit_log import AuditLog
+from app.models import RegisterSession, UserAccessGrant, UserPOSSession
+from app.utils.security import create_pos_access_token
 
 pytestmark = pytest.mark.asyncio
 
@@ -29,6 +32,38 @@ async def _grant_site_settings(db, profile) -> None:
         )
     )
     await db.flush()
+
+
+async def _pos_headers_with_profile(db, user, site, device, profile) -> dict[str, str]:
+    """
+    Mint a POS access token for [user] at [site], via a fresh UserAccessGrant
+    tied to [profile] — mirrors conftest.py's pos_auth_headers fixture, but
+    lets a test choose which access profile backs the token (that fixture is
+    hardcoded to the "Cashier" custom profile). Deliberately doesn't also
+    depend on pos_auth_headers/test_access_grant — two active grants for the
+    same (user, site) pair trip the ambiguous-grant lookup in resolve_access.
+    """
+    grant = UserAccessGrant(
+        id=uuid.uuid4(), user_id=user.id, site_id=site.id, access_profile_id=profile.id, is_active=True,
+    )
+    db.add(grant)
+
+    jti = str(uuid.uuid4())
+    session = UserPOSSession(id=uuid.uuid4(), user_id=user.id, site_id=site.id, device_id=device.id, token_jti=jti)
+    db.add(session)
+
+    register_session = RegisterSession(
+        id=uuid.uuid4(), device_id=device.id, site_id=site.id, status="open",
+        opened_at=datetime.now(tz=timezone.utc), opening_cash_cents=10000,
+        opened_by_user_id=user.id, opened_by_name=user.name,
+    )
+    db.add(register_session)
+    await db.flush()
+
+    token = create_pos_access_token(
+        user_id=str(user.id), site_id=str(site.id), jti=jti, device_id=str(device.id),
+    )
+    return {"Authorization": f"Bearer {token}"}
 
 
 # ── GET /settings ──────────────────────────────────────────────────────────
@@ -161,11 +196,67 @@ async def test_update_setting_without_permission_returns_403(client, mgmt_auth_h
 
 
 async def test_update_setting_pos_access_forbidden(client, pos_auth_headers):
-    """A raw POS terminal session can never write a setting."""
+    """A POS session backed by a non-Manager+ (custom "Cashier") profile cannot write a setting."""
     response = await client.put(
         "/settings/hide_variance_on_close", json={"value": True}, headers=pos_auth_headers
     )
     assert response.status_code == 403
+
+
+async def test_update_setting_pos_manager_profile_succeeds(
+    client, db, test_user, test_site, test_device, test_manager_profile
+):
+    """A POS session backed by the Manager profile can push a 'Save as default' override for its own site."""
+    headers = await _pos_headers_with_profile(db, test_user, test_site, test_device, test_manager_profile)
+    await db.commit()
+
+    response = await client.put(
+        "/settings/hide_variance_on_close", json={"value": True, "site_id": str(test_site.id)}, headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["site_value"] is True
+
+
+async def test_update_setting_pos_manager_wrong_site_returns_403(
+    client, db, test_user, test_site, test_device, test_manager_profile, test_brand
+):
+    """A Manager-profile POS session cannot push a setting override for a site other than its own."""
+    from app.models import Site
+
+    other_site = Site(
+        id=uuid.uuid4(), brand_id=test_brand.id, name="Other Site", is_active=True,
+        timezone="Australia/Sydney", currency="AUD", country="AU",
+        address_street="2 Test Street", address_state="NSW", address_postcode="2000",
+    )
+    db.add(other_site)
+    await db.flush()
+
+    headers = await _pos_headers_with_profile(db, test_user, test_site, test_device, test_manager_profile)
+    await db.commit()
+
+    response = await client.put(
+        "/settings/hide_variance_on_close", json={"value": True, "site_id": str(other_site.id)}, headers=headers
+    )
+    assert response.status_code == 403
+
+
+async def test_update_setting_pos_manager_writes_audit_log(
+    client, db, test_user, test_site, test_device, test_manager_profile
+):
+    """A Manager-profile POS session's settings push writes a SETTING_UPDATED audit row."""
+    headers = await _pos_headers_with_profile(db, test_user, test_site, test_device, test_manager_profile)
+    await db.commit()
+
+    response = await client.put(
+        "/settings/hide_variance_on_close", json={"value": True, "site_id": str(test_site.id)}, headers=headers
+    )
+    assert response.status_code == 200
+
+    audit = await db.execute(
+        select(AuditLog).where(AuditLog.action == SETTING_UPDATED, AuditLog.actor_id == test_user.id)
+    )
+    log_row = audit.scalars().first()
+    assert log_row is not None
 
 
 async def test_update_setting_portal_admin_requires_brand_id(client, portal_auth_headers):

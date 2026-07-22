@@ -82,6 +82,7 @@ async def test_create_invoice_returns_201_draft(
     assert data["status"] == "draft"
     assert data["invoice_type"] == "sale"
     assert data["total_cents"] == 0
+    assert data["ref"].startswith("INV-")
 
 
 @pytest.mark.asyncio

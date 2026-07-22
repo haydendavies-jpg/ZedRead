@@ -2,6 +2,7 @@ package com.zedread.pos.data.repository
 
 import com.zedread.pos.data.api.PosApiService
 import com.zedread.pos.data.api.SettingDto
+import com.zedread.pos.data.api.SettingUpdateRequest
 import com.zedread.pos.data.local.TokenStore
 import kotlinx.coroutines.flow.firstOrNull
 import javax.inject.Inject
@@ -13,25 +14,71 @@ object SettingKeys {
     const val HIDE_VARIANCE_ON_CLOSE = "hide_variance_on_close"
 }
 
+/**
+ * POS access profile names allowed to push a "Save as default" settings
+ * override — mirrors app/routes/settings.py's
+ * _POS_SETTINGS_WRITE_PROFILE_NAMES exactly. Purely a UI nicety (hide/show
+ * the button); the backend is the real gate and re-checks this on every
+ * PUT /settings/{key} call regardless of what the client shows.
+ */
+private val POS_SETTINGS_WRITE_PROFILES = setOf("Master User", "Admin", "Manager")
+
 /** Value the cash_in_mode setting resolves to when the denomination-grid variant is selected. */
 const val CASH_IN_MODE_DENOMINATION = "denomination"
 
 /**
  * Reads the POS settings catalog resolved for this terminal's own site
  * (GET /pos/settings — read-only; overrides are managed from the portal's
- * Settings page, not this app). No local cache: unlike the product catalog,
- * settings are small and read on-demand each time a screen needs them
- * (Settings screen open, CashIn/CashUp screen mount) rather than kept warm
- * for offline browsing.
+ * Settings page, not this app).
+ *
+ * Cached in-memory after the first fetch (this session) — per user-testing
+ * feedback that the app was re-hitting the server on essentially every
+ * screen open, settings now sync once and serve from that cache thereafter,
+ * same as the product catalog's own Room cache. [getSettings]'s
+ * [forceRefresh] is the escape hatch (a manual refresh action on the
+ * Settings screen); [saveAsDefault] patches the cache in place from its own
+ * response so a save is reflected immediately without a second round trip.
+ * The cache is keyed on "no search term" only — a server-side search
+ * query always bypasses it, though no current caller actually passes one
+ * (SettingsViewModel filters client-side against the unfiltered load).
  */
 @Singleton
 class SettingsRepository @Inject constructor(
     private val api: PosApiService,
     private val tokenStore: TokenStore,
 ) {
+    @Volatile
+    private var cachedSettings: List<SettingDto>? = null
+
     /** Fetch every setting, optionally filtered server-side by [search] (key/label/category substring). */
-    suspend fun getSettings(search: String? = null): List<SettingDto> =
-        api.getSettings(requireBearer(), search)
+    suspend fun getSettings(search: String? = null, forceRefresh: Boolean = false): List<SettingDto> {
+        if (search == null && !forceRefresh) {
+            cachedSettings?.let { return it }
+        }
+        val fetched = api.getSettings(requireBearer(), search)
+        if (search == null) cachedSettings = fetched
+        return fetched
+    }
+
+    /**
+     * Push a locally-edited setting back to become this site's backend
+     * override ("Save as default"). The backend re-verifies the operator's
+     * access profile itself — [canPushDefaults] only decides whether to
+     * offer the button. Patches the in-memory cache from the response so
+     * the next [getSettings] call (e.g. a later Settings screen open, or
+     * CashIn/CashUp reading cash_in_mode) sees the saved value without
+     * re-fetching.
+     */
+    suspend fun saveAsDefault(key: String, value: Any?): SettingDto {
+        val siteId = tokenStore.siteId.firstOrNull() ?: error("No site ID — cannot save setting")
+        val updated = api.updateSetting(requireBearer(), key, SettingUpdateRequest(value = value, siteId = siteId))
+        cachedSettings = cachedSettings?.map { if (it.key == key) updated else it }
+        return updated
+    }
+
+    /** True if the signed-in operator's POS access profile may push settings back to the backend. */
+    suspend fun canPushDefaults(): Boolean =
+        tokenStore.accessProfileName.firstOrNull() in POS_SETTINGS_WRITE_PROFILES
 
     /**
      * Fetch the two settings the cash-in/cash-up screens need, returning

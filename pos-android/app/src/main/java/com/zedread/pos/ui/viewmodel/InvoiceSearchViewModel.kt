@@ -41,20 +41,25 @@ class InvoiceSearchViewModel @Inject constructor(
     private val _dateRangeFilter = MutableStateFlow(DateRangeFilter.ALL)
     val dateRangeFilter: StateFlow<DateRangeFilter> = _dateRangeFilter.asStateFlow()
 
+    /** Free-text search against the invoice's INV-000001-style ref — the "invoice number" a cashier actually knows. */
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
     fun setStatusFilter(status: String?) { _statusFilter.value = status }
     fun setPaymentMethodFilter(method: String?) { _paymentMethodFilter.value = method }
     fun setDateRangeFilter(range: DateRangeFilter) { _dateRangeFilter.value = range }
+    fun setSearchQuery(query: String) { _searchQuery.value = query }
 
     val results: StateFlow<List<InvoiceCacheEntity>> =
-        combine(_statusFilter, _paymentMethodFilter, _dateRangeFilter) { status, method, range ->
-            Triple(status, method, range)
+        combine(_statusFilter, _paymentMethodFilter, _dateRangeFilter, _searchQuery) { status, method, range, query ->
+            SearchParams(status, method, range, query)
         }
-            .flatMapLatest { (status, method, range) ->
-                val (from, to) = range.toMillisRange()
-                invoiceRepo.searchCache(status, method, from, to)
+            .flatMapLatest { params ->
+                val (from, to) = params.range.toMillisRange()
+                invoiceRepo.searchCache(params.status, params.method, from, to, params.query.trim().ifBlank { null })
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -69,6 +74,14 @@ class InvoiceSearchViewModel @Inject constructor(
 
     init { refreshFromServer() }
 }
+
+/** Combine() intermediate — the four independent filter inputs to [InvoiceSearchViewModel.results]. */
+private data class SearchParams(
+    val status: String?,
+    val method: String?,
+    val range: DateRangeFilter,
+    val query: String,
+)
 
 /** Quick date-range chips — a full date-picker is more chrome than this screen's first cut needs. */
 enum class DateRangeFilter(val label: String) {

@@ -615,6 +615,7 @@ async def test_pos_login_single_grant_auto_resolves(
     body = response.json()
     assert body["access_token"] is not None
     assert body["available_sites"] is None
+    assert body["device_name"] == "Test Terminal"
 
 
 async def test_pos_login_multiple_grants_returns_available_sites(

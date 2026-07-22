@@ -178,12 +178,21 @@ class ProductModifiersOut(BaseModel):
 
 
 class ProductModifierOptionOut(BaseModel):
-    """One active option belonging to a product's attached modifier group — flat, no comboing links."""
+    """
+    One active option belonging to a product's attached modifier group.
+
+    linked_groups carries this option's comboing links (one level deep, same
+    as list_modifier_groups_detailed) so the Register's modifier sheet can
+    expand a nested group inline when this option is selected — previously
+    omitted here as "not needed at the point of sale," reversed once POS
+    testing showed the sheet needs it to actually render a comboed option.
+    """
 
     id: uuid.UUID
     name: str
     price_delta_cents: int
     display_order: int
+    linked_groups: list[LinkedGroupOut] = []
 
 
 class ProductModifierGroupDetailOut(BaseModel):
@@ -714,13 +723,16 @@ async def list_product_modifiers_detailed(
 ) -> list[ProductModifierGroupDetailOut]:
     """
     Return a product's attached modifier groups, each with its full active
-    option list — powers the POS Register's modifier customise sheet.
+    option list (including each option's one-level-deep comboing links) —
+    powers the POS Register's modifier customise sheet.
 
     Unlike list_product_modifiers(), this never touches the brand's other
     (unattached) groups — the sheet only needs what a given product actually
-    offers. Unlike list_modifier_groups_detailed(), it skips comboing links
-    and used_by_count (not needed at the point of sale) and is scoped to one
-    product instead of every brand group.
+    offers. Unlike list_modifier_groups_detailed(), it skips used_by_count
+    (not needed at the point of sale) and is scoped to one product instead of
+    every brand group; it does include comboing links, same batched-query
+    pattern as list_modifier_groups_detailed (a per-option loop of individual
+    queries would scale with catalog size).
 
     Args:
         db: Active database session.
@@ -756,6 +768,21 @@ async def list_product_modifiers_detailed(
 
     group_ids = [group.id for _, group in attached_rows]
     options_by_group = await _active_options_by_group(db, group_ids)
+    option_ids = [o.id for options in options_by_group.values() for o in options]
+
+    links_by_option: dict[uuid.UUID, list[ModifierGroup]] = defaultdict(list)
+    if option_ids:
+        links_result = await db.execute(
+            select(ModifierOptionGroupLink.modifier_option_id, ModifierGroup)
+            .join(ModifierGroup, ModifierOptionGroupLink.linked_group_id == ModifierGroup.id)
+            .where(ModifierOptionGroupLink.modifier_option_id.in_(option_ids))
+            .order_by(ModifierOptionGroupLink.display_order)
+        )
+        for option_id, linked_group in links_result.all():
+            links_by_option[option_id].append(linked_group)
+
+    linked_group_ids = list({lg.id for groups_ in links_by_option.values() for lg in groups_})
+    linked_group_options = await _active_options_by_group(db, linked_group_ids)
 
     return [
         ProductModifierGroupDetailOut(
@@ -771,6 +798,19 @@ async def list_product_modifiers_detailed(
                     name=option.name,
                     price_delta_cents=option.price_delta_cents,
                     display_order=option.display_order,
+                    linked_groups=[
+                        LinkedGroupOut(
+                            id=lg.id,
+                            name=lg.name,
+                            min_selections=lg.min_selections,
+                            max_selections=lg.max_selections,
+                            options=[
+                                LinkedGroupOptionOut(id=o.id, name=o.name, price_delta_cents=o.price_delta_cents)
+                                for o in linked_group_options.get(lg.id, [])
+                            ],
+                        )
+                        for lg in links_by_option.get(option.id, [])
+                    ],
                 )
                 for option in options_by_group.get(group.id, [])
             ],

@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,6 +26,11 @@ class Invoice(Base):
     unit_price_cents, tax_rate_percent, tax_model as copied values.  This
     invoice row is NOT a snapshot — it references live brand_id and site_id
     FKs that must remain after the invoice is paid or voided.
+
+    ref (migration 0056) is the INV-000001-style human-readable sequence,
+    same mechanism as Product/Category/ReportingGroup/Variant/Combo's own
+    ref columns — added so a cashier or manager has an actual "invoice
+    number" to search by (previously only the raw UUID id existed).
     """
 
     __tablename__ = "invoices"
@@ -35,6 +40,13 @@ class Invoice(Base):
         primary_key=True,
         default=uuid.uuid4,
         comment="Primary key — UUID generated at insert time",
+    )
+    ref: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        unique=True,
+        server_default=text("'INV-' || LPAD(nextval('invoices_ref_seq')::text, 6, '0')"),
+        comment="Human-readable reference ID, e.g. INV-000001",
     )
     brand_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
