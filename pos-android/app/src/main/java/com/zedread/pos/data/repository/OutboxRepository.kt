@@ -69,6 +69,10 @@ class OutboxRepository @Inject constructor(
         invoiceCacheDao.upsert(
             InvoiceCacheEntity(
                 id = clientRef,
+                // No server-issued ref exists yet for a queued-offline sale — the
+                // sync worker re-keys this row with the real INV-000001 ref once
+                // syncSale() confirms it (see OutboxSyncWorker.syncSale).
+                ref = "Pending sync",
                 status = "paid",
                 totalCents = amountCents,
                 createdAtMillis = System.currentTimeMillis(),

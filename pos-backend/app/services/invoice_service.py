@@ -60,6 +60,7 @@ class InvoiceResponse(BaseModel):
     """Response schema for an invoice."""
 
     id: uuid.UUID
+    ref: str
     brand_id: uuid.UUID
     site_id: uuid.UUID
     created_by_id: uuid.UUID | None

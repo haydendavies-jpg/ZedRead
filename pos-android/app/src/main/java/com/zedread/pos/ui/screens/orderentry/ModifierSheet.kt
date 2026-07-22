@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -36,17 +38,23 @@ import com.zedread.pos.data.local.entity.ProductEntity
 import com.zedread.pos.ui.theme.LocalZedReadColors
 import com.zedread.pos.ui.theme.ZedReadColors
 import com.zedread.pos.ui.theme.parseHexColor
+import com.zedread.pos.ui.viewmodel.LinkedGroupSelection
 import com.zedread.pos.ui.viewmodel.ModifierGroupSelection
 import com.zedread.pos.ui.viewmodel.ModifierSheetState
 
 /**
- * Modifier customise sheet — exact-match to design_handoff_zedread/README.md's
- * "Component: Modifier customise sheet": a right-hand slide-over over a
- * dimming overlay, header with the product's category colour/name/base
- * price, one block per modifier group (uppercase name + a "Choose 1"/
- * "Optional" rule chip, radio-style single-select vs checkbox-style
- * multi-select rows, a `+$X.XX` price when an option costs extra), a qty
- * stepper, and a live-updating "Add to order $total" footer button.
+ * Modifier customise sheet — a centered floating box over a dimming overlay
+ * (matching PaymentModal's own layout, per user-testing feedback that a
+ * right-hand slide-over read as visually inconsistent with the payment
+ * modal it sits alongside — the design_handoff_zedread README's original
+ * right-hand-slide-over spec is superseded by this on that one point).
+ * Header with the product's category colour/name/base price, one block per
+ * modifier group (uppercase name + a "Choose 1"/"Optional" rule chip,
+ * radio-style single-select vs checkbox-style multi-select rows, a
+ * `+$X.XX` price when an option costs extra), each selected option's
+ * "comboed" linked groups nested inline directly beneath it (one level
+ * deep — see ModifierGroupSelection's doc), a qty stepper, and a
+ * live-updating "Add to order $total" footer button.
  *
  * Rendered as an overlay on the Register screen itself (not a nav
  * destination) — see SellViewModel's class doc for why.
@@ -56,6 +64,7 @@ fun ModifierSheetOverlay(
     state: ModifierSheetState,
     onDismiss: () -> Unit,
     onToggleChoice: (groupIndex: Int, optionIndex: Int) -> Unit,
+    onToggleLinkedChoice: (groupIndex: Int, optionIndex: Int, linkedGroupIndex: Int, linkedOptionIndex: Int) -> Unit,
     onQtyDec: () -> Unit,
     onQtyInc: () -> Unit,
     onConfirm: () -> Unit,
@@ -65,14 +74,17 @@ fun ModifierSheetOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.42f))
+            .background(Color.Black.copy(alpha = 0.5f))
+            .imePadding()
             .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
-                .width(420.dp)
+                .widthIn(max = 480.dp)
+                .fillMaxWidth(0.9f)
+                .fillMaxHeight(0.85f)
+                .clip(RoundedCornerShape(18.dp))
                 // Swallow taps inside the panel so they don't fall through to the
                 // scrim's dismiss-on-click behind it.
                 .clickable(enabled = false) {}
@@ -102,6 +114,7 @@ fun ModifierSheetOverlay(
                                     groupIndex = groupIndex,
                                     gs = gs,
                                     onToggleChoice = onToggleChoice,
+                                    onToggleLinkedChoice = onToggleLinkedChoice,
                                 )
                             }
                         }
@@ -168,6 +181,7 @@ private fun ModifierGroupBlock(
     groupIndex: Int,
     gs: ModifierGroupSelection,
     onToggleChoice: (Int, Int) -> Unit,
+    onToggleLinkedChoice: (Int, Int, Int, Int) -> Unit,
 ) {
     val colors = LocalZedReadColors.current
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -178,7 +192,7 @@ private fun ModifierGroupBlock(
                 fontWeight = FontWeight.Bold,
                 color = colors.text,
             )
-            RuleChip(gs, colors)
+            RuleChip(gs.isSingleSelect, gs.isRequired, gs.group.minSelections, gs.group.maxSelections, colors)
         }
         Spacer(Modifier.height(11.dp))
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -191,29 +205,82 @@ private fun ModifierGroupBlock(
                     isSingleSelect = gs.isSingleSelect,
                     onClick = { onToggleChoice(groupIndex, optionIndex) },
                 )
+                // Comboed groups nest directly beneath their owning option, only
+                // while it's selected — the inline-nested-cascade pattern the
+                // portal's own Modifiers page uses for the same "option 1" design.
+                if (selected) {
+                    gs.linkedSelections[optionIndex]?.forEachIndexed { linkedGroupIndex, linked ->
+                        LinkedGroupBlock(
+                            linked = linked,
+                            modifier = Modifier.padding(start = 18.dp, top = 2.dp),
+                            onToggle = { linkedOptionIndex ->
+                                onToggleLinkedChoice(groupIndex, optionIndex, linkedGroupIndex, linkedOptionIndex)
+                            },
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun RuleChip(gs: ModifierGroupSelection, colors: ZedReadColors) {
-    val label = if (gs.isSingleSelect) {
-        if (gs.isRequired) "Choose 1" else "Optional"
+private fun LinkedGroupBlock(
+    linked: LinkedGroupSelection,
+    modifier: Modifier = Modifier,
+    onToggle: (optionIndex: Int) -> Unit,
+) {
+    val colors = LocalZedReadColors.current
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(colors.surface2)
+            .padding(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                linked.group.name.uppercase(),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = colors.text,
+            )
+            RuleChip(linked.isSingleSelect, linked.isRequired, linked.group.minSelections, linked.group.maxSelections, colors)
+        }
+        Spacer(Modifier.height(8.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            linked.group.options.forEachIndexed { optionIndex, option ->
+                ModifierChoiceRow(
+                    label = option.name,
+                    priceDeltaCents = option.priceDeltaCents,
+                    selected = linked.selected.contains(optionIndex),
+                    isSingleSelect = linked.isSingleSelect,
+                    onClick = { onToggle(optionIndex) },
+                )
+            }
+        }
+    }
+}
+
+/** Shared by both top-level ModifierGroupBlock and nested LinkedGroupBlock — takes primitives, not one shared type. */
+@Composable
+private fun RuleChip(isSingleSelect: Boolean, isRequired: Boolean, minSelections: Int, maxSelections: Int, colors: ZedReadColors) {
+    val label = if (isSingleSelect) {
+        if (isRequired) "Choose 1" else "Optional"
     } else {
-        if (gs.isRequired) "Choose ${gs.group.minSelections}-${gs.group.maxSelections}" else "Optional"
+        if (isRequired) "Choose $minSelections-$maxSelections" else "Optional"
     }
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(if (gs.isRequired) colors.accentSoft else colors.surface2)
+            .background(if (isRequired) colors.accentSoft else colors.surface2)
             .padding(horizontal = 8.dp, vertical = 3.dp),
     ) {
         Text(
             label.uppercase(),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
-            color = if (gs.isRequired) colors.accent else colors.faint,
+            color = if (isRequired) colors.accent else colors.faint,
         )
     }
 }

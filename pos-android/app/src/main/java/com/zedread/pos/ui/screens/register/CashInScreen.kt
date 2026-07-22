@@ -29,22 +29,32 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.zedread.pos.data.repository.CASH_IN_MODE_DENOMINATION
+import com.zedread.pos.ui.components.PosTopBar
 import com.zedread.pos.ui.viewmodel.CashInState
 import com.zedread.pos.ui.viewmodel.RegisterSessionViewModel
+import com.zedread.pos.ui.viewmodel.SyncViewModel
+import com.zedread.pos.ui.viewmodel.TopBarViewModel
 
 /**
  * Start-of-day cash-in: bulk-total entry, or a per-denomination breakdown
  * grid when the site's cash_in_mode setting is "denomination" (Phase 2
  * settings framework — see SettingsRepository). Blocks Register access
- * until a session is open (POST /register-sessions/open).
+ * until a session is open (POST /register-sessions/open). No back action —
+ * a session must be opened before Register is usable, there's nowhere
+ * sensible to go back to short of logging out entirely.
  */
 @Composable
 fun CashInScreen(
     onOpened: () -> Unit,
     viewModel: RegisterSessionViewModel = hiltViewModel(),
+    syncViewModel: SyncViewModel = hiltViewModel(),
+    topBarViewModel: TopBarViewModel = hiltViewModel(),
 ) {
     val state by viewModel.cashInState.collectAsState()
     val cashSettings by viewModel.cashSettings.collectAsState()
+    val deviceName by topBarViewModel.deviceName.collectAsState()
+    val isOnline by syncViewModel.isOnline.collectAsState()
+    val pendingCount by syncViewModel.pendingCount.collectAsState()
     var amount by remember { mutableStateOf("") }
     var denominationTotalCents by remember { mutableStateOf(0L) }
 
@@ -61,6 +71,14 @@ fun CashInScreen(
     val enteredCents = if (isDenominationMode) denominationTotalCents else dollarsToCents(amount)
     val hasEntry = if (isDenominationMode) denominationTotalCents > 0 else amount.isNotBlank()
 
+    Column(modifier = Modifier.fillMaxSize()) {
+    PosTopBar(
+        title = deviceName ?: "Register",
+        subtitle = "Start of Day",
+        isOnline = isOnline,
+        pendingCount = pendingCount,
+        onSyncClick = {},
+    )
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -120,6 +138,7 @@ fun CashInScreen(
                 Text("Start Shift")
             }
         }
+    }
     }
 }
 

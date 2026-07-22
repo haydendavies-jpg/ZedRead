@@ -32,6 +32,7 @@ interface InvoiceCacheDao {
           AND (:paymentMethod IS NULL OR payment_method = :paymentMethod)
           AND (:fromMillis IS NULL OR created_at_millis >= :fromMillis)
           AND (:toMillis IS NULL OR created_at_millis <= :toMillis)
+          AND (:refQuery IS NULL OR ref LIKE '%' || :refQuery || '%')
         ORDER BY created_at_millis DESC
         """
     )
@@ -40,6 +41,7 @@ interface InvoiceCacheDao {
         paymentMethod: String?,
         fromMillis: Long?,
         toMillis: Long?,
+        refQuery: String?,
     ): Flow<List<InvoiceCacheEntity>>
 
     @Query("DELETE FROM invoice_cache")

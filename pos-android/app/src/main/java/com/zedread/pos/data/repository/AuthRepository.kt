@@ -94,6 +94,7 @@ class AuthRepository @Inject constructor(
             userName = response.userName.orEmpty(),
             email = email,
             accessProfileName = response.accessProfileName.orEmpty(),
+            deviceName = response.deviceName,
         )
         return LoginOutcome.Authenticated(needsPinSetup = response.isPinResetRequired ?: true)
     }

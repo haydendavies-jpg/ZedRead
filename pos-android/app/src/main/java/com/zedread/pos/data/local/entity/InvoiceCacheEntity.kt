@@ -19,6 +19,9 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "invoice_cache")
 data class InvoiceCacheEntity(
     @PrimaryKey val id: String,
+    // Human-readable INV-000001-style reference — what a cashier actually
+    // searches by; the raw id is a UUID and was never a real "invoice number".
+    val ref: String,
     val status: String,
     @ColumnInfo(name = "total_cents") val totalCents: Long,
     @ColumnInfo(name = "created_at_millis") val createdAtMillis: Long,

@@ -94,6 +94,7 @@ class OutboxSyncWorker @AssistedInject constructor(
         invoiceCacheDao.upsert(
             InvoiceCacheEntity(
                 id = paid.id,
+                ref = paid.ref,
                 status = paid.status,
                 totalCents = paid.totalCents,
                 createdAtMillis = System.currentTimeMillis(),

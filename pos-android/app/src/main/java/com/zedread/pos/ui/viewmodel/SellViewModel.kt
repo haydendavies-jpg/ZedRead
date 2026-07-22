@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zedread.pos.data.api.LineItemDto
 import com.zedread.pos.data.api.LineModifierDto
+import com.zedread.pos.data.api.LinkedGroupDto
 import com.zedread.pos.data.api.PosMenuLayoutDto
 import com.zedread.pos.data.api.ProductModifierGroupDto
 import com.zedread.pos.data.local.entity.CategoryEntity
@@ -109,25 +110,48 @@ class SellViewModel @Inject constructor(
     /** Staff picking a layout from the menu selector — a manual override until the next completed sale. */
     fun selectMenuLayout(layoutId: String?) { _selectedMenuLayoutId.value = layoutId }
 
+    /** The currently selected menu layout's full detail (tabs/buttons), or null when none is selected/available. */
+    val currentMenuLayout: StateFlow<PosMenuLayoutDto?> =
+        combine(_menuLayouts, _selectedMenuLayoutId) { layouts, id -> layouts.firstOrNull { it.id == id } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Folder navigation — which tab's buttons the grid is currently showing. Null means "not yet drilled into a folder". */
+    private val _selectedTabId = MutableStateFlow<String?>(null)
+
     /**
-     * Re-fetch the site's active layouts.
-     *
-     * [forceDefaultSelection] is true only right after a completed
-     * transaction — it discards whatever was manually selected and re-picks
-     * the schedule's own default at that moment, per the "reverts after a
-     * completed transaction" requirement. On a plain refresh (app launch,
-     * pull-to-refresh) the current selection is kept if it's still among
-     * the active set, falling back to the default only if it's gone.
+     * The tab the grid actually renders: [_selectedTabId] if it's still a
+     * tab of the current layout, else the layout's first top-level (rail)
+     * tab — so switching layouts (or a layout losing the tab you were in)
+     * naturally resets to the top without any manual reset call needed.
+     */
+    val effectiveTabId: StateFlow<String?> =
+        combine(currentMenuLayout, _selectedTabId) { layout, tabId ->
+            when {
+                layout == null -> null
+                tabId != null && layout.tabs.any { it.id == tabId } -> tabId
+                else -> layout.topLevelTabs.firstOrNull()?.id
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Switch the rail tab, or drill into/out of a folder tile's nested tab. */
+    fun selectTab(tabId: String?) { _selectedTabId.value = tabId }
+
+    /**
+     * Fetch the site's active layouts — called once at construction (the
+     * one-time sync; see CatalogRepository/SettingsRepository's own docs on
+     * the same architecture) rather than on every screen action. The
+     * current selection is kept if it's still among the active set,
+     * falling back to the schedule's own default only if it's gone.
      * Failure is silent — the grid already falls back to the unfiltered
      * catalog when no layout resolves, so a network hiccup here never
      * blocks a sale.
      */
-    fun refreshMenuLayouts(forceDefaultSelection: Boolean = false) {
+    fun refreshMenuLayouts() {
         viewModelScope.launch {
             runCatching { menuLayoutRepo.getMenuLayouts() }
                 .onSuccess { layouts ->
                     _menuLayouts.value = layouts
-                    val keepCurrent = !forceDefaultSelection && layouts.any { it.id == _selectedMenuLayoutId.value }
+                    val keepCurrent = layouts.any { it.id == _selectedMenuLayoutId.value }
                     if (!keepCurrent) {
                         _selectedMenuLayoutId.value = layouts.firstOrNull { it.isEffectiveDefault }?.id
                     }
@@ -144,6 +168,15 @@ class SellViewModel @Inject constructor(
             val refs = layouts.firstOrNull { it.id == layoutId }?.productRefs
             if (refs.isNullOrEmpty()) catalogProducts else catalogProducts.filter { it.ref in refs }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Every cached product, unfiltered — used only to resolve a menu-grid
+     * product tile's product_ref back to a local product id on tap
+     * ([addToCartByRef]). [products] above is category/menu-filtered for
+     * display, which isn't what a tap handler needs.
+     */
+    private val allProducts: StateFlow<List<ProductEntity>> =
+        catalogRepo.observeProducts(null).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -206,12 +239,18 @@ class SellViewModel @Inject constructor(
      * straight to the order, same as before.
      */
     fun addToCart(productId: String) {
-        val product = products.value.firstOrNull { it.id == productId } ?: return
+        val product = allProducts.value.firstOrNull { it.id == productId } ?: return
         if (!product.modifierNames.isNullOrBlank()) {
             openModifierSheet(product)
             return
         }
         addPlainLineItem(productId, quantity = 1)
+    }
+
+    /** Menu-grid tile tap — resolves the tile's product_ref to its locally-cached product, then behaves like [addToCart]. */
+    fun addToCartByRef(productRef: String) {
+        val product = allProducts.value.firstOrNull { it.ref == productRef } ?: return
+        addToCart(product.id)
     }
 
     /** Opens the draft invoice first if this is the first item, then appends the line. */
@@ -253,7 +292,16 @@ class SellViewModel @Inject constructor(
         if (_ticketNumber.value == null) issueTicketNumber()
     }
 
-    /** Build and append a locally-synthesized line — see the class doc's "Offline write-queue scope" note. */
+    /**
+     * Build and append a locally-synthesized line — see the class doc's
+     * "Offline write-queue scope" note.
+     *
+     * Deliberately top-level modifiers only — a selected comboed (linked)
+     * option is dropped here, unlike the online confirmModifierSheet() path.
+     * An offline sale is already the rare fallback case (first action of a
+     * sale failing outright); adding a second local-total/outbox-payload
+     * shape just for nested comboing isn't worth it for that intersection.
+     */
     private fun addOfflineLine(productId: String, quantity: Int, modifiers: List<ModifierGroupSelection>) {
         val product = products.value.firstOrNull { it.id == productId } ?: return
         val lineId = UUID.randomUUID().toString()
@@ -362,7 +410,10 @@ class SellViewModel @Inject constructor(
                     val selections = groups.map { group ->
                         val defaultSelected =
                             if (group.maxSelections <= 1 && group.options.isNotEmpty()) setOf(0) else emptySet()
-                        ModifierGroupSelection(group, defaultSelected)
+                        val defaultLinked = defaultSelected.associateWith { idx ->
+                            group.options.getOrNull(idx)?.linkedGroups.orEmpty().map(::defaultLinkedSelection)
+                        }.filterValues { it.isNotEmpty() }
+                        ModifierGroupSelection(group, defaultSelected, defaultLinked)
                     }
                     _modifierSheetState.value = ModifierSheetState.Ready(product, selections, quantity = 1)
                 }
@@ -390,7 +441,38 @@ class SellViewModel @Inject constructor(
             current.selected.contains(optionIndex) -> current.selected - optionIndex
             else -> current.selected + optionIndex
         }
-        groups[groupIndex] = current.copy(selected = newSelected)
+        // Seed default linked-group selections the first time an option carrying
+        // comboing links becomes selected — a previously-seeded entry for an
+        // option no longer selected is left in place (harmless, see the doc).
+        val newlySelected = newSelected - current.selected
+        val newLinked = current.linkedSelections.toMutableMap()
+        newlySelected.forEach { idx ->
+            if (idx !in newLinked) {
+                val linked = current.group.options.getOrNull(idx)?.linkedGroups.orEmpty().map(::defaultLinkedSelection)
+                if (linked.isNotEmpty()) newLinked[idx] = linked
+            }
+        }
+        groups[groupIndex] = current.copy(selected = newSelected, linkedSelections = newLinked)
+        _modifierSheetState.value = state.copy(groups = groups)
+    }
+
+    /** Radio-style select for a single-select linked group, checkbox-style toggle for multi-select. */
+    fun toggleLinkedChoice(groupIndex: Int, optionIndex: Int, linkedGroupIndex: Int, linkedOptionIndex: Int) {
+        val state = _modifierSheetState.value as? ModifierSheetState.Ready ?: return
+        val groups = state.groups.toMutableList()
+        val current = groups.getOrNull(groupIndex) ?: return
+        val linkedList = current.linkedSelections[optionIndex] ?: return
+        val linkedGroup = linkedList.getOrNull(linkedGroupIndex) ?: return
+        val newLinkedSelected = when {
+            linkedGroup.isSingleSelect -> setOf(linkedOptionIndex)
+            linkedGroup.selected.contains(linkedOptionIndex) -> linkedGroup.selected - linkedOptionIndex
+            else -> linkedGroup.selected + linkedOptionIndex
+        }
+        val newLinkedList = linkedList.toMutableList()
+        newLinkedList[linkedGroupIndex] = linkedGroup.copy(selected = newLinkedSelected)
+        val newLinked = current.linkedSelections.toMutableMap()
+        newLinked[optionIndex] = newLinkedList
+        groups[groupIndex] = current.copy(linkedSelections = newLinked)
         _modifierSheetState.value = state.copy(groups = groups)
     }
 
@@ -401,11 +483,22 @@ class SellViewModel @Inject constructor(
 
     fun closeModifierSheet() { _modifierSheetState.value = ModifierSheetState.Closed }
 
-    /** Per-unit price including selected modifiers — mirrors modAddToOrder's live `unit` calc. */
+    /**
+     * Per-unit price including selected modifiers and any selected comboed
+     * (linked) options one level deep — mirrors modAddToOrder's live `unit`
+     * calc, extended for comboing since the mockup predates it.
+     */
     fun modifierSheetUnitPriceCents(state: ModifierSheetState.Ready): Long {
         var unit = state.product.basePriceCents
         state.groups.forEach { gs ->
-            gs.selected.forEach { idx -> unit += gs.group.options.getOrNull(idx)?.priceDeltaCents ?: 0 }
+            gs.selected.forEach { idx ->
+                unit += gs.group.options.getOrNull(idx)?.priceDeltaCents ?: 0
+                gs.linkedSelections[idx]?.forEach { linked ->
+                    linked.selected.forEach { linkedIdx ->
+                        unit += linked.group.options.getOrNull(linkedIdx)?.priceDeltaCents ?: 0
+                    }
+                }
+            }
         }
         return unit
     }
@@ -437,10 +530,20 @@ class SellViewModel @Inject constructor(
                     ?: invoiceRepo.createInvoice().id.also { currentInvoiceId = it; issueTicketNumber() }
                 val item = invoiceRepo.addLineItem(invoiceId, state.product.id, state.quantity)
 
+                // Top-level attach rule (single-select always attached, multi-select
+                // only when priced) applies identically one level down to linked
+                // (comboed) selections — same reasoning, just nested.
                 val optionIds = state.groups.flatMap { gs ->
-                    gs.selected.mapNotNull { idx ->
-                        val option = gs.group.options.getOrNull(idx) ?: return@mapNotNull null
-                        if (gs.isSingleSelect || option.priceDeltaCents > 0) option.id else null
+                    gs.selected.flatMap { idx ->
+                        val option = gs.group.options.getOrNull(idx)
+                        val ownId = if (option != null && (gs.isSingleSelect || option.priceDeltaCents > 0)) listOf(option.id) else emptyList()
+                        val linkedIds = gs.linkedSelections[idx].orEmpty().flatMap { linked ->
+                            linked.selected.mapNotNull { linkedIdx ->
+                                val linkedOption = linked.group.options.getOrNull(linkedIdx) ?: return@mapNotNull null
+                                if (linked.isSingleSelect || linkedOption.priceDeltaCents > 0) linkedOption.id else null
+                            }
+                        }
+                        ownId + linkedIds
                     }
                 }
                 optionIds.forEach { optionId -> invoiceRepo.addLineModifier(invoiceId, item.id, optionId) }
@@ -680,9 +783,16 @@ class SellViewModel @Inject constructor(
     /** "New order" action from the Done screen — resets the sale and closes the modal. */
     fun completePaymentAndStartNewOrder() {
         clearOrder()
-        // Re-resolve the schedule and drop back to its own default, discarding
-        // any manual menu-selector override for the sale that just finished.
-        refreshMenuLayouts(forceDefaultSelection = true)
+        // Drop back to the schedule's own default, discarding any manual
+        // menu-selector override for the sale that just finished — resolved
+        // from the already-cached layout list, not a fresh network call.
+        // Per the one-time-sync architecture (see CatalogRepository/
+        // SettingsRepository's own docs), catalog/menu-layout data syncs
+        // once and is read locally thereafter; only invoices and register
+        // open/close talk to the server in real time. A sale completing is
+        // exactly the kind of frequent, per-action event that must not
+        // trigger its own round trip.
+        _selectedMenuLayoutId.value = _menuLayouts.value.firstOrNull { it.isEffectiveDefault }?.id
     }
 }
 
@@ -710,15 +820,39 @@ sealed class ModifierSheetState {
     data class Error(val product: ProductEntity, val message: String) : ModifierSheetState()
 }
 
-/** One modifier group's option list plus which option indices are currently selected. */
+/**
+ * One modifier group's option list plus which option indices are currently selected.
+ *
+ * linkedSelections carries "comboing" state: keyed by the top-level option
+ * index that owns the link, one [LinkedGroupSelection] per group that
+ * option links to (same order as that option's own linkedGroups list — one
+ * level of nesting only, matching the backend). Entries persist even after
+ * their owning option is deselected (harmless — the sheet only ever renders
+ * a currently-selected option's linked blocks) rather than being pruned on
+ * every toggle.
+ */
 data class ModifierGroupSelection(
     val group: ProductModifierGroupDto,
     val selected: Set<Int>,
+    val linkedSelections: Map<Int, List<LinkedGroupSelection>> = emptyMap(),
 ) {
     /** Radio-style (at most 1 choice) vs checkbox-style (multiple) — mirrors the mockup's g.type. */
     val isSingleSelect: Boolean get() = group.maxSelections <= 1
     val isRequired: Boolean get() = group.minSelections >= 1
 }
+
+/** A linked ("combo") group's own option list plus which option indices are currently selected. */
+data class LinkedGroupSelection(
+    val group: LinkedGroupDto,
+    val selected: Set<Int>,
+) {
+    val isSingleSelect: Boolean get() = group.maxSelections <= 1
+    val isRequired: Boolean get() = group.minSelections >= 1
+}
+
+/** Default selection for a linked group when its owning option is first selected — mirrors the top-level default rule. */
+private fun defaultLinkedSelection(group: LinkedGroupDto): LinkedGroupSelection =
+    LinkedGroupSelection(group, if (group.maxSelections <= 1 && group.options.isNotEmpty()) setOf(0) else emptySet())
 
 /** Method tabs on the payment modal — Voucher is the flagged addition the design bundle predates. */
 enum class PaymentMethod(val label: String) { CARD("Card"), CASH("Cash"), VOUCHER("Voucher") }

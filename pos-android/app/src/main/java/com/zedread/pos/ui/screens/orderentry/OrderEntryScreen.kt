@@ -55,8 +55,8 @@ import com.zedread.pos.data.api.LineItemDto
 import com.zedread.pos.data.api.PosMenuLayoutDto
 import com.zedread.pos.data.local.entity.CategoryEntity
 import com.zedread.pos.data.local.entity.ProductEntity
+import com.zedread.pos.ui.components.PosTopBar
 import com.zedread.pos.ui.components.SyncPanel
-import com.zedread.pos.ui.components.SyncStatusBadge
 import com.zedread.pos.ui.screens.payment.PaymentModal
 import com.zedread.pos.ui.theme.LocalZedReadColors
 import com.zedread.pos.ui.theme.ZedReadColors
@@ -67,6 +67,7 @@ import com.zedread.pos.ui.viewmodel.ModifierSheetState
 import com.zedread.pos.ui.viewmodel.OrderType
 import com.zedread.pos.ui.viewmodel.SellViewModel
 import com.zedread.pos.ui.viewmodel.SyncViewModel
+import com.zedread.pos.ui.viewmodel.TopBarViewModel
 
 /**
  * Register (order-entry) screen — exact-match layout to
@@ -93,8 +94,10 @@ fun OrderEntryScreen(
     onInvoiceSearch: () -> Unit,
     viewModel: SellViewModel = hiltViewModel(),
     syncViewModel: SyncViewModel = hiltViewModel(),
+    topBarViewModel: TopBarViewModel = hiltViewModel(),
 ) {
     val colors = LocalZedReadColors.current
+    val deviceName by topBarViewModel.deviceName.collectAsState()
     val categories by viewModel.categories.collectAsState()
     val products by viewModel.products.collectAsState()
     val selectedCatId by viewModel.selectedCategoryId.collectAsState()
@@ -108,6 +111,8 @@ fun OrderEntryScreen(
     val menuLayouts by viewModel.menuLayouts.collectAsState()
     val selectedMenuLayoutId by viewModel.selectedMenuLayoutId.collectAsState()
     val isMenuManualOverride by viewModel.isMenuManualOverride.collectAsState()
+    val currentMenuLayout by viewModel.currentMenuLayout.collectAsState()
+    val effectiveTabId by viewModel.effectiveTabId.collectAsState()
 
     val isOnline by syncViewModel.isOnline.collectAsState()
     val pendingCount by syncViewModel.pendingCount.collectAsState()
@@ -116,13 +121,28 @@ fun OrderEntryScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().background(colors.bg)) {
-            RegisterHeader(
-                selectedCategoryName = categories.firstOrNull { it.id == selectedCatId }?.name,
-                onSwitchUser = onSwitchUser,
-                onCashUp = onCashUp,
-                onSettings = onSettings,
-                onInvoiceSearch = onInvoiceSearch,
-            )
+            PosTopBar(
+                title = deviceName ?: "Register",
+                subtitle = currentMenuLayout?.tabs?.firstOrNull { it.id == effectiveTabId }?.name
+                    ?: categories.firstOrNull { it.id == selectedCatId }?.name
+                    ?: "All Items",
+                isOnline = isOnline,
+                pendingCount = pendingCount,
+                onSyncClick = { showSyncPanel = true },
+            ) {
+                IconButton(onClick = onInvoiceSearch) {
+                    Icon(Icons.Default.History, contentDescription = "Invoice search", tint = colors.muted)
+                }
+                IconButton(onClick = onSettings) {
+                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = colors.muted)
+                }
+                IconButton(onClick = onCashUp) {
+                    Icon(Icons.Default.AttachMoney, contentDescription = "Cash up", tint = colors.muted)
+                }
+                IconButton(onClick = onSwitchUser) {
+                    Icon(Icons.Default.Person, contentDescription = "Switch operator", tint = colors.muted)
+                }
+            }
 
             Row(modifier = Modifier.fillMaxSize()) {
                 Column(modifier = Modifier.fillMaxHeight()) {
@@ -132,19 +152,43 @@ fun OrderEntryScreen(
                         isManualOverride = isMenuManualOverride,
                         onSelect = viewModel::selectMenuLayout,
                     )
-                    CategoryRail(
-                        categories = categories,
-                        selectedCatId = selectedCatId,
-                        onSelect = viewModel::selectCategory,
-                        modifier = Modifier.weight(1f),
-                    )
+                    val layoutForRail = currentMenuLayout
+                    if (layoutForRail != null) {
+                        MenuTabRail(
+                            layout = layoutForRail,
+                            effectiveTabId = effectiveTabId,
+                            onSelectTab = viewModel::selectTab,
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        CategoryRail(
+                            categories = categories,
+                            selectedCatId = selectedCatId,
+                            onSelect = viewModel::selectCategory,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
 
                 Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                    ProductGrid(
-                        products = products,
-                        onProductTap = viewModel::addToCart,
-                    )
+                    val layoutForGrid = currentMenuLayout
+                    if (layoutForGrid != null) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            MenuBreadcrumb(layout = layoutForGrid, tabId = effectiveTabId, onSelectTab = viewModel::selectTab)
+                            MenuTileGrid(
+                                layout = layoutForGrid,
+                                tabId = effectiveTabId,
+                                onProductTap = viewModel::addToCartByRef,
+                                onFolderTap = viewModel::selectTab,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    } else {
+                        ProductGrid(
+                            products = products,
+                            onProductTap = viewModel::addToCart,
+                        )
+                    }
                     if (cartActionState is CartActionState.Loading) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
@@ -178,6 +222,7 @@ fun OrderEntryScreen(
                 state = modifierSheetState,
                 onDismiss = viewModel::closeModifierSheet,
                 onToggleChoice = viewModel::toggleModifierChoice,
+                onToggleLinkedChoice = viewModel::toggleLinkedChoice,
                 onQtyDec = { viewModel.changeModifierSheetQuantity(-1) },
                 onQtyInc = { viewModel.changeModifierSheetQuantity(1) },
                 onConfirm = viewModel::confirmModifierSheet,
@@ -204,14 +249,6 @@ fun OrderEntryScreen(
             )
         }
 
-        // Persistent, unobtrusive — never blocks the sell loop underneath it.
-        SyncStatusBadge(
-            isOnline = isOnline,
-            pendingCount = pendingCount,
-            onClick = { showSyncPanel = true },
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 76.dp, end = 16.dp),
-        )
-
         if (showSyncPanel) {
             SyncPanel(
                 isOnline = isOnline,
@@ -219,49 +256,6 @@ fun OrderEntryScreen(
                 onSyncNow = syncViewModel::syncNow,
                 onDismiss = { showSyncPanel = false },
             )
-        }
-    }
-}
-
-@Composable
-private fun RegisterHeader(
-    selectedCategoryName: String?,
-    onSwitchUser: () -> Unit,
-    onCashUp: () -> Unit,
-    onSettings: () -> Unit,
-    onInvoiceSearch: () -> Unit,
-) {
-    val colors = LocalZedReadColors.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(colors.surface)
-            .border(width = 1.dp, color = colors.border)
-            .padding(horizontal = 22.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column {
-            Text("Register", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = colors.text)
-            Text(
-                (selectedCategoryName ?: "All Items").uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.faint,
-            )
-        }
-        Row {
-            IconButton(onClick = onInvoiceSearch) {
-                Icon(Icons.Default.History, contentDescription = "Invoice search", tint = colors.muted)
-            }
-            IconButton(onClick = onSettings) {
-                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = colors.muted)
-            }
-            IconButton(onClick = onCashUp) {
-                Icon(Icons.Default.AttachMoney, contentDescription = "Cash up", tint = colors.muted)
-            }
-            IconButton(onClick = onSwitchUser) {
-                Icon(Icons.Default.Person, contentDescription = "Switch operator", tint = colors.muted)
-            }
         }
     }
 }
@@ -494,7 +488,7 @@ private fun OrderPane(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            ticketNumber?.toString() ?: "–",
+                            ticketNumber?.let { "#$it" } ?: "–",
                             color = colors.accent,
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.labelMedium,

@@ -70,6 +70,21 @@ private val MIGRATION_3_4 = object : Migration(3, 4) {
     }
 }
 
+/**
+ * Adds invoice_cache.ref (schema version 4 -> 5) — the human-readable
+ * INV-000001 reference Invoice Search now searches by. A real migration for
+ * the same reason MIGRATION_2_3/3_4 are: a destructive rebuild on this hop
+ * would also wipe outbox_items. invoice_cache itself is individually
+ * re-derivable (AppDatabase's own doc), so an empty default here is fine —
+ * corrected on the next GET /invoices backfill (refreshCacheFromServer()),
+ * same convention as products.ref's own empty-then-refreshed default.
+ */
+private val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE invoice_cache ADD COLUMN ref TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 /** Provides the Room database and its DAOs. */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -79,8 +94,8 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "zedread_pos.db")
-            .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
-            .fallbackToDestructiveMigration() // last resort only — MIGRATION_2_3/3_4 handle the hops that exist today
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .fallbackToDestructiveMigration() // last resort only — MIGRATION_2_3/3_4/4_5 handle the hops that exist today
             .build()
 
     @Provides
