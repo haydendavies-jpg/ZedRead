@@ -27,7 +27,7 @@ here in a new session — read the Status section first, then the phase you're o
 | 2 | Android — Settings screen + denomination-grid cash-in/cash-up variant | ✅ Done — see below |
 | 2 | Android — offline write-queue, sync indicator, invoice search | ✅ Done — see below |
 | 3 | Menu Studio → POS integration depth (recurring scheduling, menu selector) | ✅ Done — see below |
-| 4 | Table maps & floor service | 🔲 Not started |
+| 4 | Table maps & floor service | ✅ Done — see below |
 
 **Next up:** Phase 1 is functionally complete on both backend and Android, including a round of fixes
 from real on-device testing. What's left before calling Phase 1 fully done is verification: a real
@@ -41,7 +41,51 @@ invoice search (items 5–7). See "What the Phase 2 offline write-queue slice sh
 integration depth) is now also done — see "What the Phase 3 slice shipped" below. Phase 2 and Phase 3
 are not yet verified against a real build/emulator (same standing constraint as every Android slice)
 — that, plus Phase 1's own pending verification, are the things blocking calling any of the three
-"done" with full confidence. Next up after that verification pass: Phase 4 (table maps), not started.
+"done" with full confidence. Phase 4 (table maps & floor service) is now also done — see "What the
+Phase 4 slice shipped" below. Next up: the standing real-build/emulator verification pass across all
+four phases.
+
+**What the Phase 4 slice shipped** (this session): table maps & floor service, backend/portal/Android, per
+`README-tables-floormap.md`.
+- **Backend**: new `table_maps`/`table_map_shapes` tables (migration `0056`) — portal-authored floor layouts,
+  mirroring `menu_layouts`/`menu_buttons`'s position/size/publish pattern. A shape's `kind` is either a seatable
+  table (`stool`/`round`/`rect`, each gets a 1:1 `dining_tables` row) or decorative (`zone`/`bar_counter`/
+  `entrance`/`wall`, never linked to a table). New `dining_tables`/`table_sessions` live-status layer:
+  `table_sessions.status ∈ {seated, ordered, bill}` deliberately excludes an `open` value — an unoccupied table is
+  `dining_tables.active_session_id IS NULL`, not a session row carrying `status='open'`; closing a session sets
+  `closed_at` rather than deleting the row, so a new seating creates a fresh row and history is preserved.
+  `invoices.table_session_id` (migration `0057`, nullable) carries the Register hand-off. `GET /pos/table-map?
+  site_id=` mirrors `GET /pos/menu-layout?site_id=`'s POS/management dual-auth convention; status-mutation routes
+  (`POST /pos/dining-tables/{id}/seat`, `.../reserve`, `POST /pos/table-sessions/{id}/order`, `.../bill`,
+  `.../merge`, `.../clear`) use `client_ref`/checksum idempotency on the row-creating `seat` call, matching Phase
+  2's established pattern. New `table_maps` page-permission key (Product & Menus category, PRO/ENTERPRISE tiers,
+  portal-side gated like `menu_layouts`). 33 new backend tests; full suite 942/942 passing against real Postgres 16
+  through migration `0057`. One real bug found by CI and fixed: `duplicate_table_map`'s per-shape `DiningTable`
+  insert raced ahead of its new shape's own row (an explicit `db.flush()` between them was needed — the two
+  `use_alter`'d circular FK constraints from migration `0056` aren't picked up by SQLAlchemy's automatic
+  dependency-sort between these two tables the way a plain FK would be).
+- **Portal**: new `TableMapsPage.tsx` (`/management/table-maps`) — a list view (site filter, publish/unpublish,
+  duplicate, delete) plus a free-form percentage-based canvas editor, reusing `MenuBuilderPage.tsx`'s pointer-based
+  drag/resize-with-live-preview technique adapted from discrete grid cells to continuous `x`/`y`/`w`/`h` percentages
+  (table maps aren't grid-cell-sized the way menu buttons are). `grid_size` is treated as a percent-of-stage snap
+  pitch, applied when `is_grid_locked` is on; zoom scales the stage's explicit pixel dimensions (not a CSS
+  `transform`) so percentage-positioned children scale cleanly. Site selection reuses `DevicesPage.tsx`'s existing
+  `<select>`-from-`fetchAll<Site>` pattern rather than `MenuBuilderPage`'s raw-UUID-paste fallback. `npm run build`
+  clean.
+- **Android**: `TablesScreen.kt` (floor tabs, zone/table canvas positioned by stage-relative percentages, status
+  legend, selection bar with detail chips computed client-side from `seated_at`/`last_touch_at` timestamps, the full
+  merge-arm/complete flow with a 1600ms auto-dismiss toast) polls `GET /pos/table-map` every 8s while visible. First
+  screen in this app needing chrome shared across routes: `MainScaffold`/`TopNavBar` (Register/Tables/Online — Online
+  a disabled, non-interactive placeholder per this plan's explicit exclusion, theme toggle, static-initial avatar)
+  wraps both the Register and Tables nav destinations without disturbing `OrderEntryScreen`'s existing
+  `hiltViewModel()` scoping; switching tabs uses the standard Navigation-Compose save/restoreState pattern so an
+  in-progress cart survives a trip to Tables and back. The selection bar's primary action is status-dependent: an
+  **open** table (no session) gets "Seat table →" (a covers-count dialog, then `POST .../seat`); a **seated/
+  ordered/bill** table gets **"Open order →"**, which navigates into Register with `tableSessionId` as a nav arg,
+  threaded through `SellViewModel` (via `SavedStateHandle`) into its invoice-creation call sites — only on the first
+  invoice of a fresh sell session, mirroring how `client_ref` is already scoped there. **Not verified against a real
+  build** — same standing constraint as every prior Android slice; checked via brace/paren balance and a symbol
+  cross-reference sweep instead of compilation.
 
 **What the Phase 3 slice shipped** (this session): re-scoped against current code first, per this
 plan's own flag below — the standalone `menus` entity this section originally described scheduling
