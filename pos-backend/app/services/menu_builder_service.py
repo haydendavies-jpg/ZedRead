@@ -338,6 +338,33 @@ async def _validate_site(db: AsyncSession, brand_id: uuid.UUID, site_id: uuid.UU
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="site_id does not belong to this brand")
 
 
+async def _clear_other_default_layouts(
+    db: AsyncSession, brand_id: uuid.UUID, scope: str, site_id: uuid.UUID | None, exclude_layout_id: uuid.UUID
+) -> None:
+    """
+    Clear is_default on every other layout sharing the same scope grouping.
+
+    scope='site' groups by site_id (one default per site); scope='brand'
+    groups by brand_id (one brand-wide default). Mirrors
+    access_grant_service's set_default_grant convention — no audit row is
+    written for the cleared siblings, only for the target layout's own change.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand the layout belongs to.
+        scope: 'brand' or 'site' — which grouping to clear defaults within.
+        site_id: Required when scope='site'.
+        exclude_layout_id: The layout being set as default — left untouched here.
+    """
+    conditions = [MenuLayout.brand_id == brand_id, MenuLayout.scope == scope, MenuLayout.is_default.is_(True),
+                  MenuLayout.id != exclude_layout_id]
+    if scope == "site":
+        conditions.append(MenuLayout.site_id == site_id)
+    result = await db.execute(select(MenuLayout).where(*conditions))
+    for other in result.scalars().all():
+        other.is_default = False
+
+
 async def create_menu_layout(
     db: AsyncSession,
     brand_id: uuid.UUID,
@@ -428,6 +455,13 @@ async def update_menu_layout(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="start_time and end_time are required when is_all_day=False",
         )
+
+    if payload.is_default is not None:
+        before["is_default"] = layout.is_default
+        if payload.is_default:
+            await _clear_other_default_layouts(db, brand_id, layout.scope, layout.site_id, layout.id)
+        layout.is_default = payload.is_default
+        after["is_default"] = payload.is_default
 
     await log_action(
         db=db,
@@ -1290,22 +1324,48 @@ def _layout_active_now(layout: MenuLayout) -> bool:
     return layout.start_time <= now.time() <= layout.end_time
 
 
+def _resolve_effective_default_layout_id(layouts: list[MenuLayout]) -> uuid.UUID | None:
+    """
+    Pick which currently-active layout (if any) is the site's effective default.
+
+    A site's own is_default scope='site' layout takes precedence over the
+    brand-wide is_default scope='brand' fallback — a site opting into its own
+    daypart default shouldn't be overridden by the brand default. Returns
+    None if nothing among the active set is marked default (the Android
+    client then has no highlighted default; the first published layout is a
+    reasonable fallback on that side, not this one's concern).
+
+    Args:
+        layouts: The currently-active, published layouts already resolved for one site.
+
+    Returns:
+        uuid.UUID | None: The winning layout's id, or None.
+    """
+    site_default = next((layout for layout in layouts if layout.scope == "site" and layout.is_default), None)
+    if site_default is not None:
+        return site_default.id
+    brand_default = next((layout for layout in layouts if layout.scope == "brand" and layout.is_default), None)
+    return brand_default.id if brand_default is not None else None
+
+
 async def get_published_menu_layouts_for_site(db: AsyncSession, site: Site) -> list[dict]:
     """
     Fetch every published, currently-active menu layout visible to a site.
 
-    This is the read-only contract Android will eventually consume via
-    GET /pos/menu-layout?site_id=. Android-side consumption is out of scope;
-    only the contract is built. "Currently-active" applies each layout's own
-    active-time/day-of-week window (distinct from is_published — see
-    MenuLayout's docstring).
+    This is the read-only contract Android consumes via
+    GET /pos/menu-layout?site_id= to power the Register header's menu
+    selector. "Currently-active" applies each layout's own active-time/
+    day-of-week window (distinct from is_published — see MenuLayout's
+    docstring). Exactly one of the returned layouts (or none) is flagged
+    'is_effective_default' — see _resolve_effective_default_layout_id.
 
     Args:
         db: Active database session.
         site: The site to resolve visible published layouts for.
 
     Returns:
-        list[dict]: Each dict has keys 'layout' (MenuLayout) and 'tabs' (list[MenuTabOut]).
+        list[dict]: Each dict has keys 'layout' (MenuLayout), 'tabs'
+            (list[MenuTabOut]), and 'is_effective_default' (bool).
     """
     result = await db.execute(
         select(MenuLayout).where(
@@ -1315,7 +1375,12 @@ async def get_published_menu_layouts_for_site(db: AsyncSession, site: Site) -> l
         )
     )
     layouts = [layout for layout in result.scalars().all() if _layout_active_now(layout)]
+    default_id = _resolve_effective_default_layout_id(layouts)
     return [
-        {"layout": layout, "tabs": await _load_tabs_with_buttons(db, site.brand_id, layout.id)}
+        {
+            "layout": layout,
+            "tabs": await _load_tabs_with_buttons(db, site.brand_id, layout.id),
+            "is_effective_default": layout.id == default_id,
+        }
         for layout in layouts
     ]

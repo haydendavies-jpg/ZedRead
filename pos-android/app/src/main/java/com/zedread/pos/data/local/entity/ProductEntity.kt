@@ -8,6 +8,8 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "products")
 data class ProductEntity(
     @PrimaryKey val id: String,
+    // Matches a menu_buttons.product_ref value — lets the menu selector filter this cache by layout.
+    val ref: String,
     @ColumnInfo(name = "category_id") val categoryId: String,
     val name: String,
     val description: String?,

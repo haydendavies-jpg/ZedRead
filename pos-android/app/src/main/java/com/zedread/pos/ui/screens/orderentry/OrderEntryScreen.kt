@@ -29,6 +29,8 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -50,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.zedread.pos.data.api.LineItemDto
+import com.zedread.pos.data.api.PosMenuLayoutDto
 import com.zedread.pos.data.local.entity.CategoryEntity
 import com.zedread.pos.data.local.entity.ProductEntity
 import com.zedread.pos.ui.components.SyncPanel
@@ -102,6 +105,9 @@ fun OrderEntryScreen(
     val selectedLineItemId by viewModel.selectedLineItemId.collectAsState()
     val modifierSheetState by viewModel.modifierSheetState.collectAsState()
     val paymentState by viewModel.paymentState.collectAsState()
+    val menuLayouts by viewModel.menuLayouts.collectAsState()
+    val selectedMenuLayoutId by viewModel.selectedMenuLayoutId.collectAsState()
+    val isMenuManualOverride by viewModel.isMenuManualOverride.collectAsState()
 
     val isOnline by syncViewModel.isOnline.collectAsState()
     val pendingCount by syncViewModel.pendingCount.collectAsState()
@@ -119,11 +125,20 @@ fun OrderEntryScreen(
             )
 
             Row(modifier = Modifier.fillMaxSize()) {
-                CategoryRail(
-                    categories = categories,
-                    selectedCatId = selectedCatId,
-                    onSelect = viewModel::selectCategory,
-                )
+                Column(modifier = Modifier.fillMaxHeight()) {
+                    MenuSelectorRow(
+                        layouts = menuLayouts,
+                        selectedId = selectedMenuLayoutId,
+                        isManualOverride = isMenuManualOverride,
+                        onSelect = viewModel::selectMenuLayout,
+                    )
+                    CategoryRail(
+                        categories = categories,
+                        selectedCatId = selectedCatId,
+                        onSelect = viewModel::selectCategory,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
 
                 Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                     ProductGrid(
@@ -252,12 +267,16 @@ private fun RegisterHeader(
 }
 
 @Composable
-private fun CategoryRail(categories: List<CategoryEntity>, selectedCatId: String?, onSelect: (String?) -> Unit) {
+private fun CategoryRail(
+    categories: List<CategoryEntity>,
+    selectedCatId: String?,
+    onSelect: (String?) -> Unit,
+    modifier: Modifier = Modifier.fillMaxHeight(),
+) {
     val colors = LocalZedReadColors.current
     LazyColumn(
-        modifier = Modifier
+        modifier = modifier
             .width(200.dp)
-            .fillMaxHeight()
             .background(colors.surface)
             .border(width = 1.dp, color = colors.border),
     ) {
@@ -269,6 +288,73 @@ private fun CategoryRail(categories: List<CategoryEntity>, selectedCatId: String
                 selected = selectedCatId == cat.id,
                 onClick = { onSelect(cat.id) },
             )
+        }
+    }
+}
+
+/**
+ * Menu selector (Android POS Phase 3 — Menu Studio -> POS integration
+ * depth): lets staff switch among the site's currently-active published
+ * menu layouts, filtering the product grid to that layout's product_refs.
+ * Renders nothing when the site has none (the grid stays unfiltered, same
+ * as before this control existed — no empty/disabled control cluttering
+ * the rail for a brand that hasn't adopted Menu Studio layouts).
+ *
+ * A star marks the schedule-active default; a "MANUAL" chip replaces it
+ * once staff pick anything else, distinguishing an intentional override
+ * from the schedule's own choice — cleared back to the star automatically
+ * once the current sale completes (see SellViewModel.completePaymentAndStartNewOrder).
+ */
+@Composable
+private fun MenuSelectorRow(
+    layouts: List<PosMenuLayoutDto>,
+    selectedId: String?,
+    isManualOverride: Boolean,
+    onSelect: (String?) -> Unit,
+) {
+    if (layouts.isEmpty()) return
+    val colors = LocalZedReadColors.current
+    var expanded by remember { mutableStateOf(false) }
+    val selected = layouts.firstOrNull { it.id == selectedId }
+
+    Box(modifier = Modifier.width(200.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(colors.surface)
+                .border(width = 1.dp, color = colors.border)
+                .clickable { expanded = true }
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(selected?.color?.let { parseHexColor(it) } ?: colors.accent),
+                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text(selected?.name ?: "All items", style = MaterialTheme.typography.labelLarge, color = colors.text)
+                    Text(
+                        if (isManualOverride) "MANUAL" else if (selected != null) "SCHEDULED" else "",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isManualOverride) colors.accent else colors.faint,
+                    )
+                }
+            }
+            Text("▾", color = colors.muted)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(text = { Text("All items") }, onClick = { onSelect(null); expanded = false })
+            layouts.forEach { layout ->
+                DropdownMenuItem(
+                    text = { Text(layout.name + if (layout.isEffectiveDefault) " ★" else "") },
+                    onClick = { onSelect(layout.id); expanded = false },
+                )
+            }
         }
     }
 }

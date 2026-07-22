@@ -184,6 +184,7 @@ class MenuLayoutOut(BaseModel):
     end_time: time | None
     active_days: list[int]
     scheduled_publish_at: datetime | None
+    is_default: bool
     button_count: int = 0
     created_at: datetime
     updated_at: datetime
@@ -195,6 +196,21 @@ class MenuLayoutDetail(MenuLayoutOut):
     """Full menu layout detail — every tab (flat, arbitrarily nested via parent_tab_id), each with ordered resolved buttons."""
 
     tabs: list[MenuTabOut]
+
+
+class PosMenuLayoutDetail(MenuLayoutDetail):
+    """
+    GET /pos/menu-layout's per-layout response shape.
+
+    is_effective_default is computed per-request (not the stored is_default
+    column directly): among the currently-active published layouts returned
+    for a site, at most one has is_effective_default=True — a site's own
+    is_default site-scope layout takes precedence over the brand-wide
+    is_default fallback. Lets Android distinguish the schedule-active
+    default from a layout the staff manually switched to.
+    """
+
+    is_effective_default: bool = False
 
 
 class MenuLayoutCreate(BaseModel):
@@ -215,6 +231,10 @@ class MenuLayoutUpdate(BaseModel):
     start_time: time | None = None
     end_time: time | None = None
     active_days: list[int] | None = Field(None, description="0=Monday .. 6=Sunday")
+    is_default: bool | None = Field(
+        None,
+        description="Set True to make this the scheduled/default layout for its scope, clearing any other default in the same scope",
+    )
 
 
 class MenuLayoutSchedulePublish(BaseModel):

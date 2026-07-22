@@ -167,6 +167,9 @@ data class RegisterSessionDto(
 @JsonClass(generateAdapter = true)
 data class ProductDto(
     val id: String,
+    // Matches a menu_buttons.product_ref value (Menu Studio POS Layout) so
+    // the Register screen can filter its grid down to a selected menu layout.
+    val ref: String,
     @Json(name = "brand_id") val brandId: String,
     @Json(name = "category_id") val categoryId: String,
     val name: String,
@@ -215,6 +218,49 @@ data class CategoryDto(
     @Json(name = "display_order") val displayOrder: Int,
     @Json(name = "default_color") val defaultColor: String,
 )
+
+// ── Menu layouts (Phase 3 — Menu Studio -> POS integration depth) ──────────
+//
+// Mirrors PosMenuLayoutDetail / MenuTabOut / MenuButtonOut in
+// app/schemas/menu_layout.py, trimmed to only the fields the Register
+// screen's menu selector needs: which layouts are available, which one the
+// schedule currently favours (isEffectiveDefault), and — flattened
+// recursively across every tab, including nested folder tabs — the set of
+// product refs the layout includes, used to filter the product grid.
+// Everything else about a layout (tabs-as-rail navigation, button
+// size/position/colour) is the portal grid editor's own concern, not
+// reproduced on the POS.
+
+/** One button within a menu tab — only the fields needed to resolve included product_refs. */
+@JsonClass(generateAdapter = true)
+data class PosMenuButtonDto(
+    val kind: String,
+    @Json(name = "product_ref") val productRef: String?,
+)
+
+/** One tab within a menu layout, with its buttons — tabs.buttons(kind='product') are what get filtered on. */
+@JsonClass(generateAdapter = true)
+data class PosMenuTabDto(
+    val id: String,
+    val buttons: List<PosMenuButtonDto>,
+)
+
+/** GET /pos/menu-layout's per-layout response — one currently-active published layout for the site. */
+@JsonClass(generateAdapter = true)
+data class PosMenuLayoutDto(
+    val id: String,
+    val name: String,
+    val color: String,
+    @Json(name = "is_effective_default") val isEffectiveDefault: Boolean,
+    val tabs: List<PosMenuTabDto>,
+) {
+    /** Every distinct product_ref referenced by a product button anywhere in this layout (any nesting depth). */
+    val productRefs: Set<String>
+        get() = tabs.flatMap { it.buttons }
+            .filter { it.kind == "product" }
+            .mapNotNull { it.productRef }
+            .toSet()
+}
 
 // ── Invoices ──────────────────────────────────────────────────────────────
 //

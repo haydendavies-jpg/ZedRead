@@ -26,7 +26,7 @@ here in a new session — read the Status section first, then the phase you're o
 | — | Portal — brand-scoped License & Billing page (seat editing for Admin/Master User, not just SuperAdmin) | ✅ Done — see below |
 | 2 | Android — Settings screen + denomination-grid cash-in/cash-up variant | ✅ Done — see below |
 | 2 | Android — offline write-queue, sync indicator, invoice search | ✅ Done — see below |
-| 3 | Menu Studio → POS integration depth (recurring scheduling, menu selector) | 🔲 Not started |
+| 3 | Menu Studio → POS integration depth (recurring scheduling, menu selector) | ✅ Done — see below |
 | 4 | Table maps & floor service | 🔲 Not started |
 
 **Next up:** Phase 1 is functionally complete on both backend and Android, including a round of fixes
@@ -35,13 +35,34 @@ Gradle build + emulator run (still blocked in this sandbox, see below) and manua
 round-trip end to end. One item from this round's feedback is still open pending user input — see
 "colour branding" below. Phase 2 is now fully built end to end: the backend foundations (settings
 framework, idempotency, checksum verification — items 1–3), the Android Settings screen +
-denomination-grid cash-in/cash-up variant (item 4), and — this session — the offline write-queue,
-sync indicator, and invoice search (items 5–7). See "What the Phase 2 offline write-queue slice
-shipped" below and `STAGE_STATUS.md`'s "Android POS Phase 2" entries for full detail. Phase 2 as a
-whole is not yet verified against a real build/emulator (same standing constraint as every Android
-slice) — that, plus Phase 1's own pending verification, are the two things blocking calling either
-phase "done" with full confidence. Next up after that verification pass: Phase 3 (Menu Studio → POS
-integration depth) or Phase 4 (table maps), neither started.
+denomination-grid cash-in/cash-up variant (item 4), and the offline write-queue, sync indicator, and
+invoice search (items 5–7). See "What the Phase 2 offline write-queue slice shipped" below and
+`STAGE_STATUS.md`'s "Android POS Phase 2" entries for full detail. Phase 3 (Menu Studio → POS
+integration depth) is now also done — see "What the Phase 3 slice shipped" below. Phase 2 and Phase 3
+are not yet verified against a real build/emulator (same standing constraint as every Android slice)
+— that, plus Phase 1's own pending verification, are the things blocking calling any of the three
+"done" with full confidence. Next up after that verification pass: Phase 4 (table maps), not started.
+
+**What the Phase 3 slice shipped** (this session): re-scoped against current code first, per this
+plan's own flag below — the standalone `menus` entity this section originally described scheduling
+against was already removed (`STAGE_STATUS.md` "Menus tab removal"); `menu_layouts` already carries
+its draft/schedule/publish lifecycle plus Phase 2's active-time/day-of-week scheduling directly. The
+only missing piece was resolving **which** currently-active layout is the schedule's own default
+when more than one applies to a site at once — backend: `menu_layouts.is_default` (migration `0055`,
+scoped per-site or per-brand, service-enforced single-default like `UserAccessGrant.is_default`) plus
+a per-request `is_effective_default` on `GET /pos/menu-layout` (a site's own default wins over the
+brand-wide one); portal: a "★ Default" pill + set/unset action on `MenuBuilderPage.tsx`'s layout list.
+Android: `GET /pos/menu-layout` consumed for the first time (built in Stage 23, never called until
+now) via a new `MenuLayoutRepository` + trimmed `PosMenuLayoutDto` family; `ProductDto`/`ProductEntity`
+gained `ref` (Room bumped 3→4, a real migration since `outbox_items`/`invoice_cache` must survive);
+`SellViewModel` gained the selector's state (`menuLayouts`/`selectedMenuLayoutId`/`isMenuManualOverride`)
+and filters `products` to the selected layout's product_refs, falling back to the full catalog when
+none is selected or the layout has no product buttons; `completePaymentAndStartNewOrder()` reverts to
+the schedule's own default after every completed sale. `OrderEntryScreen.kt` gained `MenuSelectorRow`
+— a dropdown pill above the category rail, SCHEDULED/MANUAL label, ★ marking the default in the list.
+5 new backend tests (full suite passing against real Postgres 16 through migration `0055`; portal
+`npm run build` clean). **Not verified against a real build** — same standing constraint as every
+prior Android slice; see `STAGE_STATUS.md` for the manual verification steps taken instead.
 
 **What the Phase 2 offline write-queue slice shipped** (this session): items 5–7 of Phase 2's build
 order — see `STAGE_STATUS.md`'s "Android POS Phase 2 — Offline write-queue, sync indicator & invoice
@@ -648,23 +669,28 @@ Moves from "one published layout" to the full multi-menu, scheduled-default beha
 described.
 
 **Backend**
-- `menus` (the standalone entity) was **removed entirely** post-Phase-1 as redundant (see
+- ✅ `menus` (the standalone entity) was **removed entirely** post-Phase-1 as redundant (see
   `STAGE_STATUS.md` "Menus tab removal") — its draft/schedule/publish lifecycle already lives directly
-  on `menu_layouts`. This phase's "recurring daypart scheduling + default menu" work now targets
-  `menu_layouts`' site-assignment model instead of the removed `menus` table — re-scope against
-  current code before starting, this plan predates that removal.
-- Add recurring **daypart** scheduling (`is_all_day`/`start_time`/`end_time`/`active_days`, which
-  `menu_layouts` already has) at the site-assignment level, plus an **`is_default`** flag per site
-  assignment so exactly one layout is the scheduled/default choice for a given site at a given time.
-- Portal: an **assign-to-site** selector (which layouts are available to which sites, and which is
-  default) — `menu_layouts` today publish per brand/site scope already; confirm what's actually
-  missing before building.
+  on `menu_layouts`. This phase's "recurring daypart scheduling + default menu" work targeted
+  `menu_layouts`' site-assignment model instead of the removed `menus` table.
+- ✅ Recurring **daypart** scheduling (`is_all_day`/`start_time`/`end_time`/`active_days`) already
+  existed on `menu_layouts` from Phase 2's grid editor — confirmed rather than rebuilt. Added the
+  missing piece: an **`is_default`** flag (migration `0055`), scoped per-site (`scope='site'`) or
+  per-brand (`scope='brand'`) with service-enforced single-default (mirrors
+  `UserAccessGrant.is_default`), so exactly one layout resolves as the scheduled/default choice for a
+  given site at a given time (`is_effective_default` on `GET /pos/menu-layout`, a site's own default
+  taking precedence over the brand-wide one).
+- ✅ Portal: confirmed `menu_layouts` already publish per brand/site scope (no missing "assign-to-site"
+  selector needed) — added a "★ Default" pill + set/unset action to `MenuBuilderPage.tsx`'s layout
+  list instead, the actual missing piece.
 
 **Android**
-- **Menu selector** control (Register header, near the category rail): lets staff switch among
-  published menu layouts granted to the site; visually distinguishes the schedule-active default from
-  a manually overridden choice; after a completed transaction the app reverts to whichever layout is
-  scheduled-active at that moment.
+- ✅ **Menu selector** control (Register header, near the category rail): lets staff switch among
+  published menu layouts granted to the site (`GET /pos/menu-layout`, consumed for the first time);
+  visually distinguishes the schedule-active default (★, "SCHEDULED" label) from a manually overridden
+  choice ("MANUAL" label); after a completed transaction the app reverts to whichever layout is
+  scheduled-active at that moment (`completePaymentAndStartNewOrder()` → `refreshMenuLayouts(forceDefaultSelection
+  = true)`). See `STAGE_STATUS.md` "Android POS Phase 3" for full deliverables.
 
 ---
 

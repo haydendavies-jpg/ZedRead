@@ -54,6 +54,22 @@ private val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
+/**
+ * Adds products.ref (schema version 3 -> 4) — matches a menu_buttons.product_ref
+ * value so the Register screen's menu selector (Android POS Phase 3) can filter
+ * the cached catalog to a chosen layout. A real migration, not
+ * fallbackToDestructiveMigration, for the same reason MIGRATION_2_3 is one:
+ * a destructive rebuild on this hop would also wipe outbox_items/invoice_cache,
+ * which must survive an app update. Existing cached rows get an empty ref
+ * (refetched with the real value on the very next [CatalogRepository.refresh]
+ * call, which already runs on every app launch — never left stale).
+ */
+private val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE products ADD COLUMN ref TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 /** Provides the Room database and its DAOs. */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -63,8 +79,8 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "zedread_pos.db")
-            .addMigrations(MIGRATION_2_3)
-            .fallbackToDestructiveMigration() // last resort only — MIGRATION_2_3 handles the one hop that exists today
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+            .fallbackToDestructiveMigration() // last resort only — MIGRATION_2_3/3_4 handle the hops that exist today
             .build()
 
     @Provides
