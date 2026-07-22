@@ -1383,11 +1383,53 @@ sync indicator, invoice search) is **not** part of this slice — see "Next up" 
       verified against a real local Postgres 16 instance with migrations applied through `0053`.
 - [x] Portal `npm run build` (tsc + vite) verified clean with the new `SettingsPage.tsx`.
 
-**Next up:** Android-side consumption — items 4–7 of the Phase 2 build order (Settings screen,
-denomination-grid cash-in/cash-up variant, offline write-queue/WorkManager outbox, the
-Offline·N-pending sync indicator and panel, invoice search/history) — plus the usual "not verified
-against a real build" caveat once that Android work starts (this sandbox still can't reach Google's
-Maven repo).
+**Next up:** Android-side consumption of the offline-queue foundations — items 5–7 of the Phase 2
+build order (offline write-queue/WorkManager outbox, the Offline·N-pending sync indicator and panel,
+invoice search/history). Item 4 (Settings screen + denomination-grid cash-in/cash-up variant) is done
+— see the entry directly below.
+
+---
+
+### Android POS Phase 2 — Settings screen & denomination-grid cash entry (Android) ✅
+
+Item 4 of `ANDROID_POS_BUILD_PLAN.md`'s Phase 2 build order — the first Android consumer of the
+settings framework above, proving the pattern end to end on-device. Items 5–7 (offline write-queue,
+sync indicator, invoice search) are deliberately **not** part of this slice — see "Next up" above;
+the write-queue needs a new WorkManager Gradle dependency and a Room outbox schema, which this
+session judged better scoped on its own than folded in as a partial cut.
+
+**Deliverables:**
+- [x] `SettingDto`/`PosApiService.getSettings()` — mirrors `SettingOut` exactly. The polymorphic
+      `default_value`/`brand_value`/`site_value`/`effective_value` fields are typed `Any?`, resolved
+      by Moshi's built-in Any/Object adapter (the same mechanism that already backs `Map<String,
+      Any>` parsing elsewhere) rather than a registered custom adapter — no new Moshi setup needed.
+- [x] `SettingsRepository` — no local Room cache, unlike the product catalog: settings are small and
+      cheap enough to read fresh every time a screen needs them rather than kept warm for offline
+      browsing. `getCashSettings()` resolves `cash_in_mode`/`hide_variance_on_close` together and
+      falls back to the catalog's own defaults (bulk entry, variance shown) if the fetch fails, so a
+      settings outage never blocks opening or closing the till.
+- [x] **Settings screen** (`SettingsScreen.kt`/`SettingsViewModel.kt`) — read-only, search-filterable
+      (key/label/category, client-side) list of every setting resolved for the terminal's site.
+      Read-only is intentional, matching the backend's own read-only `GET /pos/settings` contract —
+      overrides are a portal-only capability (`SettingsPage.tsx`), not something this app writes. A
+      gear icon on the Register header (`RegisterHeader`, next to the existing Cash-up/Switch-operator
+      icons) is the entry point, wired as a new `Screen.Settings` nav destination.
+- [x] **Denomination-grid cash entry** (`CashDenominationGrid.kt`'s `DenominationGrid` composable) —
+      standard AUD note/coin rows ($100 down to 5c), each blank by default (not pre-filled zero, so an
+      untouched row can't be mistaken for a counted-and-confirmed zero), reporting a running total in
+      cents on every keystroke. `CashInScreen`/`CashUpScreen` each toggle between this and the
+      existing bulk-total field based on the `cash_in_mode` setting's effective value, via a new
+      `RegisterSessionViewModel.loadCashSettings()`/`cashSettings` StateFlow.
+- [x] **Hideable variance line** — `CashUpScreen`'s Closed-state summary collapses to a single
+      "Counted cash" row when `hide_variance_on_close` is set, instead of the
+      Expected/Counted/Variance three-row comparison.
+- **Not verified against a real build** — same standing constraint as every prior Android slice (this
+  sandbox can't reach Google's Maven repo, `gradle :app:compileDebugKotlin` fails at AGP plugin
+  resolution). Checked instead via a manual brace/paren balance pass on every new/changed file, a
+  cross-reference of every new type/import against its definition, and a repo-wide grep for stale or
+  missing call sites (the new `OrderEntryScreen(onSettings = …)` parameter, `Screen.Settings`,
+  `getSettings(` call sites) — all confirmed consistent. Needs a real compile + emulator run before
+  merging with confidence.
 
 ---
 

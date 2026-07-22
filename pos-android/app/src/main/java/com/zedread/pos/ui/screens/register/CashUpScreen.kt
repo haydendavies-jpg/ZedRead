@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -29,17 +31,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.zedread.pos.data.repository.CASH_IN_MODE_DENOMINATION
 import com.zedread.pos.ui.viewmodel.CashUpState
 import com.zedread.pos.ui.viewmodel.RegisterSessionViewModel
 
 /**
- * End-of-day cash-up: bulk-value entry only for Phase 1 — the
- * denomination-breakdown variant and the hide-variance option are both
- * Phase 2 settings. Closes this terminal's open till session
+ * End-of-day cash-up: bulk-total entry, or the same per-denomination
+ * breakdown grid CashInScreen uses when cash_in_mode is "denomination"; the
+ * Expected/Variance comparison is hidden when hide_variance_on_close is set
+ * (Phase 2 settings framework — see SettingsRepository), showing only the
+ * counted total. Closes this terminal's open till session
  * (POST /register-sessions/{id}/close); the operator stays logged in and the
  * device stays paired for the next shift — logging out is a separate,
- * explicit action that belongs in Settings (not built yet), not something
- * cash-up should force.
+ * explicit action reserved for the Settings screen, not something cash-up
+ * should force.
  */
 @Composable
 fun CashUpScreen(
@@ -47,14 +52,24 @@ fun CashUpScreen(
     viewModel: RegisterSessionViewModel = hiltViewModel(),
 ) {
     val state by viewModel.cashUpState.collectAsState()
+    val cashSettings by viewModel.cashSettings.collectAsState()
     var amount by remember { mutableStateOf("") }
+    var denominationTotalCents by remember { mutableStateOf(0L) }
 
-    LaunchedEffect(Unit) { viewModel.loadForCashUp() }
+    LaunchedEffect(Unit) {
+        viewModel.loadForCashUp()
+        viewModel.loadCashSettings()
+    }
+
+    val isDenominationMode = cashSettings.cashInMode == CASH_IN_MODE_DENOMINATION
+    val enteredCents = if (isDenominationMode) denominationTotalCents else dollarsToCents(amount)
+    val hasEntry = if (isDenominationMode) denominationTotalCents > 0 else amount.isNotBlank()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .imePadding()
+            .verticalScroll(rememberScrollState())
             .padding(32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -73,23 +88,30 @@ fun CashUpScreen(
 
                 Spacer(Modifier.height(32.dp))
 
-                OutlinedTextField(
-                    value = amount,
-                    onValueChange = { input -> if (input.matches(Regex("^\\d*\\.?\\d{0,2}$"))) amount = input },
-                    label = { Text("Closing cash ($)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (isDenominationMode) {
+                    DenominationGrid(
+                        modifier = Modifier.fillMaxWidth(),
+                        onTotalChanged = { denominationTotalCents = it },
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = amount,
+                        onValueChange = { input -> if (input.matches(Regex("^\\d*\\.?\\d{0,2}$"))) amount = input },
+                        label = { Text("Closing cash ($)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
 
                 Spacer(Modifier.height(24.dp))
 
                 Button(
                     onClick = {
-                        val cents = dollarsToCents(amount)
+                        val cents = enteredCents
                         if (cents != null) viewModel.closeSession(current.session.id, cents)
                     },
-                    enabled = amount.isNotBlank(),
+                    enabled = hasEntry,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Close Till") }
             }
@@ -99,10 +121,14 @@ fun CashUpScreen(
 
                 Spacer(Modifier.height(24.dp))
 
-                CashUpSummaryRow("Expected cash", current.session.expectedCashCents)
-                CashUpSummaryRow("Counted cash", current.session.closingCashCents)
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                CashUpSummaryRow("Variance", current.session.varianceCents, emphasize = true)
+                if (cashSettings.hideVarianceOnClose) {
+                    CashUpSummaryRow("Counted cash", current.session.closingCashCents, emphasize = true)
+                } else {
+                    CashUpSummaryRow("Expected cash", current.session.expectedCashCents)
+                    CashUpSummaryRow("Counted cash", current.session.closingCashCents)
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    CashUpSummaryRow("Variance", current.session.varianceCents, emphasize = true)
+                }
 
                 Spacer(Modifier.height(32.dp))
 

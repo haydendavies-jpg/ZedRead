@@ -276,3 +276,26 @@ data class PaymentRequest(
     @Json(name = "amount_cents") val amountCents: Long,
     val reference: String? = null,
 )
+
+// ── Settings (Android POS Phase 2) ───────────────────────────────────────────
+//
+// Mirrors SettingOut in app/schemas/setting.py. The value fields are
+// polymorphic per catalog entry's type (Boolean for "boolean", String for
+// "datetime"/"single_select", List<String> for "multi_select") — typed Any?
+// here and narrowed by the caller (see SettingsRepository), which Moshi
+// resolves via its built-in Any/Object adapter (the same mechanism backing
+// Map<String, Any> parsing) rather than a registered custom adapter.
+
+/** GET /pos/settings response row — one catalog entry resolved for the terminal's own site. */
+@JsonClass(generateAdapter = true)
+data class SettingDto(
+    val key: String,
+    val label: String,
+    val category: String,
+    val type: String,
+    val options: List<String>?,
+    @Json(name = "default_value") val defaultValue: Any?,
+    @Json(name = "brand_value") val brandValue: Any?,
+    @Json(name = "site_value") val siteValue: Any?,
+    @Json(name = "effective_value") val effectiveValue: Any?,
+)
