@@ -22,7 +22,8 @@ here in a new session — read the Status section first, then the phase you're o
 | 1 | Android — user-testing feedback round (cash-up logout, keyboard/IME, immersive system bars, PIN-only switch-user) | ✅ Done — see below |
 | 2 | Backend — settings framework, idempotency, checksum verification | ✅ Done — see below |
 | 2 | Portal — Settings management page | ✅ Done |
-| 2 | Android — Settings screen, offline write-queue, sync indicator, invoice search | 🔲 Not started |
+| 2 | Android — Settings screen + denomination-grid cash-in/cash-up variant | ✅ Done — see below |
+| 2 | Android — offline write-queue, sync indicator, invoice search | 🔲 Not started |
 | 3 | Menu Studio → POS integration depth (recurring scheduling, menu selector) | 🔲 Not started |
 | 4 | Table maps & floor service | 🔲 Not started |
 
@@ -31,11 +32,39 @@ from real on-device testing. What's left before calling Phase 1 fully done is ve
 Gradle build + emulator run (still blocked in this sandbox, see below) and manual exercise of the till
 round-trip end to end. One item from this round's feedback is still open pending user input — see
 "colour branding" below. Phase 2's backend foundations (settings framework, idempotency, checksum
-verification — items 1–3 of that phase's build order) are done, per this session's own guidance to
-stop there rather than leave the offline queue half-built. Next: Phase 2 items 4–7 (Android Settings
-screen, denomination-grid cash-in/cash-up variant, offline write-queue, sync indicator, invoice
-search) — see "What the Phase 2 backend/portal slice shipped" below and `STAGE_STATUS.md`'s "Android
-POS Phase 2" entry for full detail.
+verification — items 1–3 of that phase's build order) are done. Item 4 (Android Settings screen +
+denomination-grid cash-in/cash-up variant) is also done, proving the settings pattern end to end on
+Android — see "What the Phase 2 Android settings slice shipped" below. Next: Phase 2 items 5–7
+(offline write-queue, sync indicator, invoice search) — deliberately not started this session per
+this plan's own "stop after #4 rather than leaving the offline queue half-built" guidance; the
+write-queue needs a new WorkManager dependency and a Room outbox schema that deserve their own
+focused session rather than a partial cut. See `STAGE_STATUS.md`'s "Android POS Phase 2" entries for
+full detail.
+
+**What the Phase 2 Android settings slice shipped** (this session): `GET /pos/settings` consumed
+for the first time — a new `SettingDto`/`PosApiService.getSettings()` (mirrors `SettingOut` exactly;
+the polymorphic `default_value`/`brand_value`/`site_value`/`effective_value` fields are typed `Any?`,
+resolved by Moshi's built-in Any/Object adapter rather than a registered custom one — the same
+mechanism that already backs `Map<String, Any>` parsing elsewhere in the Moshi ecosystem) and a new
+`SettingsRepository` (no local Room cache — unlike the product catalog, settings are small and read
+fresh each time a screen needs them). A new read-only **Settings screen**
+(`SettingsScreen.kt`/`SettingsViewModel.kt`) lists every setting resolved for the terminal's site,
+search-filterable client-side by key/label/category; a gear icon on the Register header (next to the
+existing Cash-up/Switch-operator icons) opens it — editing overrides stays a portal-only capability,
+matching the backend's own read-only `GET /pos/settings` contract. `CashInScreen`/`CashUpScreen` each
+gained the **denomination-grid** variant (`CashDenominationGrid.kt`'s `DenominationGrid` composable —
+standard AUD note/coin rows, blank by default so an untouched row can't be mistaken for a
+counted-and-confirmed zero, reporting a running total in cents) toggled by the `cash_in_mode` setting,
+and `CashUpScreen`'s Expected/Counted/Variance summary collapses to Counted-only when
+`hide_variance_on_close` is set — both read via a new `RegisterSessionViewModel.loadCashSettings()`
+backed by `SettingsRepository.getCashSettings()`, which defaults to bulk-entry/variance-shown (the
+catalog's own defaults) if the settings fetch fails, so a settings outage never blocks a till
+open/close. **Not verified against a real build** — same standing constraint as every prior Android
+slice (this sandbox can't reach Google's Maven repo); checked via a manual brace/paren balance pass
+on every new/changed file, a cross-reference of every new type/import against its definition, and a
+repo-wide grep for stale call sites (`OrderEntryScreen(` for the new `onSettings` parameter, `Screen.
+Settings`, `getSettings(`) — all confirmed consistent. Needs a real compile + emulator run before
+merging with confidence.
 
 **What the Phase 2 backend/portal slice shipped** (this session): the first three items of Phase 2's
 build order, fully tested against a real Postgres instance — see `STAGE_STATUS.md` "Android POS

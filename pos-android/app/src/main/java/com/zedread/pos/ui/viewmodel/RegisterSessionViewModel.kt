@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zedread.pos.data.api.RegisterSessionDto
 import com.zedread.pos.data.repository.AuthRepository
+import com.zedread.pos.data.repository.CashSettings
 import com.zedread.pos.data.repository.RegisterSessionRepository
+import com.zedread.pos.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,10 +25,25 @@ import javax.inject.Inject
 class RegisterSessionViewModel @Inject constructor(
     private val repo: RegisterSessionRepository,
     private val authRepository: AuthRepository,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val _gateState = MutableStateFlow<RegisterGateState>(RegisterGateState.Checking)
     val gateState: StateFlow<RegisterGateState> = _gateState.asStateFlow()
+
+    // Defaults (bulk entry, variance shown) match the settings catalog's own
+    // defaults in app/constants/settings.py — used until loadCashSettings()
+    // resolves, and if that call fails, so a settings outage never blocks
+    // opening or closing the till.
+    private val _cashSettings = MutableStateFlow(CashSettings(cashInMode = "bulk", hideVarianceOnClose = false))
+    val cashSettings: StateFlow<CashSettings> = _cashSettings.asStateFlow()
+
+    /** Resolve the cash-in-mode / hide-variance-on-close settings for this site. */
+    fun loadCashSettings() {
+        viewModelScope.launch {
+            _cashSettings.value = settingsRepository.getCashSettings()
+        }
+    }
 
     fun checkCurrentSession() {
         _gateState.value = RegisterGateState.Checking

@@ -150,4 +150,13 @@ interface PosApiService {
         @Path("id") invoiceId: String,
         @Body body: PaymentRequest,
     ): InvoiceDto
+
+    // ── Settings ────────────────────────────────────────────────────────────
+
+    /** GET /pos/settings — every setting resolved for this terminal's own site, optionally search-filtered. */
+    @GET("pos/settings")
+    suspend fun getSettings(
+        @Header("Authorization") bearer: String,
+        @Query("search") search: String?,
+    ): List<SettingDto>
 }

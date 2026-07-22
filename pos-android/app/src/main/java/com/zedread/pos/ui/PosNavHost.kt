@@ -20,6 +20,7 @@ import com.zedread.pos.ui.screens.orderentry.OrderEntryScreen
 import com.zedread.pos.ui.screens.register.CashInScreen
 import com.zedread.pos.ui.screens.register.CashUpScreen
 import com.zedread.pos.ui.screens.register.RegisterGateScreen
+import com.zedread.pos.ui.screens.settings.SettingsScreen
 import com.zedread.pos.ui.screens.switchuser.SwitchUserScreen
 import com.zedread.pos.ui.viewmodel.AppEntryViewModel
 import com.zedread.pos.ui.viewmodel.StartDestination
@@ -136,6 +137,13 @@ fun PosNavHost() {
             OrderEntryScreen(
                 onSwitchUser = { navController.navigate(Screen.SwitchUser.route) },
                 onCashUp = { navController.navigate(Screen.CashUp.route) },
+                onSettings = { navController.navigate(Screen.Settings.route) },
+            )
+        }
+
+        composable(Screen.Settings.route) {
+            SettingsScreen(
+                onBack = { navController.popBackStack() },
             )
         }
 
@@ -174,4 +182,5 @@ sealed class Screen(val route: String) {
     object CashUp : Screen("cash_up")
     object OrderEntry : Screen("order_entry")
     object SwitchUser : Screen("switch_user")
+    object Settings : Screen("settings")
 }

@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -78,6 +79,7 @@ import com.zedread.pos.ui.viewmodel.SellViewModel
 fun OrderEntryScreen(
     onSwitchUser: () -> Unit,
     onCashUp: () -> Unit,
+    onSettings: () -> Unit,
     viewModel: SellViewModel = hiltViewModel(),
 ) {
     val colors = LocalZedReadColors.current
@@ -98,6 +100,7 @@ fun OrderEntryScreen(
                 selectedCategoryName = categories.firstOrNull { it.id == selectedCatId }?.name,
                 onSwitchUser = onSwitchUser,
                 onCashUp = onCashUp,
+                onSettings = onSettings,
             )
 
             Row(modifier = Modifier.fillMaxSize()) {
@@ -174,7 +177,12 @@ fun OrderEntryScreen(
 }
 
 @Composable
-private fun RegisterHeader(selectedCategoryName: String?, onSwitchUser: () -> Unit, onCashUp: () -> Unit) {
+private fun RegisterHeader(
+    selectedCategoryName: String?,
+    onSwitchUser: () -> Unit,
+    onCashUp: () -> Unit,
+    onSettings: () -> Unit,
+) {
     val colors = LocalZedReadColors.current
     Row(
         modifier = Modifier
@@ -194,6 +202,9 @@ private fun RegisterHeader(selectedCategoryName: String?, onSwitchUser: () -> Un
             )
         }
         Row {
+            IconButton(onClick = onSettings) {
+                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = colors.muted)
+            }
             IconButton(onClick = onCashUp) {
                 Icon(Icons.Default.AttachMoney, contentDescription = "Cash up", tint = colors.muted)
             }
