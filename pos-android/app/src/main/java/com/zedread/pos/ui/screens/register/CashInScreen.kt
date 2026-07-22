@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -26,13 +28,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.zedread.pos.data.repository.CASH_IN_MODE_DENOMINATION
 import com.zedread.pos.ui.viewmodel.CashInState
 import com.zedread.pos.ui.viewmodel.RegisterSessionViewModel
 
 /**
- * Start-of-day cash-in: bulk-value entry only for Phase 1 — the
- * denomination-breakdown variant is a Phase 2 setting. Blocks Register
- * access until a session is open (POST /register-sessions/open).
+ * Start-of-day cash-in: bulk-total entry, or a per-denomination breakdown
+ * grid when the site's cash_in_mode setting is "denomination" (Phase 2
+ * settings framework — see SettingsRepository). Blocks Register access
+ * until a session is open (POST /register-sessions/open).
  */
 @Composable
 fun CashInScreen(
@@ -40,16 +44,25 @@ fun CashInScreen(
     viewModel: RegisterSessionViewModel = hiltViewModel(),
 ) {
     val state by viewModel.cashInState.collectAsState()
+    val cashSettings by viewModel.cashSettings.collectAsState()
     var amount by remember { mutableStateOf("") }
+    var denominationTotalCents by remember { mutableStateOf(0L) }
+
+    LaunchedEffect(Unit) { viewModel.loadCashSettings() }
 
     LaunchedEffect(state) {
         if (state is CashInState.Done) onOpened()
     }
 
+    val isDenominationMode = cashSettings.cashInMode == CASH_IN_MODE_DENOMINATION
+    val enteredCents = if (isDenominationMode) denominationTotalCents else dollarsToCents(amount)
+    val hasEntry = if (isDenominationMode) denominationTotalCents > 0 else amount.isNotBlank()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .imePadding()
+            .verticalScroll(rememberScrollState())
             .padding(32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -62,14 +75,21 @@ fun CashInScreen(
 
         Spacer(Modifier.height(32.dp))
 
-        OutlinedTextField(
-            value = amount,
-            onValueChange = { input -> if (input.matches(Regex("^\\d*\\.?\\d{0,2}$"))) amount = input },
-            label = { Text("Opening cash ($)") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (isDenominationMode) {
+            DenominationGrid(
+                modifier = Modifier.fillMaxWidth(),
+                onTotalChanged = { denominationTotalCents = it },
+            )
+        } else {
+            OutlinedTextField(
+                value = amount,
+                onValueChange = { input -> if (input.matches(Regex("^\\d*\\.?\\d{0,2}$"))) amount = input },
+                label = { Text("Opening cash ($)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
 
         Spacer(Modifier.height(8.dp))
 
@@ -85,10 +105,10 @@ fun CashInScreen(
 
         Button(
             onClick = {
-                val cents = dollarsToCents(amount)
+                val cents = enteredCents
                 if (cents != null) viewModel.openSession(cents)
             },
-            enabled = amount.isNotBlank() && state !is CashInState.Loading,
+            enabled = hasEntry && state !is CashInState.Loading,
             modifier = Modifier.fillMaxWidth(),
         ) {
             if (state is CashInState.Loading) {
