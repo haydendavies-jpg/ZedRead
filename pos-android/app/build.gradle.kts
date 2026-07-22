@@ -87,6 +87,11 @@ dependencies {
     // Image loading
     implementation(libs.coil.compose)
 
+    // WorkManager (offline write-queue — Android POS Phase 2)
+    implementation(libs.work.runtime.ktx)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.work.compiler)
+
     // Test
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.ext)

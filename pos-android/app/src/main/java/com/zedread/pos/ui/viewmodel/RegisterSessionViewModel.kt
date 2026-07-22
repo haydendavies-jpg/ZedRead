@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.zedread.pos.data.api.RegisterSessionDto
 import com.zedread.pos.data.repository.AuthRepository
 import com.zedread.pos.data.repository.CashSettings
+import com.zedread.pos.data.repository.OutboxRepository
 import com.zedread.pos.data.repository.RegisterSessionRepository
 import com.zedread.pos.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -13,6 +14,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
+import java.io.IOException
+import java.time.OffsetDateTime
 import javax.inject.Inject
 
 /**
@@ -20,12 +23,22 @@ import javax.inject.Inject
  * register (till) session, and drives the start-of-day cash-in form that
  * opens one. POST /invoices rejects with 400 until a session is open, so
  * this check runs on every app launch/resume before a sale can start.
+ *
+ * Offline write-queue: a network failure on open/close queues the event to
+ * [OutboxRepository] instead (see [openSession]/[closeSession]) and
+ * proceeds optimistically — the operator isn't blocked from starting or
+ * ending a shift just because the device is offline. A queued close can't
+ * show a real expected-cash/variance figure (that's computed server-side
+ * from committed cash payments, some of which may themselves still be
+ * queued) — the cash-up screen shows "pending sync" instead, see
+ * [CashUpState.ClosedPendingSync].
  */
 @HiltViewModel
 class RegisterSessionViewModel @Inject constructor(
     private val repo: RegisterSessionRepository,
     private val authRepository: AuthRepository,
     private val settingsRepository: SettingsRepository,
+    private val outboxRepo: OutboxRepository,
 ) : ViewModel() {
 
     private val _gateState = MutableStateFlow<RegisterGateState>(RegisterGateState.Checking)
@@ -50,10 +63,9 @@ class RegisterSessionViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { repo.getCurrentSession() }
                 .onSuccess { session ->
-                    _gateState.value = if (session != null) {
-                        RegisterGateState.Open(session.id)
-                    } else {
-                        RegisterGateState.NeedsCashIn
+                    _gateState.value = when {
+                        session != null -> RegisterGateState.Open(session.id)
+                        else -> offlineOpenGateStateOrNeedsCashIn()
                     }
                 }
                 .onFailure { e ->
@@ -65,11 +77,21 @@ class RegisterSessionViewModel @Inject constructor(
                     if (e is HttpException && e.code() == 401) {
                         authRepository.logout()
                         _gateState.value = RegisterGateState.SessionExpired
+                    } else if (e is IOException) {
+                        // Can't even reach the server to check — if a start-of-day
+                        // open is queued from earlier in this offline stretch, don't
+                        // block selling on a round trip that isn't happening yet.
+                        _gateState.value = offlineOpenGateStateOrNeedsCashIn()
                     } else {
                         _gateState.value = RegisterGateState.Error(e.message ?: "Could not check register session")
                     }
                 }
         }
+    }
+
+    private suspend fun offlineOpenGateStateOrNeedsCashIn(): RegisterGateState {
+        val queued = outboxRepo.latestQueuedOpenSessionWithoutClose()
+        return if (queued != null) RegisterGateState.Open(OFFLINE_SESSION_ID_PREFIX + queued.clientRef) else RegisterGateState.NeedsCashIn
     }
 
     private val _cashInState = MutableStateFlow<CashInState>(CashInState.Idle)
@@ -78,10 +100,18 @@ class RegisterSessionViewModel @Inject constructor(
     /** Open the till with [openingCashCents] counted in at the start of the shift. */
     fun openSession(openingCashCents: Long) {
         _cashInState.value = CashInState.Loading
+        val openedAtIso = OffsetDateTime.now().toString()
         viewModelScope.launch {
-            runCatching { repo.openSession(openingCashCents) }
+            runCatching { repo.openSession(openedAtIso, openingCashCents, clientRef = null) }
                 .onSuccess { _cashInState.value = CashInState.Done }
-                .onFailure { e -> _cashInState.value = CashInState.Error(e.message ?: "Failed to open the till") }
+                .onFailure { e ->
+                    if (e is IOException) {
+                        outboxRepo.enqueueOpenSession(openedAtIso, openingCashCents)
+                        _cashInState.value = CashInState.DoneOffline
+                    } else {
+                        _cashInState.value = CashInState.Error(e.message ?: "Failed to open the till")
+                    }
+                }
         }
     }
 
@@ -94,26 +124,69 @@ class RegisterSessionViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { repo.getCurrentSession() }
                 .onSuccess { session ->
-                    _cashUpState.value = if (session != null) {
-                        CashUpState.Ready(session)
+                    _cashUpState.value = if (session != null) CashUpState.Ready(session) else offlineCashUpStateOrError()
+                }
+                .onFailure { e ->
+                    _cashUpState.value = if (e is IOException) {
+                        offlineCashUpStateOrError()
                     } else {
-                        CashUpState.Error("No open till session to close")
+                        CashUpState.Error(e.message ?: "Could not load the till session")
                     }
                 }
-                .onFailure { e -> _cashUpState.value = CashUpState.Error(e.message ?: "Could not load the till session") }
         }
     }
 
-    /** Close the till with [closingCashCents] counted in at the end of the shift. */
+    private suspend fun offlineCashUpStateOrError(): CashUpState {
+        val queued = outboxRepo.latestQueuedOpenSessionWithoutClose()
+            ?: return CashUpState.Error("No open till session to close")
+        return CashUpState.ReadyOffline(queued.clientRef, queued.openingCashCents, queued.openedAtIso)
+    }
+
+    /** Close the till with [closingCashCents] counted in at the end of the shift. [sessionId] is the real server id. */
     fun closeSession(sessionId: String, closingCashCents: Long) {
         _cashUpState.value = CashUpState.Submitting
+        val closedAtIso = OffsetDateTime.now().toString()
         viewModelScope.launch {
-            runCatching { repo.closeSession(sessionId, closingCashCents) }
+            runCatching { repo.closeSession(sessionId, closedAtIso, closingCashCents, clientRef = null) }
                 .onSuccess { result -> _cashUpState.value = CashUpState.Closed(result) }
-                .onFailure { e -> _cashUpState.value = CashUpState.Error(e.message ?: "Failed to close the till") }
+                .onFailure { e ->
+                    if (e is IOException) {
+                        outboxRepo.enqueueCloseSession(
+                            sessionId = sessionId,
+                            openClientRef = null,
+                            closedAtIso = closedAtIso,
+                            closingCashCents = closingCashCents,
+                        )
+                        _cashUpState.value = CashUpState.ClosedPendingSync(closingCashCents)
+                    } else {
+                        _cashUpState.value = CashUpState.Error(e.message ?: "Failed to close the till")
+                    }
+                }
+        }
+    }
+
+    /**
+     * Close a till whose own opening never synced ([CashUpState.ReadyOffline]) — there's no real
+     * session id to call the online close endpoint with, so this queues directly rather than
+     * attempting (and failing) an online call first.
+     */
+    fun closeOfflineSession(openClientRef: String, closingCashCents: Long) {
+        _cashUpState.value = CashUpState.Submitting
+        val closedAtIso = OffsetDateTime.now().toString()
+        viewModelScope.launch {
+            outboxRepo.enqueueCloseSession(
+                sessionId = null,
+                openClientRef = openClientRef,
+                closedAtIso = closedAtIso,
+                closingCashCents = closingCashCents,
+            )
+            _cashUpState.value = CashUpState.ClosedPendingSync(closingCashCents)
         }
     }
 }
+
+/** Prefix marking a [RegisterGateState.Open.sessionId] as a not-yet-synced offline open's client_ref, not a real server id. */
+const val OFFLINE_SESSION_ID_PREFIX = "offline:"
 
 sealed class RegisterGateState {
     object Checking : RegisterGateState()
@@ -128,13 +201,19 @@ sealed class CashInState {
     object Idle : CashInState()
     object Loading : CashInState()
     object Done : CashInState()
+    /** Opened successfully, but only locally — queued to the outbox because the device is offline. */
+    object DoneOffline : CashInState()
     data class Error(val message: String) : CashInState()
 }
 
 sealed class CashUpState {
     object Loading : CashUpState()
     data class Ready(val session: RegisterSessionDto) : CashUpState()
+    /** The till's own opening hasn't synced yet — no real [RegisterSessionDto] exists to show. */
+    data class ReadyOffline(val openClientRef: String, val openingCashCents: Long, val openedAtIso: String) : CashUpState()
     object Submitting : CashUpState()
     data class Closed(val session: RegisterSessionDto) : CashUpState()
+    /** Closed locally and queued — no server-computed expected-cash/variance figures exist yet. */
+    data class ClosedPendingSync(val closingCashCents: Long) : CashUpState()
     data class Error(val message: String) : CashUpState()
 }

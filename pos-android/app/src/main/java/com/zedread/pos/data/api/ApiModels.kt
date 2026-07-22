@@ -109,18 +109,29 @@ data class LogoutResponseDto(
 // Mirrors app/schemas/register_session.py. Timestamps are device-local,
 // ISO-8601 with offset (java.time.OffsetDateTime.toString()).
 
-/** POST /register-sessions/open request — start-of-day cash-in. */
+/**
+ * POST /register-sessions/open request — start-of-day cash-in.
+ *
+ * [clientRef] dedupes a retried open (see RegisterSessionOpenRequest in
+ * app/services/register_session_service.py). No [checksum] field — that
+ * would need this terminal's own server-side `device.id`, which is never
+ * returned to the client (only the opaque device_token is) — see
+ * OutboxModels.kt's OpenSessionPayload doc for the full reasoning.
+ * `client_ref` alone already makes a retried sync safe.
+ */
 @JsonClass(generateAdapter = true)
 data class RegisterSessionOpenRequest(
     @Json(name = "opened_at") val openedAt: String,
     @Json(name = "opening_cash_cents") val openingCashCents: Long,
+    @Json(name = "client_ref") val clientRef: String? = null,
 )
 
-/** POST /register-sessions/{id}/close request — end-of-day cash-up. */
+/** POST /register-sessions/{id}/close request — end-of-day cash-up. [clientRef] dedupes a retried close. */
 @JsonClass(generateAdapter = true)
 data class RegisterSessionCloseRequest(
     @Json(name = "closed_at") val closedAt: String,
     @Json(name = "closing_cash_cents") val closingCashCents: Long,
+    @Json(name = "client_ref") val clientRef: String? = null,
 )
 
 /** Full register session state, returned by every /register-sessions endpoint. */
@@ -211,6 +222,19 @@ data class InvoiceDto(
     @Json(name = "discount_cents") val discountCents: Long,
     @Json(name = "total_cents") val totalCents: Long,
     @Json(name = "is_refunded") val isRefunded: Boolean,
+    // Only populated by GET /invoices (invoice history / search) — the
+    // create/pay responses don't need it and older call sites ignore it.
+    @Json(name = "created_at") val createdAt: String? = null,
+)
+
+/**
+ * POST /invoices request. All fields optional — site/brand/register-session
+ * resolve server-side from the caller's POS token (see InvoiceCreateRequest
+ * in app/services/invoice_service.py); [clientRef] dedupes a retried create.
+ */
+@JsonClass(generateAdapter = true)
+data class InvoiceCreateBody(
+    @Json(name = "client_ref") val clientRef: String? = null,
 )
 
 /**
@@ -269,12 +293,18 @@ data class LineItemDto(
     val modifiers: List<LineModifierDto> = emptyList(),
 )
 
-/** POST /invoices/{id}/pay request. reference carries a voucher's redemption code; null for cash/card. */
+/**
+ * POST /invoices/{id}/pay request. [reference] carries a voucher's redemption
+ * code; null for cash/card. [clientRef] dedupes a retried pay call. No
+ * [checksum] field is populated by this client — see
+ * OutboxModels.kt's SyncSalePayload doc for why.
+ */
 @JsonClass(generateAdapter = true)
 data class PaymentRequest(
     val method: String,
     @Json(name = "amount_cents") val amountCents: Long,
     val reference: String? = null,
+    @Json(name = "client_ref") val clientRef: String? = null,
 )
 
 // ── Settings (Android POS Phase 2) ───────────────────────────────────────────

@@ -1,6 +1,6 @@
 # ZedRead POS — Stage Build Status
 
-Last updated: 2026-07-21 (Android exact-match Register screen + invoice line-item update/remove — see ANDROID_POS_BUILD_PLAN.md)
+Last updated: 2026-07-22 (Android offline write-queue, sync indicator & invoice search — see ANDROID_POS_BUILD_PLAN.md)
 
 ---
 
@@ -1433,6 +1433,97 @@ session judged better scoped on its own than folded in as a partial cut.
 
 ---
 
+### Android POS Phase 2 — Offline write-queue, sync indicator & invoice search (Android) ✅
+
+Items 5–7 of `ANDROID_POS_BUILD_PLAN.md`'s Phase 2 build order — the piece that makes the app survive
+a real shift on a bad connection instead of only working online. Item 1 (the outbox/WorkManager
+write-queue) was built and reviewed solidly first per the plan's own "stop after #1 rather than
+half-wiring #2/#3" guidance, then #2/#3 followed in the same session once #1's design held up.
+
+**Deliverables:**
+- [x] **Room outbox** — new `outbox_items` table (migration via Room `MIGRATION_2_3`, **not** the
+      catalog tables' destructive fallback — this table holds unsynced writes that must survive an
+      app update) storing one row per **complete unit of work**, not one row per API call: a whole
+      sale (`SYNC_SALE` — line items/modifiers/payment bundled) or one register-session event
+      (`OPEN_REGISTER_SESSION`/`CLOSE_REGISTER_SESSION`). Bundling a sale this way lets
+      `OutboxSyncWorker` replay it as create → each line (+ modifiers) → pay in one `doWork()` pass
+      using the real invoice id straight from `create`, without needing a separate "local id → server
+      id" mapping table for a not-yet-synced invoice — and reads better in the sync panel as one row
+      per sale rather than five rows per order. Every row carries a client-generated `client_ref`
+      (UUID minted on enqueue) for server-side dedup; `POST /invoices`, `.../pay`,
+      `/register-sessions/open`, and `.../close` all already accept one (Phase 2's backend slice
+      above) so a retried sync is always safe to replay.
+- [x] **Checksum — deliberately omitted**, not attempted: `OutboxModels.kt` documents why for each
+      payload. A sale's checksum covers server-computed subtotal/tax/total (tax rules — inclusive/
+      exclusive/compound — live entirely in `tax_calculation_service.py`, not reproducible on-device
+      without duplicating that engine); a register-session open's checksum is keyed in part by the
+      PosDevice's own server-side UUID, which is **never returned to the client** (only the opaque
+      `device_token` is) — there's no way to source it on-device without a new backend field, out of
+      scope for this slice. `client_ref` alone already makes a retried sync safe, which is exactly the
+      escape hatch `verify_checksum()` was built to allow (skips verification when the field is
+      absent) — sending a byte-guessed checksum that might not match would risk a spurious 422 more
+      than sending none does.
+- [x] **WorkManager wiring** — new `androidx.work:work-runtime-ktx:2.10.0` +
+      `androidx.hilt:hilt-work:1.2.0` Gradle dependencies (not previously in the project).
+      `PosApplication` implements `Configuration.Provider` (supplies `HiltWorkerFactory` so
+      `@HiltWorker`-annotated `OutboxSyncWorker` gets constructor-injected repositories/DAOs); the
+      manifest removes the default `androidx.startup`-driven `WorkManagerInitializer` per the standard
+      Hilt+WorkManager recipe. `OutboxScheduler` runs two triggers, both constrained to
+      `NetworkType.CONNECTED`: a 15-minute periodic job (the guaranteed-eventually fallback) and an
+      immediate one-time request fired at enqueue time and by the sync panel's manual "Sync now" —
+      the periodic job alone could leave a queued sale waiting up to a full interval before its first
+      retry.
+- [x] **Failure handling** — a network/IO failure is transient: the row stays PENDING (attempt count
+      bumped), the whole drain pass stops there (later rows may depend on this one), and
+      `Result.retry()` lets WorkManager's own backoff schedule the next attempt — never expired or
+      discarded. An HTTP error response is a definitive rejection: the row is marked FAILED with a
+      plain-language reason (`OutboxSyncWorker.plainLanguageReason()` — "This account no longer has
+      permission…", not "403") and **kept**, not deleted, for the sync panel; the drain continues past
+      it, and only rows that causally depend on it (e.g. a queued close whose matching open just
+      failed) fail in turn with their own reason.
+- [x] **Offline write-queue scope, by design** — a sale only falls back to local-only mode
+      (`SellViewModel.isOfflineSale`) when it fails on its **very first** action, i.e. nothing for it
+      exists server-side yet; a sale that drops offline only *after* a line item already synced
+      surfaces the existing error state instead (asking the operator to retry once reconnected) rather
+      than risking a second, duplicate invoice once the queued bundle also syncs. Modifier prices
+      aren't cached locally (`CatalogRepository.getProductModifiers()` is a live network call by
+      design — see its own doc), so a customisable product genuinely can't be rung up offline; a plain
+      product still can. A locally-synthesized offline line item carries `taxCents = 0` (confirmed
+      once the sale actually syncs) and split payment is disabled for an offline sale (`toggleSplitMode`
+      no-ops) — a queued bundle carries exactly one payment call, not multiple partial legs against one
+      invoice. Register-session open/close mirror the same "fails once, queues, proceeds optimistically"
+      pattern (`RegisterSessionViewModel`); a till closed while its own opening still hasn't synced
+      shows "pending sync" instead of guessing at expected-cash/variance figures that depend on
+      committed cash payments the server hasn't seen yet.
+- [x] **Offline/pending-sync indicator** — `SyncStatusBadge` ("Offline · N pending" / "N pending" /
+      "Synced", never a blocking modal) mounted as a persistent overlay on `OrderEntryScreen`, reading
+      `OutboxDao.observePendingCount()`/`observeAll()` directly so it updates the instant something is
+      enqueued, not after the round trip. Tapping it opens `SyncPanel` — per-item status (a friendly
+      title like "Sale · $12.50" or "Till opened", decoded from the row's payload) and the manual
+      "Sync now" action, dismissible without interrupting the sell loop underneath.
+- [x] **Invoice search** (`InvoiceSearchScreen.kt`/`InvoiceSearchViewModel.kt`) — filterable (status,
+      payment method, quick date-range chips) list reading a new `invoice_cache` Room table, so it
+      works fully offline. A queued sale is written to the cache immediately at enqueue time (keyed by
+      its `client_ref` placeholder) and re-keyed to the real invoice id once `OutboxSyncWorker`
+      confirms it, so it shows up as "Pending sync" right away rather than after the round trip;
+      `InvoiceRepository.refreshCacheFromServer()` best-effort backfills from `GET /invoices` for
+      other devices' sales (silently skipped offline). Payment method is only known for sales rung up
+      on *this* device (recorded at enqueue/pay time) — rows backfilled from the server leave it null,
+      a known, documented gap (`GET /invoices` is per-invoice, not per-payment). Entry point: a new
+      History icon on the Register header, alongside Settings/Cash-up.
+- **Not verified against a real build** — same standing constraint as every prior Android slice (this
+  sandbox can't reach Google's Maven repo). This slice carries more risk than most since it adds a new
+  Gradle dependency (WorkManager) — its version/coordinates were checked against what's actually
+  published (`androidx.work:work-runtime-ktx:2.10.0`, `androidx.hilt:hilt-work:1.2.0`, both current
+  stable releases compatible with this project's Hilt `2.52`/compileSdk `35`) rather than guessed.
+  Checked via a manual brace/paren balance pass on every new/changed file (27 files), a cross-reference
+  of every new type/import against its definition, and a repo-wide grep for stale or mismatched call
+  sites (every `openSession(`/`closeSession(`/`createInvoice(`/`pay(` call site cross-checked against
+  its overload). Needs a real compile + emulator run — especially the WorkManager/Hilt wiring and the
+  Room migration path — before merging with confidence.
+
+---
+
 ## Cross-Cutting — Always Active
 
 | Concern | Status |
@@ -1455,7 +1546,9 @@ session judged better scoped on its own than folded in as a partial cut.
 | Circular combo reference: no DB constraint | `combo_service.py` graph traversal only | Low |
 | Photo size limit: no DB constraint | `product_service.py` check only | Low |
 | Invoice line `notes` column: not exposed in API | `invoice_line_items.notes` exists in model | Low |
-| Offline sync strategy: not documented | Android Stage 25–26 | High |
+| Offline write-queue only covers a sale that fails on its *first* action (nothing synced yet); one that drops offline mid-ring surfaces an error instead of queuing, to avoid a duplicate invoice risk | `SellViewModel.kt` — see "Offline write-queue, sync indicator & invoice search" above | Medium |
+| Offline sale totals show `taxCents = 0` until synced — tax rules aren't reproducible on-device | `SellViewModel.addOfflineLine()` | Medium |
+| Invoice search: payment method unknown for sales backfilled from other devices (`GET /invoices` has no per-payment breakdown) | `InvoiceRepository.refreshCacheFromServer()` | Low |
 | Line modifier price is a flat per-line addition, not scaled by quantity | `invoice_line_modifiers` has no quantity dimension — one row per (line, modifier); `add_line_modifier()`/`_recompute_invoice_totals()` add `price_delta_cents` once regardless of the line's `quantity` | Medium |
 | Tax compound edge cases (PST on GST): not validated | `tax_calculation_service.py` | Medium |
 | Accounting/journal integration for refunds | Not started | Future |

@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachMoney
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,6 +36,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,6 +52,8 @@ import coil.compose.AsyncImage
 import com.zedread.pos.data.api.LineItemDto
 import com.zedread.pos.data.local.entity.CategoryEntity
 import com.zedread.pos.data.local.entity.ProductEntity
+import com.zedread.pos.ui.components.SyncPanel
+import com.zedread.pos.ui.components.SyncStatusBadge
 import com.zedread.pos.ui.screens.payment.PaymentModal
 import com.zedread.pos.ui.theme.LocalZedReadColors
 import com.zedread.pos.ui.theme.ZedReadColors
@@ -57,6 +63,7 @@ import com.zedread.pos.ui.viewmodel.CartActionState
 import com.zedread.pos.ui.viewmodel.ModifierSheetState
 import com.zedread.pos.ui.viewmodel.OrderType
 import com.zedread.pos.ui.viewmodel.SellViewModel
+import com.zedread.pos.ui.viewmodel.SyncViewModel
 
 /**
  * Register (order-entry) screen — exact-match layout to
@@ -80,7 +87,9 @@ fun OrderEntryScreen(
     onSwitchUser: () -> Unit,
     onCashUp: () -> Unit,
     onSettings: () -> Unit,
+    onInvoiceSearch: () -> Unit,
     viewModel: SellViewModel = hiltViewModel(),
+    syncViewModel: SyncViewModel = hiltViewModel(),
 ) {
     val colors = LocalZedReadColors.current
     val categories by viewModel.categories.collectAsState()
@@ -94,6 +103,11 @@ fun OrderEntryScreen(
     val modifierSheetState by viewModel.modifierSheetState.collectAsState()
     val paymentState by viewModel.paymentState.collectAsState()
 
+    val isOnline by syncViewModel.isOnline.collectAsState()
+    val pendingCount by syncViewModel.pendingCount.collectAsState()
+    val syncItems by syncViewModel.items.collectAsState()
+    var showSyncPanel by remember { mutableStateOf(false) }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().background(colors.bg)) {
             RegisterHeader(
@@ -101,6 +115,7 @@ fun OrderEntryScreen(
                 onSwitchUser = onSwitchUser,
                 onCashUp = onCashUp,
                 onSettings = onSettings,
+                onInvoiceSearch = onInvoiceSearch,
             )
 
             Row(modifier = Modifier.fillMaxSize()) {
@@ -173,6 +188,23 @@ fun OrderEntryScreen(
                 onNewOrder = viewModel::completePaymentAndStartNewOrder,
             )
         }
+
+        // Persistent, unobtrusive — never blocks the sell loop underneath it.
+        SyncStatusBadge(
+            isOnline = isOnline,
+            pendingCount = pendingCount,
+            onClick = { showSyncPanel = true },
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 76.dp, end = 16.dp),
+        )
+
+        if (showSyncPanel) {
+            SyncPanel(
+                isOnline = isOnline,
+                items = syncItems,
+                onSyncNow = syncViewModel::syncNow,
+                onDismiss = { showSyncPanel = false },
+            )
+        }
     }
 }
 
@@ -182,6 +214,7 @@ private fun RegisterHeader(
     onSwitchUser: () -> Unit,
     onCashUp: () -> Unit,
     onSettings: () -> Unit,
+    onInvoiceSearch: () -> Unit,
 ) {
     val colors = LocalZedReadColors.current
     Row(
@@ -202,6 +235,9 @@ private fun RegisterHeader(
             )
         }
         Row {
+            IconButton(onClick = onInvoiceSearch) {
+                Icon(Icons.Default.History, contentDescription = "Invoice search", tint = colors.muted)
+            }
             IconButton(onClick = onSettings) {
                 Icon(Icons.Default.Settings, contentDescription = "Settings", tint = colors.muted)
             }

@@ -116,6 +116,66 @@ fun CashUpScreen(
                 ) { Text("Close Till") }
             }
 
+            is CashUpState.ReadyOffline -> {
+                // This till's own opening hasn't synced yet — there's no real
+                // RegisterSessionDto to show "opened by"/expected-cash figures
+                // from, but the operator can still close out; the close is
+                // queued too and both replay together once reconnected.
+                Text("End of Day", style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    "Offline · opening cash ${formatCents(current.openingCashCents)} — not yet synced",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "Count the cash in the till and enter the total to close your shift.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+
+                Spacer(Modifier.height(32.dp))
+
+                if (isDenominationMode) {
+                    DenominationGrid(
+                        modifier = Modifier.fillMaxWidth(),
+                        onTotalChanged = { denominationTotalCents = it },
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = amount,
+                        onValueChange = { input -> if (input.matches(Regex("^\\d*\\.?\\d{0,2}$"))) amount = input },
+                        label = { Text("Closing cash ($)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                Spacer(Modifier.height(24.dp))
+
+                Button(
+                    onClick = {
+                        val cents = enteredCents
+                        if (cents != null) viewModel.closeOfflineSession(current.openClientRef, cents)
+                    },
+                    enabled = hasEntry,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Close Till") }
+            }
+
+            is CashUpState.ClosedPendingSync -> {
+                Text("Till Closed", style = MaterialTheme.typography.headlineMedium)
+                Spacer(Modifier.height(24.dp))
+                CashUpSummaryRow("Counted cash", current.closingCashCents, emphasize = true)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Offline — expected cash and variance will be confirmed once this syncs.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(32.dp))
+                Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) {
+                    Text("Done")
+                }
+            }
+
             is CashUpState.Closed -> {
                 Text("Till Closed", style = MaterialTheme.typography.headlineMedium)
 

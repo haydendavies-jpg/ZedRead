@@ -95,11 +95,24 @@ interface PosApiService {
 
     // ── Invoices ─────────────────────────────────────────────────────────────
 
-    /** POST /invoices — open a new draft invoice. No body: site/brand/register-session resolve from the token. */
+    /**
+     * POST /invoices — open a new draft invoice. Site/brand/register-session
+     * resolve server-side from the token; [body] only carries the optional
+     * offline-sync idempotency key.
+     */
     @POST("invoices")
     suspend fun createInvoice(
         @Header("Authorization") bearer: String,
+        @Body body: InvoiceCreateBody,
     ): InvoiceDto
+
+    /** GET /invoices — this site's invoice history, most recent first. Backfills the local search cache. */
+    @GET("invoices")
+    suspend fun listInvoices(
+        @Header("Authorization") bearer: String,
+        @Query("skip") skip: Int,
+        @Query("limit") limit: Int,
+    ): List<InvoiceDto>
 
     /** POST /invoices/{id}/line-items — append a product to the invoice. */
     @POST("invoices/{id}/line-items")

@@ -51,7 +51,10 @@ fun CashInScreen(
     LaunchedEffect(Unit) { viewModel.loadCashSettings() }
 
     LaunchedEffect(state) {
-        if (state is CashInState.Done) onOpened()
+        // DoneOffline means the open was queued to the outbox rather than
+        // confirmed by the server — still proceeds to Register so staff
+        // aren't blocked from selling while offline (see RegisterSessionViewModel).
+        if (state is CashInState.Done || state is CashInState.DoneOffline) onOpened()
     }
 
     val isDenominationMode = cashSettings.cashInMode == CASH_IN_MODE_DENOMINATION

@@ -503,6 +503,14 @@ private fun PaymentDoneContent(state: PaymentUiState, onNewOrder: () -> Unit) {
             style = MaterialTheme.typography.bodyMedium,
             color = colors.muted,
         )
+        if (state.doneIsPendingSync) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Offline — queued, will sync automatically once back online",
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.muted,
+            )
+        }
         if (state.doneChangeCents > 0) {
             Spacer(Modifier.height(22.dp))
             Column(
