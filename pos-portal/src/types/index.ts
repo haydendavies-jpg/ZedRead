@@ -170,6 +170,18 @@ export interface License {
   updated_at: string
 }
 
+export interface Setting {
+  key: string
+  label: string
+  category: string
+  type: 'boolean' | 'datetime' | 'single_select' | 'multi_select'
+  options: string[] | null
+  default_value: unknown
+  brand_value: unknown
+  site_value: unknown
+  effective_value: unknown
+}
+
 export interface PosDevice {
   id: string
   site_id: string

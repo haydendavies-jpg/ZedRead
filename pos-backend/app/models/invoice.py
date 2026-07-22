@@ -120,6 +120,26 @@ class Invoice(Base):
         default=False,
         comment="True once a refund invoice has been created for this sale",
     )
+    client_ref: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        unique=True,
+        comment=(
+            "Client-generated idempotency key (UUID minted on-device at creation time) — "
+            "a retried POST /invoices with the same client_ref returns the original row "
+            "instead of creating a duplicate. NULL for pre-offline-queue callers."
+        ),
+    )
+    checksum: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment=(
+            "SHA-256 hex digest over the invoice's canonical line items/totals/payments, "
+            "computed on-device and re-verified server-side at pay time (see "
+            "app.utils.checksum) — the value stored here is always the server's own "
+            "computed digest, echoed back so the device can confirm what was stored."
+        ),
+    )
     voided_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,

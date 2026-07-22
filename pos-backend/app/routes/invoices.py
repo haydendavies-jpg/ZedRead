@@ -10,6 +10,7 @@ from app.services.invoice_service import (
     AddLineItemRequest,
     AddModifierRequest,
     ApplyDiscountRequest,
+    InvoiceCreateRequest,
     InvoiceResponse,
     LineItemDetailResponse,
     LineItemResponse,
@@ -60,6 +61,7 @@ async def list_site_invoices(
 
 @router.post("", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
 async def create_site_invoice(
+    payload: InvoiceCreateRequest = InvoiceCreateRequest(),
     access: POSAccess = Depends(resolve_access),
     db: AsyncSession = Depends(get_db),
 ) -> InvoiceResponse:
@@ -67,21 +69,23 @@ async def create_site_invoice(
     Create a draft invoice for the authenticated user's site.
 
     Requires an open register session for this terminal — see
-    register_session_service.get_open_session_or_400().
+    register_session_service.get_open_session_or_400(). Idempotent when
+    payload.client_ref is supplied — see create_invoice().
 
     Args:
+        payload: Optional offline-sync idempotency key.
         access: Resolved POS access.
         db: Active database session.
 
     Returns:
-        InvoiceResponse: The newly created draft invoice.
+        InvoiceResponse: The newly created (or deduped) draft invoice.
 
     Raises:
         HTTPException: 400 if no register session is open for this device.
     """
     session = await get_open_session_or_400(db, access.device)
     invoice = await create_invoice(
-        db, access.user.brand_id, access.site.id, access.user, session.id
+        db, access.user.brand_id, access.site.id, access.user, session.id, payload.client_ref
     )
     return InvoiceResponse.model_validate(invoice)
 

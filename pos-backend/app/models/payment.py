@@ -55,6 +55,16 @@ class Payment(Base):
         server_default=func.now(),
         comment="Timestamp of this payment event",
     )
+    client_ref: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        unique=True,
+        comment=(
+            "Client-generated idempotency key (UUID minted on-device at creation time) — "
+            "a retried POST .../pay with the same client_ref returns the invoice's current "
+            "state instead of recording a duplicate payment leg."
+        ),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -32,6 +32,7 @@ from app.models.product_variant import ProductVariant
 from app.models.product_variant_attribute import ProductVariantAttribute
 from app.models.register_session import RegisterSession
 from app.models.reporting_group import ReportingGroup
+from app.models.setting_value import SettingValue
 from app.models.site import Site
 from app.models.tax_category import TaxCategory
 from app.models.tax_rate import TaxRate
@@ -75,6 +76,7 @@ __all__ = [
     "ProductVariantAttribute",
     "RegisterSession",
     "ReportingGroup",
+    "SettingValue",
     "Site",
     "TaxCategory",
     "TaxRate",

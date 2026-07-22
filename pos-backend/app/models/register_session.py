@@ -119,6 +119,34 @@ class RegisterSession(Base):
         nullable=True,
         comment="Snapshot of the closing user's display name at the time; NULL while still open",
     )
+    client_ref: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        unique=True,
+        comment=(
+            "Client-generated idempotency key for the OPEN call (UUID minted on-device) — "
+            "a retried POST /register-sessions/open with the same client_ref returns the "
+            "original row instead of raising 409 for a device that already has one open."
+        ),
+    )
+    close_client_ref: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        unique=True,
+        comment=(
+            "Client-generated idempotency key for the CLOSE call — a retried close with the "
+            "same close_client_ref returns the already-closed row instead of raising 400."
+        ),
+    )
+    checksum: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment=(
+            "SHA-256 hex digest over this session's canonical counts/totals, re-verified at "
+            "open and again (overwritten) at close — see app.utils.checksum. Always the "
+            "server's own computed digest, echoed back so the device can confirm what was stored."
+        ),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

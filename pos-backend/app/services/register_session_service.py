@@ -16,6 +16,7 @@ from app.models.register_session import RegisterSession
 from app.models.user import User
 from app.schemas.register_session import RegisterSessionCloseRequest, RegisterSessionOpenRequest
 from app.services.audit_service import log_action
+from app.utils.checksum import verify_checksum
 
 log = structlog.get_logger(__name__)
 
@@ -97,6 +98,21 @@ async def get_open_session_or_400(db: AsyncSession, device: PosDevice | None) ->
     return session
 
 
+async def _get_by_client_ref(db: AsyncSession, client_ref: str) -> RegisterSession | None:
+    """
+    Look up a register session previously opened with this idempotency key.
+
+    Args:
+        db: Active database session.
+        client_ref: The client-generated key from RegisterSessionOpenRequest.
+
+    Returns:
+        RegisterSession | None: The session that key already created, if any.
+    """
+    result = await db.execute(select(RegisterSession).where(RegisterSession.client_ref == client_ref))
+    return result.scalar_one_or_none()
+
+
 async def open_register_session(
     db: AsyncSession,
     payload: RegisterSessionOpenRequest,
@@ -106,28 +122,51 @@ async def open_register_session(
     """
     Open a new register session for a device.
 
-    Rejects with 409 if a session is already open for this device — a
-    partial unique index also enforces this at the DB level as a
-    defence-in-depth backstop against a concurrent double-open.
+    Idempotent when payload.client_ref is supplied: a retried open call
+    that already landed (the device sent the request, the write succeeded,
+    but the response was lost to a dropped connection) returns the
+    original session instead of raising 409 for a device that now looks
+    already-open. Rejects with 409 for a genuine second open — a partial
+    unique index also enforces this at the DB level as a defence-in-depth
+    backstop against a concurrent double-open.
 
     Args:
         db: Active database session.
-        payload: Opening cash and the device-local opened_at timestamp.
+        payload: Opening cash, the device-local opened_at timestamp, and
+            optional idempotency key / integrity checksum.
         device: The terminal being opened (already resolved from device_token).
         actor: The authenticated POS user opening the till.
 
     Returns:
-        RegisterSession: The newly opened session.
+        RegisterSession: The newly opened (or, on a deduped retry, the
+            already-existing) session.
 
     Raises:
         HTTPException: 409 if a session is already open for this device.
+        HTTPException: 422 if payload.checksum is supplied and doesn't
+            match the server's own computed checksum.
     """
+    if payload.client_ref is not None:
+        existing_by_ref = await _get_by_client_ref(db, payload.client_ref)
+        if existing_by_ref is not None:
+            log.info("register_session.open.deduped", client_ref=payload.client_ref)
+            return existing_by_ref
+
     existing = await get_open_session_for_device(db, device.id)
     if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A register session is already open for this device",
         )
+
+    checksum = verify_checksum(
+        {
+            "device_id": str(device.id),
+            "opened_at": payload.opened_at.isoformat(),
+            "opening_cash_cents": payload.opening_cash_cents,
+        },
+        payload.checksum,
+    )
 
     session = RegisterSession(
         id=uuid.uuid4(),
@@ -138,6 +177,8 @@ async def open_register_session(
         opening_cash_cents=payload.opening_cash_cents,
         opened_by_user_id=actor.id,
         opened_by_name=actor.name,
+        client_ref=payload.client_ref,
+        checksum=checksum,
     )
     db.add(session)
 
@@ -176,10 +217,16 @@ async def close_register_session(
     difference between what was actually counted and that expectation —
     positive means over, negative means short.
 
+    Idempotent when payload.client_ref is supplied: a retried close call
+    that already landed (same close_client_ref as the currently-closed row)
+    returns the already-closed session instead of raising 400. A genuine
+    second close attempt (different or absent client_ref) still raises 400.
+
     Args:
         db: Active database session.
         session_id: The session to close.
-        payload: Closing cash and the device-local closed_at timestamp.
+        payload: Closing cash, the device-local closed_at timestamp, and
+            optional idempotency key / integrity checksum.
         actor: The authenticated POS user closing the till.
 
     Returns:
@@ -187,9 +234,18 @@ async def close_register_session(
 
     Raises:
         HTTPException: 404 if the session doesn't exist; 400 if it's already closed.
+        HTTPException: 422 if payload.checksum is supplied and doesn't
+            match the server's own computed checksum.
     """
     session = await _get_or_404(db, session_id)
     if session.status != "open":
+        if (
+            payload.client_ref is not None
+            and session.close_client_ref is not None
+            and payload.client_ref == session.close_client_ref
+        ):
+            log.info("register_session.close.deduped", client_ref=payload.client_ref)
+            return session
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Register session is already closed",
@@ -212,6 +268,17 @@ async def close_register_session(
     expected_cents = session.opening_cash_cents + cash_takings_cents
     variance_cents = payload.closing_cash_cents - expected_cents
 
+    checksum = verify_checksum(
+        {
+            "session_id": str(session.id),
+            "closed_at": payload.closed_at.isoformat(),
+            "closing_cash_cents": payload.closing_cash_cents,
+            "expected_cash_cents": expected_cents,
+            "variance_cents": variance_cents,
+        },
+        payload.checksum,
+    )
+
     session.status = "closed"
     session.closed_at = payload.closed_at
     session.closing_cash_cents = payload.closing_cash_cents
@@ -219,6 +286,8 @@ async def close_register_session(
     session.variance_cents = variance_cents
     session.closed_by_user_id = actor.id
     session.closed_by_name = actor.name
+    session.close_client_ref = payload.client_ref
+    session.checksum = checksum
 
     await log_action(
         db=db,

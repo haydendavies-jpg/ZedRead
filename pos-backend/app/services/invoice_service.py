@@ -44,6 +44,7 @@ from app.models.payment import Payment
 from app.models.user import User
 from app.models.product import Product
 from app.services.audit_service import log_action
+from app.utils.checksum import verify_checksum
 
 log = structlog.get_logger(__name__)
 
@@ -75,6 +76,8 @@ class InvoiceResponse(BaseModel):
     voided_at: datetime | None
     paid_at: datetime | None
     created_at: datetime
+    client_ref: str | None = None
+    checksum: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -153,12 +156,33 @@ class ApplyDiscountRequest(BaseModel):
     reason: str | None = None
 
 
+class InvoiceCreateRequest(BaseModel):
+    """
+    Payload for POST /invoices.
+
+    All fields optional — site/brand/register-session resolve server-side
+    from the caller's POS token, this only carries the offline-sync
+    idempotency key.
+    """
+
+    client_ref: str | None = Field(
+        None, description="Client-generated idempotency key — a retried create with the same value is deduped"
+    )
+
+
 class PayInvoiceRequest(BaseModel):
     """Payload for recording a payment."""
 
     method: str = Field(..., pattern="^(cash|card|voucher)$")
     amount_cents: int = Field(..., ge=1)
     reference: str | None = None
+    client_ref: str | None = Field(
+        None, description="Client-generated idempotency key — a retried pay call with the same value is deduped"
+    )
+    checksum: str | None = Field(
+        None,
+        description="SHA-256 over the invoice's canonical line items/totals/payments after this payment — verified if supplied",
+    )
 
 
 class RefundRequest(BaseModel):
@@ -218,6 +242,57 @@ async def _recompute_invoice_totals(db: AsyncSession, invoice: Invoice) -> None:
     invoice.total_cents = max(0, total)  # never negative (discount cannot exceed total)
 
 
+async def _build_invoice_checksum_payload(db: AsyncSession, invoice: Invoice) -> dict:
+    """
+    Build the canonical dict pay_invoice() checksums an invoice's current state against.
+
+    Covers line items and payments (per CLAUDE.md's Phase 2 plan: "line
+    items/totals/payments for an invoice") sorted by id so the digest is
+    stable regardless of query row order.
+
+    Args:
+        db: Active database session.
+        invoice: The invoice to build the payload for — read within the same
+            transaction as the write being verified, so it reflects the
+            payment/line items already flushed but not yet committed.
+
+    Returns:
+        dict: JSON-primitive canonical payload, ready for app.utils.checksum.
+    """
+    items_result = await db.execute(
+        select(InvoiceLineItem).where(InvoiceLineItem.invoice_id == invoice.id)
+    )
+    items = sorted(items_result.scalars().all(), key=lambda i: str(i.id))
+
+    payments_result = await db.execute(select(Payment).where(Payment.invoice_id == invoice.id))
+    payments = payments_result.scalars().all()
+
+    return {
+        "invoice_id": str(invoice.id),
+        "subtotal_cents": invoice.subtotal_cents,
+        "tax_cents": invoice.tax_cents,
+        "discount_cents": invoice.discount_cents,
+        "total_cents": invoice.total_cents,
+        "line_items": [
+            {
+                "id": str(i.id),
+                "product_id": str(i.product_id) if i.product_id else None,
+                "quantity": i.quantity,
+                "line_total_cents": i.line_total_cents,
+            }
+            for i in items
+        ],
+        # Keyed by client_ref (known to the device before the call that
+        # creates the row) rather than the server-generated id, so the
+        # device can compute this checksum for the payment it is about to
+        # submit without needing a round trip first.
+        "payments": [
+            {"ref": p.client_ref or str(p.id), "method": p.method, "amount_cents": p.amount_cents}
+            for p in sorted(payments, key=lambda p: p.client_ref or str(p.id))
+        ],
+    }
+
+
 # ── Public service functions ──────────────────────────────────────────────────
 
 
@@ -257,9 +332,15 @@ async def create_invoice(
     site_id: uuid.UUID,
     actor: User,
     register_session_id: uuid.UUID,
+    client_ref: str | None = None,
 ) -> Invoice:
     """
     Create a DRAFT invoice for a site.
+
+    Idempotent when client_ref is supplied: a retried create call that
+    already landed (the write succeeded but the device never saw the
+    response) returns the original invoice instead of creating a duplicate
+    draft.
 
     Args:
         db: Active database session.
@@ -270,10 +351,19 @@ async def create_invoice(
             rung up under — callers resolve this via
             register_session_service.get_open_session_or_400() before
             calling create_invoice(), so a sale is never orphaned from a shift.
+        client_ref: Optional client-generated idempotency key.
 
     Returns:
-        Invoice: The newly created draft invoice.
+        Invoice: The newly created (or, on a deduped retry, the
+            already-existing) draft invoice.
     """
+    if client_ref is not None:
+        existing_result = await db.execute(select(Invoice).where(Invoice.client_ref == client_ref))
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            log.info("invoice.create.deduped", client_ref=client_ref)
+            return existing
+
     invoice = Invoice(
         id=uuid.uuid4(),
         brand_id=brand_id,
@@ -282,6 +372,7 @@ async def create_invoice(
         register_session_id=register_session_id,
         invoice_type=InvoiceType.SALE.value,
         status=InvoiceStatus.DRAFT.value,
+        client_ref=client_ref,
     )
     db.add(invoice)
 
@@ -833,11 +924,16 @@ async def pay_invoice(
     further legs of a split payment; the invoice status in the response
     tells the caller whether the balance is now fully covered.
 
+    Idempotent when payload.client_ref is supplied: a retried pay call that
+    already landed (a Payment row already exists with that client_ref)
+    returns the invoice's current state instead of recording a duplicate
+    payment leg.
+
     Args:
         db: Active database session.
         brand_id: Brand scope.
         invoice_id: Invoice to pay.
-        payload: Payment method and amount.
+        payload: Payment method, amount, and optional idempotency key / checksum.
         actor: The authenticated POS user.
 
     Returns:
@@ -847,8 +943,19 @@ async def pay_invoice(
     Raises:
         HTTPException: 404 if invoice not found.
         HTTPException: 409 if already paid or voided.
+        HTTPException: 422 if payload.checksum is supplied and doesn't
+            match the server's own computed checksum over the invoice's
+            line items, totals, and payments after this one is applied.
     """
     invoice = await _get_invoice_or_404(db, brand_id, invoice_id)
+
+    if payload.client_ref is not None:
+        existing_payment_result = await db.execute(
+            select(Payment).where(Payment.client_ref == payload.client_ref)
+        )
+        if existing_payment_result.scalar_one_or_none() is not None:
+            log.info("invoice.pay.deduped", client_ref=payload.client_ref)
+            return invoice
 
     if invoice.status == InvoiceStatus.PAID.value:
         raise HTTPException(
@@ -870,6 +977,7 @@ async def pay_invoice(
         amount_cents=payload.amount_cents,
         reference=payload.reference,
         paid_at=now,
+        client_ref=payload.client_ref,
     )
     db.add(payment)
     await db.flush()
@@ -885,6 +993,9 @@ async def pay_invoice(
     # so it JSON-serializes cleanly into the audit log's after_state.
     total_paid_cents = int(paid_result.scalar_one() or 0)
     fully_paid = total_paid_cents >= invoice.total_cents
+
+    checksum = verify_checksum(await _build_invoice_checksum_payload(db, invoice), payload.checksum)
+    invoice.checksum = checksum
 
     if fully_paid:
         invoice.status = InvoiceStatus.PAID.value

@@ -16,6 +16,12 @@ class RegisterSessionOpenRequest(BaseModel):
 
     opened_at: datetime = Field(..., description="Device-local timestamp the session was opened")
     opening_cash_cents: int = Field(..., ge=0, description="Cash counted into the till at start of shift")
+    client_ref: str | None = Field(
+        None, description="Client-generated idempotency key — a retried open with the same value is deduped"
+    )
+    checksum: str | None = Field(
+        None, description="SHA-256 over {device_id, opened_at, opening_cash_cents} — verified if supplied"
+    )
 
 
 class RegisterSessionCloseRequest(BaseModel):
@@ -23,6 +29,16 @@ class RegisterSessionCloseRequest(BaseModel):
 
     closed_at: datetime = Field(..., description="Device-local timestamp the session was closed")
     closing_cash_cents: int = Field(..., ge=0, description="Cash counted out of the till at close")
+    client_ref: str | None = Field(
+        None, description="Client-generated idempotency key — a retried close with the same value is deduped"
+    )
+    checksum: str | None = Field(
+        None,
+        description=(
+            "SHA-256 over {session_id, closed_at, closing_cash_cents, expected_cash_cents, "
+            "variance_cents} — verified if supplied"
+        ),
+    )
 
 
 class RegisterSessionOut(BaseModel):
@@ -42,5 +58,8 @@ class RegisterSessionOut(BaseModel):
     variance_cents: int | None
     closed_by_user_id: uuid.UUID | None
     closed_by_name: str | None
+    client_ref: str | None = Field(None, description="Idempotency key supplied at open, if any")
+    close_client_ref: str | None = Field(None, description="Idempotency key supplied at close, if any")
+    checksum: str | None = Field(None, description="Server-computed checksum of the session's current state")
 
     model_config = {"from_attributes": True}
