@@ -51,6 +51,7 @@ LICENSE_INVOICE_PAID = "license_invoice.paid"
 DEVICE_REGISTERED = "device.registered"
 DEVICE_DEREGISTERED = "device.deregistered"
 DEVICE_REPAIRED = "device.repaired"
+DEVICE_TOKEN_RECOVERED = "device.token_recovered"
 
 # ── Phase 2 / Stage 7 — POS Authentication ───────────────────────────────────
 POS_LOGIN_SUCCESS = "pos_auth.login.success"

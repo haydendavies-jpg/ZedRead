@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants.audit_actions import (
     DEVICE_REGISTERED,
     DEVICE_REPAIRED,
+    DEVICE_TOKEN_RECOVERED,
     POS_LOGIN_FAILED,
     POS_LOGIN_SUCCESS,
     POS_LOGOUT,
@@ -213,6 +214,31 @@ async def _get_device_by_token(db: AsyncSession, device_token: str) -> PosDevice
     return result.scalar_one_or_none()
 
 
+async def _get_device_by_hardware_id(db: AsyncSession, hardware_id: str) -> PosDevice | None:
+    """
+    Fetch an active PosDevice by its stable hardware-anchored identifier.
+
+    Used as a fallback when the terminal presents no device_token (e.g. the
+    app was reinstalled and its local storage — and the token with it — was
+    wiped), so the same physical device is still recognised rather than
+    treated as brand-new.
+
+    Args:
+        db: Active database session.
+        hardware_id: The OS-level identifier (e.g. Android ID) presented by the terminal.
+
+    Returns:
+        PosDevice | None: The matching device, or None if unknown/deregistered.
+    """
+    result = await db.execute(
+        select(PosDevice).where(
+            PosDevice.hardware_id == hardware_id,
+            PosDevice.is_active == True,  # noqa: E712
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def _get_active_license(db: AsyncSession, site_id: uuid.UUID) -> License | None:
     """
     Fetch the active License for a site, if any.
@@ -293,17 +319,24 @@ async def _resolve_or_claim_device(
     license_row: License,
     device_name: str,
     device_token: str | None,
+    hardware_id: str | None = None,
 ) -> PosDevice | None:
     """
     Resolve this terminal's PosDevice for the target site, self-service.
 
-    Three outcomes: the presented device_token already belongs to an active
-    device on site_id (reused as-is, no seat change); it belongs to an
-    active device on a different site (re-paired here, consuming a seat on
-    site_id's license — writes DEVICE_REPAIRED); or it is absent/unknown
-    (a new device is claimed with a server-generated token, consuming a
-    seat — writes DEVICE_REGISTERED). The first case aside, both other
-    outcomes require a free seat on license_row.
+    Resolution order: the presented device_token, if any; otherwise —
+    since device_token lives in the app's own storage and is wiped by a
+    reinstall — a fallback lookup by hardware_id (a stable OS-level
+    identifier, e.g. Android ID, that survives reinstalls) to recognise a
+    returning physical device that lost its token. Whichever way it's
+    found, an existing device on site_id is reused as-is (no seat change,
+    or a DEVICE_TOKEN_RECOVERED audit row if it was found only via
+    hardware_id); found on a different site, it's re-paired here,
+    consuming a seat on site_id's license (DEVICE_REPAIRED, or
+    DEVICE_TOKEN_RECOVERED if the hardware_id fallback is what found it);
+    genuinely unknown, a new device is claimed with a server-generated
+    token, consuming a seat (DEVICE_REGISTERED). Every outcome but the
+    plain same-site token match requires a free seat on license_row.
 
     Args:
         db: Active database session.
@@ -312,13 +345,36 @@ async def _resolve_or_claim_device(
         license_row: The target site's active License.
         device_name: Human-readable name to give a newly claimed device.
         device_token: The terminal's own previously-claimed token, if any.
+        hardware_id: The terminal's stable hardware identifier, if any.
 
     Returns:
         PosDevice | None: The resolved device, or None if site_id's license
         has no free seat for a new claim/re-pair.
     """
     existing = await _get_device_by_token(db, device_token) if device_token else None
+    recovered_via_hardware_id = False
+    if existing is None and hardware_id:
+        existing = await _get_device_by_hardware_id(db, hardware_id)
+        recovered_via_hardware_id = existing is not None
+
+    # Learn (or refresh) the hardware anchor whenever the terminal reports one,
+    # so a future token loss can still be recovered.
+    if existing is not None and hardware_id and existing.hardware_id != hardware_id:
+        existing.hardware_id = hardware_id
+
     if existing is not None and existing.site_id == site_id:
+        if recovered_via_hardware_id:
+            await log_action(
+                db=db,
+                action=DEVICE_TOKEN_RECOVERED,
+                entity_type="pos_device",
+                entity_id=str(existing.id),
+                actor_type=ActorType.USER,
+                actor_id=user.id,
+                actor_email=user.email,
+                actor_name=user.name,
+                after_state={"site_id": str(site_id)},
+            )
         return existing
 
     active_count = await pos_device_service.count_active_devices_for_license(db, license_row.id)
@@ -331,7 +387,7 @@ async def _resolve_or_claim_device(
         existing.license_id = license_row.id
         await log_action(
             db=db,
-            action=DEVICE_REPAIRED,
+            action=DEVICE_TOKEN_RECOVERED if recovered_via_hardware_id else DEVICE_REPAIRED,
             entity_type="pos_device",
             entity_id=str(existing.id),
             actor_type=ActorType.USER,
@@ -349,6 +405,7 @@ async def _resolve_or_claim_device(
         license_id=license_row.id,
         device_name=device_name,
         device_token=str(uuid.uuid4()),
+        hardware_id=hardware_id,
         is_active=True,
     )
     db.add(device)
@@ -378,6 +435,7 @@ async def _finalize_login(
     site_id: uuid.UUID,
     device_name: str,
     device_token: str | None,
+    hardware_id: str | None = None,
 ) -> POSLoginResponse:
     """
     Resolve a chosen site into an issued POS access token.
@@ -393,6 +451,7 @@ async def _finalize_login(
         site_id: The site being logged into.
         device_name: Human-readable name to give a newly claimed device.
         device_token: The terminal's own previously-claimed token, if any.
+        hardware_id: The terminal's stable hardware identifier, if any.
 
     Returns:
         POSLoginResponse: Access token and terminal context.
@@ -468,6 +527,7 @@ async def _finalize_login(
         license_row=license_row,
         device_name=device_name,
         device_token=device_token,
+        hardware_id=hardware_id,
     )
     if device is None:
         await log_action(
@@ -591,6 +651,7 @@ async def login(db: AsyncSession, payload: POSLoginRequest) -> POSLoginResponse:
             site_id=target_site.id,
             device_name=payload.device_name,
             device_token=payload.device_token,
+            hardware_id=payload.hardware_id,
         )
 
     log.info("pos_auth.login.site_selection", user_id=str(user.id), site_count=len(site_grants))
@@ -639,6 +700,7 @@ async def select_site(db: AsyncSession, payload: POSSiteTokenRequest) -> POSLogi
         site_id=payload.site_id,
         device_name=payload.device_name,
         device_token=payload.device_token,
+        hardware_id=payload.hardware_id,
     )
 
 

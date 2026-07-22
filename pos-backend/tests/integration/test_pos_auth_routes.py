@@ -19,6 +19,7 @@ from sqlalchemy import select
 from app.constants.audit_actions import (
     DEVICE_REGISTERED,
     DEVICE_REPAIRED,
+    DEVICE_TOKEN_RECOVERED,
     POS_LOGIN_FAILED,
     POS_LOGIN_SUCCESS,
     POS_LOGOUT,
@@ -201,6 +202,115 @@ async def test_pos_login_unknown_device_token_claims_new_device(
             "password": "POSPassword123!",
             "device_name": "New Terminal",
             "device_token": "not-a-real-device-token",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["device_token"] is not None
+
+
+async def test_pos_login_missing_token_recovers_via_hardware_id(
+    client, db, test_user, test_site, test_access_grant, test_device
+):
+    """No device_token but a hardware_id matching an active device recovers it, same seat."""
+    test_device.hardware_id = "android-id-abc123"
+    await db.commit()
+
+    response = await client.post(
+        "/auth/pos/login",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "device_name": "Reinstalled Terminal",
+            "hardware_id": "android-id-abc123",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["device_token"] == test_device.device_token
+
+
+async def test_pos_login_hardware_id_recovery_does_not_consume_new_seat(
+    client, db, test_user, test_site, test_access_grant, test_license, test_device
+):
+    """Recovering a device via hardware_id succeeds even with no free seats — no seat is consumed."""
+    # test_license defaults to max_devices=1, and test_device already occupies it.
+    test_device.hardware_id = "android-id-full-seat"
+    await db.commit()
+
+    response = await client.post(
+        "/auth/pos/login",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "device_name": "Reinstalled Terminal",
+            "hardware_id": "android-id-full-seat",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["device_token"] == test_device.device_token
+
+
+async def test_pos_login_hardware_id_recovery_writes_audit_log(
+    client, db, test_user, test_site, test_access_grant, test_device
+):
+    """Recognising a returning device via hardware_id writes a DEVICE_TOKEN_RECOVERED row."""
+    test_device.hardware_id = "android-id-def456"
+    await db.commit()
+
+    await client.post(
+        "/auth/pos/login",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "device_name": "Reinstalled Terminal",
+            "hardware_id": "android-id-def456",
+        },
+    )
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_device.id),
+            AuditLog.action == DEVICE_TOKEN_RECOVERED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.actor_id == test_user.id
+
+
+async def test_pos_login_learns_hardware_id_from_known_token(
+    client, db, test_user, test_site, test_access_grant, test_device
+):
+    """A login carrying both a valid device_token and a new hardware_id backfills it onto the device."""
+    assert test_device.hardware_id is None
+
+    await client.post(
+        "/auth/pos/login",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "device_name": "Test Terminal",
+            "device_token": test_device.device_token,
+            "hardware_id": "android-id-newly-learned",
+        },
+    )
+
+    await db.refresh(test_device)
+    assert test_device.hardware_id == "android-id-newly-learned"
+
+
+async def test_pos_login_unknown_hardware_id_claims_new_device(
+    client, test_user, test_site, test_access_grant, test_license
+):
+    """A hardware_id matching nothing active is treated as a first-ever claim, not an error."""
+    response = await client.post(
+        "/auth/pos/login",
+        json={
+            "email": "posuser@test.com",
+            "password": "POSPassword123!",
+            "device_name": "New Terminal",
+            "hardware_id": "brand-new-android-id",
         },
     )
 

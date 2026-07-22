@@ -188,6 +188,7 @@ export interface PosDevice {
   license_id: string
   device_name: string
   device_token: string
+  hardware_id: string | null
   is_active: boolean
   registered_at: string
 }

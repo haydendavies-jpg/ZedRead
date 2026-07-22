@@ -1,6 +1,8 @@
 package com.zedread.pos.data.repository
 
+import android.content.Context
 import android.os.Build
+import android.provider.Settings
 import com.zedread.pos.data.api.LoginRequest
 import com.zedread.pos.data.api.PinSetRequest
 import com.zedread.pos.data.api.PinVerifyRequest
@@ -10,6 +12,7 @@ import com.zedread.pos.data.api.PosLoginResponseDto
 import com.zedread.pos.data.api.SiteOptionDto
 import com.zedread.pos.data.api.SiteTokenRequest
 import com.zedread.pos.data.local.TokenStore
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.firstOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -19,6 +22,7 @@ import javax.inject.Singleton
 class AuthRepository @Inject constructor(
     private val api: PosApiService,
     private val tokenStore: TokenStore,
+    @ApplicationContext private val context: Context,
 ) {
     /** Outcome of a login()/selectSite() call — exactly one branch applies. */
     sealed class LoginOutcome {
@@ -43,19 +47,34 @@ class AuthRepository @Inject constructor(
      */
     suspend fun login(email: String, password: String): LoginOutcome {
         val deviceToken = tokenStore.deviceToken.firstOrNull()
-        val response = api.login(LoginRequest(email, password, deviceName(), deviceToken))
+        val response = api.login(LoginRequest(email, password, deviceName(), deviceToken, hardwareId()))
         return handleLoginResponse(response, email)
     }
 
     /** Step 2 (multi-site only): finalize login by choosing one of the offered sites. */
     suspend fun selectSite(email: String, password: String, siteId: String): LoginOutcome {
         val deviceToken = tokenStore.deviceToken.firstOrNull()
-        val response = api.selectSite(SiteTokenRequest(email, password, deviceName(), deviceToken, siteId))
+        val response = api.selectSite(
+            SiteTokenRequest(email, password, deviceName(), deviceToken, hardwareId(), siteId)
+        )
         return handleLoginResponse(response, email)
     }
 
     /** Human-readable fallback name for a brand-new device claim — the model name is good enough. */
     private fun deviceName(): String = Build.MODEL ?: "Android Terminal"
+
+    /**
+     * This terminal's stable OS-level identifier, read fresh from the OS each call rather than
+     * cached locally — it survives an app reinstall (unlike deviceToken), so the backend can
+     * recognise this physical device even after its stored device_token was wiped. Deliberately
+     * not the device's MAC address: modern Android randomizes the Wi-Fi MAC per network for
+     * privacy and blocks apps from reading the real hardware MAC without root, so it would never
+     * reliably match across reinstalls. Null only on the (extremely rare) device/OS combination
+     * where ANDROID_ID itself is unavailable — the backend already treats a missing hardware_id
+     * as "can't fall back, use device_token alone".
+     */
+    private fun hardwareId(): String? =
+        Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
 
     private suspend fun handleLoginResponse(
         response: PosLoginResponseDto,

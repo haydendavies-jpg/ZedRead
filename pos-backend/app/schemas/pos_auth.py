@@ -16,6 +16,11 @@ class POSLoginRequest(BaseModel):
     this terminal's own previously-claimed token, or None on its very first
     login ever; the server claims (or re-pairs) a device and returns its
     token for the client to persist — see POSLoginResponse.device_token.
+    hardware_id is a stable OS-level identifier (Android's
+    Settings.Secure.ANDROID_ID) that survives an app reinstall, unlike
+    device_token — if the terminal shows up with no device_token but a
+    hardware_id matching a previously-claimed device, it's recognised and
+    re-linked instead of claiming a brand-new seat.
     """
 
     email: EmailStr
@@ -29,6 +34,11 @@ class POSLoginRequest(BaseModel):
     device_token: str | None = Field(
         default=None,
         description="This terminal's own previously-claimed device token, or None on first login",
+    )
+    hardware_id: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Stable OS-level hardware identifier for this terminal (e.g. Android ID)",
     )
 
 
@@ -52,6 +62,7 @@ class POSSiteTokenRequest(BaseModel):
     password: str
     device_name: str = Field(..., min_length=1, max_length=255)
     device_token: str | None = None
+    hardware_id: str | None = Field(default=None, max_length=255)
     site_id: uuid.UUID
 
 

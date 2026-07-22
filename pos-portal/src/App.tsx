@@ -35,6 +35,7 @@ import { ReportsPage } from './pages/management/ReportsPage'
 import { InvoicesPage } from './pages/management/InvoicesPage'
 import { RegisterSessionsPage } from './pages/management/RegisterSessionsPage'
 import { DevicesPage } from './pages/management/DevicesPage'
+import { LicenseBillingPage } from './pages/management/LicenseBillingPage'
 import { SettingsPage } from './pages/management/SettingsPage'
 import { InvoiceDetailPage } from './pages/management/InvoiceDetailPage'
 import { UsersPage as MgmtUsersPage } from './pages/management/UsersPage'
@@ -176,6 +177,7 @@ export default function App() {
               <Route path="management/invoices/:invoiceId" element={<InvoiceDetailPage />} />
               <Route path="management/register-sessions" element={<RegisterSessionsPage />} />
               <Route path="management/devices" element={<DevicesPage />} />
+              <Route path="management/license-billing" element={<LicenseBillingPage />} />
               <Route path="management/settings" element={<SettingsPage />} />
               <Route path="management/users" element={<MgmtUsersPage />} />
               <Route path="management/access-profiles" element={<AccessProfilesPage />} />

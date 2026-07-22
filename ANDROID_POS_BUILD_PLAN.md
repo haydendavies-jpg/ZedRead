@@ -22,6 +22,8 @@ here in a new session — read the Status section first, then the phase you're o
 | 1 | Android — user-testing feedback round (cash-up logout, keyboard/IME, immersive system bars, PIN-only switch-user) | ✅ Done — see below |
 | 2 | Backend — settings framework, idempotency, checksum verification | ✅ Done — see below |
 | 2 | Portal — Settings management page | ✅ Done |
+| 1 | Backend/Android — hardware-anchored device recognition (`pos_devices.hardware_id`, survives reinstall) | ✅ Done — see below |
+| — | Portal — brand-scoped License & Billing page (seat editing for Admin/Master User, not just SuperAdmin) | ✅ Done — see below |
 | 2 | Android — Settings screen + denomination-grid cash-in/cash-up variant | ✅ Done — see below |
 | 2 | Android — offline write-queue, sync indicator, invoice search | 🔲 Not started |
 | 3 | Menu Studio → POS integration depth (recurring scheduling, menu selector) | 🔲 Not started |
@@ -65,6 +67,22 @@ on every new/changed file, a cross-reference of every new type/import against it
 repo-wide grep for stale call sites (`OrderEntryScreen(` for the new `onSettings` parameter, `Screen.
 Settings`, `getSettings(`) — all confirmed consistent. Needs a real compile + emulator run before
 merging with confidence.
+
+**What the license-editing + device-tracking slice shipped** (this session): two user requests. (1)
+Brand-scoped Admin/Master User can now edit a license's seat capacity via a new `license_billing`-
+gated `/licenses/management` route family and a new portal "License & Billing" page — previously the
+`license_billing` page permission existed in the role model but nothing was wired to it, so only
+SuperAdmin could touch `/licenses` at all. (2) Device tracking across app reinstalls: `device_token`
+alone can't survive a reinstall (it lives in the app's own storage, wiped with it), and MAC address
+was explicitly ruled out (Android randomizes/blocks it for privacy). `pos_devices.hardware_id`
+(migration `0054`) stores Android's `Settings.Secure.ANDROID_ID`, read fresh from the OS on every
+login and sent alongside `device_token`; `pos_auth_service` now falls back to a hardware_id lookup
+when no token is presented, re-linking a returning physical device instead of silently claiming a
+new seat. See `STAGE_STATUS.md` "License editing for Admin/Master User + hardware-anchored device
+tracking" for the full deliverable list — the 109 tests directly covering this slice, and the full
+suite (904/904, up from 889), pass against a real local Postgres 16; portal `npm run build` clean;
+the Android-side change (`AuthRepository` reading `ANDROID_ID`) is source-only, same "no reachable
+Gradle build in this sandbox" caveat as everything else here.
 
 **What the Phase 2 backend/portal slice shipped** (this session): the first three items of Phase 2's
 build order, fully tested against a real Postgres instance — see `STAGE_STATUS.md` "Android POS

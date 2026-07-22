@@ -27,6 +27,20 @@ class LicenseUpdate(BaseModel):
     max_devices: int | None = Field(default=None, ge=1)
 
 
+class LicenseManagementUpdate(BaseModel):
+    """
+    Payload for PATCH /licenses/management/{id} — the subset of license
+    fields a brand-scoped Admin/Master User may edit via the "license_billing"
+    page permission.
+
+    Commercial terms (plan_name, monthly_fee_cents, expires_at) and status
+    transitions (disable/enable) stay SuperAdmin-only via /licenses/{id} —
+    only seat capacity is exposed here.
+    """
+
+    max_devices: int | None = Field(default=None, ge=1)
+
+
 class LicenseResponse(BaseModel):
     """Serialised License returned by all /licenses routes."""
 
