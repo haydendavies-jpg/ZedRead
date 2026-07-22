@@ -1,5 +1,6 @@
 package com.zedread.pos.ui.viewmodel
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zedread.pos.data.api.LineItemDto
@@ -66,7 +67,21 @@ class SellViewModel @Inject constructor(
     private val invoiceRepo: InvoiceRepository,
     private val outboxRepo: OutboxRepository,
     private val menuLayoutRepo: MenuLayoutRepository,
+    savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
+
+    // ── Tables handoff (Android POS Phase 4) ────────────────────────────────
+    //
+    // "Open order →" on the Tables screen navigates here with a
+    // `tableSessionId` nav arg (see PosNavHost's Screen.OrderEntry route).
+    // Hilt's hiltViewModel() automatically backs [SavedStateHandle] with the
+    // current nav back stack entry's arguments, so this is populated without
+    // the screen itself having to pass anything through. Consumed exactly
+    // once — on this sell session's very first invoice creation, same as
+    // [currentInvoiceId]'s own lazy-create-on-first-item pattern below —
+    // then cleared, so a subsequent "New order" on the same screen instance
+    // doesn't keep re-attaching to the same table.
+    private var pendingTableSessionId: String? = savedStateHandle.get<String>("tableSessionId")
 
     // ── Category / product browsing ─────────────────────────────────────────
 
@@ -224,7 +239,11 @@ class SellViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 val invoiceId = currentInvoiceId
-                    ?: invoiceRepo.createInvoice().id.also { currentInvoiceId = it; issueTicketNumber() }
+                    ?: invoiceRepo.createInvoice(tableSessionId = pendingTableSessionId).id.also {
+                        currentInvoiceId = it
+                        pendingTableSessionId = null
+                        issueTicketNumber()
+                    }
                 invoiceRepo.addLineItem(invoiceId, productId, quantity)
             }
                 .onSuccess { item ->
@@ -434,7 +453,11 @@ class SellViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 val invoiceId = currentInvoiceId
-                    ?: invoiceRepo.createInvoice().id.also { currentInvoiceId = it; issueTicketNumber() }
+                    ?: invoiceRepo.createInvoice(tableSessionId = pendingTableSessionId).id.also {
+                        currentInvoiceId = it
+                        pendingTableSessionId = null
+                        issueTicketNumber()
+                    }
                 val item = invoiceRepo.addLineItem(invoiceId, state.product.id, state.quantity)
 
                 val optionIds = state.groups.flatMap { gs ->

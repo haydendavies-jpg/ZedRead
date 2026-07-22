@@ -10,9 +10,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.zedread.pos.ui.components.MainScaffold
+import com.zedread.pos.ui.components.TopNavTab
 import com.zedread.pos.ui.screens.auth.LoginScreen
 import com.zedread.pos.ui.screens.auth.PinSetScreen
 import com.zedread.pos.ui.screens.auth.SiteSelectorScreen
@@ -23,6 +27,7 @@ import com.zedread.pos.ui.screens.register.CashUpScreen
 import com.zedread.pos.ui.screens.register.RegisterGateScreen
 import com.zedread.pos.ui.screens.settings.SettingsScreen
 import com.zedread.pos.ui.screens.switchuser.SwitchUserScreen
+import com.zedread.pos.ui.screens.tables.TablesScreen
 import com.zedread.pos.ui.viewmodel.AppEntryViewModel
 import com.zedread.pos.ui.viewmodel.StartDestination
 
@@ -85,7 +90,7 @@ fun PosNavHost() {
                     }
                 },
                 onOpen = {
-                    navController.navigate(Screen.OrderEntry.route) {
+                    navController.navigate(Screen.OrderEntry.buildRoute()) {
                         popUpTo(Screen.RegisterGate.route) { inclusive = true }
                     }
                 },
@@ -100,7 +105,7 @@ fun PosNavHost() {
         composable(Screen.CashIn.route) {
             CashInScreen(
                 onOpened = {
-                    navController.navigate(Screen.OrderEntry.route) {
+                    navController.navigate(Screen.OrderEntry.buildRoute()) {
                         popUpTo(Screen.CashIn.route) { inclusive = true }
                     }
                 },
@@ -134,13 +139,54 @@ fun PosNavHost() {
         // navigate-and-pop trick. The design bundle has no separate cart
         // screen either — the order pane lives alongside the product grid on
         // one Register screen — so there's only one entry point here.
-        composable(Screen.OrderEntry.route) {
-            OrderEntryScreen(
-                onSwitchUser = { navController.navigate(Screen.SwitchUser.route) },
-                onCashUp = { navController.navigate(Screen.CashUp.route) },
-                onSettings = { navController.navigate(Screen.Settings.route) },
-                onInvoiceSearch = { navController.navigate(Screen.InvoiceSearch.route) },
-            )
+        composable(
+            route = Screen.OrderEntry.route,
+            arguments = listOf(
+                navArgument("tableSessionId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) {
+            MainScaffold(
+                activeTab = TopNavTab.REGISTER,
+                onSelectRegister = {},
+                onSelectTables = { switchTab(navController, Screen.Tables.route) },
+            ) {
+                OrderEntryScreen(
+                    onSwitchUser = { navController.navigate(Screen.SwitchUser.route) },
+                    onCashUp = { navController.navigate(Screen.CashUp.route) },
+                    onSettings = { navController.navigate(Screen.Settings.route) },
+                    onInvoiceSearch = { navController.navigate(Screen.InvoiceSearch.route) },
+                )
+            }
+        }
+
+        // ── Tables / Floor Map (Android POS Phase 4) ────────────────────────
+        composable(Screen.Tables.route) {
+            MainScaffold(
+                activeTab = TopNavTab.TABLES,
+                onSelectRegister = { switchTab(navController, Screen.OrderEntry.buildRoute()) },
+                onSelectTables = {},
+            ) {
+                TablesScreen(
+                    onOpenOrder = { tableSessionId ->
+                        // A specific table's "Open order →" always starts a
+                        // fresh Register entry tied to that table — see
+                        // TablesScreen's own doc for why an open table gets
+                        // a different ("Seat table →") action first. Popping
+                        // the prior Register entry (if any) keeps exactly
+                        // one live sale on this terminal at a time, matching
+                        // the single always-visible order pane the design
+                        // has no "switch between sales" concept for.
+                        navController.navigate(Screen.OrderEntry.buildRoute(tableSessionId)) {
+                            popUpTo(Screen.OrderEntry.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                )
+            }
         }
 
         composable(Screen.Settings.route) {
@@ -172,6 +218,28 @@ fun PosNavHost() {
     }
 }
 
+/**
+ * Switches between the persistent top nav's Register/Tables tabs while
+ * preserving each destination's own back stack entry — and therefore its
+ * `hiltViewModel()` instance, so [com.zedread.pos.ui.viewmodel.SellViewModel]'s
+ * in-progress cart survives a trip to Tables and back — via the standard
+ * Navigation-Compose save/restoreState bottom-nav pattern.
+ *
+ * `popUpTo(Screen.OrderEntry.route)` treats Register as this tab system's
+ * own root: by the time either tab is reachable, Login/RegisterGate/CashIn
+ * have already popped themselves off the back stack via their own
+ * `popUpTo { inclusive = true }` calls above, so this always lands on an
+ * actual Register entry rather than past the graph's real start
+ * destination.
+ */
+private fun switchTab(navController: NavHostController, route: String) {
+    navController.navigate(route) {
+        popUpTo(Screen.OrderEntry.route) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
+    }
+}
+
 /** After login/site-select: PIN set if the backend flagged is_pin_reset_required, else the register gate. */
 private fun navigateAfterAuth(navController: NavHostController, needsPinSetup: Boolean) {
     val target = if (needsPinSetup) Screen.PinSet.route else Screen.RegisterGate.route
@@ -188,8 +256,19 @@ sealed class Screen(val route: String) {
     object RegisterGate : Screen("register_gate")
     object CashIn : Screen("cash_in")
     object CashUp : Screen("cash_up")
-    object OrderEntry : Screen("order_entry")
+    /**
+     * `tableSessionId` is an optional query arg — the Tables screen's "Open
+     * order →" handoff (see PosNavHost's Tables composable). Use
+     * [buildRoute] to navigate here rather than filling in the pattern by
+     * hand.
+     */
+    object OrderEntry : Screen("order_entry?tableSessionId={tableSessionId}") {
+        /** Resolves an actual navigable route — plain Register, or scoped to one table's session. */
+        fun buildRoute(tableSessionId: String? = null): String =
+            if (tableSessionId != null) "order_entry?tableSessionId=$tableSessionId" else "order_entry"
+    }
     object SwitchUser : Screen("switch_user")
     object Settings : Screen("settings")
     object InvoiceSearch : Screen("invoice_search")
+    object Tables : Screen("tables")
 }

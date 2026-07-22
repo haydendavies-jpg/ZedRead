@@ -147,6 +147,28 @@ object ThemeState {
     var darkOverride by mutableStateOf<Boolean?>(null)
 }
 
+/**
+ * Table-tile fill/border/accent per README-tables-floormap.md's "Status"
+ * token group (Android POS Phase 4, Tables / Floor Map screen). These are a
+ * fixed semantic set — the design bundle's own token list only lists one
+ * set, not a light/dark pair — and have no direct match in [ZedReadColors]'
+ * Material-mapped roles, so they're kept as their own small lookup rather
+ * than overloading e.g. `accent` for two different meanings.
+ */
+data class TableStatusStyle(val accent: Color, val fill: Color, val border: Color)
+
+/**
+ * Resolves a [PosDiningTableStatusDto]-shaped status string to its tile
+ * colors. [status] is null/"open"/"seated"/"ordered"/"bill" — null means
+ * "open" per that DTO's own doc comment.
+ */
+fun tableStatusStyle(status: String?): TableStatusStyle = when (status) {
+    "seated" -> TableStatusStyle(accent = Color(0xFF3B5A8C), fill = Color(0x143B5A8C), border = Color(0x663B5A8C))
+    "ordered" -> TableStatusStyle(accent = Color(0xFFC56A1A), fill = Color(0x14C56A1A), border = Color(0x66C56A1A))
+    "bill" -> TableStatusStyle(accent = Color(0xFFA82040), fill = Color(0x14A82040), border = Color(0x6BA82040))
+    else -> TableStatusStyle(accent = Color(0xFFA39A8C), fill = Color(0xFFF0ECE3), border = Color(0xFFF0ECE3))
+}
+
 @Composable
 fun ZedReadTheme(content: @Composable () -> Unit) {
     val dark = ThemeState.darkOverride ?: isSystemInDarkTheme()
