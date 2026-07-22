@@ -4,12 +4,19 @@ import uuid
 
 import structlog
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.audit_actions import DEVICE_DEREGISTERED, DEVICE_REGISTERED
+from app.constants.audit_actions import (
+    DEVICE_DELETED,
+    DEVICE_DEREGISTERED,
+    DEVICE_REGISTERED,
+    DEVICE_RENAMED,
+)
 from app.constants.statuses import LicenseStatus
+from app.models.invoice import Invoice
 from app.models.license import License
+from app.models.register_session import RegisterSession
 from app.models.user import User
 from app.models.pos_device import PosDevice
 from app.models.site import Site
@@ -269,3 +276,121 @@ async def deregister_device(
     await db.commit()
     await db.refresh(device)
     return device
+
+
+async def update_device_name(
+    db: AsyncSession,
+    device_id: uuid.UUID,
+    device_name: str,
+    actor: User,
+) -> PosDevice:
+    """
+    Rename a POS device and write an audit log row.
+
+    Args:
+        db: Active database session.
+        device_id: UUID of the device to rename.
+        device_name: The new display name.
+        actor: The authenticated portal user performing the rename.
+
+    Returns:
+        PosDevice: The updated device.
+
+    Raises:
+        HTTPException: 404 if not found.
+    """
+    device = await _get_or_404(db, device_id)
+    before_name = device.device_name
+    device.device_name = device_name
+
+    await log_action(
+        db=db,
+        action=DEVICE_RENAMED,
+        entity_type="pos_device",
+        entity_id=str(device.id),
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"device_name": before_name},
+        after_state={"device_name": device_name},
+    )
+
+    await db.commit()
+    await db.refresh(device)
+    return device
+
+
+async def hard_delete_device(
+    db: AsyncSession,
+    device_id: uuid.UUID,
+    actor: User,
+) -> tuple[int, int]:
+    """
+    Permanently delete a POS device record, admin-only clean-up for stray/test
+    registrations — irreversible, unlike deregister_device()'s soft-delete.
+
+    A device may have register_sessions (ondelete=RESTRICT) that in turn have
+    invoices referencing them (also ondelete=RESTRICT, but nullable) — neither
+    is cascaded at the DB level, so this walks the chain itself: any invoice
+    referencing one of the device's sessions is detached first (its
+    register_session_id set NULL, keeping the invoice itself intact), then the
+    sessions are deleted, then the device. user_pos_sessions.device_id is
+    ondelete=SET NULL and needs no handling here — the DB does it automatically
+    on the final delete.
+
+    Args:
+        db: Active database session.
+        device_id: UUID of the device to delete.
+        actor: The authenticated portal user performing the deletion.
+
+    Returns:
+        tuple[int, int]: (register_sessions_deleted, invoices_detached).
+
+    Raises:
+        HTTPException: 404 if not found.
+    """
+    device = await _get_or_404(db, device_id)
+
+    session_ids_result = await db.execute(
+        select(RegisterSession.id).where(RegisterSession.device_id == device_id)
+    )
+    session_ids = [row[0] for row in session_ids_result.all()]
+
+    invoices_detached = 0
+    if session_ids:
+        detach_result = await db.execute(
+            update(Invoice)
+            .where(Invoice.register_session_id.in_(session_ids))
+            .values(register_session_id=None)
+        )
+        invoices_detached = detach_result.rowcount or 0
+
+        await db.execute(delete(RegisterSession).where(RegisterSession.device_id == device_id))
+
+    log.info(
+        "device.deleting",
+        device_id=str(device_id),
+        register_sessions_deleted=len(session_ids),
+        invoices_detached=invoices_detached,
+    )
+
+    await log_action(
+        db=db,
+        action=DEVICE_DELETED,
+        entity_type="pos_device",
+        entity_id=str(device.id),
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={
+            "device_name": device.device_name,
+            "site_id": str(device.site_id),
+            "license_id": str(device.license_id),
+            "register_sessions_deleted": len(session_ids),
+            "invoices_detached": invoices_detached,
+        },
+    )
+
+    await db.delete(device)
+    await db.commit()
+    return len(session_ids), invoices_detached

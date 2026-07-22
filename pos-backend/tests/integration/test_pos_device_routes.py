@@ -13,11 +13,18 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from app.constants.audit_actions import DEVICE_DEREGISTERED, DEVICE_REGISTERED
+from app.constants.audit_actions import (
+    DEVICE_DELETED,
+    DEVICE_DEREGISTERED,
+    DEVICE_REGISTERED,
+    DEVICE_RENAMED,
+)
 from app.models.access_profile_page_permission import AccessProfilePagePermission
 from app.models.audit_log import AuditLog
+from app.models.invoice import Invoice
 from app.models.license import License
 from app.models.pos_device import PosDevice
+from app.models.register_session import RegisterSession
 from app.models.site import Site
 
 
@@ -402,3 +409,188 @@ async def test_release_device_writes_audit_log(
     )
     row = result.scalar_one()
     assert row.after_state["is_active"] is False
+
+
+# ── PATCH /pos-devices/{id} (rename, superadmin) ────────────────────────────────
+
+
+async def test_update_device_renames_and_returns_200(client, portal_auth_headers, test_device):
+    """PATCH /pos-devices/{id} renames a device and returns the updated row."""
+    response = await client.patch(
+        f"/pos-devices/{test_device.id}", json={"device_name": "Front Counter Terminal"}, headers=portal_auth_headers
+    )
+
+    assert response.status_code == 200
+    assert response.json()["device_name"] == "Front Counter Terminal"
+
+
+async def test_update_device_no_token_returns_403(client, test_device):
+    """PATCH /pos-devices/{id} without a token returns 403."""
+    response = await client.patch(f"/pos-devices/{test_device.id}", json={"device_name": "New Name"})
+    assert response.status_code == 403
+
+
+async def test_update_device_blank_name_returns_422(client, portal_auth_headers, test_device):
+    """PATCH /pos-devices/{id} with an empty device_name returns 422."""
+    response = await client.patch(
+        f"/pos-devices/{test_device.id}", json={"device_name": ""}, headers=portal_auth_headers
+    )
+    assert response.status_code == 422
+
+
+async def test_update_unknown_device_returns_404(client, portal_auth_headers):
+    """PATCH /pos-devices/{id} for an unknown device returns 404."""
+    response = await client.patch(
+        f"/pos-devices/{uuid.uuid4()}", json={"device_name": "New Name"}, headers=portal_auth_headers
+    )
+    assert response.status_code == 404
+
+
+async def test_update_device_writes_audit_log(client, db, portal_auth_headers, test_device):
+    """A successful rename writes a DEVICE_RENAMED audit row with before/after names."""
+    original_name = test_device.device_name
+
+    await client.patch(
+        f"/pos-devices/{test_device.id}", json={"device_name": "Renamed Terminal"}, headers=portal_auth_headers
+    )
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_device.id),
+            AuditLog.action == DEVICE_RENAMED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.before_state["device_name"] == original_name
+    assert row.after_state["device_name"] == "Renamed Terminal"
+
+
+# ── PATCH /pos-devices/management/{id} (rename, management) ────────────────────
+
+
+async def test_update_device_management_without_permission_returns_403(client, mgmt_auth_headers, test_device):
+    """A management caller whose access profile lacks the 'devices' page permission is denied."""
+    response = await client.patch(
+        f"/pos-devices/management/{test_device.id}", json={"device_name": "New Name"}, headers=mgmt_auth_headers
+    )
+    assert response.status_code == 403
+
+
+async def test_update_device_management_with_permission_succeeds(
+    client, db, mgmt_auth_headers, test_manager_profile, test_device
+):
+    """A management caller granted the 'devices' page permission can rename a device in scope."""
+    db.add(AccessProfilePagePermission(id=uuid.uuid4(), access_profile_id=test_manager_profile.id, page_key="devices"))
+    await db.commit()
+
+    response = await client.patch(
+        f"/pos-devices/management/{test_device.id}", json={"device_name": "Renamed by Manager"}, headers=mgmt_auth_headers
+    )
+
+    assert response.status_code == 200
+    assert response.json()["device_name"] == "Renamed by Manager"
+
+
+async def test_update_device_management_pos_access_forbidden(client, pos_auth_headers, test_device):
+    """A raw POS terminal session can never rename a device."""
+    response = await client.patch(
+        f"/pos-devices/management/{test_device.id}", json={"device_name": "New Name"}, headers=pos_auth_headers
+    )
+    assert response.status_code == 403
+
+
+# ── DELETE /pos-devices/{id} (hard delete, superadmin-only) ────────────────────
+
+
+async def test_delete_device_no_token_returns_403(client, test_device):
+    """DELETE /pos-devices/{id} without a token returns 403."""
+    response = await client.delete(f"/pos-devices/{test_device.id}")
+    assert response.status_code == 403
+
+
+async def test_delete_device_mgmt_access_forbidden(client, mgmt_auth_headers, test_device):
+    """A management caller — even with the 'devices' permission — cannot hard-delete a device."""
+    response = await client.delete(f"/pos-devices/{test_device.id}", headers=mgmt_auth_headers)
+    assert response.status_code == 401  # get_current_superadmin rejects a non-"access" token type
+
+
+async def test_delete_unknown_device_returns_404(client, portal_auth_headers):
+    """DELETE /pos-devices/{id} for an unknown device returns 404."""
+    response = await client.delete(f"/pos-devices/{uuid.uuid4()}", headers=portal_auth_headers)
+    assert response.status_code == 404
+
+
+async def test_delete_device_with_no_sessions_removes_row(client, db, portal_auth_headers, test_device):
+    """A device with zero register-session history is deleted outright."""
+    device_id = test_device.id
+
+    response = await client.delete(f"/pos-devices/{device_id}", headers=portal_auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["register_sessions_deleted"] == 0
+    assert body["invoices_detached"] == 0
+
+    result = await db.execute(select(PosDevice).where(PosDevice.id == device_id))
+    assert result.scalar_one_or_none() is None
+
+
+async def test_delete_device_cascades_register_sessions_and_detaches_invoices(
+    client, db, portal_auth_headers, test_brand, test_site, test_device
+):
+    """
+    Deleting a device with real session/invoice history cascades: the
+    session is removed and any invoice that referenced it is detached
+    (register_session_id cleared) rather than the invoice being deleted.
+    """
+    session = RegisterSession(
+        id=uuid.uuid4(),
+        device_id=test_device.id,
+        site_id=test_site.id,
+        status="open",
+        opened_at=datetime.now(tz=timezone.utc),
+        opening_cash_cents=10000,
+        opened_by_name="Test Cashier",
+    )
+    db.add(session)
+    await db.flush()
+
+    invoice = Invoice(
+        id=uuid.uuid4(),
+        brand_id=test_brand.id,
+        site_id=test_site.id,
+        register_session_id=session.id,
+    )
+    db.add(invoice)
+    await db.commit()
+
+    response = await client.delete(f"/pos-devices/{test_device.id}", headers=portal_auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["register_sessions_deleted"] == 1
+    assert body["invoices_detached"] == 1
+
+    session_result = await db.execute(select(RegisterSession).where(RegisterSession.id == session.id))
+    assert session_result.scalar_one_or_none() is None
+
+    await db.refresh(invoice)
+    assert invoice.register_session_id is None  # Invoice itself survives, just detached
+
+
+async def test_delete_device_writes_audit_log(client, db, portal_auth_headers, test_device):
+    """A successful hard delete writes a DEVICE_DELETED audit row before the row disappears."""
+    device_id = test_device.id
+    device_name = test_device.device_name
+
+    await client.delete(f"/pos-devices/{device_id}", headers=portal_auth_headers)
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(device_id),
+            AuditLog.action == DEVICE_DELETED,
+        )
+    )
+    row = result.scalar_one()
+    assert row.before_state["device_name"] == device_name
+    assert row.before_state["register_sessions_deleted"] == 0

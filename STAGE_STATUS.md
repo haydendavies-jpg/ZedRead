@@ -1583,6 +1583,46 @@ reinstall, which is exactly the gap this closes).
 
 ---
 
+### Device rename + admin hard-delete (post-license-editing, complete) ✅
+
+Two follow-up requests: (1) editing a device's display name, which had no update path at all —
+`PosDevice.device_name` was set once at registration/self-service claim and never touched again;
+(2) letting an admin permanently remove stray/test device rows, distinct from the existing
+`deregister`/`release` soft-delete (`is_active=False`) which keeps the row around forever.
+
+- [x] **Rename** — new `PosDeviceUpdate` schema (`device_name` only). `PATCH /pos-devices/{id}`
+      (SuperAdmin) and `PATCH /pos-devices/management/{id}` (brand-scoped, gated by the existing
+      "devices" page permission + site/brand scope — the release route's authorization helper was
+      generalized from `_assert_release_permitted` to `_assert_devices_action_permitted` rather than
+      duplicated) both write a new `DEVICE_RENAMED` audit row. Inline click-to-edit on both
+      `pages/PosDevicesPage.tsx` and `pages/management/DevicesPage.tsx`, same pattern as
+      `LicensesPage.tsx`'s seat-count editing.
+- [x] **Hard delete, SuperAdmin-only** — `DELETE /pos-devices/{id}`, explicitly *not* exposed to
+      brand-scoped management (a higher bar than rename/release, per user decision). A device may
+      have `register_sessions` (`ondelete=RESTRICT`) which in turn have `invoices` referencing them
+      (also `ondelete=RESTRICT`, but nullable) — neither cascades at the DB level, so
+      `pos_device_service.hard_delete_device()` walks the chain itself: any invoice referencing one
+      of the device's sessions is detached first (`register_session_id` set NULL — the invoice
+      itself is kept, not deleted), the sessions are then deleted, then the device row itself.
+      `user_pos_sessions.device_id` needs no handling — it's `ondelete=SET NULL` and the DB does
+      that automatically on the final delete. Per explicit user decision this cascades through real
+      session/invoice history rather than blocking with a 409 — accepted as a known risk to an
+      admin-only, intentionally destructive cleanup action; every deletion writes a `DEVICE_DELETED`
+      audit row *before* the row disappears, capturing the device's name/site/license and exactly
+      how many sessions were deleted / invoices detached, so the action leaves a full trail even
+      though the row itself is gone. New `PosDeviceDeleteResponse` echoes those two counts back to
+      the caller. Portal: a "Delete" action on `pages/PosDevicesPage.tsx` only, behind a `confirm()`
+      dialog that names the cascade explicitly.
+- [x] Tests: `test_pos_device_routes.py` gained rename coverage (both routes — happy path, 422 blank
+      name, 404, permission/scope gating identical to release, audit log) and delete coverage (403/
+      401 for non-SuperAdmin callers, 404, a no-history device deleted outright, a real
+      session+invoice cascade asserting the session is gone and the invoice survives with
+      `register_session_id` cleared, and the `DEVICE_DELETED` audit row) — 38/38 passing in this
+      file, and the full suite 918/918 passing (up from 904), verified against a real local
+      Postgres 16 instance. Portal `npm run build` (tsc + vite) verified clean.
+
+---
+
 ## Cross-Cutting — Always Active
 
 | Concern | Status |
