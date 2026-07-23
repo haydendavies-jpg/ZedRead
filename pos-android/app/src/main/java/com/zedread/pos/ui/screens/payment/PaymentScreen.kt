@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -34,10 +33,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zedread.pos.ui.components.KeypadAmountDisplay
+import com.zedread.pos.ui.components.NumericKeypad
+import com.zedread.pos.ui.components.keypadAppendDigit
+import com.zedread.pos.ui.components.keypadBackspace
 import com.zedread.pos.ui.theme.LocalZedReadColors
 import com.zedread.pos.ui.viewmodel.PaymentMethod
 import com.zedread.pos.ui.viewmodel.PaymentStage
@@ -414,6 +416,17 @@ private fun SplitAmountEntry(
 ) {
     val colors = LocalZedReadColors.current
     var amountText by remember(state.method, state.paidCents) { mutableStateOf("") }
+
+    fun applyDigit(digit: Char) {
+        amountText = keypadAppendDigit(amountText, digit)
+        onSplitAmountChange(dollarsToCents(amountText))
+    }
+
+    fun applyBackspace() {
+        amountText = keypadBackspace(amountText)
+        onSplitAmountChange(dollarsToCents(amountText))
+    }
+
     Column {
         Text(
             "Partial amount",
@@ -421,17 +434,12 @@ private fun SplitAmountEntry(
             color = colors.faint,
         )
         Spacer(Modifier.height(6.dp))
-        OutlinedTextField(
-            value = amountText,
-            onValueChange = { text ->
-                amountText = text
-                val cents = text.toDoubleOrNull()?.let { (it * 100).toLong() } ?: 0L
-                onSplitAmountChange(cents)
-            },
-            label = { Text("Amount (\$)") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
+        KeypadAmountDisplay(value = amountText, placeholder = "0.00")
+        Spacer(Modifier.height(10.dp))
+        NumericKeypad(
+            onDigit = ::applyDigit,
+            onBackspace = ::applyBackspace,
+            modifier = Modifier.widthIn(max = 260.dp),
         )
         Spacer(Modifier.height(8.dp))
         val after = (remainingCents - state.splitAmountCents).coerceAtLeast(0)
@@ -568,4 +576,14 @@ private fun formatCents(cents: Long): String {
     val dollars = cents / 100
     val remainder = cents % 100
     return "$${dollars}.${remainder.toString().padStart(2, '0')}"
+}
+
+/** Parse a keypad-built "$" amount string into integer cents — never float arithmetic on money. */
+private fun dollarsToCents(input: String): Long {
+    if (input.isBlank()) return 0L
+    val parts = input.split(".")
+    val dollars = parts.getOrNull(0)?.toLongOrNull() ?: 0L
+    val centsPart = parts.getOrNull(1).orEmpty().padEnd(2, '0').take(2)
+    val cents = centsPart.toLongOrNull() ?: 0L
+    return dollars * 100 + cents
 }

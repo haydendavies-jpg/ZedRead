@@ -148,11 +148,17 @@ class SellViewModel @Inject constructor(
      * Fetch the site's active layouts — called once at construction (the
      * one-time sync; see CatalogRepository/SettingsRepository's own docs on
      * the same architecture) rather than on every screen action. The
-     * current selection is kept if it's still among the active set,
-     * falling back to the schedule's own default only if it's gone.
-     * Failure is silent — the grid already falls back to the unfiltered
-     * catalog when no layout resolves, so a network hiccup here never
-     * blocks a sale.
+     * current selection is kept if it's still among the active set;
+     * otherwise it falls back to the schedule's own default, and if *no*
+     * layout is marked as the site's default either (nobody configured one
+     * from the portal), falls back further to simply the first published
+     * layout rather than leaving nothing selected — user-testing feedback
+     * that an unconfigured default was landing the Register on the
+     * unfiltered "All items" catalog (or no menu at all with Auto Menu off)
+     * on every fresh login, when a real published menu already existed and
+     * should have been shown instead. Failure to fetch at all is silent —
+     * the grid already falls back to the unfiltered catalog/`NoMenuAvailable`
+     * when no layout resolves, so a network hiccup here never blocks a sale.
      */
     fun refreshMenuLayouts() {
         viewModelScope.launch {
@@ -161,7 +167,8 @@ class SellViewModel @Inject constructor(
                     _menuLayouts.value = layouts
                     val keepCurrent = layouts.any { it.id == _selectedMenuLayoutId.value }
                     if (!keepCurrent) {
-                        _selectedMenuLayoutId.value = layouts.firstOrNull { it.isEffectiveDefault }?.id
+                        _selectedMenuLayoutId.value =
+                            (layouts.firstOrNull { it.isEffectiveDefault } ?: layouts.firstOrNull())?.id
                     }
                 }
         }
@@ -282,12 +289,35 @@ class SellViewModel @Inject constructor(
      * popup rather than optimistically toggling, since a silent local-only
      * flip would let staff believe a sold-out item is sellable again when
      * the backend never actually heard about it.
+     *
+     * On success also patches [_menuLayouts] in place: a Menu Studio POS
+     * Layout tile's `isSoldOut` is a snapshot taken when the layout was last
+     * fetched (`MenuLayoutRepository.getMenuLayouts()`, deliberately not
+     * re-fetched on every mutation — see its own doc), so without this the
+     * grid tile kept showing the old grey "SOLD OUT" overlay after toggling
+     * a product back to available, even though [productDetail]'s own popup
+     * (driven by the live product cache) correctly reflected the flip —
+     * user-testing feedback caught exactly this drift.
      */
     fun toggleSoldOut() {
         val product = productDetail.value ?: return
         _soldOutActionError.value = null
+        val newSoldOut = !product.isSoldOut
         viewModelScope.launch {
-            runCatching { catalogRepo.setSoldOut(product.id, !product.isSoldOut) }
+            runCatching { catalogRepo.setSoldOut(product.id, newSoldOut) }
+                .onSuccess {
+                    _menuLayouts.value = _menuLayouts.value.map { layout ->
+                        layout.copy(
+                            tabs = layout.tabs.map { tab ->
+                                tab.copy(
+                                    buttons = tab.buttons.map { button ->
+                                        if (button.productRef == product.ref) button.copy(isSoldOut = newSoldOut) else button
+                                    },
+                                )
+                            },
+                        )
+                    }
+                }
                 .onFailure { e -> _soldOutActionError.value = e.message ?: "Failed to update product" }
         }
     }

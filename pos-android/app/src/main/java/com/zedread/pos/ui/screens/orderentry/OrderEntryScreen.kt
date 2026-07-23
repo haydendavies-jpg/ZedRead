@@ -62,6 +62,7 @@ import com.zedread.pos.ui.components.PosTopBar
 import com.zedread.pos.ui.components.SyncPanel
 import com.zedread.pos.ui.screens.payment.PaymentModal
 import com.zedread.pos.ui.theme.LocalZedReadColors
+import com.zedread.pos.ui.theme.SoldOutTileColor
 import com.zedread.pos.ui.theme.ZedReadColors
 import com.zedread.pos.ui.theme.contrastTextColor
 import com.zedread.pos.ui.theme.parseHexColor
@@ -351,7 +352,7 @@ private fun MenuSelectorRow(
     var expanded by remember { mutableStateOf(false) }
     val selected = layouts.firstOrNull { it.id == selectedId }
 
-    Box(modifier = Modifier.width(200.dp)) {
+    Box(modifier = Modifier.width(226.dp)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -373,7 +374,10 @@ private fun MenuSelectorRow(
                 Column {
                     Text(selected?.name ?: "All items", style = MaterialTheme.typography.labelLarge, color = colors.text)
                     Text(
-                        if (isManualOverride) "MANUAL" else if (selected != null) "SCHEDULED" else "",
+                        // Spelled out rather than a bare "MANUAL"/"SCHEDULED" —
+                        // user-testing feedback that the single-word chip
+                        // wasn't self-explanatory on its own.
+                        if (isManualOverride) "Manually selected" else if (selected != null) "Scheduled default" else "",
                         style = MaterialTheme.typography.labelSmall,
                         color = if (isManualOverride) colors.accent else colors.faint,
                     )
@@ -505,8 +509,8 @@ private fun ProductGrid(
 @Composable
 private fun ProductTile(product: ProductEntity, onClick: () -> Unit, onLongPress: () -> Unit) {
     val colors = LocalZedReadColors.current
-    val fillColor = if (product.isSoldOut) colors.faint else parseHexColor(product.categoryColor)
-    val textColor = if (product.isSoldOut) colors.surface else contrastTextColor(product.categoryColor)
+    val fillColor = if (product.isSoldOut) SoldOutTileColor else parseHexColor(product.categoryColor)
+    val textColor = if (product.isSoldOut) Color.White else contrastTextColor(product.categoryColor)
     val hasModifiers = !product.modifierNames.isNullOrBlank()
 
     Box(
@@ -522,7 +526,7 @@ private fun ProductTile(product: ProductEntity, onClick: () -> Unit, onLongPress
                     // Reserve room for the "+" badge's top-right corner (22.dp + 8.dp
                     // padding either side) so a wrapped name never renders under it —
                     // previously read as if the badge's "+" were part of the name.
-                    modifier = if (hasModifiers && !product.isSoldOut) Modifier.padding(end = 30.dp) else Modifier,
+                    modifier = if (hasModifiers && !product.isSoldOut) Modifier.padding(end = 22.dp) else Modifier,
                     color = textColor,
                     fontWeight = FontWeight.SemiBold,
                     style = MaterialTheme.typography.titleSmall,
@@ -543,14 +547,14 @@ private fun ProductTile(product: ProductEntity, onClick: () -> Unit, onLongPress
         if (hasModifiers && !product.isSoldOut) {
             Box(
                 modifier = Modifier
-                    .padding(8.dp)
+                    .padding(5.dp)
                     .align(Alignment.TopEnd)
-                    .size(22.dp)
+                    .size(18.dp)
                     .clip(CircleShape)
                     .background(Color.Black.copy(alpha = 0.18f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("+", color = textColor, fontWeight = FontWeight.Bold)
+                Text("+", color = textColor, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
             }
         }
         if (product.isSoldOut) {

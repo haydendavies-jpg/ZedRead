@@ -1,6 +1,10 @@
 package com.zedread.pos.ui.screens.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -9,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,12 +35,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.zedread.pos.data.api.SettingDto
 import com.zedread.pos.ui.components.PosTopBar
+import com.zedread.pos.ui.theme.LocalZedReadColors
 import com.zedread.pos.ui.viewmodel.SettingsUiState
 import com.zedread.pos.ui.viewmodel.SettingsViewModel
 import com.zedread.pos.ui.viewmodel.SyncViewModel
@@ -214,20 +221,45 @@ private fun SettingValueEditor(setting: SettingDto, value: Any?, onValueChange: 
     }
 }
 
+/**
+ * A single-select value control styled as an obvious dropdown (bordered
+ * pill + a "▾" arrow, matching OrderEntryScreen's MenuSelectorRow
+ * convention) — previously a bare [TextButton] with no border/affordance,
+ * user-testing feedback that it wasn't obvious this was tappable at all.
+ * Option/value text is capitalized for display — the raw catalog values
+ * (e.g. "denomination") are lowercase machine identifiers, not meant to be
+ * shown to a cashier verbatim.
+ */
 @Composable
 private fun SingleSelectEditor(options: List<String>, value: String?, onValueChange: (Any?) -> Unit) {
+    val colors = LocalZedReadColors.current
     var expanded by remember { mutableStateOf(false) }
-    Column {
-        TextButton(onClick = { expanded = true }) {
-            Text(value ?: "—")
+    Box {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(colors.surface)
+                .border(width = 1.dp, color = colors.inputBorder, shape = RoundedCornerShape(8.dp))
+                .clickable { expanded = true }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(value?.capitalizeForDisplay() ?: "—", color = colors.text)
+            Text("▾", color = colors.muted)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { option ->
-                DropdownMenuItem(text = { Text(option) }, onClick = { onValueChange(option); expanded = false })
+                DropdownMenuItem(
+                    text = { Text(option.capitalizeForDisplay()) },
+                    onClick = { onValueChange(option); expanded = false },
+                )
             }
         }
     }
 }
+
+private fun String.capitalizeForDisplay(): String = replaceFirstChar { it.uppercase() }
 
 /** Render a setting's effective value for display — the shape depends on its SettingType. */
 private fun formatSettingValue(value: Any?): String = when (value) {
