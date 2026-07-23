@@ -216,6 +216,18 @@ export function ModifiersPage() {
                     />
                     Quantity
                   </label>
+                  <label
+                    className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer"
+                    title="When enabled, the first item in this modifier group is selected by default when the POS customise sheet opens. When disabled (default), nothing is pre-selected — the cashier must choose."
+                  >
+                    <input
+                      type="checkbox"
+                      checked={g.is_first_option_default_selected}
+                      onChange={(e) => patchGroup.mutate({ id: g.id, body: { is_first_option_default_selected: e.target.checked } })}
+                      className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500"
+                    />
+                    Default select
+                  </label>
                   <label className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
                     Min
                     <BufferedInput

@@ -46,6 +46,9 @@ class ModifierGroupCreate(BaseModel):
     min_selections: int = Field(0, ge=0)
     max_selections: int = Field(1, ge=1)
     has_quantity: bool = Field(False, description="Allow selecting the same option more than once")
+    is_first_option_default_selected: bool = Field(
+        False, description="Pre-select this group's first option when the POS customise sheet opens"
+    )
 
 
 class ModifierGroupUpdate(BaseModel):
@@ -55,6 +58,7 @@ class ModifierGroupUpdate(BaseModel):
     min_selections: int | None = Field(None, ge=0)
     max_selections: int | None = Field(None, ge=1)
     has_quantity: bool | None = None
+    is_first_option_default_selected: bool | None = None
 
 
 class ModifierGroupResponse(BaseModel):
@@ -66,6 +70,7 @@ class ModifierGroupResponse(BaseModel):
     min_selections: int
     max_selections: int
     has_quantity: bool
+    is_first_option_default_selected: bool
     is_active: bool
 
     model_config = {"from_attributes": True}
@@ -122,6 +127,7 @@ class LinkedGroupOut(BaseModel):
     name: str
     min_selections: int
     max_selections: int
+    is_first_option_default_selected: bool
     options: list[LinkedGroupOptionOut]
 
 
@@ -210,6 +216,7 @@ class ProductModifierGroupDetailOut(BaseModel):
     min_selections: int
     max_selections: int
     has_quantity: bool
+    is_first_option_default_selected: bool
     display_order: int
     options: list[ProductModifierOptionOut]
 
@@ -296,6 +303,7 @@ async def create_modifier_group(
         min_selections=payload.min_selections,
         max_selections=payload.max_selections,
         has_quantity=payload.has_quantity,
+        is_first_option_default_selected=payload.is_first_option_default_selected,
         is_active=True,
     )
     db.add(group)
@@ -331,6 +339,7 @@ async def update_modifier_group(
         "min_selections": group.min_selections,
         "max_selections": group.max_selections,
         "has_quantity": group.has_quantity,
+        "is_first_option_default_selected": group.is_first_option_default_selected,
     }
 
     if payload.name is not None:
@@ -341,6 +350,8 @@ async def update_modifier_group(
         group.max_selections = payload.max_selections
     if payload.has_quantity is not None:
         group.has_quantity = payload.has_quantity
+    if payload.is_first_option_default_selected is not None:
+        group.is_first_option_default_selected = payload.is_first_option_default_selected
 
     await log_action(
         db=db,
@@ -357,6 +368,7 @@ async def update_modifier_group(
             "min_selections": group.min_selections,
             "max_selections": group.max_selections,
             "has_quantity": group.has_quantity,
+            "is_first_option_default_selected": group.is_first_option_default_selected,
         },
     )
 
@@ -791,6 +803,7 @@ async def list_product_modifiers_detailed(
             min_selections=group.min_selections,
             max_selections=group.max_selections,
             has_quantity=group.has_quantity,
+            is_first_option_default_selected=group.is_first_option_default_selected,
             display_order=link.display_order,
             options=[
                 ProductModifierOptionOut(
@@ -804,6 +817,7 @@ async def list_product_modifiers_detailed(
                             name=lg.name,
                             min_selections=lg.min_selections,
                             max_selections=lg.max_selections,
+                            is_first_option_default_selected=lg.is_first_option_default_selected,
                             options=[
                                 LinkedGroupOptionOut(id=o.id, name=o.name, price_delta_cents=o.price_delta_cents)
                                 for o in linked_group_options.get(lg.id, [])
@@ -997,6 +1011,7 @@ async def duplicate_modifier_group(
         min_selections=source.min_selections,
         max_selections=source.max_selections,
         has_quantity=source.has_quantity,
+        is_first_option_default_selected=source.is_first_option_default_selected,
         is_active=True,
     )
     db.add(new_group)
@@ -1224,6 +1239,7 @@ async def list_modifier_groups_detailed(
                     name=lg.name,
                     min_selections=lg.min_selections,
                     max_selections=lg.max_selections,
+                    is_first_option_default_selected=lg.is_first_option_default_selected,
                     options=[
                         LinkedGroupOptionOut(id=o.id, name=o.name, price_delta_cents=o.price_delta_cents)
                         for o in linked_group_options.get(lg.id, [])

@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Icon
@@ -36,15 +38,17 @@ private val TopBarFaint = Color(0xFFD9D4CE) // muted near-white for the subtitle
  * Persistent top navigation bar — per user-testing feedback, every screen
  * (including End of Day, which previously had no way back once entered)
  * must always show this bar, never a screen-specific one-off header with no
- * escape hatch. Shows this terminal's own configured name (PosDevice.
- * device_name, via TokenStore — falls back to a generic label before the
- * first login populates it) instead of a generic "Register" title, an
- * optional subtitle (e.g. the selected category, or the current screen's
- * name), a back affordance where the screen has somewhere to go back to,
- * screen-specific actions in the middle (History/Settings/Cash-up/Switch
- * operator icons on Register; empty elsewhere), and the sync status badge +
- * ZedRead wordmark pinned to the trailing edge on every screen — the sync
- * badge is no longer a floating overlay icon.
+ * escape hatch. Leads with the [ZedReadWordmark] (moved here from the
+ * trailing edge per user-testing feedback), then this terminal's own
+ * configured name (PosDevice.device_name, via TokenStore — falls back to a
+ * generic label before the first login populates it) instead of a generic
+ * "Register" title, an optional subtitle (e.g. the selected category, or
+ * the current screen's name — see the doc on [PosTopBar]'s `subtitle`
+ * param for what it actually shows on the Register screen), a back
+ * affordance where the screen has somewhere to go back to, screen-specific
+ * actions in the middle (History/Settings/Cash-up/Switch operator icons on
+ * Register; empty elsewhere), and the sync status badge on the trailing
+ * edge — no longer a floating overlay icon.
  *
  * The background is always [TopBarBackground] (#332E29), never
  * ZedReadColors.surface — the design calls for this fixed dark bar in both
@@ -53,6 +57,14 @@ private val TopBarFaint = Color(0xFFD9D4CE) // muted near-white for the subtitle
  * [LocalZedReadColors] the rest of this bar's content would otherwise use,
  * to stay legible against that fixed dark background regardless of the
  * app's own theme.
+ */
+/**
+ * @param title This terminal's configured name (e.g. "POS #8" — see the
+ * class doc). @param subtitle Context for the current screen — on
+ * Register specifically, this is the name of whichever menu tab or
+ * category is currently active (e.g. "TEST" is a Menu Studio tab named
+ * "Test", not a build/debug label — see OrderEntryScreen's own subtitle
+ * wiring), elsewhere it's a plain screen name like "Settings".
  */
 @Composable
 fun PosTopBar(
@@ -79,6 +91,8 @@ fun PosTopBar(
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TopBarText)
                 }
             }
+            ZedReadWordmark()
+            Spacer(Modifier.width(16.dp))
             Column {
                 Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = TopBarText)
                 if (subtitle != null) {
@@ -90,7 +104,6 @@ fun PosTopBar(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             actions()
             SyncStatusBadge(isOnline = isOnline, pendingCount = pendingCount, onClick = onSyncClick)
-            ZedReadWordmark()
         }
     }
 }
@@ -99,22 +112,25 @@ fun PosTopBar(
  * The ZedRead wordmark — matches the portal's own sign-in page treatment
  * (serif "ZedRead" + a small uppercase tagline underneath, see
  * pos-portal's AuthPageShell.tsx) rather than the earlier single-letter "Z"
- * tile, per user-testing feedback pointing at that exact screen as the
- * reference. Sized down to fit this bar's trailing corner.
+ * tile. Per user-testing feedback: moved from the bar's trailing edge
+ * (where the terminal name now sits, shifted right to make room) to
+ * leading, sized up, and set to plain white — it was previously the
+ * portal's own brand taupe, which read as illegible dark-on-dark once the
+ * bar's own background became the fixed dark #332E29.
  */
 @Composable
 private fun ZedReadWordmark() {
-    Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 8.dp)) {
+    Column(horizontalAlignment = Alignment.Start) {
         Text(
             "ZedRead",
             fontFamily = FontFamily.Serif,
             fontWeight = FontWeight.Bold,
-            fontSize = 15.sp,
-            color = Color(0xFF554C44), // portal's own brand taupe — see Theme.kt's doc
+            fontSize = 22.sp,
+            color = TopBarText,
         )
         Text(
             "POS YOU CAN COUNT ON",
-            fontSize = 6.sp,
+            fontSize = 7.sp,
             letterSpacing = 0.8.sp,
             color = TopBarFaint,
         )

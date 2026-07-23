@@ -327,8 +327,11 @@ private fun CategoryRail(
  *
  * A star marks the schedule-active default; a "MANUAL" chip replaces it
  * once staff pick anything else, distinguishing an intentional override
- * from the schedule's own choice — cleared back to the star automatically
- * once the current sale completes (see SellViewModel.completePaymentAndStartNewOrder).
+ * from the schedule's own choice. Per user-testing feedback the selection
+ * now persists across a completed sale rather than resetting to the star
+ * each time (see SellViewModel.completePaymentAndStartNewOrder) — it only
+ * moves on its own via [SellViewModel.refreshMenuLayouts], e.g. a daypart
+ * boundary or the next login/sync.
  *
  * [showAllItemsOption] gates the unfiltered "All items" choice behind the
  * "Auto Menu" backend setting (Menu Studio's POS Layout tab) — per

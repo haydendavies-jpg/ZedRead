@@ -83,14 +83,14 @@ class SettingsRepository @Inject constructor(
 
     /**
      * Fetch the two settings the cash-in/cash-up screens need, returning
-     * sensible defaults (bulk entry, variance shown) if the call fails —
-     * a settings-fetch error should never block a cashier from opening or
-     * closing the till.
+     * sensible defaults (full denomination count, variance shown) if the
+     * call fails — a settings-fetch error should never block a cashier from
+     * opening or closing the till.
      */
     suspend fun getCashSettings(): CashSettings {
         val settings = runCatching { getSettings() }.getOrDefault(emptyList())
         val cashInMode = settings.firstOrNull { it.key == SettingKeys.CASH_IN_MODE }
-            ?.effectiveValue as? String ?: "bulk"
+            ?.effectiveValue as? String ?: CASH_IN_MODE_DENOMINATION
         val hideVariance = settings.firstOrNull { it.key == SettingKeys.HIDE_VARIANCE_ON_CLOSE }
             ?.effectiveValue as? Boolean ?: false
         return CashSettings(cashInMode = cashInMode, hideVarianceOnClose = hideVariance)
