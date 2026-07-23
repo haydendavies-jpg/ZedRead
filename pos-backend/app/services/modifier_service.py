@@ -1162,10 +1162,13 @@ async def _active_options_by_group(
     return by_group
 
 
+_MAX_LINK_RESOLUTION_DEPTH = 20
+
+
 async def _resolve_linked_groups(
     db: AsyncSession,
     option_ids: list[uuid.UUID],
-    ancestor_group_ids: frozenset[uuid.UUID] = frozenset(),
+    depth: int = 0,
 ) -> dict[uuid.UUID, list[LinkedGroupOut]]:
     """
     Recursively resolve the modifier groups linked ("comboed") from a set of
@@ -1175,21 +1178,30 @@ async def _resolve_linked_groups(
     One query per depth level (not per option/group), so cost scales with
     how many nesting levels actually exist in the data, not with catalog
     size — same batched-query discipline as the rest of this "detailed"
-    listing. ancestor_group_ids excludes any group already seen earlier in
-    this traversal path, guarding against an infinite loop if a group ever
-    links back to one of its own ancestors — the schema doesn't forbid that
-    today.
+    listing. [depth] is a defensive cap against a genuine cycle in the data
+    (the schema doesn't forbid a group linking back to one of its own
+    ancestors) rather than real per-path cycle detection: a single call here
+    resolves links for a whole BATCH of options at once (e.g. every
+    top-level group's options in one call, from list_modifier_groups_detailed),
+    so those options are frequently unrelated to each other in the link
+    graph — tracking "groups already seen" globally across that batch would
+    incorrectly treat one option's legitimate second-level link as a cycle
+    just because an unrelated sibling option happened to surface the same
+    group id in the same batch (caught by
+    test_detailed_listing_nests_a_linked_group_linked_to_another_group).
+    _MAX_LINK_RESOLUTION_DEPTH is generous enough that no legitimate chain
+    should ever hit it.
 
     Args:
         db: Active database session.
         option_ids: Options to resolve linked groups for at this level.
-        ancestor_group_ids: Group ids already visited on the path to here.
+        depth: How many levels deep this call already is.
 
     Returns:
         dict[uuid.UUID, list[LinkedGroupOut]]: Each option id (from
             option_ids) mapped to its linked groups, each fully nested.
     """
-    if not option_ids:
+    if not option_ids or depth >= _MAX_LINK_RESOLUTION_DEPTH:
         return {}
 
     links_result = await db.execute(
@@ -1203,8 +1215,6 @@ async def _resolve_linked_groups(
     )
     links_by_option: dict[uuid.UUID, list[ModifierGroup]] = defaultdict(list)
     for option_id, linked_group in links_result.all():
-        if linked_group.id in ancestor_group_ids:
-            continue  # cycle guard — never re-enter a group already on this path
         links_by_option[option_id].append(linked_group)
     if not links_by_option:
         return {}
@@ -1212,7 +1222,7 @@ async def _resolve_linked_groups(
     linked_group_ids = list({lg.id for groups_ in links_by_option.values() for lg in groups_})
     linked_group_options = await _active_options_by_group(db, linked_group_ids)
     next_option_ids = [o.id for options in linked_group_options.values() for o in options]
-    nested = await _resolve_linked_groups(db, next_option_ids, ancestor_group_ids | set(linked_group_ids))
+    nested = await _resolve_linked_groups(db, next_option_ids, depth + 1)
 
     return {
         option_id: [
