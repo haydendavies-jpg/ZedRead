@@ -54,7 +54,13 @@ class SyncViewModel @Inject constructor(
             when (OutboxOperation.valueOf(item.operation)) {
                 OutboxOperation.SYNC_SALE -> {
                     val payload = OutboxPayloads.decodeSale(moshi, item.payloadJson)
-                    "Sale · ${formatSyncCents(payload.amountCents)}"
+                    // payments is empty for a held order (see SellViewModel.holdOrder) — no
+                    // amount to show yet, since nothing has been paid on it.
+                    if (payload.payments.isEmpty()) {
+                        "Held order"
+                    } else {
+                        "Sale · ${formatSyncCents(payload.payments.sumOf { it.amountCents })}"
+                    }
                 }
                 OutboxOperation.OPEN_REGISTER_SESSION -> "Till opened"
                 OutboxOperation.CLOSE_REGISTER_SESSION -> "Till closed"
