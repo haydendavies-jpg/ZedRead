@@ -36,6 +36,9 @@ class ProductUpdate(BaseModel):
     is_taxable: bool | None = None
     is_open_item: bool | None = None
     display_order: int | None = Field(None, ge=0)
+    is_sold_out: bool | None = Field(
+        None, description="Set/clear from the Android Register's long-press product popup"
+    )
 
 
 class ProductResponse(BaseModel):
@@ -57,6 +60,7 @@ class ProductResponse(BaseModel):
     photo_url: str | None
     display_order: int
     is_active: bool
+    is_sold_out: bool
 
     model_config = {"from_attributes": True}
 

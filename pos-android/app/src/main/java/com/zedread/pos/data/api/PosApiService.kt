@@ -101,6 +101,14 @@ interface PosApiService {
         @Query("site_id") siteId: String,
     ): List<PosMenuLayoutDto>
 
+    /** PATCH /products/{id} — the Register app only ever uses this for the long-press sold-out toggle. */
+    @PATCH("products/{id}")
+    suspend fun updateProduct(
+        @Header("Authorization") bearer: String,
+        @Path("id") productId: String,
+        @Body body: ProductUpdateRequest,
+    ): ProductDto
+
     // ── Invoices ─────────────────────────────────────────────────────────────
 
     /**

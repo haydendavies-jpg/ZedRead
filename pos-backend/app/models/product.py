@@ -124,6 +124,16 @@ class Product(Base):
         default=True,
         comment="False when soft-deleted; inactive products are excluded from the catalog",
     )
+    is_sold_out: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="True when the POS should refuse to sell this product — set/cleared from the "
+        "Android Register's long-press product popup. Brand-wide (not per-site): the schema has "
+        "no per-site product state elsewhere, so this follows the same scoping as every other "
+        "product field rather than introducing a new dimension for one flag.",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

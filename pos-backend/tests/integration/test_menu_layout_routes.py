@@ -202,7 +202,7 @@ async def _create_layout_with_tab(client, headers, layout_name="Layout", tab_nam
 
 
 async def test_create_button_resolves_product(client, mgmt_auth_headers, test_product):
-    """POST .../buttons resolves product_name/price_cents/is_active from the ref."""
+    """POST .../buttons resolves product_name/price_cents/is_active/is_sold_out from the ref."""
     layout_id, tab_id = await _create_layout_with_tab(client, mgmt_auth_headers)
 
     response = await client.post(
@@ -216,6 +216,22 @@ async def test_create_button_resolves_product(client, mgmt_auth_headers, test_pr
     assert body["product_name"] == test_product.name
     assert body["price_cents"] == test_product.base_price_cents
     assert body["is_active"] is True
+    assert body["is_sold_out"] is False
+
+
+async def test_create_button_resolves_sold_out_product(client, db, mgmt_auth_headers, test_product):
+    """A button linked to a sold-out product resolves is_sold_out=True — greys the POS tile out."""
+    test_product.is_sold_out = True
+    await db.commit()
+    layout_id, tab_id = await _create_layout_with_tab(client, mgmt_auth_headers)
+
+    response = await client.post(
+        f"/menu-layouts/{layout_id}/tabs/{tab_id}/buttons",
+        json={"product_ref": test_product.ref},
+        headers=mgmt_auth_headers,
+    )
+    assert response.status_code == 201
+    assert response.json()["is_sold_out"] is True
 
 
 async def test_create_button_writes_audit_log(client, db, mgmt_auth_headers, test_user, test_product):

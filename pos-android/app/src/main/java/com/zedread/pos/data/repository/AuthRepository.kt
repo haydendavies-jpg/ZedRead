@@ -1,7 +1,6 @@
 package com.zedread.pos.data.repository
 
 import android.content.Context
-import android.os.Build
 import android.provider.Settings
 import com.zedread.pos.data.api.LoginRequest
 import com.zedread.pos.data.api.PinSetRequest
@@ -60,8 +59,13 @@ class AuthRepository @Inject constructor(
         return handleLoginResponse(response, email)
     }
 
-    /** Human-readable fallback name for a brand-new device claim — the model name is good enough. */
-    private fun deviceName(): String = Build.MODEL ?: "Android Terminal"
+    /**
+     * No client-supplied name for a brand-new device claim — the backend
+     * auto-assigns "POS #N", counting up per site, rather than this terminal
+     * sending its own app/model name as the default (per user-testing
+     * feedback; see pos_auth_service._resolve_or_claim_device).
+     */
+    private fun deviceName(): String? = null
 
     /**
      * This terminal's stable OS-level identifier, read fresh from the OS each call rather than

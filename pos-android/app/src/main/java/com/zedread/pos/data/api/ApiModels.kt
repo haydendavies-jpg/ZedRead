@@ -27,7 +27,8 @@ import com.squareup.moshi.JsonClass
 data class LoginRequest(
     val email: String,
     val password: String,
-    @Json(name = "device_name") val deviceName: String,
+    // Null lets the backend auto-assign "POS #N" for a brand-new device claim.
+    @Json(name = "device_name") val deviceName: String?,
     @Json(name = "device_token") val deviceToken: String?,
     @Json(name = "hardware_id") val hardwareId: String?,
 )
@@ -37,7 +38,7 @@ data class LoginRequest(
 data class SiteTokenRequest(
     val email: String,
     val password: String,
-    @Json(name = "device_name") val deviceName: String,
+    @Json(name = "device_name") val deviceName: String?,
     @Json(name = "device_token") val deviceToken: String?,
     @Json(name = "hardware_id") val hardwareId: String?,
     @Json(name = "site_id") val siteId: String,
@@ -179,11 +180,27 @@ data class ProductDto(
     @Json(name = "photo_url") val photoUrl: String?,
     @Json(name = "display_order") val displayOrder: Int,
     @Json(name = "is_active") val isActive: Boolean,
+    // Long-press product popup: greys the tile out with "SOLD OUT" written
+    // over it and blocks adding it to an order until toggled off again.
+    @Json(name = "is_sold_out") val isSoldOut: Boolean,
     // ProductListItem's joined fields — the Register screen's tile colour and
     // its "has modifiers" "+" badge (comma-joined active modifier group names;
     // null/blank means the product has none).
     @Json(name = "category_color") val categoryColor: String,
     @Json(name = "modifier_names") val modifierNames: String?,
+)
+
+/**
+ * PATCH /products/{id} request — only the fields the Register app itself
+ * ever writes (the long-press sold-out toggle). Mirrors ProductUpdate on the
+ * backend, which accepts every product field, but this client only ever
+ * sends is_sold_out — never null, Moshi would otherwise omit an unset
+ * property entirely rather than send an explicit null, which is exactly
+ * "leave everything else unchanged" here since every other field is absent.
+ */
+@JsonClass(generateAdapter = true)
+data class ProductUpdateRequest(
+    @Json(name = "is_sold_out") val isSoldOut: Boolean,
 )
 
 // ── Modifiers ─────────────────────────────────────────────────────────────
@@ -268,6 +285,7 @@ data class PosMenuButtonDto(
     @Json(name = "product_name") val productName: String?,
     @Json(name = "price_cents") val priceCents: Long?,
     @Json(name = "is_active") val isActive: Boolean?,
+    @Json(name = "is_sold_out") val isSoldOut: Boolean?,
     @Json(name = "category_color") val categoryColor: String?,
     @Json(name = "product_photo_url") val productPhotoUrl: String?,
     @Json(name = "child_tab_name") val childTabName: String?,

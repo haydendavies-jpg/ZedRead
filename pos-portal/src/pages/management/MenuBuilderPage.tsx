@@ -20,7 +20,7 @@ import { Modal } from '../../components/Modal'
 import { ColorSwatchPicker } from '../../components/ColorSwatchPicker'
 import { MENU_STUDIO_PALETTE, textColorOn, centsToDisplay } from '../../utils/menuStudio'
 import { apiErrorMessage } from '../../utils/apiError'
-import type { MenuButton, MenuLayout, MenuLayoutDetail, MenuTab, ProductListItem, PublishResult, PublishWarning } from '../../types'
+import type { MenuButton, MenuLayout, MenuLayoutDetail, MenuTab, ProductListItem, PublishResult, PublishWarning, Setting } from '../../types'
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -42,6 +42,50 @@ function formatTimeLabel(t: string | null): string {
 
 function activeTimeLabel(layout: MenuLayout): string {
   return layout.is_all_day ? 'All day' : `${formatTimeLabel(layout.start_time)} – ${formatTimeLabel(layout.end_time)}`
+}
+
+/**
+ * "Auto Menu" toggle — backs the Android Register's menu selector "All
+ * items" option (SellViewModel.isAutoMenuEnabled): per user-testing
+ * feedback, the only menus visible on the POS should be the ones actually
+ * published from Menu Studio unless this is explicitly turned on. Reuses
+ * the existing Android POS Phase 2 settings framework
+ * (GET/PUT /settings/auto_menu_enabled) as a brand-level default — this page
+ * has no site selector of its own, unlike SettingsPage.tsx's brand/site
+ * override editor, so it only ever writes site_id: null.
+ */
+function AutoMenuToggle({ brandId }: { brandId: string }) {
+  const qc = useQueryClient()
+  const queryKey = ['setting', 'auto_menu_enabled', brandId]
+
+  const { data: setting } = useQuery<Setting | undefined>({
+    queryKey,
+    queryFn: async () => (await api.get('/settings', { params: { brand_id: brandId, search: 'auto_menu_enabled' } })).data[0],
+  })
+
+  const toggle = useMutation({
+    mutationFn: (value: boolean) =>
+      api.put('/settings/auto_menu_enabled', { value, site_id: null }, { params: { brand_id: brandId } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey }),
+  })
+
+  const enabled = Boolean(setting?.effective_value)
+
+  return (
+    <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer select-none">
+      <input
+        type="checkbox"
+        checked={enabled}
+        disabled={toggle.isPending}
+        onChange={(e) => toggle.mutate(e.target.checked)}
+        className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500"
+      />
+      Auto Menu
+      <span className="text-xs text-gray-400 dark:text-gray-500" title="When on, the Register's menu selector offers an unfiltered 'All items' option showing the full catalog.">
+        (?)
+      </span>
+    </label>
+  )
 }
 
 export function MenuBuilderPage() {
@@ -133,12 +177,15 @@ function LayoutsList({ brandId, onOpen }: { brandId: string; onOpen: (id: string
             {layouts.length} {layouts.length === 1 ? 'layout' : 'layouts'}
           </p>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="px-3 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 transition-colors"
-        >
-          + New layout
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <AutoMenuToggle brandId={brandId} />
+          <button
+            onClick={() => setShowCreate(true)}
+            className="px-3 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 transition-colors"
+          >
+            + New layout
+          </button>
+        </div>
       </div>
 
       {actionError && (

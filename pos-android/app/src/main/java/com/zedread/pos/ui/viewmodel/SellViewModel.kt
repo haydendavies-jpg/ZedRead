@@ -13,6 +13,8 @@ import com.zedread.pos.data.repository.CatalogRepository
 import com.zedread.pos.data.repository.InvoiceRepository
 import com.zedread.pos.data.repository.MenuLayoutRepository
 import com.zedread.pos.data.repository.OutboxRepository
+import com.zedread.pos.data.repository.SettingKeys
+import com.zedread.pos.data.repository.SettingsRepository
 import com.zedread.pos.data.sync.OutboxSaleLine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.Flow
@@ -67,6 +69,7 @@ class SellViewModel @Inject constructor(
     private val invoiceRepo: InvoiceRepository,
     private val outboxRepo: OutboxRepository,
     private val menuLayoutRepo: MenuLayoutRepository,
+    private val settingsRepo: SettingsRepository,
 ) : ViewModel() {
 
     // ── Category / product browsing ─────────────────────────────────────────
@@ -174,9 +177,24 @@ class SellViewModel @Inject constructor(
      * product tile's product_ref back to a local product id on tap
      * ([addToCartByRef]). [products] above is category/menu-filtered for
      * display, which isn't what a tap handler needs.
+     *
+     * [SharingStarted.Eagerly], not WhileSubscribed like every other flow in
+     * this class — nothing ever calls .collect() on [allProducts] itself (it's
+     * only ever read via its plain .value property from addToCart/
+     * addToCartByRef/productByRef), and a StateFlow.value read does not count
+     * as subscribing. Under WhileSubscribed the upstream Room flow would
+     * therefore never start, leaving .value permanently stuck at the initial
+     * emptyList() — every tap on a product tile silently failing to add to
+     * the order, since the ref/id lookup below always came back null. Fixed
+     * in user testing as "buttons are not selectable and cannot add to the
+     * order".
      */
     private val allProducts: StateFlow<List<ProductEntity>> =
-        catalogRepo.observeProducts(null).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        catalogRepo.observeProducts(null).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Resolve a menu-grid tile's product_ref to its cached product — used by [addToCartByRef] and the long-press popup. */
+    private fun productByRef(productRef: String): ProductEntity? =
+        allProducts.value.firstOrNull { it.ref == productRef }
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -195,7 +213,79 @@ class SellViewModel @Inject constructor(
         }
     }
 
-    init { refresh(); refreshMenuLayouts() }
+    // ── Auto Menu (Menu Studio "auto_menu_enabled" backend setting) ─────────
+    //
+    // Per user-testing feedback, the Register's menu selector should only
+    // offer an unfiltered "All items" option when a site/brand has this
+    // setting turned on from Menu Studio's POS Layout tab — otherwise staff
+    // may only browse the layouts actually published from Menu Studio.
+
+    private val _isAutoMenuEnabled = MutableStateFlow(false)
+    val isAutoMenuEnabled: StateFlow<Boolean> = _isAutoMenuEnabled.asStateFlow()
+
+    private fun refreshAutoMenuSetting() {
+        viewModelScope.launch {
+            runCatching { settingsRepo.getSettings() }
+                .onSuccess { settings ->
+                    _isAutoMenuEnabled.value = settings
+                        .firstOrNull { it.key == SettingKeys.AUTO_MENU_ENABLED }
+                        ?.effectiveValue as? Boolean ?: false
+                }
+        }
+    }
+
+    init { refresh(); refreshMenuLayouts(); refreshAutoMenuSetting() }
+
+    // ── Product detail popup (long-press) ────────────────────────────────────
+    //
+    // Press-and-hold on a product tile — either grid — pops up a window
+    // showing the product's short description and a sold-out toggle. Always
+    // opens, sold-out or not, so staff can press-and-hold a sold-out tile to
+    // clear it again (a plain tap on a sold-out tile is blocked in
+    // [addToCart] instead, never reaching this popup).
+
+    private val _productDetailId = MutableStateFlow<String?>(null)
+
+    /** The product currently shown in the long-press popup, or null when closed. Resolved live from [allProducts] so a toggle is reflected immediately. */
+    val productDetail: StateFlow<ProductEntity?> =
+        combine(_productDetailId, allProducts) { id, all -> all.firstOrNull { it.id == id } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val _soldOutActionError = MutableStateFlow<String?>(null)
+    val soldOutActionError: StateFlow<String?> = _soldOutActionError.asStateFlow()
+
+    /** Open the long-press popup for a product already resolved to a local id (category-based grid tiles). */
+    fun openProductDetail(productId: String) {
+        _soldOutActionError.value = null
+        _productDetailId.value = productId
+    }
+
+    /** Open the long-press popup from a menu-grid tile's product_ref. */
+    fun openProductDetailByRef(productRef: String) {
+        productByRef(productRef)?.let { openProductDetail(it.id) }
+    }
+
+    fun closeProductDetail() {
+        _productDetailId.value = null
+    }
+
+    /**
+     * Flip the currently-open popup's product between sold-out and
+     * available. Pushes to the backend first ([CatalogRepository.setSoldOut]
+     * already patches the local cache from the confirmed response) — on
+     * failure the cache is left untouched and an error is surfaced in the
+     * popup rather than optimistically toggling, since a silent local-only
+     * flip would let staff believe a sold-out item is sellable again when
+     * the backend never actually heard about it.
+     */
+    fun toggleSoldOut() {
+        val product = productDetail.value ?: return
+        _soldOutActionError.value = null
+        viewModelScope.launch {
+            runCatching { catalogRepo.setSoldOut(product.id, !product.isSoldOut) }
+                .onFailure { e -> _soldOutActionError.value = e.message ?: "Failed to update product" }
+        }
+    }
 
     // ── Cart (the current sale's invoice) ───────────────────────────────────
 
@@ -233,13 +323,17 @@ class SellViewModel @Inject constructor(
     val cartActionState: StateFlow<CartActionState> = _cartActionState.asStateFlow()
 
     /**
-     * Tap a product tile. A product with a modifier set — [ProductEntity.modifierNames]
-     * non-blank, the same field that backs the grid's "+" badge — opens the
-     * customise sheet instead of adding directly; a plain product adds
-     * straight to the order, same as before.
+     * Tap a product tile. A sold-out product ([ProductEntity.isSoldOut] — set
+     * from this same tile's long-press popup, see [openProductDetail]) never
+     * adds to the order, matching the backend's own catalog state; a product
+     * with a modifier set — [ProductEntity.modifierNames] non-blank, the same
+     * field that backs the grid's "+" badge — opens the customise sheet
+     * instead of adding directly; a plain product adds straight to the
+     * order, same as before.
      */
     fun addToCart(productId: String) {
         val product = allProducts.value.firstOrNull { it.id == productId } ?: return
+        if (product.isSoldOut) return
         if (!product.modifierNames.isNullOrBlank()) {
             openModifierSheet(product)
             return
@@ -249,7 +343,7 @@ class SellViewModel @Inject constructor(
 
     /** Menu-grid tile tap — resolves the tile's product_ref to its locally-cached product, then behaves like [addToCart]. */
     fun addToCartByRef(productRef: String) {
-        val product = allProducts.value.firstOrNull { it.ref == productRef } ?: return
+        val product = productByRef(productRef) ?: return
         addToCart(product.id)
     }
 

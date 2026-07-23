@@ -1,14 +1,17 @@
 package com.zedread.pos.ui.screens.orderentry
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -113,6 +116,9 @@ fun OrderEntryScreen(
     val isMenuManualOverride by viewModel.isMenuManualOverride.collectAsState()
     val currentMenuLayout by viewModel.currentMenuLayout.collectAsState()
     val effectiveTabId by viewModel.effectiveTabId.collectAsState()
+    val isAutoMenuEnabled by viewModel.isAutoMenuEnabled.collectAsState()
+    val productDetail by viewModel.productDetail.collectAsState()
+    val soldOutActionError by viewModel.soldOutActionError.collectAsState()
 
     val isOnline by syncViewModel.isOnline.collectAsState()
     val pendingCount by syncViewModel.pendingCount.collectAsState()
@@ -150,6 +156,7 @@ fun OrderEntryScreen(
                         layouts = menuLayouts,
                         selectedId = selectedMenuLayoutId,
                         isManualOverride = isMenuManualOverride,
+                        showAllItemsOption = isAutoMenuEnabled,
                         onSelect = viewModel::selectMenuLayout,
                     )
                     val layoutForRail = currentMenuLayout
@@ -179,6 +186,7 @@ fun OrderEntryScreen(
                                 layout = layoutForGrid,
                                 tabId = effectiveTabId,
                                 onProductTap = viewModel::addToCartByRef,
+                                onProductLongPress = viewModel::openProductDetailByRef,
                                 onFolderTap = viewModel::selectTab,
                                 modifier = Modifier.weight(1f),
                             )
@@ -187,6 +195,7 @@ fun OrderEntryScreen(
                         ProductGrid(
                             products = products,
                             onProductTap = viewModel::addToCart,
+                            onProductLongPress = viewModel::openProductDetail,
                         )
                     }
                     if (cartActionState is CartActionState.Loading) {
@@ -257,6 +266,16 @@ fun OrderEntryScreen(
                 onDismiss = { showSyncPanel = false },
             )
         }
+
+        val currentProductDetail = productDetail
+        if (currentProductDetail != null) {
+            ProductDetailDialog(
+                product = currentProductDetail,
+                errorMessage = soldOutActionError,
+                onToggleSoldOut = viewModel::toggleSoldOut,
+                onDismiss = viewModel::closeProductDetail,
+            )
+        }
     }
 }
 
@@ -298,12 +317,18 @@ private fun CategoryRail(
  * once staff pick anything else, distinguishing an intentional override
  * from the schedule's own choice — cleared back to the star automatically
  * once the current sale completes (see SellViewModel.completePaymentAndStartNewOrder).
+ *
+ * [showAllItemsOption] gates the unfiltered "All items" choice behind the
+ * "Auto Menu" backend setting (Menu Studio's POS Layout tab) — per
+ * user-testing feedback, the only menus visible should be the ones
+ * published from Menu Studio unless a site/brand has explicitly opted in.
  */
 @Composable
 private fun MenuSelectorRow(
     layouts: List<PosMenuLayoutDto>,
     selectedId: String?,
     isManualOverride: Boolean,
+    showAllItemsOption: Boolean,
     onSelect: (String?) -> Unit,
 ) {
     if (layouts.isEmpty()) return
@@ -342,7 +367,9 @@ private fun MenuSelectorRow(
             Text("▾", color = colors.muted)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(text = { Text("All items") }, onClick = { onSelect(null); expanded = false })
+            if (showAllItemsOption) {
+                DropdownMenuItem(text = { Text("All items") }, onClick = { onSelect(null); expanded = false })
+            }
             layouts.forEach { layout ->
                 DropdownMenuItem(
                     text = { Text(layout.name + if (layout.isEffectiveDefault) " ★" else "") },
@@ -382,8 +409,20 @@ private fun Color.toHex(): String {
     return "#%02X%02X%02X".format(r, g, b)
 }
 
+/**
+ * The "All items" / category browsing grid — per user-testing feedback,
+ * always laid out as [MENU_GRID_COLUMNS] fixed columns (matching the Menu
+ * Studio grid's own 6-column convention, not the previous responsive
+ * [GridCells.Adaptive]) and padded with empty placeholder cells up to at
+ * least 6 rows, so a sparsely-stocked category doesn't collapse to a couple
+ * of tiles floating at the top of an otherwise-empty screen.
+ */
 @Composable
-private fun ProductGrid(products: List<ProductEntity>, onProductTap: (String) -> Unit) {
+private fun ProductGrid(
+    products: List<ProductEntity>,
+    onProductTap: (String) -> Unit,
+    onProductLongPress: (String) -> Unit,
+) {
     val colors = LocalZedReadColors.current
     if (products.isEmpty()) {
         Box(Modifier.fillMaxSize().background(colors.bg), contentAlignment = Alignment.Center) {
@@ -391,28 +430,49 @@ private fun ProductGrid(products: List<ProductEntity>, onProductTap: (String) ->
         }
         return
     }
+    val minCells = 6 * MENU_GRID_COLUMNS
+    val paddedCount = maxOf(minCells, ((products.size + MENU_GRID_COLUMNS - 1) / MENU_GRID_COLUMNS) * MENU_GRID_COLUMNS)
+    // A List<ProductEntity?>, not the items(count: Int) overload — this
+    // project's pinned Compose Foundation version only resolves
+    // LazyGridScope.items' Array/List overloads under the `items as
+    // gridItems` import used elsewhere in this file, so the count-based
+    // overload fails to compile ("None of the following candidates is
+    // applicable"). A null entry renders as an empty placeholder cell.
+    val paddedItems: List<ProductEntity?> = List(paddedCount) { products.getOrNull(it) }
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(180.dp),
+        columns = GridCells.Fixed(MENU_GRID_COLUMNS),
         modifier = Modifier.fillMaxSize().background(colors.bg),
         contentPadding = PaddingValues(18.dp, 18.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        gridItems(products) { product -> ProductTile(product = product, onClick = { onProductTap(product.id) }) }
+        gridItems(paddedItems) { product ->
+            if (product != null) {
+                ProductTile(
+                    product = product,
+                    onClick = { onProductTap(product.id) },
+                    onLongPress = { onProductLongPress(product.id) },
+                )
+            } else {
+                Spacer(Modifier.aspectRatio(1f))
+            }
+        }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ProductTile(product: ProductEntity, onClick: () -> Unit) {
-    val fillColor = parseHexColor(product.categoryColor)
-    val textColor = contrastTextColor(product.categoryColor)
+private fun ProductTile(product: ProductEntity, onClick: () -> Unit, onLongPress: () -> Unit) {
+    val colors = LocalZedReadColors.current
+    val fillColor = if (product.isSoldOut) colors.faint else parseHexColor(product.categoryColor)
+    val textColor = if (product.isSoldOut) colors.surface else contrastTextColor(product.categoryColor)
     val hasModifiers = !product.modifierNames.isNullOrBlank()
 
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
             .background(fillColor)
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
     ) {
         Column {
             Column(modifier = Modifier.padding(12.dp)) {
@@ -435,7 +495,7 @@ private fun ProductTile(product: ProductEntity, onClick: () -> Unit) {
                 )
             }
         }
-        if (hasModifiers) {
+        if (hasModifiers && !product.isSoldOut) {
             Box(
                 modifier = Modifier
                     .padding(8.dp)
@@ -446,6 +506,16 @@ private fun ProductTile(product: ProductEntity, onClick: () -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 Text("+", color = textColor, fontWeight = FontWeight.Bold)
+            }
+        }
+        if (product.isSoldOut) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    "SOLD OUT",
+                    color = textColor,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.labelMedium,
+                )
             }
         }
     }

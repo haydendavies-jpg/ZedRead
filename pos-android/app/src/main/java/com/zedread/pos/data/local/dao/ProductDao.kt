@@ -23,6 +23,10 @@ interface ProductDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun replaceAll(products: List<ProductEntity>)
 
+    /** Patch one cached row's sold-out flag in place — the long-press popup's toggle, applied optimistically after the API call succeeds. */
+    @Query("UPDATE products SET is_sold_out = :isSoldOut WHERE id = :productId")
+    suspend fun setSoldOut(productId: String, isSoldOut: Boolean)
+
     /** Wipe the cache (called on logout). */
     @Query("DELETE FROM products")
     suspend fun clearAll()

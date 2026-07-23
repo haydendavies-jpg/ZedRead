@@ -1654,6 +1654,87 @@ a site at once.
 
 ---
 
+### Android POS — testing feedback round 4 ✅
+
+Eight user-reported gaps against the running Android app: a real correctness bug plus branding,
+Menu Studio, device-naming, and a new sold-out feature. See each item below for detail.
+
+**Backend:**
+- [x] `products.is_sold_out` (migration `0057`), exposed on `ProductUpdate`/`ProductResponse` and
+      threaded through `MenuButtonOut` (`menu_builder_service._build_button_out`) so a POS-layout
+      button resolves it alongside `is_active`/`category_color`. Written via the existing
+      `PATCH /products/{id}` (already POS-callable — no new route needed); reuses `products.description`
+      (wired since the catalog's first stage) for the popup's short description, no new column needed
+      there.
+- [x] `auto_menu_enabled` added to the settings framework catalog (`app/constants/settings.py`,
+      category "Menu Studio") — gates the Android menu selector's unfiltered "All items" option,
+      toggled from Menu Studio's POS Layout tab (`MenuBuilderPage.tsx`'s `LayoutsList` header) as a
+      brand-level default via the existing `GET`/`PUT /settings` contract; no new backend surface.
+- [x] Device auto-naming: `device_name` is now optional on `POSLoginRequest`/`POSSiteTokenRequest` —
+      when omitted/blank on a brand-new device claim, `pos_auth_service._resolve_or_claim_device`
+      assigns `"POS #N"`, counting every device ever claimed at the site (new
+      `pos_device_service.count_devices_for_site()`, counts inactive/deregistered devices too so
+      numbering never repeats) rather than the terminal submitting its own app/model name.
+
+**Android:**
+- [x] **Fixed a real bug**: "buttons are not selectable and cannot add to the order" traced to
+      `SellViewModel.allProducts` — a `StateFlow` built with `SharingStarted.WhileSubscribed(5_000)`
+      that nothing ever `.collect()`s (only read via its plain `.value` from `addToCart`/
+      `addToCartByRef`, which doesn't count as subscribing), so its upstream Room flow never started
+      and `.value` stayed permanently `emptyList()` — every tap's ref/id lookup came back null and
+      silently no-opped. Changed to `SharingStarted.Eagerly`.
+- [x] Brand colours: `Theme.kt`'s `accent`/`accentText`/`accentSoft(2)` swapped from the
+      `design_handoff_zedread` mockup's crimson (`#A82040` — that bundle's own README already flags
+      it as "not necessarily final real branding") to the portal's actual documented brand taupe
+      (`pos-portal/CLAUDE.md`'s single source of truth for brand, `#554C44`/`#403933` light,
+      `#554C44`/`#C2B6A8` dark) — the same colour `LoginScreen.kt` already special-cased for exactly
+      this reason before this fix made it the app-wide default, so that screen's duplicate hardcoded
+      palette was removed in favour of the shared theme tokens. Fixes "buttons and accents on all
+      screens like cash in & cash out have the wrong colours" — those screens' plain Material
+      `Button`s already inherited `colorScheme.primary`, so no per-screen edits were needed once the
+      token itself changed. Resolves the "Android accent colour update pending an actual hex value"
+      gap below — the portal's own token *is* that value, no separate user-supplied hex was needed.
+- [x] `PosTopBar` now always renders a fixed `#FFFFFF` background (never `ZedReadColors.surface`,
+      which swaps dark in dark theme) with fixed light-mode text/icon colours, and its trailing "Z"
+      square badge is replaced with a small serif "ZedRead" + "POS YOU CAN COUNT ON" wordmark matching
+      the portal's own login-page treatment (`AuthPageShell.tsx`) — the exact screen user-testing
+      pointed at as the reference.
+- [x] Menu selector: the "All items" `DropdownMenuItem` in `MenuSelectorRow` is now gated behind the
+      new `auto_menu_enabled` setting (`SellViewModel.isAutoMenuEnabled`, fetched once at construction
+      like the existing cash settings) — hidden by default, so only layouts actually published from
+      Menu Studio are selectable until a brand opts in.
+- [x] The "All items" / category-browsing grid (`ProductGrid`) now always lays out as
+      `MENU_GRID_COLUMNS` (6) fixed columns — matching the Menu Studio grid's own convention instead
+      of the previous responsive `GridCells.Adaptive` — and pads with empty placeholder cells up to at
+      least 6 rows, so a sparsely-stocked category doesn't collapse to a couple of tiles floating at
+      the top of an otherwise-empty screen.
+- [x] Long-press product popup (`ProductDetailDialog.kt`, new): press-and-hold on a tile in either
+      grid (`ProductTile`/`ProductMenuTile`, via `combinedClickable`) opens a centered popup showing
+      the product's description and a sold-out `Switch`. Toggling pushes
+      `CatalogRepository.setSoldOut()` (PATCH the backend first, patch the Room cache from the
+      confirmed response — no optimistic flip, so a failed write surfaces an error instead of lying
+      about the new state) and greys the tile out with "SOLD OUT" written over it in both grids; a
+      short tap on a sold-out tile no-ops in `SellViewModel.addToCart` (blocked before the modifier-
+      sheet/add-to-cart branch), while long-press keeps working on a sold-out tile specifically so
+      staff can clear it again — `combinedClickable`'s `enabled` flag disables *both* callbacks
+      together, so the short-tap guard lives in the ViewModel, not in the tile's `enabled` param.
+- [x] Room DB bumped `5 -> 6` (`products.is_sold_out`) via `fallbackToDestructiveMigration`, same
+      established convention as every other products/categories-only column add (no explicit
+      `Migration` needed — see `DatabaseModule`'s own doc).
+- [x] Tests: `test_product_routes.py` gained sold-out default/toggle/audit-log coverage;
+      `test_menu_layout_routes.py` gained a resolved-sold-out-button test;
+      `test_settings_routes.py` gained an `auto_menu_enabled` catalog assertion; `test_pos_auth_routes.py`'s
+      obsolete "missing device_name returns 422" test was replaced with one asserting it's now
+      accepted, plus a new counting-up-per-site auto-naming test. **Verified against a real local
+      Postgres 16 instance with migrations applied through `0057`** (this environment had one
+      reachable this time, unlike prior Android slices) — full suite passing; portal `npm run build`
+      (tsc + vite) verified clean. Android changes are still source-only — no `gradlew` wrapper is
+      checked into this repo and this sandbox has no reachable Google Maven, so the usual manual
+      brace/import/property-order review stands in, same as every prior Android slice; relies on the
+      repo's `Android build` CI job for the real compile check.
+
+---
+
 ## Cross-Cutting — Always Active
 
 | Concern | Status |
@@ -1682,5 +1763,4 @@ a site at once.
 | Line modifier price is a flat per-line addition, not scaled by quantity | `invoice_line_modifiers` has no quantity dimension — one row per (line, modifier); `add_line_modifier()`/`_recompute_invoice_totals()` add `price_delta_cents` once regardless of the line's `quantity` | Medium |
 | Tax compound edge cases (PST on GST): not validated | `tax_calculation_service.py` | Medium |
 | Accounting/journal integration for refunds | Not started | Future |
-| Android accent colour update pending an actual hex value from the user ("new colour branding" reported in testing, not yet supplied) | `Theme.kt` currently matches `design_handoff_zedread/README.md`'s documented `#A82040` exactly | Medium |
 | Inline manager-authorisation prompt (`InlineAuthPrompt.kt`) exists but isn't wired to any screen | Android, void/refund/discount elevated-privilege approval | Low |

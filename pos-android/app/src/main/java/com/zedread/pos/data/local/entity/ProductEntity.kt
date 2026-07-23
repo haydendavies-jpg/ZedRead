@@ -17,6 +17,9 @@ data class ProductEntity(
     @ColumnInfo(name = "photo_url") val photoUrl: String?,
     @ColumnInfo(name = "display_order") val displayOrder: Int,
     @ColumnInfo(name = "is_active") val isActive: Boolean,
+    // Long-press product popup: greys the tile out with "SOLD OUT" written
+    // over it and blocks adding it to an order until toggled off again.
+    @ColumnInfo(name = "is_sold_out") val isSoldOut: Boolean,
     @ColumnInfo(name = "category_color") val categoryColor: String,
     @ColumnInfo(name = "modifier_names") val modifierNames: String?,
 )

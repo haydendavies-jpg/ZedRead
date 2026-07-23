@@ -3,14 +3,11 @@ package com.zedread.pos.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Icon
@@ -20,10 +17,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.zedread.pos.ui.theme.LocalZedReadColors
+import androidx.compose.ui.unit.sp
+
+// Fixed, theme-independent colours for this bar — per user-testing feedback
+// the top bar must always read #FFFFFF, in light AND dark mode, unlike every
+// other surface in the app which follows ZedReadColors' light/dark swap.
+private val TopBarBackground = Color.White
+private val TopBarText = Color(0xFF241F1A) // ZedReadColors' own light-mode --text, fixed here regardless of theme
+private val TopBarFaint = Color(0xFFA39A8C) // ZedReadColors' own light-mode --faint, fixed here regardless of theme
 
 /**
  * Persistent top navigation bar — per user-testing feedback, every screen
@@ -38,6 +43,13 @@ import com.zedread.pos.ui.theme.LocalZedReadColors
  * operator icons on Register; empty elsewhere), and the sync status badge +
  * ZedRead wordmark pinned to the trailing edge on every screen — the sync
  * badge is no longer a floating overlay icon.
+ *
+ * The background is always [TopBarBackground] (#FFFFFF), never
+ * ZedReadColors.surface — the design calls for a white top bar in both light
+ * and dark mode, so its text/icon colours are pinned to fixed light-mode
+ * equivalents rather than the theme-aware [LocalZedReadColors] the rest of
+ * this bar's content would otherwise use, to stay legible against that fixed
+ * white regardless of the app's own theme.
  */
 @Composable
 fun PosTopBar(
@@ -49,12 +61,11 @@ fun PosTopBar(
     onSyncClick: () -> Unit,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
-    val colors = LocalZedReadColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.surface)
-            .border(width = 1.dp, color = colors.border)
+            .background(TopBarBackground)
+            .border(width = 1.dp, color = Color(0x14241F1A))
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -62,13 +73,13 @@ fun PosTopBar(
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
             if (onBack != null) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = colors.text)
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TopBarText)
                 }
             }
             Column {
-                Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = colors.text)
+                Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = TopBarText)
                 if (subtitle != null) {
-                    Text(subtitle.uppercase(), style = MaterialTheme.typography.labelSmall, color = colors.faint)
+                    Text(subtitle.uppercase(), style = MaterialTheme.typography.labelSmall, color = TopBarFaint)
                 }
             }
         }
@@ -76,23 +87,33 @@ fun PosTopBar(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             actions()
             SyncStatusBadge(isOnline = isOnline, pendingCount = pendingCount, onClick = onSyncClick)
-            ZedReadBadge()
+            ZedReadWordmark()
         }
     }
 }
 
-/** Small "Z" wordmark badge — the ZedRead identity every top bar carries in its trailing corner. */
+/**
+ * The ZedRead wordmark — matches the portal's own sign-in page treatment
+ * (serif "ZedRead" + a small uppercase tagline underneath, see
+ * pos-portal's AuthPageShell.tsx) rather than the earlier single-letter "Z"
+ * tile, per user-testing feedback pointing at that exact screen as the
+ * reference. Sized down to fit this bar's trailing corner.
+ */
 @Composable
-private fun ZedReadBadge() {
-    val colors = LocalZedReadColors.current
-    Box(
-        modifier = Modifier
-            .padding(start = 8.dp)
-            .size(28.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(colors.accent),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text("Z", color = androidx.compose.ui.graphics.Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+private fun ZedReadWordmark() {
+    Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 8.dp)) {
+        Text(
+            "ZedRead",
+            fontFamily = FontFamily.Serif,
+            fontWeight = FontWeight.Bold,
+            fontSize = 15.sp,
+            color = Color(0xFF554C44), // portal's own brand taupe — see Theme.kt's doc
+        )
+        Text(
+            "POS YOU CAN COUNT ON",
+            fontSize = 6.sp,
+            letterSpacing = 0.8.sp,
+            color = TopBarFaint,
+        )
     }
 }

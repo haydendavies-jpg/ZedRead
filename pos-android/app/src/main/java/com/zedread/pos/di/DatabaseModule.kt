@@ -95,7 +95,9 @@ object DatabaseModule {
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "zedread_pos.db")
             .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
-            .fallbackToDestructiveMigration() // last resort only — MIGRATION_2_3/3_4/4_5 handle the hops that exist today
+            // last resort only for outbox_items/invoice_cache — the 5->6 hop (products.is_sold_out)
+            // falls through here deliberately, same as every other products/categories-only column add
+            .fallbackToDestructiveMigration()
             .build()
 
     @Provides

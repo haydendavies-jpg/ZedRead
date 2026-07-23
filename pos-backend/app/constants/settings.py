@@ -57,6 +57,19 @@ SETTING_CATALOG: list[SettingDefinition] = [
             "only — the expected/variance comparison is hidden from the cashier."
         ),
     ),
+    SettingDefinition(
+        key="auto_menu_enabled",
+        label="Auto Menu",
+        category="Menu Studio",
+        type=SettingType.BOOLEAN,
+        default_value=False,
+        description=(
+            "When enabled, the Android Register's menu selector offers an "
+            "unfiltered 'All items' option showing the full catalog. When "
+            "disabled (the default), staff may only browse the menu layouts "
+            "actually published from Menu Studio."
+        ),
+    ),
 ]
 
 SETTING_KEYS: frozenset[str] = frozenset(s.key for s in SETTING_CATALOG)

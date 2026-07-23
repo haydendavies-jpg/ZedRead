@@ -25,11 +25,14 @@ class POSLoginRequest(BaseModel):
 
     email: EmailStr
     password: str
-    device_name: str = Field(
-        ...,
-        min_length=1,
+    device_name: str | None = Field(
+        default=None,
         max_length=255,
-        description="Human-readable name for this terminal, used only if a new device is claimed",
+        description=(
+            "Human-readable name for this terminal, used only if a new device is claimed. "
+            "Omit/blank to let the server auto-assign 'POS #N', counting up per site — see "
+            "pos_auth_service._resolve_or_claim_device."
+        ),
     )
     device_token: str | None = Field(
         default=None,
@@ -60,7 +63,7 @@ class POSSiteTokenRequest(BaseModel):
 
     email: EmailStr
     password: str
-    device_name: str = Field(..., min_length=1, max_length=255)
+    device_name: str | None = Field(default=None, max_length=255)
     device_token: str | None = None
     hardware_id: str | None = Field(default=None, max_length=255)
     site_id: uuid.UUID
