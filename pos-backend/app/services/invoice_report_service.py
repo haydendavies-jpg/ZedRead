@@ -56,6 +56,12 @@ class InvoiceReportRow(BaseModel):
     voided_at: datetime | None
     paid_at: datetime | None
     created_at: datetime
+    # Distinct payment methods recorded against this invoice (e.g.
+    # ["cash", "card"] for a split payment) — powers the Invoices table's
+    # per-row payment-method columns. Resolved via a correlated subquery in
+    # _INVOICE_REPORT_COLUMNS, not a join, since one invoice can have many
+    # payments and a join would duplicate the invoice row per payment.
+    payment_methods: list[str]
 
 
 class PaymentResponse(BaseModel):
@@ -152,7 +158,9 @@ InvoiceDetailResponse.model_rebuild()
 _INVOICE_REPORT_COLUMNS = (
     "id, brand_id, site_id, site_name, brand_name, created_by_id, invoice_type, "
     "status, subtotal_cents, tax_cents, discount_cents, total_cents, refund_of_id, "
-    "is_refunded, voided_at, paid_at, created_at"
+    "is_refunded, voided_at, paid_at, created_at, "
+    "(SELECT COALESCE(array_agg(DISTINCT p.method ORDER BY p.method), ARRAY[]::text[]) "
+    "FROM payments p WHERE p.invoice_id = vw_invoice_detail.id) AS payment_methods"
 )
 
 

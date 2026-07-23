@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit_log import AuditLog
+from app.models.invoice import Invoice
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -228,3 +229,97 @@ async def test_export_invoice_pdf_returns_pdf_bytes(
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "application/pdf"
     assert resp.content.startswith(b"%PDF")
+
+
+# ── Payment methods column ───────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_list_invoice_reports_includes_payment_methods(
+    client: AsyncClient, pos_auth_headers: dict, test_product
+) -> None:
+    """Each row's payment_methods lists every distinct method recorded against it — the Invoices table's Payment column."""
+    invoice_id = await _create_paid_invoice(client, pos_auth_headers, str(test_product.id), 1500)
+
+    resp = await client.get("/invoice-reports", headers=pos_auth_headers)
+    assert resp.status_code == 200
+    row = next(r for r in resp.json() if r["id"] == invoice_id)
+    assert row["payment_methods"] == ["cash"]
+
+
+@pytest.mark.asyncio
+async def test_list_invoice_reports_split_payment_lists_every_method(
+    client: AsyncClient, pos_auth_headers: dict, test_product
+) -> None:
+    """A split-paid invoice's payment_methods lists all distinct methods used, not just the last one."""
+    inv_resp = await client.post("/invoices", json={}, headers=pos_auth_headers)
+    invoice_id = inv_resp.json()["id"]
+    await client.post(
+        f"/invoices/{invoice_id}/line-items",
+        json={"product_id": str(test_product.id), "quantity": 1},
+        headers=pos_auth_headers,
+    )
+    await client.post(
+        f"/invoices/{invoice_id}/pay", json={"method": "cash", "amount_cents": 500}, headers=pos_auth_headers
+    )
+    await client.post(
+        f"/invoices/{invoice_id}/pay", json={"method": "card", "amount_cents": 1000}, headers=pos_auth_headers
+    )
+
+    resp = await client.get("/invoice-reports", headers=pos_auth_headers)
+    row = next(r for r in resp.json() if r["id"] == invoice_id)
+    assert row["payment_methods"] == ["card", "cash"]  # array_agg orders alphabetically
+
+
+# ── Portal-initiated refund ──────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_portal_refund_full_invoice(
+    client: AsyncClient, pos_auth_headers: dict, mgmt_auth_headers: dict, test_product, db: AsyncSession
+) -> None:
+    """POST /invoice-reports/{id}/refund (management/portal JWT) refunds a paid invoice, no till session required."""
+    invoice_id = await _create_paid_invoice(client, pos_auth_headers, str(test_product.id), 1500)
+
+    resp = await client.post(
+        f"/invoice-reports/{invoice_id}/refund", json={"reason": "Portal-initiated"}, headers=mgmt_auth_headers
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["invoice_type"] == "refund"
+    assert data["refund_of_id"] == invoice_id
+    assert data["total_cents"] == -1500
+
+    orig = await db.get(Invoice, uuid.UUID(invoice_id))
+    assert orig.is_refunded is True
+
+
+@pytest.mark.asyncio
+async def test_portal_refund_partial_by_line_item(
+    client: AsyncClient, pos_auth_headers: dict, mgmt_auth_headers: dict, test_product
+) -> None:
+    """POST /invoice-reports/{id}/refund with line_item_ids refunds only the selected items."""
+    inv_resp = await client.post("/invoices", json={}, headers=pos_auth_headers)
+    invoice_id = inv_resp.json()["id"]
+    li_resp = await client.post(
+        f"/invoices/{invoice_id}/line-items",
+        json={"product_id": str(test_product.id), "quantity": 1},
+        headers=pos_auth_headers,
+    )
+    line_id = li_resp.json()["id"]
+    await client.post(
+        f"/invoices/{invoice_id}/line-items",
+        json={"product_id": str(test_product.id), "quantity": 1},
+        headers=pos_auth_headers,
+    )
+    await client.post(
+        f"/invoices/{invoice_id}/pay", json={"method": "cash", "amount_cents": 3000}, headers=pos_auth_headers
+    )
+
+    resp = await client.post(
+        f"/invoice-reports/{invoice_id}/refund",
+        json={"line_item_ids": [line_id]},
+        headers=mgmt_auth_headers,
+    )
+    assert resp.status_code == 201
+    assert resp.json()["total_cents"] == -1500

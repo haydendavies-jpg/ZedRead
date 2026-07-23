@@ -11,6 +11,7 @@ import com.zedread.pos.data.local.TokenStore
 import com.zedread.pos.data.local.entity.CategoryEntity
 import com.zedread.pos.data.local.entity.ProductEntity
 import com.zedread.pos.data.repository.CatalogRepository
+import com.zedread.pos.data.repository.InvoiceRepository
 import com.zedread.pos.data.repository.MenuLayoutRepository
 import com.zedread.pos.data.repository.OutboxRepository
 import com.zedread.pos.data.repository.PrinterRepository
@@ -19,6 +20,7 @@ import com.zedread.pos.data.repository.SettingsRepository
 import com.zedread.pos.data.sync.OutboxSaleLine
 import com.zedread.pos.data.sync.SyncPaymentLeg
 import com.zedread.pos.printing.Docket
+import com.zedread.pos.ui.components.roundToNearest5Cents
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,10 +46,11 @@ import javax.inject.Inject
  * `order[]` on one Component), so their state lives here as plain StateFlows
  * rather than being routed through Compose Navigation — the Register screen
  * is a single flat nav destination (`Screen.OrderEntry`), and this ViewModel
- * scopes to it via the default `hiltViewModel()`. There is no
- * `GET /invoices/{id}/line-items` to reconstruct the cart from, so a fresh
- * sale after "New order" is a same-instance state reset
- * ([completePaymentAndStartNewOrder]) rather than a new ViewModel instance.
+ * scopes to it via the default `hiltViewModel()`. A fresh sale after "New
+ * order" is a same-instance state reset ([completePaymentAndStartNewOrder])
+ * rather than a new ViewModel instance. `GET /invoices/{id}/line-items` now
+ * exists (added for [recallHeldOrder]) but a brand-new sale still never
+ * calls it — only a held-order recall does.
  *
  * **Local-first cart, sync-on-commit** (post-round-4 user feedback): the
  * cart is built ENTIRELY on-device — [addToCart]/[confirmModifierSheet]/
@@ -77,6 +80,7 @@ import javax.inject.Inject
 class SellViewModel @Inject constructor(
     private val catalogRepo: CatalogRepository,
     private val outboxRepo: OutboxRepository,
+    private val invoiceRepo: InvoiceRepository,
     private val menuLayoutRepo: MenuLayoutRepository,
     private val settingsRepo: SettingsRepository,
     private val printerRepo: PrinterRepository,
@@ -350,8 +354,28 @@ class SellViewModel @Inject constructor(
     /** Tax across all lines — modifiers carry no tax of their own (matches invoice.tax_cents). */
     val taxCents: Long get() = _lineItems.value.sumOf { it.taxCents }
 
-    /** Computed total in cents across all line items (subtotal, incl. modifiers, + tax). */
-    val totalCents: Long get() = subtotalCents + taxCents
+    // ── Manual discount (Register's Discount button, above Hold/Pay) ────────
+    //
+    // A flat cents amount, computed client-side from either a typed $ figure
+    // or a %-of-order figure (see DiscountDialog) — either way the result is
+    // clamped here to [0, subtotal+tax] so it can never exceed the order's
+    // own total, matching apply_discount()'s own "discount cannot exceed
+    // total" backend invariant. Threaded into the outbox payload
+    // (SyncSalePayload.discountCents) and applied server-side after lines,
+    // before payment — see OutboxSyncWorker.syncSale.
+
+    private val _discountCents = MutableStateFlow(0L)
+    val discountCents: StateFlow<Long> = _discountCents.asStateFlow()
+
+    /** Set (or clear, with 0) the order's manual discount — clamped to the pre-discount order total. */
+    fun setDiscount(cents: Long) {
+        _discountCents.value = cents.coerceIn(0L, subtotalCents + taxCents)
+    }
+
+    fun clearDiscount() { _discountCents.value = 0L }
+
+    /** Computed total in cents across all line items (subtotal, incl. modifiers, + tax), less any manual discount. */
+    val totalCents: Long get() = (subtotalCents + taxCents - _discountCents.value).coerceAtLeast(0)
 
     // Retained for the modifier sheet's own Loading/Ready/Closed states
     // (see ModifierSheetState below) and as a defensive surface for the
@@ -412,10 +436,12 @@ class SellViewModel @Inject constructor(
 
     /**
      * Flatten a modifier sheet's selections into [LineModifierDto] rows —
-     * same attach rule at both nesting levels (single-select groups always
-     * attach their one choice; multi-select only when it costs extra), just
-     * applied one level deeper for a linked ("comboed") group. Ported from
-     * the sheet's own online-confirm logic now that this is the only path —
+     * same attach rule at every nesting level (single-select groups always
+     * attach their one choice; multi-select only when it costs extra),
+     * recursing down through however many linked ("comboed") groups a chain
+     * actually has — a linked group's own selected option may itself own
+     * further linked groups, with no fixed depth limit. Ported from the
+     * sheet's own online-confirm logic now that this is the only path —
      * unlike the old offline fallback, linked selections are NOT dropped
      * here; that shortcut was only acceptable for a rare emergency path, not
      * the everyday one.
@@ -423,21 +449,33 @@ class SellViewModel @Inject constructor(
     private fun resolveModifierDtos(lineId: String, groups: List<ModifierGroupSelection>): List<LineModifierDto> {
         data class Chosen(val id: String, val name: String, val priceDeltaCents: Long)
         val chosen = mutableListOf<Chosen>()
+
+        // Only descends into linkedSelections[ownerIdx] for owner indices that
+        // are actually selected right now — a stale entry for a since-deselected
+        // option is left in the map (harmless, see ModifierGroupSelection's doc)
+        // but must never contribute to what gets attached to the line.
+        fun collectChildren(selectedOwnerIndices: Set<Int>, linkedSelections: Map<Int, List<LinkedGroupSelection>>) {
+            selectedOwnerIndices.forEach { ownerIdx ->
+                linkedSelections[ownerIdx].orEmpty().forEach { child ->
+                    child.selected.forEach childLoop@{ idx ->
+                        val option = child.group.options.getOrNull(idx) ?: return@childLoop
+                        if (child.isSingleSelect || option.priceDeltaCents > 0) {
+                            chosen += Chosen(option.id, option.name, option.priceDeltaCents)
+                        }
+                    }
+                    collectChildren(child.selected, child.linkedSelections)
+                }
+            }
+        }
+
         groups.forEach { gs ->
             gs.selected.forEach { idx ->
                 val option = gs.group.options.getOrNull(idx) ?: return@forEach
                 if (gs.isSingleSelect || option.priceDeltaCents > 0) {
                     chosen += Chosen(option.id, option.name, option.priceDeltaCents)
                 }
-                gs.linkedSelections[idx].orEmpty().forEach { linked ->
-                    linked.selected.forEach linkedLoop@{ linkedIdx ->
-                        val linkedOption = linked.group.options.getOrNull(linkedIdx) ?: return@linkedLoop
-                        if (linked.isSingleSelect || linkedOption.priceDeltaCents > 0) {
-                            chosen += Chosen(linkedOption.id, linkedOption.name, linkedOption.priceDeltaCents)
-                        }
-                    }
-                }
             }
+            collectChildren(gs.selected, gs.linkedSelections)
         }
         return chosen.map { c ->
             LineModifierDto(
@@ -567,23 +605,23 @@ class SellViewModel @Inject constructor(
         _modifierSheetState.value = state.copy(groups = groups)
     }
 
-    /** Radio-style select for a single-select linked group, checkbox-style toggle for multi-select. */
-    fun toggleLinkedChoice(groupIndex: Int, optionIndex: Int, linkedGroupIndex: Int, linkedOptionIndex: Int) {
+    /**
+     * Radio-style select for a single-select linked group, checkbox-style
+     * toggle for multi-select — at ANY nesting depth, not just one level.
+     *
+     * [path] is the chain of hops from the top-level group down to (and
+     * including) the group being toggled: each [ModifierPathStep] names
+     * which option owned the next linked-group slot. An empty path would
+     * mean "the top-level group itself", which this function never receives
+     * (that's [toggleModifierChoice]'s job) — path always has at least one step.
+     */
+    fun toggleNestedModifierChoice(groupIndex: Int, path: List<ModifierPathStep>, optionIndex: Int) {
         val state = _modifierSheetState.value as? ModifierSheetState.Ready ?: return
         val groups = state.groups.toMutableList()
         val current = groups.getOrNull(groupIndex) ?: return
-        val linkedList = current.linkedSelections[optionIndex] ?: return
-        val linkedGroup = linkedList.getOrNull(linkedGroupIndex) ?: return
-        val newLinkedSelected = when {
-            linkedGroup.isSingleSelect -> setOf(linkedOptionIndex)
-            linkedGroup.selected.contains(linkedOptionIndex) -> linkedGroup.selected - linkedOptionIndex
-            else -> linkedGroup.selected + linkedOptionIndex
-        }
-        val newLinkedList = linkedList.toMutableList()
-        newLinkedList[linkedGroupIndex] = linkedGroup.copy(selected = newLinkedSelected)
-        val newLinked = current.linkedSelections.toMutableMap()
-        newLinked[optionIndex] = newLinkedList
-        groups[groupIndex] = current.copy(linkedSelections = newLinked)
+        groups[groupIndex] = current.copy(
+            linkedSelections = applyNestedToggle(current.linkedSelections, path, optionIndex),
+        )
         _modifierSheetState.value = state.copy(groups = groups)
     }
 
@@ -596,8 +634,9 @@ class SellViewModel @Inject constructor(
 
     /**
      * Per-unit price including selected modifiers and any selected comboed
-     * (linked) options one level deep — mirrors modAddToOrder's live `unit`
-     * calc, extended for comboing since the mockup predates it. The base
+     * (linked) options, however deep the chain goes — mirrors
+     * modAddToOrder's live `unit` calc, extended for unlimited-depth
+     * comboing since the mockup predates it entirely. The base
      * (pre-modifier) starting point uses [computeLocalLineTax]'s own
      * unitPriceCents rather than product.basePriceCents directly, so a
      * non-taxable product's preview here matches what it's actually charged
@@ -606,14 +645,8 @@ class SellViewModel @Inject constructor(
     fun modifierSheetUnitPriceCents(state: ModifierSheetState.Ready): Long {
         var unit = computeLocalLineTax(state.product, 1).unitPriceCents
         state.groups.forEach { gs ->
-            gs.selected.forEach { idx ->
-                unit += gs.group.options.getOrNull(idx)?.priceDeltaCents ?: 0
-                gs.linkedSelections[idx]?.forEach { linked ->
-                    linked.selected.forEach { linkedIdx ->
-                        unit += linked.group.options.getOrNull(linkedIdx)?.priceDeltaCents ?: 0
-                    }
-                }
-            }
+            gs.selected.forEach { idx -> unit += gs.group.options.getOrNull(idx)?.priceDeltaCents ?: 0 }
+            unit += sumLinkedSelectionPriceCents(gs.selected, gs.linkedSelections)
         }
         return unit
     }
@@ -672,6 +705,78 @@ class SellViewModel @Inject constructor(
         _ticketNumber.value = null
         _selectedLineItemId.value = null
         _paymentState.value = null
+        _discountCents.value = 0L
+        _recalledInvoiceId.value = null
+        recalledExistingLineIds = emptySet()
+    }
+
+    // ── Held orders (recall) ─────────────────────────────────────────────────
+    //
+    // Recalling a held order loads its lines (already created server-side by
+    // an earlier Hold) into this same cart so staff can add to it and/or pay
+    // it off. Unlike a brand-new sale, a recalled order's Hold-again/Pay must
+    // target the EXISTING invoice rather than create a new one — see
+    // [holdOrder]/[submitPayment]'s recalled-order branches. This path calls
+    // the API directly rather than going through the outbox: recalling
+    // itself already requires connectivity (it fetches the invoice's current
+    // server state), so there is no meaningful "offline recall" to support —
+    // a flagged limitation, not silently dropped. See HeldOrdersOverlay for
+    // the list this recalls from, and HeldOrdersViewModel for how it's fetched.
+    //
+    // Known limitation, also flagged rather than silently dropped: editing
+    // the quantity of, or removing, a line that already existed on the
+    // server as of recall isn't supported here — [setLineQuantity]/
+    // [removeLine] happily mutate it locally (nothing stops that), but only
+    // [newLinesSinceRecall] ever syncs, so such an edit would silently fail
+    // to reach the server. Only adding new items to a recalled order, and
+    // paying/holding it again, are wired end to end this round.
+
+    private val _recalledInvoiceId = MutableStateFlow<String?>(null)
+    val recalledInvoiceId: StateFlow<String?> = _recalledInvoiceId.asStateFlow()
+
+    /** Line item ids already on the server as of recall — only ids NOT in this set are new lines to sync on Hold-again/Pay. */
+    private var recalledExistingLineIds: Set<String> = emptySet()
+
+    /**
+     * Fetch a held order's lines (and header, for any discount already
+     * applied before it was held — see [InvoiceRepository.getInvoice]) and
+     * load them into this cart. Requires connectivity.
+     */
+    fun recallHeldOrder(invoiceId: String) {
+        _cartActionState.value = CartActionState.Idle
+        viewModelScope.launch {
+            runCatching {
+                val lines = invoiceRepo.getLineItems(invoiceId)
+                val invoice = invoiceRepo.getInvoice(invoiceId)
+                lines to invoice.discountCents
+            }
+                .onSuccess { (lines, discountCents) ->
+                    _lineItems.value = lines
+                    recalledExistingLineIds = lines.map { it.id }.toSet()
+                    _recalledInvoiceId.value = invoiceId
+                    _discountCents.value = discountCents
+                    if (_ticketNumber.value == null) issueTicketNumber()
+                }
+                .onFailure { e ->
+                    _cartActionState.value = CartActionState.Error(e.message ?: "Couldn't recall this order — check your connection")
+                }
+        }
+    }
+
+    /** Lines added to the cart since recall (or all lines, for a brand-new sale) — what actually needs to sync. */
+    private fun newLinesSinceRecall(): List<LineItemDto> =
+        _lineItems.value.filter { it.id !in recalledExistingLineIds }
+
+    /** Push newly-added lines (with their modifiers) directly to an existing server-side invoice — mirrors OutboxSyncWorker.syncSale's own loop. */
+    private suspend fun addLinesOnline(invoiceId: String, lines: List<LineItemDto>) {
+        for (line in lines) {
+            val productId = line.productId ?: error("Line item is missing its product id")
+            val created = invoiceRepo.addLineItem(invoiceId, productId, line.quantity)
+            for (modifier in line.modifiers) {
+                val optionId = modifier.modifierOptionId ?: continue
+                invoiceRepo.addLineModifier(invoiceId, created.id, optionId)
+            }
+        }
     }
 
     /**
@@ -679,16 +784,36 @@ class SellViewModel @Inject constructor(
      * [OutboxRepository.enqueueSale]) and clears the order pane once it's
      * queued. The resulting invoice is created and left OPEN on the server,
      * same as before this round's rework, just via the sync queue instead
-     * of a live call — still no "recall a held order" list on this device
-     * (a manager can find it via the portal's invoice reports), a known,
-     * flagged gap rather than something this round silently drops.
+     * of a live call. When the cart came from [recallHeldOrder] instead,
+     * this just pushes whatever new lines were added since — the held
+     * invoice already exists, there's nothing to (re)create.
      */
     fun holdOrder() {
         if (_lineItems.value.isEmpty()) { clearOrder(); return }
+        val recalledId = _recalledInvoiceId.value
+        if (recalledId != null) {
+            val newLines = newLinesSinceRecall()
+            viewModelScope.launch {
+                runCatching {
+                    addLinesOnline(recalledId, newLines)
+                    // Always pushed (not gated on > 0) — a recalled order may
+                    // already carry a server-side discount from before it was
+                    // held, and clearing it locally (setDiscount(0)) must
+                    // sync that removal back, not just a newly-applied one.
+                    invoiceRepo.applyDiscount(recalledId, _discountCents.value)
+                }
+                    .onSuccess { clearOrder() }
+                    .onFailure { e -> _cartActionState.value = CartActionState.Error(e.message ?: "Couldn't update this held order") }
+            }
+            return
+        }
         val lines = buildOutboxLines()
         val total = totalCents
+        val discount = _discountCents.value
         viewModelScope.launch {
-            runCatching { outboxRepo.enqueueSale(lines = lines, payments = emptyList(), isPaid = false, totalCents = total) }
+            runCatching {
+                outboxRepo.enqueueSale(lines = lines, payments = emptyList(), isPaid = false, totalCents = total, discountCents = discount)
+            }
                 .onSuccess { clearOrder() }
                 .onFailure { e -> _cartActionState.value = CartActionState.Error(e.message ?: "Couldn't hold this order") }
         }
@@ -804,26 +929,57 @@ class SellViewModel @Inject constructor(
         // still due before it — 0 for card/voucher, and for a non-split
         // cash tender this is exactly amountCents - remaining. Computable
         // locally now (unlike before this round), since totalCents is
-        // itself always locally correct — see LocalTaxCalculator.
+        // itself always locally correct — see LocalTaxCalculator. Rounded
+        // to the nearest 5c for cash specifically (AU cash-rounding — see
+        // roundToNearest5Cents's doc): this is what's physically handed
+        // back, a receipt-only figure never sent to the backend, so
+        // rounding it here doesn't touch the ledger amount (amountCents).
         val dueBeforeThisPayment = totalCents - current.paidCents
-        val change = (amountCents - dueBeforeThisPayment).coerceAtLeast(0)
+        val rawChange = (amountCents - dueBeforeThisPayment).coerceAtLeast(0)
+        val change = if (method == "cash") roundToNearest5Cents(rawChange) else rawChange
 
         if (updatedPaidCents < totalCents) {
             _paymentState.value = PaymentUiState(paidCents = updatedPaidCents, legs = updatedLegs)
             return
         }
 
-        val lines = buildOutboxLines()
         val total = totalCents
+        val discount = _discountCents.value
+        val recalledId = _recalledInvoiceId.value
         _paymentState.value = current.copy(isSubmitting = true, errorMessage = null)
         viewModelScope.launch {
-            runCatching { outboxRepo.enqueueSale(lines = lines, payments = updatedLegs, isPaid = true, totalCents = total) }
-                .onSuccess { clientRef ->
-                    // Captured for printReceipt() — the sync worker re-keys this row with the
-                    // real server-issued ref once it confirms (see enqueueSale's own doc); the
-                    // client ref is all that's available at Done-time, same value the receipt
-                    // would otherwise be printed with while offline anyway.
-                    lastCompletedClientRef = clientRef
+            // Captured for printReceipt(): a recalled held order already has a
+            // server-issued invoice id (recalledId itself); a brand-new sale has
+            // none yet at Done-time, so the outbox's client-generated ref is what
+            // printReceipt() has to use instead — the sync worker re-keys the
+            // cache row with the real server ref once it confirms (see
+            // enqueueSale's own doc), same value the receipt would otherwise be
+            // printed with while offline anyway.
+            var completedRef: String? = null
+            val result = if (recalledId != null) {
+                completedRef = recalledId
+                // A recalled held order already exists server-side — push any
+                // newly-added lines and the discount directly, then pay,
+                // rather than enqueueing a brand-new SYNC_SALE (which would
+                // create a duplicate invoice). Online-only, same as recall
+                // itself — see recallHeldOrder's doc.
+                runCatching {
+                    addLinesOnline(recalledId, newLinesSinceRecall())
+                    // Always pushed — see holdOrder's recalled branch for why.
+                    invoiceRepo.applyDiscount(recalledId, discount)
+                    updatedLegs.forEachIndexed { index, leg ->
+                        invoiceRepo.pay(recalledId, leg.method, leg.amountCents, leg.reference, "$recalledId-pay-$index")
+                    }
+                }
+            } else {
+                val lines = buildOutboxLines()
+                runCatching {
+                    outboxRepo.enqueueSale(lines = lines, payments = updatedLegs, isPaid = true, totalCents = total, discountCents = discount)
+                }.onSuccess { clientRef -> completedRef = clientRef }
+            }
+            result
+                .onSuccess {
+                    lastCompletedClientRef = completedRef
                     _paymentState.value = current.copy(
                         stage = PaymentStage.DONE,
                         isSubmitting = false,
@@ -911,11 +1067,13 @@ sealed class ModifierSheetState {
  *
  * linkedSelections carries "comboing" state: keyed by the top-level option
  * index that owns the link, one [LinkedGroupSelection] per group that
- * option links to (same order as that option's own linkedGroups list — one
- * level of nesting only, matching the backend). Entries persist even after
- * their owning option is deselected (harmless — the sheet only ever renders
- * a currently-selected option's linked blocks) rather than being pruned on
- * every toggle.
+ * option links to (same order as that option's own linkedGroups list).
+ * Nesting is unlimited — each [LinkedGroupSelection] carries the exact same
+ * shape one level further down ("a linked modifier linked to a linked
+ * modifier"), so this recurses to whatever depth the backend's comboing
+ * data actually has. Entries persist even after their owning option is
+ * deselected (harmless — the sheet only ever renders a currently-selected
+ * option's linked blocks) rather than being pruned on every toggle.
  */
 data class ModifierGroupSelection(
     val group: ProductModifierGroupDto,
@@ -927,18 +1085,90 @@ data class ModifierGroupSelection(
     val isRequired: Boolean get() = group.minSelections >= 1
 }
 
-/** A linked ("combo") group's own option list plus which option indices are currently selected. */
+/**
+ * A linked ("combo") group's own option list plus which option indices are
+ * currently selected — the exact same shape as [ModifierGroupSelection]
+ * (group/selected/linkedSelections), so the same recursive toggle/sum
+ * helpers below work at every depth without a depth parameter.
+ */
 data class LinkedGroupSelection(
     val group: LinkedGroupDto,
     val selected: Set<Int>,
+    val linkedSelections: Map<Int, List<LinkedGroupSelection>> = emptyMap(),
 ) {
     val isSingleSelect: Boolean get() = group.maxSelections <= 1
     val isRequired: Boolean get() = group.minSelections >= 1
 }
 
-/** Default selection for a linked group when its owning option is first selected — mirrors the top-level default rule. */
-private fun defaultLinkedSelection(group: LinkedGroupDto): LinkedGroupSelection =
-    LinkedGroupSelection(group, if (group.isFirstOptionDefaultSelected && group.options.isNotEmpty()) setOf(0) else emptySet())
+/** Default selection for a linked group when its owning option is first selected — mirrors the top-level default rule, seeded recursively down the whole chain. */
+private fun defaultLinkedSelection(group: LinkedGroupDto): LinkedGroupSelection {
+    val defaultSelected = if (group.isFirstOptionDefaultSelected && group.options.isNotEmpty()) setOf(0) else emptySet()
+    val defaultLinked = defaultSelected.associateWith { idx ->
+        group.options.getOrNull(idx)?.linkedGroups.orEmpty().map(::defaultLinkedSelection)
+    }.filterValues { it.isNotEmpty() }
+    return LinkedGroupSelection(group, defaultSelected, defaultLinked)
+}
+
+/** One hop down a modifier chain: which option (within the current group) owns the next linked-group slot, and which slot. */
+data class ModifierPathStep(val optionIndex: Int, val linkedGroupIndex: Int)
+
+/**
+ * Apply a select/deselect toggle at an arbitrary depth within a
+ * linkedSelections tree — shared by [SellViewModel.toggleNestedModifierChoice]
+ * for both the first hop (off [ModifierGroupSelection.linkedSelections]) and
+ * every hop after it (off a [LinkedGroupSelection.linkedSelections] of its
+ * own), since both have the identical `Map<Int, List<LinkedGroupSelection>>` shape.
+ */
+private fun applyNestedToggle(
+    linkedSelections: Map<Int, List<LinkedGroupSelection>>,
+    path: List<ModifierPathStep>,
+    optionIndex: Int,
+): Map<Int, List<LinkedGroupSelection>> {
+    val step = path.first()
+    val siblings = linkedSelections[step.optionIndex] ?: return linkedSelections
+    val target = siblings.getOrNull(step.linkedGroupIndex) ?: return linkedSelections
+    val updatedTarget = if (path.size == 1) {
+        toggleOptionInLinkedGroup(target, optionIndex)
+    } else {
+        target.copy(linkedSelections = applyNestedToggle(target.linkedSelections, path.drop(1), optionIndex))
+    }
+    val updatedSiblings = siblings.toMutableList().also { it[step.linkedGroupIndex] = updatedTarget }
+    return linkedSelections + (step.optionIndex to updatedSiblings)
+}
+
+/** Toggle one option within a single [LinkedGroupSelection] node, seeding default selections for any newly-selected option's own further links. */
+private fun toggleOptionInLinkedGroup(target: LinkedGroupSelection, optionIndex: Int): LinkedGroupSelection {
+    val newSelected = when {
+        target.isSingleSelect -> setOf(optionIndex)
+        target.selected.contains(optionIndex) -> target.selected - optionIndex
+        else -> target.selected + optionIndex
+    }
+    val newlySelected = newSelected - target.selected
+    val newLinked = target.linkedSelections.toMutableMap()
+    newlySelected.forEach { idx ->
+        if (idx !in newLinked) {
+            val linked = target.group.options.getOrNull(idx)?.linkedGroups.orEmpty().map(::defaultLinkedSelection)
+            if (linked.isNotEmpty()) newLinked[idx] = linked
+        }
+    }
+    return target.copy(selected = newSelected, linkedSelections = newLinked)
+}
+
+/**
+ * Sum the price of every selected option beneath [selectedOwnerIndices]'
+ * linked groups, recursing to unlimited depth — shared by
+ * [SellViewModel.modifierSheetUnitPriceCents] for both the top-level group
+ * and every nested [LinkedGroupSelection] beneath it.
+ */
+private fun sumLinkedSelectionPriceCents(
+    selectedOwnerIndices: Set<Int>,
+    linkedSelections: Map<Int, List<LinkedGroupSelection>>,
+): Long = selectedOwnerIndices.sumOf { ownerIdx ->
+    linkedSelections[ownerIdx].orEmpty().sumOf { child ->
+        child.selected.sumOf { idx -> child.group.options.getOrNull(idx)?.priceDeltaCents ?: 0L } +
+            sumLinkedSelectionPriceCents(child.selected, child.linkedSelections)
+    }
+}
 
 /** Method tabs on the payment modal — Voucher is the flagged addition the design bundle predates. */
 enum class PaymentMethod(val label: String) { CARD("Card"), CASH("Cash"), VOUCHER("Voucher") }

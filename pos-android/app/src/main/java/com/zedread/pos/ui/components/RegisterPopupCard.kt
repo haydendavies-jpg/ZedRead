@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zedread.pos.ui.theme.LocalZedReadColors
 
@@ -48,6 +49,12 @@ fun RegisterPopupCard(
     title: String,
     subtitle: String? = null,
     onClose: (() -> Unit)? = null,
+    // Wider for the denomination-grid cash entry variant (see
+    // CashDenominationGrid's doc) — its single-column list of 11
+    // denominations plus a side-by-side keypad needs more room than the
+    // plain bulk-total entry's single field+keypad ever did. Default
+    // unchanged from before this parameter existed.
+    maxWidth: Dp = 480.dp,
     footer: @Composable () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -61,7 +68,7 @@ fun RegisterPopupCard(
     ) {
         Box(
             modifier = Modifier
-                .widthIn(max = 480.dp)
+                .widthIn(max = maxWidth)
                 .fillMaxWidth(0.92f)
                 .fillMaxHeight(0.85f)
                 .clip(RoundedCornerShape(18.dp))

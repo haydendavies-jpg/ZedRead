@@ -122,13 +122,32 @@ interface PosApiService {
         @Body body: InvoiceCreateBody,
     ): InvoiceDto
 
-    /** GET /invoices — this site's invoice history, most recent first. Backfills the local search cache. */
+    /**
+     * GET /invoices — this site's invoice history, most recent first.
+     * Backfills the local search cache; also used by the Held Orders tab
+     * with [invoiceStatus]="open" to list unpaid, line-item-bearing invoices.
+     */
     @GET("invoices")
     suspend fun listInvoices(
         @Header("Authorization") bearer: String,
         @Query("skip") skip: Int,
         @Query("limit") limit: Int,
+        @Query("status") invoiceStatus: String? = null,
     ): List<InvoiceDto>
+
+    /** GET /invoices/{id}/line-items — every line item on an invoice, with modifiers. Powers Held Orders recall. */
+    @GET("invoices/{id}/line-items")
+    suspend fun getInvoiceLineItems(
+        @Header("Authorization") bearer: String,
+        @Path("id") invoiceId: String,
+    ): List<LineItemDto>
+
+    /** GET /invoices/{id} — a single invoice's header (totals/discount/status). Used alongside line-items on Held Orders recall. */
+    @GET("invoices/{id}")
+    suspend fun getInvoice(
+        @Header("Authorization") bearer: String,
+        @Path("id") invoiceId: String,
+    ): InvoiceDto
 
     /** POST /invoices/{id}/line-items — append a product to the invoice. */
     @POST("invoices/{id}/line-items")
@@ -178,6 +197,14 @@ interface PosApiService {
         @Header("Authorization") bearer: String,
         @Path("id") invoiceId: String,
         @Body body: PaymentRequest,
+    ): InvoiceDto
+
+    /** POST /invoices/{id}/discount — apply a manual discount before payment. */
+    @POST("invoices/{id}/discount")
+    suspend fun applyDiscount(
+        @Header("Authorization") bearer: String,
+        @Path("id") invoiceId: String,
+        @Body body: ApplyDiscountRequest,
     ): InvoiceDto
 
     // ── Settings ────────────────────────────────────────────────────────────

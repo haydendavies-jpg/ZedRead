@@ -15,6 +15,7 @@ time.  These fields must never be updated after the line item is created.
 """
 
 import uuid
+from collections import defaultdict
 from datetime import datetime, timezone
 
 import structlog
@@ -187,9 +188,18 @@ class PayInvoiceRequest(BaseModel):
 
 
 class RefundRequest(BaseModel):
-    """Payload for creating a refund invoice."""
+    """
+    Payload for creating a refund invoice.
+
+    line_item_ids, when supplied and non-empty, requests a PARTIAL refund —
+    only those line items (plus their modifiers) are refunded, by whole
+    item (no partial-quantity-within-a-line support — see create_refund's
+    doc). Omitted or empty means a full refund of the entire invoice, same
+    as before this field existed.
+    """
 
     reason: str | None = None
+    line_item_ids: list[uuid.UUID] | None = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -303,6 +313,7 @@ async def list_invoices(
     site_id: uuid.UUID,
     skip: int = 0,
     limit: int = 50,
+    invoice_status: str | None = None,
 ) -> list[Invoice]:
     """
     Return invoices for a site ordered by created_at descending.
@@ -313,18 +324,70 @@ async def list_invoices(
         site_id: Site to list invoices for.
         skip: Pagination offset.
         limit: Maximum rows to return.
+        invoice_status: Optional status filter (e.g. "open" — the Register's
+            Held Orders tab lists a site's unpaid-but-line-item-bearing
+            invoices this way; add_line_item() moves a DRAFT invoice to OPEN
+            once it has a line, so a held order is always status=open).
 
     Returns:
         list[Invoice]: Invoices ordered most-recent-first.
     """
-    result = await db.execute(
-        select(Invoice)
-        .where(Invoice.brand_id == brand_id, Invoice.site_id == site_id)
-        .order_by(Invoice.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-    )
+    query = select(Invoice).where(Invoice.brand_id == brand_id, Invoice.site_id == site_id)
+    if invoice_status is not None:
+        query = query.where(Invoice.status == invoice_status)
+    result = await db.execute(query.order_by(Invoice.created_at.desc()).offset(skip).limit(limit))
     return list(result.scalars().all())
+
+
+async def list_line_items(
+    db: AsyncSession, brand_id: uuid.UUID, invoice_id: uuid.UUID
+) -> list[LineItemDetailResponse]:
+    """
+    Return every line item on an invoice, each with its attached modifiers,
+    ordered by display_order.
+
+    Powers the Register's Held Orders recall: reconstructing an on-device
+    cart from an invoice that was held (created, lines added, never paid) —
+    there was previously no way to fetch a full line-item list for an
+    invoice, only one line at a time (get_line_item_detail).
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+        invoice_id: Invoice to fetch line items for.
+
+    Returns:
+        list[LineItemDetailResponse]: Line items with modifiers, ordered by display_order.
+
+    Raises:
+        HTTPException: 404 if the invoice does not exist within the brand.
+    """
+    await _get_invoice_or_404(db, brand_id, invoice_id)
+    result = await db.execute(
+        select(InvoiceLineItem)
+        .where(InvoiceLineItem.invoice_id == invoice_id)
+        .order_by(InvoiceLineItem.display_order)
+    )
+    items = list(result.scalars().all())
+    if not items:
+        return []
+
+    mods_result = await db.execute(
+        select(InvoiceLineModifier).where(
+            InvoiceLineModifier.line_item_id.in_([i.id for i in items])
+        )
+    )
+    mods_by_line: dict[uuid.UUID, list[InvoiceLineModifier]] = defaultdict(list)
+    for mod in mods_result.scalars().all():
+        mods_by_line[mod.line_item_id].append(mod)
+
+    return [
+        LineItemDetailResponse(
+            **LineItemResponse.model_validate(item).model_dump(),
+            modifiers=[LineModifierResponse.model_validate(m) for m in mods_by_line.get(item.id, [])],
+        )
+        for item in items
+    ]
 
 
 async def create_invoice(
@@ -1097,29 +1160,39 @@ async def create_refund(
     invoice_id: uuid.UUID,
     payload: RefundRequest,
     actor: User,
-    register_session_id: uuid.UUID,
+    register_session_id: uuid.UUID | None,
 ) -> Invoice:
     """
-    Create a refund invoice for a paid invoice.
+    Create a refund invoice for a paid invoice — full, or partial by line item.
 
     The refund invoice is created with status=PAID and invoice_type=REFUND.
-    The original invoice is marked is_refunded=True.
+    The original invoice is marked is_refunded=True regardless of whether
+    this refund was full or partial — there is no per-line refunded-amount
+    tracking on InvoiceLineItem, so a second refund against the same
+    invoice (even for a disjoint set of items) is blocked to avoid silently
+    double-refunding a line. A manager needing to refund more of the same
+    invoice later must void/reissue rather than layering partial refunds.
 
     Args:
         db: Active database session.
         brand_id: Brand scope.
         invoice_id: The original paid invoice to refund.
-        payload: Optional reason.
+        payload: Optional reason, and optionally line_item_ids for a
+            partial (by-item) refund — see RefundRequest's doc.
         actor: The authenticated POS user.
         register_session_id: The device's currently open till session — a
             refund is attributed to whichever shift processes it, not the
             original sale's session (that may be a different day entirely).
+            None when the refund is initiated from the management portal
+            (no till session applies there — see routes/invoice_reports.py).
 
     Returns:
         Invoice: The newly created refund invoice.
 
     Raises:
         HTTPException: 404 if original invoice not found.
+        HTTPException: 400 if line_item_ids is supplied but matches no line
+            items on the original invoice.
         HTTPException: 409 if original invoice is not paid or already refunded.
     """
     original = await _get_invoice_or_404(db, brand_id, invoice_id)
@@ -1135,6 +1208,33 @@ async def create_refund(
             detail="Invoice has already been refunded",
         )
 
+    if payload.line_item_ids:
+        items_result = await db.execute(
+            select(InvoiceLineItem).where(
+                InvoiceLineItem.invoice_id == original.id,
+                InvoiceLineItem.id.in_(payload.line_item_ids),
+            )
+        )
+        items = items_result.scalars().all()
+        if not items:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No matching line items found for a partial refund",
+            )
+        mods_result = await db.execute(
+            select(InvoiceLineModifier).where(
+                InvoiceLineModifier.line_item_id.in_([i.id for i in items])
+            )
+        )
+        modifier_total = sum(m.price_delta_cents for m in mods_result.scalars().all())
+        refund_subtotal = sum(i.subtotal_cents for i in items) + modifier_total
+        refund_tax = sum(i.tax_cents for i in items)
+        refund_total = sum(i.line_total_cents for i in items) + modifier_total
+    else:
+        refund_subtotal = original.subtotal_cents
+        refund_tax = original.tax_cents
+        refund_total = original.total_cents
+
     now = datetime.now(tz=timezone.utc)
 
     refund = Invoice(
@@ -1145,11 +1245,11 @@ async def create_refund(
         register_session_id=register_session_id,
         invoice_type=InvoiceType.REFUND.value,
         status=InvoiceStatus.PAID.value,
-        subtotal_cents=-original.subtotal_cents,
-        tax_cents=-original.tax_cents,
+        subtotal_cents=-refund_subtotal,
+        tax_cents=-refund_tax,
         discount_cents=0,
         discount_reason=payload.reason,
-        total_cents=-original.total_cents,
+        total_cents=-refund_total,
         refund_of_id=original.id,
         paid_at=now,
     )

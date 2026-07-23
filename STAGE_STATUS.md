@@ -1802,6 +1802,112 @@ a one-off fix) — summary here:
 
 ---
 
+### Android POS — payment/cash/invoice user-testing round 5 (post-round-4-follow-ups, complete)
+
+Thirteen user-reported gaps against the running Android app plus two portal Invoices-table gaps,
+covering the payment screen, cash counting, modifiers, held orders, invoice sync, discounts, cash
+rounding, refunds, and settings. See the task description for the original list; summary here:
+
+- [x] **Cash count screen redesign** (`CashDenominationGrid.kt`, `RegisterPopupCard.kt`): the
+      two-column notes/coins split is gone — a single full-width column of all 11 denominations,
+      each row generously sized (no truncated labels), with the pinpad now beside the list instead of
+      underneath it. `RegisterPopupCard` gained a `maxWidth` parameter (default unchanged at 480.dp)
+      so `CashInScreen`/`CashUpScreen` can request a wider 760.dp card specifically for the
+      denomination-grid variant — the plain bulk-total entry stays at the old narrower width.
+- [x] **Unlimited-depth modifier comboing** (`app/services/modifier_service.py`,
+      `ApiModels.kt`/`SellViewModel.kt`/`ModifierSheet.kt`): a linked ("comboed") modifier group's own
+      option can now itself link into a further group, recursing to whatever depth the
+      `modifier_option_group_links` data actually has — previously hard-capped at one level, both on
+      the backend (`_resolve_linked_groups()`, replacing the old one-level inline query, shared by
+      `list_product_modifiers_detailed()` and `list_modifier_groups_detailed()`, one query per nesting
+      depth with a cycle guard) and on Android (`LinkedGroupSelection`/`LinkedGroupOptionDto` are now
+      self-referential; `ModifierPathStep`-addressed `toggleNestedModifierChoice()` replaces the fixed
+      four-argument `toggleLinkedChoice()`; `ModifierSheet.kt`'s `LinkedGroupBlock` recurses into
+      itself for a selected option's own further links).
+- [x] **Split-payment screen**: the pinpad was already always open; it now prefills with the exact
+      amount due (clearing to a fresh entry on the first keypress, per the requested "start typing ->
+      clear and start fresh" behaviour) and gained $10/$20/$50/$100 quick-cash buttons beside the
+      pinpad that each ADD their note value to whatever's currently shown — pressing $20 twice adds
+      $40 (`PaymentScreen.kt`'s `SplitAmountEntry`/`QuickCashColumn`). The payment modal's max width
+      grew 560 -> 720.dp so the pinpad+quick-cash row has room without truncating either.
+- [x] **Held Orders** (`HeldOrdersOverlay.kt`, `HeldOrdersViewModel.kt`, `SellViewModel.recallHeldOrder`):
+      an overlay (same convention as the modifier sheet/payment modal — needs to share the Register's
+      own `SellViewModel` instance, which a separate nav destination's default-scoped ViewModel
+      wouldn't) listing the site's OPEN (held, unpaid) invoices, tap to recall onto the current cart.
+      Backend gained `GET /invoices?status=` (filter) and `GET /invoices/{id}/line-items` (new — there
+      was previously no way to fetch a full line-item list for an invoice, only one at a time).
+      Recalling restores the order's already-applied discount too (`GET /invoices/{id}`, also newly
+      consumed by Android). A recalled order's Hold-again/Pay pushes new lines/discount/payment
+      directly against the EXISTING invoice (online-only — recalling itself already requires
+      connectivity) instead of enqueueing a new `SYNC_SALE`, which would have created a duplicate
+      invoice. **Known limitation, flagged not silently dropped**: editing the quantity of, or
+      removing, a line that already existed on the server as of recall isn't wired to sync back —
+      only adding new items to a recalled order is.
+- [x] **Manual discount** (`DiscountDialog.kt`, `SellViewModel.setDiscount`/`clearDiscount`): a
+      "Discount"/"Edit discount" button above Hold/Pay opens a pinpad popup for either a flat $ amount
+      or a % of the order, clamped so it can never exceed the order's own pre-discount total (100% cap
+      for percent, `subtotal+tax` cap for dollars) — mirrors `apply_discount()`'s own backend
+      invariant. Threaded into the outbox payload (`SyncSalePayload.discountCents`/`discountReason`,
+      applied server-side by `OutboxSyncWorker.syncSale()` after lines land and before any payment
+      leg) for a brand-new sale, or pushed directly via the existing `POST /invoices/{id}/discount`
+      for a recalled order. A non-zero discount shows as its own line in the order pane's breakdown.
+- [x] **Cash rounds to the nearest 5c** (`NumericKeypad.kt`'s new `roundToNearest5Cents()`, shared by
+      `PaymentScreen.kt` and `SellViewModel`): Australian cash-rounding convention (no 1c/2c coins) —
+      the Cash tab's "exact amount" tender preset rounds UP to the nearest 5c (so it always still
+      covers what's due), and the live/final "CHANGE"/"Change due" figures round to the NEAREST 5c.
+      Deliberately display-only: the amount actually recorded against the invoice (`amountCents`
+      submitted to `pay()`) is untouched, so the ledger stays cent-accurate — only what's physically
+      handed over/back in cash is rounded.
+- [x] **Invoice sync status**: `OutboxRepository.enqueueSale()` already requested an immediate sync
+      attempt the moment a sale is queued (unchanged this round) — the actual gap was purely the
+      *display*: `InvoiceSearchScreen` showed "Pending sync" on a brand-new unsynced row instantly,
+      reading as a problem when it's the ordinary in-flight case. It now shows "Syncing…" (neutral)
+      until a row has stayed unsynced for 5 minutes, then flips to "Pending sync" — a `LaunchedEffect`
+      ticks a `nowMillis` state every 30s so an on-screen row flips over on its own without needing a
+      fresh DB emission.
+- [x] **Partial/full refund** (portal only — the POS terminal's own invoice screen is Invoice Search,
+      a lookup tool, not a management surface; refunding belongs on the portal's Invoices table where
+      a manager actually works): `create_refund()` gained an optional `line_item_ids` on `RefundRequest`
+      — supplied, it refunds only those line items (+ their modifiers) rather than negating the whole
+      invoice; either way `original.is_refunded` is still set (there's no per-line refunded-amount
+      tracking, so a second refund against the same invoice — even for a disjoint item set — is
+      blocked to avoid double-refunding a line, a documented scope decision). New portal-facing
+      `POST /invoice-reports/{id}/refund` (management/portal JWT, `register_session_id=None` since a
+      portal refund isn't tied to any till session) alongside the existing POS-only
+      `POST /invoices/{id}/refund`. `RefundModal.tsx` (new) offers Full vs Partial-by-checkbox.
+- [x] **Invoices table** (`InvoicesPage.tsx`): header renamed "Invoice #"; new Payment column
+      (`InvoiceReportRow.payment_methods`, a correlated `array_agg(DISTINCT ...)` subquery added to
+      `_INVOICE_REPORT_COLUMNS` rather than a join, since a join would duplicate the invoice row per
+      payment); clicking a row expands it inline to show line items (`ExpandedLineItems`, lazily
+      fetched via the existing `/invoice-reports/{id}` detail endpoint); a `<tfoot>` "Page total" row
+      is `position: sticky; bottom: 0` so it stays visible while scrolling (page-level total, not a
+      grand total across all pages — the table is server-paginated, see the file's own doc); a
+      "Refund" action per paid, not-yet-refunded row.
+- [x] **Settings actually adjustable from POS** (`SettingsRepository.applyLocalOverride`,
+      `SettingsViewModel.setLocalValue`): the real bug — a locally-edited setting only ever changed
+      SettingsScreen's own display; every other reader of the settings cache (`CashIn`/`CashUp`'s
+      `cash_in_mode`, the Register's `auto_menu_enabled` check) never saw it, so a non-Manager
+      operator's toggle visibly flipped but changed nothing. `setLocalValue` now also patches the
+      shared in-memory cache immediately, so the change takes effect on this device right away
+      regardless of role — pushing it as every device's shared default (`saveAsDefault`) remains
+      gated to Master User/Admin/Manager, unchanged. The explanatory row text was reworded from "Your
+      role can't save settings changes" (read as "nothing works") to "Applied to this device. Ask a
+      Manager or Admin to make it every device's default."
+- [x] **Verification**: `python3 -m ast` parse-checked every changed/added Python file; a fresh venv
+      installed `requirements.txt` and successfully imported every changed module plus `app.main`
+      (full route registration); `pytest --collect-only` found all 921 tests with no import errors (no
+      reachable Postgres in this sandbox to actually run them — same standing constraint as every
+      prior round). `npx tsc --noEmit` clean for the portal changes. **Not verified against a real
+      Gradle build** — same standing constraint as every prior Android slice (no `gradlew` wrapper
+      checked in); checked manually instead — brace/paren balance on every changed/added Kotlin file,
+      every renamed symbol's call sites re-grepped for leftover references (`toggleLinkedChoice`/
+      `onToggleLinkedChoice` — none remain), and a real import-shadowing bug caught and fixed
+      (`androidx.compose.material.icons.filled.List` would have shadowed `kotlin.collections.List`
+      throughout `OrderEntryScreen.kt`, aliased to `ListIcon` instead). Relies on the repo's `Android
+      build`/`Backend tests`/`Portal build` CI jobs for the real compile checks.
+
+---
+
 ### Android POS — modifier default-select, local modifier cache, sync splash, cash popup restyle ✅ (PR #132)
 
 Further user-testing feedback against the local-first cart build — see `ANDROID_POS_BUILD_PLAN.md`'s
@@ -1895,9 +2001,11 @@ matching write-up under "Standing architecture principle" for the full narrative
 | Circular combo reference: no DB constraint | `combo_service.py` graph traversal only | Low |
 | Photo size limit: no DB constraint | `product_service.py` check only | Low |
 | Invoice line `notes` column: not exposed in API | `invoice_line_items.notes` exists in model | Low |
-| Hold has no "recall a held order" list on-device — findable via the portal's invoice reports, but not pullable back into an active sale on the terminal | `SellViewModel.holdOrder()` | Low |
 | Invoice search: payment method unknown for sales backfilled from other devices (`GET /invoices` has no per-payment breakdown) | `InvoiceRepository.refreshCacheFromServer()` | Low |
 | Line modifier price is a flat per-line addition, not scaled by quantity | `invoice_line_modifiers` has no quantity dimension — one row per (line, modifier); `add_line_modifier()`/`_recompute_invoice_totals()` add `price_delta_cents` once regardless of the line's `quantity` | Medium |
 | Tax compound edge cases (PST on GST): not validated | `tax_calculation_service.py` | Medium |
 | Accounting/journal integration for refunds | Not started | Future |
 | Inline manager-authorisation prompt (`InlineAuthPrompt.kt`) exists but isn't wired to any screen | Android, void/refund/discount elevated-privilege approval | Low |
+| Recalled held order: editing the quantity of, or removing, a line that already existed on the server as of recall doesn't sync back — only adding new items to a recalled order does | `SellViewModel.recallHeldOrder`/`newLinesSinceRecall` | Medium |
+| Held Orders recall and its Hold-again/Pay require connectivity — no offline path (recalling itself needs the invoice's current server state) | `SellViewModel.recallHeldOrder` | Low |
+| Partial refund has no per-line refunded-amount tracking — a second refund against an already-refunded invoice is blocked entirely, even for a disjoint set of items, rather than allowed incrementally | `invoice_service.create_refund` | Medium |

@@ -236,20 +236,30 @@ data class ProductModifierOptionDto(
     val name: String,
     @Json(name = "price_delta_cents") val priceDeltaCents: Long,
     @Json(name = "display_order") val displayOrder: Int,
-    // "Comboing" — one level deep, mirrors LinkedGroupOut. Selecting this
-    // option expands into each of these nested groups on the sheet.
+    // "Comboing", to unlimited depth — mirrors LinkedGroupOut. Selecting this
+    // option expands into each of these nested groups on the sheet, and each
+    // of THEIR options may carry further links of their own (see
+    // LinkedGroupOptionDto.linkedGroups) — no fixed nesting limit.
     @Json(name = "linked_groups") val linkedGroups: List<LinkedGroupDto> = emptyList(),
 )
 
-/** One flat option belonging to a linked (combo) group — no further nesting. Mirrors LinkedGroupOptionOut. */
+/**
+ * One option belonging to a linked (combo) group.
+ *
+ * linkedGroups lets THIS option itself expand into a further nested group —
+ * "a linked modifier linked to a linked modifier" — recursing to whatever
+ * depth the backend's modifier_option_group_links data actually has.
+ * Mirrors LinkedGroupOptionOut.
+ */
 @JsonClass(generateAdapter = true)
 data class LinkedGroupOptionDto(
     val id: String,
     val name: String,
     @Json(name = "price_delta_cents") val priceDeltaCents: Long,
+    @Json(name = "linked_groups") val linkedGroups: List<LinkedGroupDto> = emptyList(),
 )
 
-/** A modifier group linked from an option ("comboing"), with its own active options. Mirrors LinkedGroupOut. */
+/** A modifier group linked from an option ("comboing"), with its own active options (each option may nest further). Mirrors LinkedGroupOut. */
 @JsonClass(generateAdapter = true)
 data class LinkedGroupDto(
     val id: String,
@@ -451,6 +461,13 @@ data class PaymentRequest(
     @Json(name = "amount_cents") val amountCents: Long,
     val reference: String? = null,
     @Json(name = "client_ref") val clientRef: String? = null,
+)
+
+/** POST /invoices/{id}/discount request — a manual discount applied before payment. */
+@JsonClass(generateAdapter = true)
+data class ApplyDiscountRequest(
+    @Json(name = "discount_cents") val discountCents: Long,
+    val reason: String? = null,
 )
 
 // ── Settings (Android POS Phase 2) ───────────────────────────────────────────

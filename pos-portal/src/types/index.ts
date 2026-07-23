@@ -673,6 +673,7 @@ export interface InvoiceReportRow {
   voided_at: string | null
   paid_at: string | null
   created_at: string
+  payment_methods: string[]
 }
 
 // ── Register session reporting types (Android POS Phase 1) ─────────────────────

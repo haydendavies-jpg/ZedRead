@@ -6,7 +6,7 @@
  * SuperAdmins: must supply brand_id via URL param, and may optionally pick a site.
  */
 
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, fetchAll } from '../../api/axios'
@@ -14,8 +14,9 @@ import { useAuth, isMgmtUser } from '../../context/AuthContext'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { StatusBadge } from '../../components/StatusBadge'
 import { EntityIdChip } from '../../components/EntityIdChip'
+import { RefundModal } from '../../components/RefundModal'
 import { downloadBlob } from '../../utils/download'
-import type { InvoiceReportRow, Site } from '../../types'
+import type { InvoiceDetail, InvoiceReportRow, Site } from '../../types'
 
 // Server-side page size — invoice volume grows without bound, so unlike the
 // catalog pages (which fetchAll and filter client-side) this list is truly
@@ -46,6 +47,8 @@ export function InvoicesPage() {
   const [maxAmount, setMaxAmount] = useState('')
   const [isExporting, setIsExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [refundInvoiceId, setRefundInvoiceId] = useState<string | null>(null)
 
   const siteId = fixedSiteId ?? selectedSiteId
 
@@ -228,50 +231,100 @@ export function InvoicesPage() {
         <p className="text-sm text-red-500">Failed to load invoices.</p>
       ) : (
         <div className="zr-table-wrap">
-          <table className="zr-table min-w-[720px]">
+          <table className="zr-table min-w-[860px]">
             <thead>
               <tr>
-                <th>Invoice</th>
+                <th>Invoice #</th>
                 <th>Date</th>
                 <th>Site</th>
                 <th>Type</th>
                 <th>Status</th>
+                <th>Payment</th>
                 <th className="zr-num">Total</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody>
-              {invoices.map((inv) => (
-                <tr key={inv.id}>
-                  <td className="px-4 py-3"><EntityIdChip id={inv.id} /></td>
-                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{new Date(inv.created_at).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{inv.site_name}</td>
-                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300 capitalize">
-                    {inv.invoice_type}
-                    {inv.is_refunded && <span className="ml-1 text-xs text-amber-600">(refunded)</span>}
-                  </td>
-                  <td className="px-4 py-3"><StatusBadge status={inv.status} /></td>
-                  <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-gray-100">{centsToDisplay(inv.total_cents)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <Link
-                      to={`/management/invoices/${inv.id}${brandId ? `?brand_id=${brandId}` : ''}`}
-                      className="text-brand-600 hover:underline text-xs"
+              {invoices.map((inv) => {
+                const isExpanded = expandedId === inv.id
+                return (
+                  <Fragment key={inv.id}>
+                    <tr
+                      onClick={() => setExpandedId(isExpanded ? null : inv.id)}
+                      className="cursor-pointer"
                     >
-                      View
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+                      <td className="px-4 py-3"><EntityIdChip id={inv.id} /></td>
+                      <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{new Date(inv.created_at).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{inv.site_name}</td>
+                      <td className="px-4 py-3 text-gray-700 dark:text-gray-300 capitalize">
+                        {inv.invoice_type}
+                        {inv.is_refunded && <span className="ml-1 text-xs text-amber-600">(refunded)</span>}
+                      </td>
+                      <td className="px-4 py-3"><StatusBadge status={inv.status} /></td>
+                      <td className="px-4 py-3 text-gray-700 dark:text-gray-300 capitalize">
+                        {inv.payment_methods.length > 0 ? inv.payment_methods.join(', ') : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-gray-100">{centsToDisplay(inv.total_cents)}</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        {inv.status === 'paid' && !inv.is_refunded && (
+                          <button
+                            onClick={() => setRefundInvoiceId(inv.id)}
+                            className="text-red-600 hover:underline text-xs mr-3"
+                          >
+                            Refund
+                          </button>
+                        )}
+                        <Link
+                          to={`/management/invoices/${inv.id}${brandId ? `?brand_id=${brandId}` : ''}`}
+                          className="text-brand-600 hover:underline text-xs"
+                        >
+                          View
+                        </Link>
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan={8} className="px-4 py-3 bg-gray-50 dark:bg-gray-800/50">
+                          <ExpandedLineItems invoiceId={inv.id} brandId={brandId} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
               {invoices.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
                     No invoices yet.
                   </td>
                 </tr>
               )}
             </tbody>
+            {invoices.length > 0 && (
+              <tfoot>
+                <tr
+                  className="sticky bottom-0 z-10 bg-white dark:bg-gray-800 border-t-2 border-gray-200 dark:border-gray-700 font-semibold"
+                >
+                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300" colSpan={6}>
+                    Page total ({invoices.length} invoice{invoices.length === 1 ? '' : 's'})
+                  </td>
+                  <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100">
+                    {centsToDisplay(invoices.reduce((sum, inv) => sum + inv.total_cents, 0))}
+                  </td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
+      )}
+
+      {refundInvoiceId && (
+        <RefundModal
+          invoiceId={refundInvoiceId}
+          brandId={brandId ?? null}
+          onClose={() => setRefundInvoiceId(null)}
+        />
       )}
 
       {/* Pagination — shown whenever there is anything to page between */}
@@ -295,5 +348,53 @@ export function InvoicesPage() {
         </div>
       )}
     </div>
+  )
+}
+
+/** A row's expanded detail — the invoice's line items (with modifiers), fetched lazily once expanded. */
+function ExpandedLineItems({ invoiceId, brandId }: { invoiceId: string; brandId: string | null }) {
+  const params = brandId ? { brand_id: brandId } : {}
+  const { data: invoice, isLoading, error } = useQuery<InvoiceDetail>({
+    queryKey: ['invoice-report-detail', invoiceId, brandId],
+    queryFn: () => api.get(`/invoice-reports/${invoiceId}`, { params }).then((r) => r.data),
+  })
+
+  if (isLoading) return <p className="text-sm text-gray-400 dark:text-gray-500">Loading items…</p>
+  if (error || !invoice) return <p className="text-sm text-red-500">Failed to load line items.</p>
+  if (invoice.line_items.length === 0) {
+    return <p className="text-sm text-gray-400 dark:text-gray-500">No line items on this invoice.</p>
+  }
+
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-xs text-gray-500 dark:text-gray-400">
+          <th className="text-left font-medium pb-1">Item</th>
+          <th className="text-right font-medium pb-1">Qty</th>
+          <th className="text-right font-medium pb-1">Unit</th>
+          <th className="text-right font-medium pb-1">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {invoice.line_items.map((li) => {
+          const modifierTotal = li.modifiers.reduce((sum, m) => sum + m.price_delta_cents, 0)
+          return (
+            <tr key={li.id} className="border-t border-gray-100 dark:border-gray-700">
+              <td className="py-1.5 text-gray-800 dark:text-gray-200">
+                {li.product_name}
+                {li.modifiers.map((m) => (
+                  <div key={m.id} className="text-xs text-gray-400 dark:text-gray-500">· {m.modifier_name}</div>
+                ))}
+              </td>
+              <td className="py-1.5 text-right text-gray-600 dark:text-gray-300">{li.quantity}</td>
+              <td className="py-1.5 text-right font-mono text-gray-600 dark:text-gray-300">{centsToDisplay(li.unit_price_cents)}</td>
+              <td className="py-1.5 text-right font-mono text-gray-800 dark:text-gray-200">
+                {centsToDisplay(li.line_total_cents + modifierTotal)}
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
   )
 }

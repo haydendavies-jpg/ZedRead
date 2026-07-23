@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +25,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,8 +40,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zedread.pos.ui.components.KeypadAmountDisplay
 import com.zedread.pos.ui.components.NumericKeypad
+import com.zedread.pos.ui.components.centsToDollarsInputString
 import com.zedread.pos.ui.components.keypadAppendDigit
 import com.zedread.pos.ui.components.keypadBackspace
+import com.zedread.pos.ui.components.roundToNearest5Cents
 import com.zedread.pos.ui.theme.LocalZedReadColors
 import com.zedread.pos.ui.viewmodel.PaymentMethod
 import com.zedread.pos.ui.viewmodel.PaymentStage
@@ -88,7 +92,13 @@ fun PaymentModal(
     ) {
         Box(
             modifier = Modifier
-                .widthIn(max = 560.dp)
+                // Wide enough for the split-payment screen's pinpad +
+                // quick-cash-buttons row to sit side by side without
+                // truncating either — user-testing feedback that the
+                // previous 560.dp cap forced that layout into a cramped
+                // single column. Every other tab (Card/Cash/Voucher) just
+                // renders narrower content inside the same wide card.
+                .widthIn(max = 720.dp)
                 .fillMaxWidth(0.9f)
                 .clip(RoundedCornerShape(18.dp))
                 .background(colors.surface),
@@ -307,6 +317,11 @@ private fun CashTabContent(
     onConfirm: () -> Unit,
 ) {
     val colors = LocalZedReadColors.current
+    // Cash tender presets round the "exact amount" preset up to the nearest
+    // 5c — AU cash rounding, since 1c/2c coins don't exist — so a cashier is
+    // never asked to make change in a denomination they can't physically
+    // hand over. The other presets ($20/$50/etc.) are already whole-dollar,
+    // hence already 5c-clean.
     val presets = remember(remainingCents) { tenderPresetsCents(remainingCents) }
     Column {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
@@ -338,7 +353,12 @@ private fun CashTabContent(
             Spacer(Modifier.weight(1f))
             Column(horizontalAlignment = Alignment.End) {
                 Text("CHANGE", style = MaterialTheme.typography.labelSmall, color = colors.faint)
-                val change = (state.tendered - remainingCents).coerceAtLeast(0)
+                // Change is what's physically handed back in cash, so it's
+                // rounded to the nearest 5c for display — the ledger amount
+                // recorded server-side (state.tendered, the exact amount
+                // typed/selected) is untouched by this, see
+                // roundToNearest5Cents's doc.
+                val change = roundToNearest5Cents((state.tendered - remainingCents).coerceAtLeast(0))
                 Text(
                     if (state.tendered > 0) formatCents(change) else "—",
                     fontWeight = FontWeight.SemiBold,
@@ -416,16 +436,41 @@ private fun SplitAmountEntry(
     onConfirm: () -> Unit,
 ) {
     val colors = LocalZedReadColors.current
-    var amountText by remember(state.method, state.paidCents) { mutableStateOf("") }
+    // Pre-filled with the amount currently due, per user-testing feedback —
+    // most split legs are for the exact remaining balance, so requiring a
+    // fresh $0.00 entry every time was needless friction. [isPristine]
+    // tracks whether the field still just mirrors that prefill: the FIRST
+    // digit/backspace tap clears it and starts a fresh entry from scratch
+    // (see applyDigit/applyBackspace), while a quick-cash tap (applyQuickCash)
+    // always adds onto whatever's currently shown, prefill or not.
+    var amountText by remember(state.method, state.paidCents) { mutableStateOf(centsToDollarsInputString(remainingCents)) }
+    var isPristine by remember(state.method, state.paidCents) { mutableStateOf(true) }
+
+    // Keep the ViewModel's own splitAmountCents in sync with the prefill as
+    // soon as this leg starts, so "Add payment" is immediately usable at
+    // the prefilled (exact-due) amount without requiring any input at all.
+    LaunchedEffect(state.method, state.paidCents) {
+        onSplitAmountChange(remainingCents)
+    }
 
     fun applyDigit(digit: Char) {
+        if (isPristine) { amountText = ""; isPristine = false }
         amountText = keypadAppendDigit(amountText, digit)
         onSplitAmountChange(dollarsToCents(amountText))
     }
 
     fun applyBackspace() {
-        amountText = keypadBackspace(amountText)
+        if (isPristine) { amountText = ""; isPristine = false } else { amountText = keypadBackspace(amountText) }
         onSplitAmountChange(dollarsToCents(amountText))
+    }
+
+    /** A quick-cash button adds its note value onto whatever's currently shown — pressing $20 twice adds $40 total. */
+    fun applyQuickCash(quickAmountCents: Long) {
+        val base = if (isPristine) remainingCents else dollarsToCents(amountText)
+        val newTotal = base + quickAmountCents
+        amountText = centsToDollarsInputString(newTotal)
+        isPristine = false
+        onSplitAmountChange(newTotal)
     }
 
     Column {
@@ -437,11 +482,18 @@ private fun SplitAmountEntry(
         Spacer(Modifier.height(6.dp))
         KeypadAmountDisplay(value = amountText, placeholder = "0.00")
         Spacer(Modifier.height(10.dp))
-        NumericKeypad(
-            onDigit = ::applyDigit,
-            onBackspace = ::applyBackspace,
-            modifier = Modifier.widthIn(max = 260.dp),
-        )
+        // Pinpad on the left, quick-cash note buttons along the right — user-testing
+        // feedback that the split screen should always have the pinpad open (it
+        // already does — this is just its layout) with $10/$20/$50/$100 shortcuts
+        // beside it rather than a separate row of presets.
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxWidth()) {
+            NumericKeypad(
+                onDigit = ::applyDigit,
+                onBackspace = ::applyBackspace,
+                modifier = Modifier.weight(1f),
+            )
+            QuickCashColumn(onPick = ::applyQuickCash, modifier = Modifier.width(96.dp))
+        }
         Spacer(Modifier.height(8.dp))
         val after = (remainingCents - state.splitAmountCents).coerceAtLeast(0)
         Text(
@@ -455,6 +507,37 @@ private fun SplitAmountEntry(
             enabled = !state.isSubmitting && state.splitAmountCents > 0,
             isLoading = state.isSubmitting,
             onClick = onConfirm,
+        )
+    }
+}
+
+/** $10/$20/$50/$100 quick-add note buttons beside the split-payment pinpad — see SplitAmountEntry's applyQuickCash. */
+@Composable
+private fun QuickCashColumn(onPick: (Long) -> Unit, modifier: Modifier = Modifier) {
+    val notesCents = listOf(1000L, 2000L, 5000L, 10000L)
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        notesCents.forEach { amount -> QuickCashButton(amountCents = amount, onClick = { onPick(amount) }) }
+    }
+}
+
+@Composable
+private fun QuickCashButton(amountCents: Long, onClick: () -> Unit) {
+    val colors = LocalZedReadColors.current
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(colors.accentSoft)
+            .border(width = 1.5.dp, color = colors.accent, shape = RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "+${formatCents(amountCents)}",
+            color = colors.accentText,
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.bodySmall,
         )
     }
 }
@@ -577,14 +660,17 @@ private fun PaymentDoneContent(
 
 /**
  * Cash tender presets, mirroring the design bundle's own computation:
- * the exact remaining amount, the next whole dollar up, then $20/$50/$100/
- * $200 — deduped and filtered to amounts that actually cover what's due,
- * capped at 6.
+ * the exact remaining amount (rounded UP to the nearest 5c — AU cash
+ * rounding, see [roundToNearest5Cents]; rounding up rather than to-nearest
+ * here specifically, so this preset always fully covers what's due), the
+ * next whole dollar up, then $20/$50/$100/$200 — deduped and filtered to
+ * amounts that actually cover what's due, capped at 6.
  */
 private fun tenderPresetsCents(remainingCents: Long): List<Long> {
     if (remainingCents <= 0) return emptyList()
+    val exactRounded = ((remainingCents + 4) / 5) * 5
     val ceilDollar = ((remainingCents + 99) / 100) * 100
-    val candidates = listOf(remainingCents, ceilDollar, 2000L, 5000L, 10000L, 20000L)
+    val candidates = listOf(exactRounded, ceilDollar, 2000L, 5000L, 10000L, 20000L)
     val seen = LinkedHashSet<Long>()
     candidates.forEach { amount -> if (amount >= remainingCents) seen.add(amount) }
     return seen.take(6).toList()

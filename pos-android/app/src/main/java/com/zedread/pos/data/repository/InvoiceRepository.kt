@@ -2,6 +2,7 @@ package com.zedread.pos.data.repository
 
 import com.zedread.pos.data.api.AddLineItemRequest
 import com.zedread.pos.data.api.AddModifierRequest
+import com.zedread.pos.data.api.ApplyDiscountRequest
 import com.zedread.pos.data.api.InvoiceCreateBody
 import com.zedread.pos.data.api.InvoiceDto
 import com.zedread.pos.data.api.LineItemDto
@@ -33,9 +34,17 @@ class InvoiceRepository @Inject constructor(
     suspend fun createInvoice(clientRef: String? = null): InvoiceDto =
         api.createInvoice(requireBearer(), InvoiceCreateBody(clientRef))
 
-    /** This site's invoice history, most recent first — backfills the local search cache. */
-    suspend fun listInvoices(skip: Int = 0, limit: Int = 200): List<InvoiceDto> =
-        api.listInvoices(requireBearer(), skip, limit)
+    /** This site's invoice history, most recent first — backfills the local search cache. [status], when supplied, filters (e.g. "open" for Held Orders). */
+    suspend fun listInvoices(skip: Int = 0, limit: Int = 200, status: String? = null): List<InvoiceDto> =
+        api.listInvoices(requireBearer(), skip, limit, status)
+
+    /** Every line item on an invoice, with modifiers — reconstructs a held order's cart on recall. */
+    suspend fun getLineItems(invoiceId: String): List<LineItemDto> =
+        api.getInvoiceLineItems(requireBearer(), invoiceId)
+
+    /** A single invoice's header — used alongside [getLineItems] on Held Orders recall to restore any discount already applied before the order was held. */
+    suspend fun getInvoice(invoiceId: String): InvoiceDto =
+        api.getInvoice(requireBearer(), invoiceId)
 
     /** Append a product to an open invoice. */
     suspend fun addLineItem(invoiceId: String, productId: String, quantity: Int): LineItemDto =
@@ -74,6 +83,10 @@ class InvoiceRepository @Inject constructor(
         clientRef: String? = null,
     ): InvoiceDto =
         api.pay(requireBearer(), invoiceId, PaymentRequest(method, amountCents, reference, clientRef))
+
+    /** Apply a manual discount to an invoice before it's paid — the Register's Discount button. */
+    suspend fun applyDiscount(invoiceId: String, discountCents: Long, reason: String? = null): InvoiceDto =
+        api.applyDiscount(requireBearer(), invoiceId, ApplyDiscountRequest(discountCents, reason))
 
     // ── Invoice search cache (Android POS Phase 2) ──────────────────────────
 

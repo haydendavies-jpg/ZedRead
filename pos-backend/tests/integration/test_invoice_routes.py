@@ -798,3 +798,118 @@ async def test_list_invoices_returns_site_invoices(
     assert resp.status_code == 200
     data = resp.json()
     assert len(data) >= 2
+
+
+@pytest.mark.asyncio
+async def test_list_invoices_filters_by_status(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+) -> None:
+    """GET /invoices?status=open returns only held (line-items-added, unpaid) invoices — the Register's Held Orders tab."""
+    held_invoice_id = await _create_invoice(client, pos_auth_headers)
+    await _add_line_item(client, pos_auth_headers, held_invoice_id, str(test_product.id))
+
+    draft_invoice_id = await _create_invoice(client, pos_auth_headers)
+
+    resp = await client.get("/invoices", params={"status": "open"}, headers=pos_auth_headers)
+    assert resp.status_code == 200
+    ids = [inv["id"] for inv in resp.json()]
+    assert held_invoice_id in ids
+    assert draft_invoice_id not in ids
+    assert all(inv["status"] == "open" for inv in resp.json())
+
+
+@pytest.mark.asyncio
+async def test_list_invoice_line_items_returns_all_lines(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+) -> None:
+    """GET /invoices/{id}/line-items returns every line item on the invoice — powers Held Orders recall."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    line_1 = await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id), quantity=1)
+    line_2 = await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id), quantity=2)
+
+    resp = await client.get(f"/invoices/{invoice_id}/line-items", headers=pos_auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert {line["id"] for line in data} == {line_1["id"], line_2["id"]}
+    assert all("modifiers" in line for line in data)
+
+
+@pytest.mark.asyncio
+async def test_list_invoice_line_items_unknown_invoice_returns_404(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+) -> None:
+    """GET /invoices/{id}/line-items for an unknown invoice returns 404."""
+    resp = await client.get(f"/invoices/{uuid.uuid4()}/line-items", headers=pos_auth_headers)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_partial_refund_only_refunds_selected_line_items(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+    db: AsyncSession,
+) -> None:
+    """POST /invoices/{id}/refund with line_item_ids refunds only those items, not the whole invoice."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    line_1 = await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id), quantity=1)
+    line_2 = await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id), quantity=1)
+    # test_product is base_price_cents=1500 (see conftest.test_product); two lines -> total 3000.
+    await client.post(
+        f"/invoices/{invoice_id}/pay",
+        json={"method": "cash", "amount_cents": 3000},
+        headers=pos_auth_headers,
+    )
+
+    resp = await client.post(
+        f"/invoices/{invoice_id}/refund",
+        json={"reason": "Only one item was wrong", "line_item_ids": [line_1["id"]]},
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    # Only line_1's 1500 cents is refunded, not the full 3000 — the negative
+    # invoice's total_cents reflects just the selected line.
+    assert data["total_cents"] == -1500
+
+    orig = await db.get(Invoice, uuid.UUID(invoice_id))
+    assert orig is not None
+    assert orig.is_refunded is True
+
+    # A second refund attempt against the same invoice (even for the other,
+    # not-yet-refunded line) is blocked — no per-line refunded tracking, see
+    # create_refund's own doc.
+    second_resp = await client.post(
+        f"/invoices/{invoice_id}/refund",
+        json={"line_item_ids": [line_2["id"]]},
+        headers=pos_auth_headers,
+    )
+    assert second_resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_partial_refund_unknown_line_item_returns_400(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+) -> None:
+    """POST /invoices/{id}/refund with line_item_ids matching nothing on the invoice returns 400."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id))
+    await client.post(
+        f"/invoices/{invoice_id}/pay",
+        json={"method": "cash", "amount_cents": 1500},
+        headers=pos_auth_headers,
+    )
+
+    resp = await client.post(
+        f"/invoices/{invoice_id}/refund",
+        json={"line_item_ids": [str(uuid.uuid4())]},
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 400

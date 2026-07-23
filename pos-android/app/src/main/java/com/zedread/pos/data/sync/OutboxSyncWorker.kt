@@ -92,6 +92,13 @@ class OutboxSyncWorker @AssistedInject constructor(
                 invoiceRepo.addLineModifier(invoice.id, lineItem.id, modifierOptionId)
             }
         }
+        // Applied after every line lands (so the discount doesn't clamp
+        // against an incomplete subtotal) and before any payment leg, so
+        // the invoice's server-computed total already reflects it once a
+        // payment is recorded against it.
+        if (payload.discountCents > 0) {
+            invoiceRepo.applyDiscount(invoice.id, payload.discountCents, payload.discountReason)
+        }
         // Each leg needs its own idempotency key — payments.client_ref is
         // unique server-side, so reusing item.clientRef across legs of the
         // same sale would collide on the second call. Deterministic (not

@@ -25,6 +25,7 @@ from app.services.invoice_report_service import (
     get_invoice_site_id,
     list_invoice_reports,
 )
+from app.services.invoice_service import InvoiceResponse, RefundRequest, create_refund
 from app.utils.dependencies import CatalogAccess, resolve_catalog_access
 
 router = APIRouter(prefix="/invoice-reports", tags=["invoice-reports"])
@@ -280,3 +281,47 @@ async def export_invoice_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=invoice_{invoice_id}.pdf"},
     )
+
+
+@router.post(
+    "/{invoice_id}/refund",
+    response_model=InvoiceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def refund_invoice_report(
+    invoice_id: uuid.UUID,
+    payload: RefundRequest,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> InvoiceResponse:
+    """
+    Refund a paid invoice from the management portal — full, or partial by
+    line item (see RefundRequest.line_item_ids).
+
+    The transactional POST /invoices/{id}/refund in routes/invoices.py
+    remains the POS terminal's own refund path (requires an open till
+    session, attributes the refund to that shift); this route is the
+    portal-initiated equivalent, so register_session_id is None — a
+    portal-issued refund isn't tied to any till session.
+
+    Args:
+        invoice_id: UUID of the original paid invoice to refund.
+        payload: Optional reason, and optionally line_item_ids for a partial refund.
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access (management or portal).
+        db: Active database session.
+
+    Returns:
+        InvoiceResponse: The newly created refund invoice.
+
+    Raises:
+        HTTPException: 403 if the invoice's site is outside the caller's scope.
+    """
+    effective_brand_id = access.effective_brand_id(brand_id)
+    site_id = await get_invoice_site_id(db, effective_brand_id, invoice_id)
+    _assert_site_visible(access, site_id)
+    refund = await create_refund(
+        db, effective_brand_id, invoice_id, payload, access.actor_user, register_session_id=None
+    )
+    return InvoiceResponse.model_validate(refund)
