@@ -1,0 +1,4 @@
+Place the Epson ePOS2 SDK's native libraries here — one subfolder per ABI
+(arm64-v8a/, armeabi-v7a/, x86/, x86_64/), each containing its .so file(s)
+exactly as they're laid out in the SDK download. See ../../../../PRINTER_SDK_SETUP.md.
+*.so files here are gitignored.

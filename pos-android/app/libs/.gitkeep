@@ -1,2 +1,2 @@
-Place the Epson ePOS2 SDK AAR(s) here — see ../../PRINTER_SDK_SETUP.md.
-This directory is otherwise empty; *.aar files here are gitignored.
+Place the Epson ePOS2 SDK's ePOS2.jar here — see ../../PRINTER_SDK_SETUP.md.
+This directory is otherwise empty; *.jar and *.aar files here are gitignored.
