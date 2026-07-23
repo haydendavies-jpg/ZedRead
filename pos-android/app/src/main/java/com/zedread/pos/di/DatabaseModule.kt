@@ -9,6 +9,7 @@ import com.zedread.pos.data.local.dao.CategoryDao
 import com.zedread.pos.data.local.dao.InvoiceCacheDao
 import com.zedread.pos.data.local.dao.OutboxDao
 import com.zedread.pos.data.local.dao.ProductDao
+import com.zedread.pos.data.local.dao.ProductModifierCacheDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -96,7 +97,9 @@ object DatabaseModule {
         Room.databaseBuilder(context, AppDatabase::class.java, "zedread_pos.db")
             .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             // last resort only for outbox_items/invoice_cache — the 5->6 hop (products.is_sold_out)
-            // falls through here deliberately, same as every other products/categories-only column add
+            // falls through here deliberately, same as every other products/categories-only column
+            // add, and the 7->8 hop (new product_modifier_cache table) is the same call again —
+            // both re-derivable tables it touches refill themselves on the next sync/tap.
             .fallbackToDestructiveMigration()
             .build()
 
@@ -111,4 +114,7 @@ object DatabaseModule {
 
     @Provides
     fun provideInvoiceCacheDao(db: AppDatabase): InvoiceCacheDao = db.invoiceCacheDao()
+
+    @Provides
+    fun provideProductModifierCacheDao(db: AppDatabase): ProductModifierCacheDao = db.productModifierCacheDao()
 }

@@ -10,9 +10,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.zedread.pos.ui.screens.auth.LoginScreen
 import com.zedread.pos.ui.screens.auth.PinSetScreen
 import com.zedread.pos.ui.screens.auth.SiteSelectorScreen
@@ -23,6 +25,7 @@ import com.zedread.pos.ui.screens.register.CashUpScreen
 import com.zedread.pos.ui.screens.register.RegisterGateScreen
 import com.zedread.pos.ui.screens.settings.SettingsScreen
 import com.zedread.pos.ui.screens.switchuser.SwitchUserScreen
+import com.zedread.pos.ui.screens.sync.SyncSplashScreen
 import com.zedread.pos.ui.viewmodel.AppEntryViewModel
 import com.zedread.pos.ui.viewmodel.StartDestination
 
@@ -64,6 +67,21 @@ fun PosNavHost() {
         composable(Screen.SiteSelector.route) {
             SiteSelectorScreen(
                 onAuthenticated = { needsPinSetup -> navigateAfterAuth(navController, needsPinSetup) },
+            )
+        }
+
+        composable(
+            route = Screen.Sync.route,
+            arguments = listOf(navArgument("needsPinSetup") { type = NavType.BoolType }),
+        ) { backStackEntry ->
+            val needsPinSetup = backStackEntry.arguments?.getBoolean("needsPinSetup") ?: false
+            SyncSplashScreen(
+                onDone = {
+                    val target = if (needsPinSetup) Screen.PinSet.route else Screen.RegisterGate.route
+                    navController.navigate(target) {
+                        popUpTo(Screen.Login.route) { inclusive = true }
+                    }
+                },
             )
         }
 
@@ -173,10 +191,14 @@ fun PosNavHost() {
     }
 }
 
-/** After login/site-select: PIN set if the backend flagged is_pin_reset_required, else the register gate. */
+/**
+ * After login/site-select: route through the sync splash first — user-testing
+ * feedback that a fresh login should visibly sync the catalog before landing
+ * on PIN-set or the register gate, rather than warming the cache silently the
+ * first time the Register screen itself mounts.
+ */
 private fun navigateAfterAuth(navController: NavHostController, needsPinSetup: Boolean) {
-    val target = if (needsPinSetup) Screen.PinSet.route else Screen.RegisterGate.route
-    navController.navigate(target) {
+    navController.navigate(Screen.Sync.route(needsPinSetup)) {
         popUpTo(Screen.Login.route) { inclusive = true }
     }
 }
@@ -185,6 +207,9 @@ private fun navigateAfterAuth(navController: NavHostController, needsPinSetup: B
 sealed class Screen(val route: String) {
     object Login : Screen("login")
     object SiteSelector : Screen("site_selector")
+    object Sync : Screen("sync/{needsPinSetup}") {
+        fun route(needsPinSetup: Boolean): String = "sync/$needsPinSetup"
+    }
     object PinSet : Screen("pin_set")
     object RegisterGate : Screen("register_gate")
     object CashIn : Screen("cash_in")

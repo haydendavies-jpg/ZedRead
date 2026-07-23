@@ -60,6 +60,14 @@ class ModifierGroup(Base):
         default=False,
         comment="True — the same option may be selected multiple times (per-option quantity), up to max_selections total",
     )
+    is_first_option_default_selected: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="True — the POS pre-selects this group's first option when the customise sheet opens. "
+        "False (the default) leaves every group unselected until the cashier actually picks something.",
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

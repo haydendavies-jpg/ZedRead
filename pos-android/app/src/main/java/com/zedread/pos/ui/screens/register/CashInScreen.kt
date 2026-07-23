@@ -1,16 +1,11 @@
 package com.zedread.pos.ui.screens.register
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -23,13 +18,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.zedread.pos.data.repository.CASH_IN_MODE_DENOMINATION
 import com.zedread.pos.ui.components.PosTopBar
+import com.zedread.pos.ui.components.RegisterPopupCard
 import com.zedread.pos.ui.viewmodel.CashInState
 import com.zedread.pos.ui.viewmodel.RegisterSessionViewModel
 import com.zedread.pos.ui.viewmodel.SyncViewModel
@@ -38,10 +33,13 @@ import com.zedread.pos.ui.viewmodel.TopBarViewModel
 /**
  * Start-of-day cash-in: bulk-total entry, or a per-denomination breakdown
  * grid when the site's cash_in_mode setting is "denomination" (Phase 2
- * settings framework — see SettingsRepository). Blocks Register access
- * until a session is open (POST /register-sessions/open). No back action —
- * a session must be opened before Register is usable, there's nowhere
- * sensible to go back to short of logging out entirely.
+ * settings framework — see SettingsRepository; now the out-of-box default
+ * per user-testing feedback, see SettingsRepository.CASH_IN_MODE_DENOMINATION's
+ * doc). Blocks Register access until a session is open
+ * (POST /register-sessions/open). No back action — a session must be opened
+ * before Register is usable, there's nowhere sensible to go back to short of
+ * logging out entirely. Rendered as the same popup-card style as the
+ * Register's modifier sheet — see [RegisterPopupCard]'s doc.
  */
 @Composable
 fun CashInScreen(
@@ -72,73 +70,58 @@ fun CashInScreen(
     val hasEntry = if (isDenominationMode) denominationTotalCents > 0 else amount.isNotBlank()
 
     Column(modifier = Modifier.fillMaxSize()) {
-    PosTopBar(
-        title = deviceName ?: "Register",
-        subtitle = "Start of Day",
-        isOnline = isOnline,
-        pendingCount = pendingCount,
-        onSyncClick = {},
-    )
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding()
-            .verticalScroll(rememberScrollState())
-            .padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text("Start of Day", style = MaterialTheme.typography.headlineMedium)
-        Text(
-            "Count the cash in the till and enter the total to begin your shift.",
-            style = MaterialTheme.typography.bodyMedium,
+        PosTopBar(
+            title = deviceName ?: "Register",
+            subtitle = "Start of Day",
+            isOnline = isOnline,
+            pendingCount = pendingCount,
+            onSyncClick = {},
         )
-
-        Spacer(Modifier.height(32.dp))
-
-        if (isDenominationMode) {
-            DenominationGrid(
-                modifier = Modifier.fillMaxWidth(),
-                onTotalChanged = { denominationTotalCents = it },
-            )
-        } else {
-            OutlinedTextField(
-                value = amount,
-                onValueChange = { input -> if (input.matches(Regex("^\\d*\\.?\\d{0,2}$"))) amount = input },
-                label = { Text("Opening cash ($)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        if (state is CashInState.Error) {
-            Text(
-                (state as CashInState.Error).message,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        Button(
-            onClick = {
-                val cents = enteredCents
-                if (cents != null) viewModel.openSession(cents)
+        RegisterPopupCard(
+            title = "Start of Day",
+            subtitle = "Count the cash in the till and enter the total to begin your shift.",
+            footer = {
+                Button(
+                    onClick = {
+                        val cents = enteredCents
+                        if (cents != null) viewModel.openSession(cents)
+                    },
+                    enabled = hasEntry && state !is CashInState.Loading,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (state is CashInState.Loading) {
+                        CircularProgressIndicator(modifier = Modifier.height(20.dp))
+                    } else {
+                        Text("Start Shift")
+                    }
+                }
             },
-            enabled = hasEntry && state !is CashInState.Loading,
-            modifier = Modifier.fillMaxWidth(),
         ) {
-            if (state is CashInState.Loading) {
-                CircularProgressIndicator(modifier = Modifier.height(20.dp))
+            if (isDenominationMode) {
+                DenominationGrid(
+                    modifier = Modifier.fillMaxWidth(),
+                    onTotalChanged = { denominationTotalCents = it },
+                )
             } else {
-                Text("Start Shift")
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { input -> if (input.matches(Regex("^\\d*\\.?\\d{0,2}$"))) amount = input },
+                    label = { Text("Opening cash ($)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            if (state is CashInState.Error) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    (state as CashInState.Error).message,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
-    }
     }
 }
 

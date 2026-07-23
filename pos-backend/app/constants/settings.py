@@ -39,7 +39,10 @@ SETTING_CATALOG: list[SettingDefinition] = [
         label="Cash-in entry mode",
         category="Register",
         type=SettingType.SINGLE_SELECT,
-        default_value="bulk",
+        # User-testing feedback: the full per-denomination cash count should
+        # be the out-of-box default, not the single bulk-total entry — a site
+        # can still opt back into "bulk" from the portal's settings page.
+        default_value="denomination",
         options=["bulk", "denomination"],
         description=(
             "How start-of-day/end-of-day cash is entered on the POS: a single bulk "

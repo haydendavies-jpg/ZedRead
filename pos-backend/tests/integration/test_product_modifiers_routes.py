@@ -253,6 +253,7 @@ async def test_list_product_modifiers_detailed_returns_options(
     assert len(data[0]["options"]) == 1
     assert data[0]["options"][0]["id"] == option_id
     assert data[0]["options"][0]["price_delta_cents"] == 70
+    assert data[0]["is_first_option_default_selected"] is False
 
 
 async def test_list_product_modifiers_detailed_includes_linked_groups(
@@ -303,6 +304,7 @@ async def test_list_product_modifiers_detailed_includes_linked_groups(
     assert linked["name"] == "Choose a Side"
     assert len(linked["options"]) == 1
     assert linked["options"][0]["id"] == side_option_id
+    assert linked["is_first_option_default_selected"] is False
 
 
 async def test_list_product_modifiers_detailed_excludes_unattached_groups(

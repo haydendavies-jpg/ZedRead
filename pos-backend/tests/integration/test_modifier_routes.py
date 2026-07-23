@@ -142,6 +142,78 @@ async def test_duplicate_modifier_group_copies_has_quantity(
 
 
 @pytest.mark.asyncio
+async def test_create_modifier_group_defaults_first_option_not_selected(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+) -> None:
+    """POST /modifier-groups without is_first_option_default_selected defaults it to False."""
+    resp = await client.post(
+        "/modifier-groups",
+        json={"name": "Ice Levels", "min_selections": 0, "max_selections": 1},
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 201
+    assert resp.json()["is_first_option_default_selected"] is False
+
+
+@pytest.mark.asyncio
+async def test_update_modifier_group_is_first_option_default_selected(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    db: AsyncSession,
+) -> None:
+    """PATCH /modifier-groups/{id} toggles is_first_option_default_selected and writes the audit row with it."""
+    create_resp = await client.post(
+        "/modifier-groups",
+        json={"name": "Milk", "min_selections": 0, "max_selections": 1},
+        headers=pos_auth_headers,
+    )
+    group_id = create_resp.json()["id"]
+
+    patch_resp = await client.patch(
+        f"/modifier-groups/{group_id}",
+        json={"is_first_option_default_selected": True},
+        headers=pos_auth_headers,
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["is_first_option_default_selected"] is True
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.action == "modifier_group.updated",
+            AuditLog.entity_id == group_id,
+        )
+    )
+    log = result.scalar_one()
+    assert log.after_state["is_first_option_default_selected"] is True
+    assert log.before_state["is_first_option_default_selected"] is False
+
+
+@pytest.mark.asyncio
+async def test_duplicate_modifier_group_copies_first_option_default_selected(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+) -> None:
+    """POST /modifier-groups/{id}/duplicate carries the source group's is_first_option_default_selected across."""
+    create_resp = await client.post(
+        "/modifier-groups",
+        json={
+            "name": "Size",
+            "min_selections": 1,
+            "max_selections": 1,
+            "is_first_option_default_selected": True,
+        },
+        headers=pos_auth_headers,
+    )
+    group_id = create_resp.json()["id"]
+    assert create_resp.json()["is_first_option_default_selected"] is True
+
+    dup_resp = await client.post(f"/modifier-groups/{group_id}/duplicate", headers=pos_auth_headers)
+    assert dup_resp.status_code == 201
+    assert dup_resp.json()["is_first_option_default_selected"] is True
+
+
+@pytest.mark.asyncio
 async def test_create_modifier_option_happy_path(
     client: AsyncClient,
     pos_auth_headers: dict,

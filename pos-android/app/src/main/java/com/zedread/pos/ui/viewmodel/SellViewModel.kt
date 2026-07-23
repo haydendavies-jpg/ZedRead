@@ -451,25 +451,38 @@ class SellViewModel @Inject constructor(
     // ── Modifier customise sheet ────────────────────────────────────────────
     //
     // Mirrors the design bundle's own state machine (`mod: {prod, sets, sel,
-    // qty}`, `toggleChoice()`, `modAddToOrder()`): single-select groups
-    // default to their first option and always keep exactly one selected;
-    // multi-select groups toggle freely with no default. On confirm, a
-    // single-select group's chosen option is always attached as a line
-    // modifier (even a free one, e.g. "Small" at +$0, so it still shows on
-    // the receipt); a multi-select choice is only attached when it carries a
-    // price — exactly modAddToOrder's `c.price>0 || g.type==='single'` filter.
+    // qty}`, `toggleChoice()`, `modAddToOrder()`): single-select groups keep
+    // exactly one selected once the cashier taps an option (radio-style), but
+    // start with nothing pre-selected unless a manager has explicitly opted
+    // the group into ModifierGroupDto.isFirstOptionDefaultSelected from Menu
+    // Studio — user-testing feedback that the sheet always defaulting to the
+    // first option was unwanted; multi-select groups toggle freely with no
+    // default either way. On confirm, a single-select group's chosen option
+    // is always attached as a line modifier (even a free one, e.g. "Small" at
+    // +$0, so it still shows on the receipt); a multi-select choice is only
+    // attached when it carries a price — exactly modAddToOrder's
+    // `c.price>0 || g.type==='single'` filter. A group left with nothing
+    // selected simply attaches no modifier for it.
 
     private val _modifierSheetState = MutableStateFlow<ModifierSheetState>(ModifierSheetState.Closed)
     val modifierSheetState: StateFlow<ModifierSheetState> = _modifierSheetState.asStateFlow()
 
     private fun openModifierSheet(product: ProductEntity) {
-        _modifierSheetState.value = ModifierSheetState.Loading(product)
         viewModelScope.launch {
+            // Only show the Loading state on a genuine cache miss — user-testing
+            // feedback that the sheet visibly loaded on every tap, even a repeat
+            // tap of the same product. CatalogRepository.getProductModifiers'
+            // own cache-hit path is just as fast as this peek, but deciding
+            // here first avoids setting Loading only to immediately overwrite
+            // it a frame later on a hit.
+            if (runCatching { catalogRepo.peekCachedProductModifiers(product.id) }.getOrNull() == null) {
+                _modifierSheetState.value = ModifierSheetState.Loading(product)
+            }
             runCatching { catalogRepo.getProductModifiers(product.id) }
                 .onSuccess { groups ->
                     val selections = groups.map { group ->
                         val defaultSelected =
-                            if (group.maxSelections <= 1 && group.options.isNotEmpty()) setOf(0) else emptySet()
+                            if (group.isFirstOptionDefaultSelected && group.options.isNotEmpty()) setOf(0) else emptySet()
                         val defaultLinked = defaultSelected.associateWith { idx ->
                             group.options.getOrNull(idx)?.linkedGroups.orEmpty().map(::defaultLinkedSelection)
                         }.filterValues { it.isNotEmpty() }
@@ -478,9 +491,10 @@ class SellViewModel @Inject constructor(
                     _modifierSheetState.value = ModifierSheetState.Ready(product, selections, quantity = 1)
                 }
                 .onFailure { e ->
-                    // Modifier prices aren't cached locally (see CatalogRepository.getProductModifiers'
-                    // doc — a deliberately deferred follow-up, not part of this round's local-first
-                    // cart rework), so a customisable item genuinely can't be rung up offline; a
+                    // A product whose modifiers were never cached (this device's
+                    // first-ever tap on it) genuinely can't be rung up offline —
+                    // see CatalogRepository.getProductModifiers' doc for the
+                    // cache-hit path that avoids this on every later tap. A
                     // plain item always can now — see addLocalLine.
                     val message = if (e is IOException) {
                         "This item can't be customised while offline — try a plain item instead."
@@ -784,18 +798,20 @@ class SellViewModel @Inject constructor(
     }
 
     /** "New order" action from the Done screen — resets the sale and closes the modal. */
+    /**
+     * "New order" action from the Done screen — resets the sale only.
+     *
+     * Per user-testing feedback, this used to also drop back to the
+     * schedule's own default layout, discarding any manual menu-selector
+     * override for the sale that just finished — staff now expect the
+     * register to stay on whatever menu/tab was active, sale after sale,
+     * until they deliberately switch it themselves. The schedule's default
+     * still applies on its own terms (a daypart boundary, or the next
+     * login/sync) via [refreshMenuLayouts] — this action just no longer
+     * forces it early.
+     */
     fun completePaymentAndStartNewOrder() {
         clearOrder()
-        // Drop back to the schedule's own default, discarding any manual
-        // menu-selector override for the sale that just finished — resolved
-        // from the already-cached layout list, not a fresh network call.
-        // Per the one-time-sync architecture (see CatalogRepository/
-        // SettingsRepository's own docs), catalog/menu-layout data syncs
-        // once and is read locally thereafter; only invoices and register
-        // open/close talk to the server in real time. A sale completing is
-        // exactly the kind of frequent, per-action event that must not
-        // trigger its own round trip.
-        _selectedMenuLayoutId.value = _menuLayouts.value.firstOrNull { it.isEffectiveDefault }?.id
     }
 }
 
@@ -855,7 +871,7 @@ data class LinkedGroupSelection(
 
 /** Default selection for a linked group when its owning option is first selected — mirrors the top-level default rule. */
 private fun defaultLinkedSelection(group: LinkedGroupDto): LinkedGroupSelection =
-    LinkedGroupSelection(group, if (group.maxSelections <= 1 && group.options.isNotEmpty()) setOf(0) else emptySet())
+    LinkedGroupSelection(group, if (group.isFirstOptionDefaultSelected && group.options.isNotEmpty()) setOf(0) else emptySet())
 
 /** Method tabs on the payment modal — Voucher is the flagged addition the design bundle predates. */
 enum class PaymentMethod(val label: String) { CARD("Card"), CASH("Cash"), VOUCHER("Voucher") }

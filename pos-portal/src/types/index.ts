@@ -320,6 +320,8 @@ export interface ModifierGroup {
   max_selections: number
   /** True — the same option may be selected multiple times on the POS (up to max_selections total). */
   has_quantity: boolean
+  /** True — the POS pre-selects this group's first option when the customise sheet opens. False (default) leaves it unselected until the cashier picks something. */
+  is_first_option_default_selected: boolean
   is_active: boolean
 }
 
@@ -343,6 +345,7 @@ export interface LinkedGroup {
   name: string
   min_selections: number
   max_selections: number
+  is_first_option_default_selected: boolean
   options: LinkedGroupOption[]
 }
 

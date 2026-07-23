@@ -207,6 +207,22 @@ data class ProductUpdateRequest(
     @Json(name = "is_sold_out") val isSoldOut: Boolean,
 )
 
+/**
+ * PATCH /products/{id} response — deliberately NOT [ProductDto]. The
+ * backend's plain `ProductResponse` (what this route returns) has no
+ * `category_color`/`modifier_names` — those are joined-in fields only
+ * `ProductListItem` (GET /products, the list route) carries. Moshi's
+ * generated adapter requires every non-nullable constructor property to be
+ * present in the JSON, so reusing [ProductDto] here threw
+ * "Required value 'categoryColor' ... missing at $" on every sold-out
+ * toggle — a real crash caught in testing, not just a lint concern.
+ */
+@JsonClass(generateAdapter = true)
+data class ProductUpdateResponse(
+    val id: String,
+    @Json(name = "is_sold_out") val isSoldOut: Boolean,
+)
+
 // ── Modifiers ─────────────────────────────────────────────────────────────
 //
 // Mirrors ProductModifierGroupDetailOut / ProductModifierOptionOut in
@@ -240,6 +256,8 @@ data class LinkedGroupDto(
     val name: String,
     @Json(name = "min_selections") val minSelections: Int,
     @Json(name = "max_selections") val maxSelections: Int,
+    // Per-group opt-in — see ProductModifierGroupDto.isFirstOptionDefaultSelected.
+    @Json(name = "is_first_option_default_selected") val isFirstOptionDefaultSelected: Boolean = false,
     val options: List<LinkedGroupOptionDto>,
 )
 
@@ -251,6 +269,11 @@ data class ProductModifierGroupDto(
     @Json(name = "max_selections") val maxSelections: Int,
     @Json(name = "has_quantity") val hasQuantity: Boolean,
     @Json(name = "display_order") val displayOrder: Int,
+    // User-testing feedback: the sheet used to always pre-select a
+    // single-select group's first option, which testers didn't want.
+    // Nothing is pre-selected unless a manager explicitly opts this group
+    // in from Menu Studio's Modifiers tab.
+    @Json(name = "is_first_option_default_selected") val isFirstOptionDefaultSelected: Boolean = false,
     val options: List<ProductModifierOptionDto>,
 )
 

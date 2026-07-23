@@ -107,7 +107,7 @@ interface PosApiService {
         @Header("Authorization") bearer: String,
         @Path("id") productId: String,
         @Body body: ProductUpdateRequest,
-    ): ProductDto
+    ): ProductUpdateResponse
 
     // ── Invoices ─────────────────────────────────────────────────────────────
 

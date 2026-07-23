@@ -7,11 +7,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -25,7 +22,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -33,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.zedread.pos.data.repository.CASH_IN_MODE_DENOMINATION
 import com.zedread.pos.ui.components.PosTopBar
+import com.zedread.pos.ui.components.RegisterPopupCard
 import com.zedread.pos.ui.viewmodel.CashUpState
 import com.zedread.pos.ui.viewmodel.RegisterSessionViewModel
 import com.zedread.pos.ui.viewmodel.SyncViewModel
@@ -40,14 +37,17 @@ import com.zedread.pos.ui.viewmodel.TopBarViewModel
 
 /**
  * End-of-day cash-up: bulk-total entry, or the same per-denomination
- * breakdown grid CashInScreen uses when cash_in_mode is "denomination"; the
- * Expected/Variance comparison is hidden when hide_variance_on_close is set
- * (Phase 2 settings framework — see SettingsRepository), showing only the
- * counted total. Closes this terminal's open till session
- * (POST /register-sessions/{id}/close); the operator stays logged in and the
- * device stays paired for the next shift — logging out is a separate,
- * explicit action reserved for the Settings screen, not something cash-up
- * should force.
+ * breakdown grid CashInScreen uses when cash_in_mode is "denomination" (now
+ * the out-of-box default — see SettingsRepository.CASH_IN_MODE_DENOMINATION's
+ * doc); the Expected/Variance comparison is hidden when
+ * hide_variance_on_close is set (Phase 2 settings framework — see
+ * SettingsRepository), showing only the counted total. Closes this
+ * terminal's open till session (POST /register-sessions/{id}/close); the
+ * operator stays logged in and the device stays paired for the next shift —
+ * logging out is a separate, explicit action reserved for the Settings
+ * screen, not something cash-up should force. Rendered as the same
+ * popup-card style as the Register's modifier sheet — see
+ * [RegisterPopupCard]'s doc.
  *
  * [onCancel] backs out to Register — only offered before the till is
  * actually closed (Ready/ReadyOffline/Error states). Previously there was no
@@ -83,6 +83,17 @@ fun CashUpScreen(
     // Closed/ClosedPendingSync, the close already happened server-side.
     val canCancel = state is CashUpState.Ready || state is CashUpState.ReadyOffline || state is CashUpState.Error
 
+    val title = when (state) {
+        is CashUpState.ClosedPendingSync, is CashUpState.Closed -> "Till Closed"
+        else -> "End of Day"
+    }
+    val subtitle = when (val current = state) {
+        is CashUpState.Ready ->
+            "Opened by ${current.session.openedByName} · opening cash ${formatCents(current.session.openingCashCents)}"
+        is CashUpState.ReadyOffline -> "Offline · opening cash ${formatCents(current.openingCashCents)} — not yet synced"
+        else -> null
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         PosTopBar(
             title = deviceName ?: "Register",
@@ -92,152 +103,115 @@ fun CashUpScreen(
             pendingCount = pendingCount,
             onSyncClick = {},
         )
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(32.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
+        RegisterPopupCard(
+            title = title,
+            subtitle = subtitle,
+            onClose = if (canCancel) onCancel else null,
+            footer = {
+                when (val current = state) {
+                    is CashUpState.Ready -> Button(
+                        onClick = {
+                            val cents = enteredCents
+                            if (cents != null) viewModel.closeSession(current.session.id, cents)
+                        },
+                        enabled = hasEntry,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Close Till") }
+
+                    is CashUpState.ReadyOffline -> Button(
+                        onClick = {
+                            val cents = enteredCents
+                            if (cents != null) viewModel.closeOfflineSession(current.openClientRef, cents)
+                        },
+                        enabled = hasEntry,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Close Till") }
+
+                    is CashUpState.ClosedPendingSync, is CashUpState.Closed ->
+                        Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("Done") }
+
+                    is CashUpState.Error ->
+                        Button(onClick = { viewModel.loadForCashUp() }, modifier = Modifier.fillMaxWidth()) { Text("Retry") }
+
+                    else -> Unit
+                }
+            },
         ) {
-        when (val current = state) {
-            is CashUpState.Ready -> {
-                Text("End of Day", style = MaterialTheme.typography.headlineMedium)
-                Text(
-                    "Opened by ${current.session.openedByName} · opening cash ${formatCents(current.session.openingCashCents)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    "Count the cash in the till and enter the total to close your shift.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-
-                Spacer(Modifier.height(32.dp))
-
-                if (isDenominationMode) {
-                    DenominationGrid(
-                        modifier = Modifier.fillMaxWidth(),
-                        onTotalChanged = { denominationTotalCents = it },
+            when (val current = state) {
+                is CashUpState.Ready -> {
+                    Text(
+                        "Count the cash in the till and enter the total to close your shift.",
+                        style = MaterialTheme.typography.bodyMedium,
                     )
-                } else {
-                    OutlinedTextField(
-                        value = amount,
-                        onValueChange = { input -> if (input.matches(Regex("^\\d*\\.?\\d{0,2}$"))) amount = input },
-                        label = { Text("Closing cash ($)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    Spacer(Modifier.height(20.dp))
+                    if (isDenominationMode) {
+                        DenominationGrid(modifier = Modifier.fillMaxWidth(), onTotalChanged = { denominationTotalCents = it })
+                    } else {
+                        OutlinedTextField(
+                            value = amount,
+                            onValueChange = { input -> if (input.matches(Regex("^\\d*\\.?\\d{0,2}$"))) amount = input },
+                            label = { Text("Closing cash ($)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
-                Spacer(Modifier.height(24.dp))
-
-                Button(
-                    onClick = {
-                        val cents = enteredCents
-                        if (cents != null) viewModel.closeSession(current.session.id, cents)
-                    },
-                    enabled = hasEntry,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Close Till") }
-            }
-
-            is CashUpState.ReadyOffline -> {
-                // This till's own opening hasn't synced yet — there's no real
-                // RegisterSessionDto to show "opened by"/expected-cash figures
-                // from, but the operator can still close out; the close is
-                // queued too and both replay together once reconnected.
-                Text("End of Day", style = MaterialTheme.typography.headlineMedium)
-                Text(
-                    "Offline · opening cash ${formatCents(current.openingCashCents)} — not yet synced",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    "Count the cash in the till and enter the total to close your shift.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-
-                Spacer(Modifier.height(32.dp))
-
-                if (isDenominationMode) {
-                    DenominationGrid(
-                        modifier = Modifier.fillMaxWidth(),
-                        onTotalChanged = { denominationTotalCents = it },
+                is CashUpState.ReadyOffline -> {
+                    // This till's own opening hasn't synced yet — there's no real
+                    // RegisterSessionDto to show expected-cash figures from, but
+                    // the operator can still close out; the close is queued too
+                    // and both replay together once reconnected.
+                    Text(
+                        "Count the cash in the till and enter the total to close your shift.",
+                        style = MaterialTheme.typography.bodyMedium,
                     )
-                } else {
-                    OutlinedTextField(
-                        value = amount,
-                        onValueChange = { input -> if (input.matches(Regex("^\\d*\\.?\\d{0,2}$"))) amount = input },
-                        label = { Text("Closing cash ($)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
+                    Spacer(Modifier.height(20.dp))
+                    if (isDenominationMode) {
+                        DenominationGrid(modifier = Modifier.fillMaxWidth(), onTotalChanged = { denominationTotalCents = it })
+                    } else {
+                        OutlinedTextField(
+                            value = amount,
+                            onValueChange = { input -> if (input.matches(Regex("^\\d*\\.?\\d{0,2}$"))) amount = input },
+                            label = { Text("Closing cash ($)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+
+                is CashUpState.ClosedPendingSync -> {
+                    CashUpSummaryRow("Counted cash", current.closingCashCents, emphasize = true)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Offline — expected cash and variance will be confirmed once this syncs.",
+                        style = MaterialTheme.typography.bodySmall,
                     )
                 }
 
-                Spacer(Modifier.height(24.dp))
-
-                Button(
-                    onClick = {
-                        val cents = enteredCents
-                        if (cents != null) viewModel.closeOfflineSession(current.openClientRef, cents)
-                    },
-                    enabled = hasEntry,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Close Till") }
-            }
-
-            is CashUpState.ClosedPendingSync -> {
-                Text("Till Closed", style = MaterialTheme.typography.headlineMedium)
-                Spacer(Modifier.height(24.dp))
-                CashUpSummaryRow("Counted cash", current.closingCashCents, emphasize = true)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Offline — expected cash and variance will be confirmed once this syncs.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Spacer(Modifier.height(32.dp))
-                Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) {
-                    Text("Done")
-                }
-            }
-
-            is CashUpState.Closed -> {
-                Text("Till Closed", style = MaterialTheme.typography.headlineMedium)
-
-                Spacer(Modifier.height(24.dp))
-
-                if (cashSettings.hideVarianceOnClose) {
-                    CashUpSummaryRow("Counted cash", current.session.closingCashCents, emphasize = true)
-                } else {
-                    CashUpSummaryRow("Expected cash", current.session.expectedCashCents)
-                    CashUpSummaryRow("Counted cash", current.session.closingCashCents)
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                    CashUpSummaryRow("Variance", current.session.varianceCents, emphasize = true)
+                is CashUpState.Closed -> {
+                    if (cashSettings.hideVarianceOnClose) {
+                        CashUpSummaryRow("Counted cash", current.session.closingCashCents, emphasize = true)
+                    } else {
+                        CashUpSummaryRow("Expected cash", current.session.expectedCashCents)
+                        CashUpSummaryRow("Counted cash", current.session.closingCashCents)
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        CashUpSummaryRow("Variance", current.session.varianceCents, emphasize = true)
+                    }
                 }
 
-                Spacer(Modifier.height(32.dp))
-
-                Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) {
-                    Text("Done")
+                is CashUpState.Error -> {
+                    Text(
+                        current.message,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                 }
-            }
 
-            is CashUpState.Error -> {
-                Text(
-                    current.message,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Spacer(Modifier.height(16.dp))
-                Button(onClick = { viewModel.loadForCashUp() }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Retry")
-                }
+                else -> CircularProgressIndicator()
             }
-
-            else -> CircularProgressIndicator()
-        }
         }
     }
 }

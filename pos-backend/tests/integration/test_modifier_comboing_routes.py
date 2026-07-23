@@ -82,6 +82,10 @@ async def test_detailed_listing_includes_linked_group(client, pos_auth_headers, 
     assert len(option["linked_groups"]) == 1
     assert option["linked_groups"][0]["id"] == combo_group_id
     assert option["linked_groups"][0]["options"][0]["name"] == "Cola"
+    # is_first_option_default_selected must round-trip on a nested linked
+    # group too, not just the top-level groups in the response — this is a
+    # separate LinkedGroupOut(...) construction site from the top-level one.
+    assert option["linked_groups"][0]["is_first_option_default_selected"] is False
 
 
 async def test_unlink_option_group_removes_link(client, pos_auth_headers, test_brand):

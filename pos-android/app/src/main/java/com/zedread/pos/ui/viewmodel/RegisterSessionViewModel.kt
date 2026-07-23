@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zedread.pos.data.api.RegisterSessionDto
 import com.zedread.pos.data.repository.AuthRepository
+import com.zedread.pos.data.repository.CASH_IN_MODE_DENOMINATION
 import com.zedread.pos.data.repository.CashSettings
 import com.zedread.pos.data.repository.OutboxRepository
 import com.zedread.pos.data.repository.RegisterSessionRepository
@@ -44,11 +45,11 @@ class RegisterSessionViewModel @Inject constructor(
     private val _gateState = MutableStateFlow<RegisterGateState>(RegisterGateState.Checking)
     val gateState: StateFlow<RegisterGateState> = _gateState.asStateFlow()
 
-    // Defaults (bulk entry, variance shown) match the settings catalog's own
-    // defaults in app/constants/settings.py — used until loadCashSettings()
-    // resolves, and if that call fails, so a settings outage never blocks
-    // opening or closing the till.
-    private val _cashSettings = MutableStateFlow(CashSettings(cashInMode = "bulk", hideVarianceOnClose = false))
+    // Defaults (full denomination count, variance shown) match the settings
+    // catalog's own defaults in app/constants/settings.py — used until
+    // loadCashSettings() resolves, and if that call fails, so a settings
+    // outage never blocks opening or closing the till.
+    private val _cashSettings = MutableStateFlow(CashSettings(cashInMode = CASH_IN_MODE_DENOMINATION, hideVarianceOnClose = false))
     val cashSettings: StateFlow<CashSettings> = _cashSettings.asStateFlow()
 
     /** Resolve the cash-in-mode / hide-variance-on-close settings for this site. */

@@ -175,11 +175,30 @@ private fun SettingRow(
             }
             SettingValueEditor(setting = setting, value = value, onValueChange = onValueChange)
         }
-        if (isDirty && canPushDefaults) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onSaveAsDefault, enabled = !isSaving) {
-                    Text(if (isSaving) "Saving…" else "Save as default")
+        if (isDirty) {
+            if (canPushDefaults) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onSaveAsDefault, enabled = !isSaving) {
+                        Text(if (isSaving) "Saving…" else "Save as default")
+                    }
                 }
+            } else {
+                // Previously just silently omitted the Save button with no
+                // explanation — read by testers as "I can't change POS
+                // settings" with no indication why. The value still flips
+                // locally (SettingsViewModel.setLocalValue) so the control
+                // itself isn't broken; this account's access profile just
+                // isn't one of the three system tiers allowed to push a
+                // change back to the server (Master User/Admin/Manager —
+                // see app/routes/settings.py's
+                // _POS_SETTINGS_WRITE_PROFILE_NAMES) — Staff/Reporting Only
+                // and any custom profile can view but not save from here.
+                Text(
+                    "Your role can't save settings changes — ask a Manager or Admin to update this.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
             }
         }
     }
