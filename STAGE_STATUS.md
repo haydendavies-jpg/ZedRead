@@ -1802,6 +1802,77 @@ a one-off fix) — summary here:
 
 ---
 
+### Android POS — modifier default-select, local modifier cache, sync splash, cash popup restyle ✅ (PR #132)
+
+Further user-testing feedback against the local-first cart build — see `ANDROID_POS_BUILD_PLAN.md`'s
+matching write-up under "Standing architecture principle" for the full narrative; checklist here:
+
+- [x] **Modifier groups no longer default-select their first option.** New
+      `modifier_groups.is_first_option_default_selected` (migration `0058`, `Boolean NOT NULL DEFAULT
+      false`) threaded through `ModifierGroupCreate`/`Update`/`Response`, `ProductModifierGroupDetailOut`
+      (POS-facing `list_product_modifiers_detailed`), and `LinkedGroupOut` at **both** of its
+      construction sites (the POS-facing nested-comboing shape and the portal-facing
+      `list_modifier_groups_detailed`'s own nested shape) — three separate explicit Pydantic
+      constructor calls needed the field added by hand, since inheriting a field from a parent schema
+      (`ModifierGroupDetail(ModifierGroupResponse)`) does not auto-populate it at an explicit
+      construction site; CI's `Backend tests` job caught one of the three that a manual read-through
+      missed (`list_modifier_groups_detailed`'s own `ModifierGroupDetail(...)` call), fixed in a
+      follow-up commit before merge. `create_modifier_group()`/`update_modifier_group()`/
+      `duplicate_modifier_group()` pass/copy the field; `update_modifier_group()`'s audit
+      before/after-state dicts include it. Android: `ProductModifierGroupDto`/`LinkedGroupDto` gained
+      `isFirstOptionDefaultSelected` (default `false` for forward/backward JSON compat);
+      `SellViewModel.openModifierSheet()`/`defaultLinkedSelection()` only pre-select a group's first
+      option when the flag is true, instead of unconditionally for any single-select group. Portal:
+      `ModifiersPage.tsx` gained a "Default select" checkbox per group with an explanatory tooltip.
+      New backend tests: default-false on create, update+audit-row assertion, duplicate-copies-it, and
+      presence on both detailed-listing endpoints (top-level group **and** the nested linked group).
+- [x] **Modifier definitions cached locally** — new Room `product_modifier_cache` table
+      (`productId` PK, JSON blob column; `AppDatabase` v7 → v8, same destructive-fallback hop as every
+      prior products/categories-only change). `CatalogRepository.getProductModifiers()` is now
+      stale-while-revalidate: a cache hit returns immediately and fires a background refresh on a
+      repository-owned `CoroutineScope(SupervisorJob() + Dispatchers.IO)` (outlives any one screen's
+      `viewModelScope`, since `CatalogRepository` is a `@Singleton`); a cache miss still blocks on the
+      network, same as before. New `peekCachedProductModifiers()` lets `SellViewModel` check for a
+      cache hit before deciding whether to show the sheet's `Loading` state at all, so a hit never
+      flashes a spinner even for one frame. `clearCache()` (logout) now also clears this table.
+- [x] **Post-login sync splash** — new `SyncSplashScreen`/`SyncSplashViewModel`, inserted into
+      `PosNavHost` between Login/SiteSelector's `onAuthenticated` and PIN-set/the register gate (a new
+      parameterized `sync/{needsPinSetup}` route carries the branch decision through). Syncs catalog,
+      menu layouts, and settings in sequence with a status line + `LinearProgressIndicator`; each step
+      is independently best-effort (a failed step never blocks entry — the app must still work
+      offline), only the final status line's wording changes ("Ready" vs "Offline — continuing with
+      cached data").
+- [x] **Cash-in/cash-up restyled as a popup card** — new shared `RegisterPopupCard.kt` (title/
+      subtitle/optional close ×, scrollable body, footer button — mirrors
+      `ModifierSheetOverlay`'s rounded-card visual language) backs `CashInScreen`/`CashUpScreen`'s
+      per-state bodies (`CashUpScreen` in particular has five distinct states — Ready/ReadyOffline/
+      ClosedPendingSync/Closed/Error — each supplying its own title/subtitle/footer/body to the shared
+      card). `cash_in_mode`'s `default_value` changed from `"bulk"` to `"denomination"` in
+      `app/constants/settings.py`'s catalog, plus the two Android-side fallback defaults that mirrored
+      the old value (`RegisterSessionViewModel`'s initial `CashSettings`,
+      `SettingsRepository.getCashSettings()`'s error-path fallback) — updated the one existing
+      integration test asserting the old default.
+- [x] **Also fixed in the same round**: a Moshi `JsonDataException` crash on the sold-out toggle
+      (`PATCH /products/{id}` returns a plain `ProductResponse`, not the `ProductListItem`-shaped
+      `ProductDto` `PosApiService.updateProduct()` was typed for — new minimal
+      `ProductUpdateResponse` DTO fixes it); `completePaymentAndStartNewOrder()` no longer resets the
+      selected menu layout back to the schedule default after a sale (it used to, which could land on
+      "All items" mid-shift even with Auto Menu off) — the register now stays on whatever menu the
+      cashier was already viewing; `SettingsScreen`'s `SettingRow` shows an explanatory message when
+      the signed-in role can't push a "Save as default" change instead of silently hiding the button;
+      `PosTopBar`'s `ZedReadWordmark` moved to the leading edge, recoloured white (from the portal
+      brand taupe, illegible against the bar's fixed dark background), and enlarged.
+- [x] **Verification**: `python3 -m ast` parse-checked every changed/added Python file (no local
+      Postgres in this sandbox — relies on CI's `Backend tests` job, which caught the missing-field
+      regression above); `npx tsc --noEmit` and `npm run build` both clean for the portal changes.
+      **Not verified against a real Gradle build** locally — same standing constraint as every prior
+      Android slice; CI's `Android build` job caught a real compile error (`ColumnScope` imported from
+      `androidx.compose.ui` instead of `androidx.compose.foundation.layout` in the new
+      `RegisterPopupCard.kt`), fixed in a follow-up commit before merge. All three CI jobs (`Backend
+      tests`, `Android build`, `Portal build`) green on the merge commit.
+
+---
+
 ## Cross-Cutting — Always Active
 
 | Concern | Status |
@@ -1824,7 +1895,6 @@ a one-off fix) — summary here:
 | Circular combo reference: no DB constraint | `combo_service.py` graph traversal only | Low |
 | Photo size limit: no DB constraint | `product_service.py` check only | Low |
 | Invoice line `notes` column: not exposed in API | `invoice_line_items.notes` exists in model | Low |
-| Modifier group/option definitions (prices, linked "comboed" groups) aren't cached locally — the customise sheet still needs connectivity to open, unlike the rest of the cart | `CatalogRepository.getProductModifiers()` — see "Local-first cart rework" below | Medium |
 | Hold has no "recall a held order" list on-device — findable via the portal's invoice reports, but not pullable back into an active sale on the terminal | `SellViewModel.holdOrder()` | Low |
 | Invoice search: payment method unknown for sales backfilled from other devices (`GET /invoices` has no per-payment breakdown) | `InvoiceRepository.refreshCacheFromServer()` | Low |
 | Line modifier price is a flat per-line addition, not scaled by quantity | `invoice_line_modifiers` has no quantity dimension — one row per (line, modifier); `add_line_modifier()`/`_recompute_invoice_totals()` add `price_delta_cents` once regardless of the line's `quantity` | Medium |
