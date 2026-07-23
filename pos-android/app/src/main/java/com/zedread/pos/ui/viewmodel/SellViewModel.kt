@@ -10,12 +10,12 @@ import com.zedread.pos.data.api.ProductModifierGroupDto
 import com.zedread.pos.data.local.entity.CategoryEntity
 import com.zedread.pos.data.local.entity.ProductEntity
 import com.zedread.pos.data.repository.CatalogRepository
-import com.zedread.pos.data.repository.InvoiceRepository
 import com.zedread.pos.data.repository.MenuLayoutRepository
 import com.zedread.pos.data.repository.OutboxRepository
 import com.zedread.pos.data.repository.SettingKeys
 import com.zedread.pos.data.repository.SettingsRepository
 import com.zedread.pos.data.sync.OutboxSaleLine
+import com.zedread.pos.data.sync.SyncPaymentLeg
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,28 +45,33 @@ import javax.inject.Inject
  * sale after "New order" is a same-instance state reset
  * ([completePaymentAndStartNewOrder]) rather than a new ViewModel instance.
  *
- * **Offline write-queue scope** (Android POS Phase 2): a sale that fails to
- * sync on its very first action — [currentInvoiceId] is still null, so
- * nothing for this sale exists server-side yet — continues entirely
- * locally from that point ([isOfflineSale]), using synthesized [LineItemDto]
- * rows (a client-generated id, quantity × unit price for the subtotal, and
- * `taxCents = 0` since tax rules live server-side and can't be reproduced
- * on-device — see OutboxModels.kt's doc), and is queued as one bundle at
- * Pay time via [OutboxRepository.enqueueSale]. A sale that only drops
- * offline *after* a line item already exists on the server is a
- * deliberately unhandled case: silently switching it to local-only mode
- * would risk creating a second, duplicate invoice once the queued bundle
- * syncs (a plain retry of the same call, with client_ref, doesn't have
- * that risk — a mid-sale switch to a different sync mechanism does). That
- * action instead surfaces the existing error state so the operator can
- * retry it once reconnected. Split payment is unsupported for a sale
- * already in offline mode ([toggleSplitMode]) — a queued bundle carries
- * exactly one payment call, not multiple partial legs against one invoice.
+ * **Local-first cart, sync-on-commit** (post-round-4 user feedback): the
+ * cart is built ENTIRELY on-device — [addToCart]/[confirmModifierSheet]/
+ * [setLineQuantity]/[removeLine] never touch the network. Every
+ * [LineItemDto] here is synthesized locally, its subtotal/tax computed by
+ * [computeLocalLineTax] (a Kotlin port of `invoice_service.add_line_item()`'s
+ * own formula — both taxable and non-taxable products already snapshot
+ * everything that formula needs on the product row itself, so no separate
+ * tax-rate sync is needed), so the running total shown while building the
+ * order is correct, not a placeholder — and there is deliberately no
+ * loading state for any of these: they're synchronous in-memory operations,
+ * nothing to wait on.
+ *
+ * The sale only ever touches the server at two points: [holdOrder] (queues
+ * the lines with zero payment legs — the created invoice is left open,
+ * unpaid) and a completed payment ([submitPayment], one leg for a plain
+ * sale or several accumulated legs for a split payment — see
+ * [PaymentUiState.legs]). Both go through [OutboxRepository.enqueueSale],
+ * which is now the ONLY way an invoice is ever created (see
+ * [com.zedread.pos.data.sync.OutboxOperation]'s doc) — not an offline
+ * fallback anymore. Whether that queued row drains in milliseconds (online)
+ * or after connectivity returns (offline) is invisible here; both cases are
+ * silent from the cashier's perspective by construction, since nothing
+ * blocks on the network to get this far.
  */
 @HiltViewModel
 class SellViewModel @Inject constructor(
     private val catalogRepo: CatalogRepository,
-    private val invoiceRepo: InvoiceRepository,
     private val outboxRepo: OutboxRepository,
     private val menuLayoutRepo: MenuLayoutRepository,
     private val settingsRepo: SettingsRepository,
@@ -287,14 +292,7 @@ class SellViewModel @Inject constructor(
         }
     }
 
-    // ── Cart (the current sale's invoice) ───────────────────────────────────
-
-    /** The draft invoice this sale is building, created lazily on the first item added. Null once [isOfflineSale]. */
-    private var currentInvoiceId: String? = null
-
-    /** True once this sale has fallen back to local-only offline mode — see the class doc. */
-    private var isOfflineSale = false
-    val isCurrentSaleOffline: Boolean get() = isOfflineSale
+    // ── Cart (built entirely on-device — see the class doc) ─────────────────
 
     private val _lineItems = MutableStateFlow<List<LineItemDto>>(emptyList())
     val lineItems: StateFlow<List<LineItemDto>> = _lineItems.asStateFlow()
@@ -319,6 +317,10 @@ class SellViewModel @Inject constructor(
     /** Computed total in cents across all line items (subtotal, incl. modifiers, + tax). */
     val totalCents: Long get() = subtotalCents + taxCents
 
+    // Retained for the modifier sheet's own Loading/Ready/Closed states
+    // (see ModifierSheetState below) and as a defensive surface for the
+    // vanishingly-rare local Room failure — cart mutations themselves are
+    // synchronous and don't set this to Loading (there's nothing to wait on).
     private val _cartActionState = MutableStateFlow<CartActionState>(CartActionState.Idle)
     val cartActionState: StateFlow<CartActionState> = _cartActionState.asStateFlow()
 
@@ -329,7 +331,7 @@ class SellViewModel @Inject constructor(
      * with a modifier set — [ProductEntity.modifierNames] non-blank, the same
      * field that backs the grid's "+" badge — opens the customise sheet
      * instead of adding directly; a plain product adds straight to the
-     * order, same as before.
+     * order, same as before. Purely local — see [addLocalLine].
      */
     fun addToCart(productId: String) {
         val product = allProducts.value.firstOrNull { it.id == productId } ?: return
@@ -338,7 +340,7 @@ class SellViewModel @Inject constructor(
             openModifierSheet(product)
             return
         }
-        addPlainLineItem(productId, quantity = 1)
+        addLocalLine(productId, quantity = 1, modifiers = emptyList())
     }
 
     /** Menu-grid tile tap — resolves the tile's product_ref to its locally-cached product, then behaves like [addToCart]. */
@@ -347,137 +349,101 @@ class SellViewModel @Inject constructor(
         addToCart(product.id)
     }
 
-    /** Opens the draft invoice first if this is the first item, then appends the line. */
-    private fun addPlainLineItem(productId: String, quantity: Int) {
-        if (isOfflineSale) {
-            addOfflineLine(productId, quantity, modifiers = emptyList())
-            return
-        }
-        _cartActionState.value = CartActionState.Loading
-        viewModelScope.launch {
-            runCatching {
-                val invoiceId = currentInvoiceId
-                    ?: invoiceRepo.createInvoice().id.also { currentInvoiceId = it; issueTicketNumber() }
-                invoiceRepo.addLineItem(invoiceId, productId, quantity)
-            }
-                .onSuccess { item ->
-                    _lineItems.value = _lineItems.value + item
-                    _cartActionState.value = CartActionState.Idle
-                }
-                .onFailure { e ->
-                    if (e is IOException && currentInvoiceId == null) {
-                        beginOfflineSale()
-                        addOfflineLine(productId, quantity, modifiers = emptyList())
-                    } else {
-                        _cartActionState.value = CartActionState.Error(e.message ?: "Failed to add item")
-                    }
-                }
-        }
-    }
-
     /**
-     * Switch this sale to local-only offline mode — see the class doc for
-     * why this is only ever entered when nothing for the sale exists
-     * server-side yet ([currentInvoiceId] still null at the point of
-     * failure).
+     * Build and append a line item entirely on-device — no network call, no
+     * loading state. [computeLocalLineTax] mirrors the backend's own
+     * add_line_item() formula exactly, so the totals shown here match what
+     * the server will compute once the sale is actually created (at Hold or
+     * Pay — see the class doc).
      */
-    private fun beginOfflineSale() {
-        isOfflineSale = true
+    private fun addLocalLine(productId: String, quantity: Int, modifiers: List<ModifierGroupSelection>) {
+        val product = allProducts.value.firstOrNull { it.id == productId } ?: return
         if (_ticketNumber.value == null) issueTicketNumber()
-    }
-
-    /**
-     * Build and append a locally-synthesized line — see the class doc's
-     * "Offline write-queue scope" note.
-     *
-     * Deliberately top-level modifiers only — a selected comboed (linked)
-     * option is dropped here, unlike the online confirmModifierSheet() path.
-     * An offline sale is already the rare fallback case (first action of a
-     * sale failing outright); adding a second local-total/outbox-payload
-     * shape just for nested comboing isn't worth it for that intersection.
-     */
-    private fun addOfflineLine(productId: String, quantity: Int, modifiers: List<ModifierGroupSelection>) {
-        val product = products.value.firstOrNull { it.id == productId } ?: return
         val lineId = UUID.randomUUID().toString()
-        val optionIds = modifiers.flatMap { gs ->
-            gs.selected.mapNotNull { idx ->
-                val option = gs.group.options.getOrNull(idx) ?: return@mapNotNull null
-                if (gs.isSingleSelect || option.priceDeltaCents > 0) option else null
-            }
-        }
-        val modifierDtos = optionIds.map { option ->
-            LineModifierDto(
-                id = UUID.randomUUID().toString(),
-                lineItemId = lineId,
-                modifierOptionId = option.id,
-                modifierName = option.name,
-                priceDeltaCents = option.priceDeltaCents,
-            )
-        }
+        val tax = computeLocalLineTax(product, quantity)
         val item = LineItemDto(
             id = lineId,
             productId = product.id,
             productName = product.name,
             quantity = quantity,
-            unitPriceCents = product.basePriceCents,
-            subtotalCents = product.basePriceCents * quantity,
-            // Tax rules live server-side (inclusive/exclusive/compound) and
-            // can't be reproduced on-device — confirmed once this sale syncs.
-            taxCents = 0L,
-            modifiers = modifierDtos,
+            unitPriceCents = tax.unitPriceCents,
+            subtotalCents = tax.subtotalCents,
+            taxCents = tax.taxCents,
+            modifiers = resolveModifierDtos(lineId, modifiers),
         )
         _lineItems.value = _lineItems.value + item
-        _cartActionState.value = CartActionState.Idle
+    }
+
+    /**
+     * Flatten a modifier sheet's selections into [LineModifierDto] rows —
+     * same attach rule at both nesting levels (single-select groups always
+     * attach their one choice; multi-select only when it costs extra), just
+     * applied one level deeper for a linked ("comboed") group. Ported from
+     * the sheet's own online-confirm logic now that this is the only path —
+     * unlike the old offline fallback, linked selections are NOT dropped
+     * here; that shortcut was only acceptable for a rare emergency path, not
+     * the everyday one.
+     */
+    private fun resolveModifierDtos(lineId: String, groups: List<ModifierGroupSelection>): List<LineModifierDto> {
+        data class Chosen(val id: String, val name: String, val priceDeltaCents: Long)
+        val chosen = mutableListOf<Chosen>()
+        groups.forEach { gs ->
+            gs.selected.forEach { idx ->
+                val option = gs.group.options.getOrNull(idx) ?: return@forEach
+                if (gs.isSingleSelect || option.priceDeltaCents > 0) {
+                    chosen += Chosen(option.id, option.name, option.priceDeltaCents)
+                }
+                gs.linkedSelections[idx].orEmpty().forEach { linked ->
+                    linked.selected.forEach linkedLoop@{ linkedIdx ->
+                        val linkedOption = linked.group.options.getOrNull(linkedIdx) ?: return@linkedLoop
+                        if (linked.isSingleSelect || linkedOption.priceDeltaCents > 0) {
+                            chosen += Chosen(linkedOption.id, linkedOption.name, linkedOption.priceDeltaCents)
+                        }
+                    }
+                }
+            }
+        }
+        return chosen.map { c ->
+            LineModifierDto(
+                id = UUID.randomUUID().toString(),
+                lineItemId = lineId,
+                modifierOptionId = c.id,
+                modifierName = c.name,
+                priceDeltaCents = c.priceDeltaCents,
+            )
+        }
+    }
+
+    /** This cart's lines in the shape the outbox queues — used by [holdOrder] and [submitPayment]. */
+    private fun buildOutboxLines(): List<OutboxSaleLine> = _lineItems.value.map { item ->
+        OutboxSaleLine(
+            productId = item.productId ?: error("Line item is missing its product id"),
+            quantity = item.quantity,
+            modifierOptionIds = item.modifiers.mapNotNull { it.modifierOptionId },
+        )
     }
 
     /**
      * Change a line's quantity via the Register screen's qty stepper.
      * Dropping to 0 removes the line entirely, same as tapping remove.
+     * Purely local — re-derives tax/subtotal for the new quantity via
+     * [computeLocalLineTax], same formula [addLocalLine] uses.
      */
     fun setLineQuantity(lineItemId: String, quantity: Int) {
         if (quantity < 1) { removeLine(lineItemId); return }
-        if (isOfflineSale) {
-            _lineItems.value = _lineItems.value.map {
-                if (it.id == lineItemId) it.copy(quantity = quantity, subtotalCents = it.unitPriceCents * quantity) else it
-            }
-            return
-        }
-        val invoiceId = currentInvoiceId ?: return
-        _cartActionState.value = CartActionState.Loading
-        viewModelScope.launch {
-            runCatching { invoiceRepo.updateLineItemQuantity(invoiceId, lineItemId, quantity) }
-                .onSuccess { updated ->
-                    // PATCH's response has no modifiers field (LineItemResponse, not
-                    // LineItemDetailResponse) — keep whatever this line's modifiers
-                    // already were rather than dropping them from the display.
-                    val previousModifiers = _lineItems.value.firstOrNull { it.id == lineItemId }?.modifiers ?: emptyList()
-                    _lineItems.value = _lineItems.value.map {
-                        if (it.id == lineItemId) updated.copy(modifiers = previousModifiers) else it
-                    }
-                    _cartActionState.value = CartActionState.Idle
-                }
-                .onFailure { e -> _cartActionState.value = CartActionState.Error(e.message ?: "Failed to update quantity") }
+        _lineItems.value = _lineItems.value.map { item ->
+            if (item.id != lineItemId) return@map item
+            val product = allProducts.value.firstOrNull { it.id == item.productId }
+                ?: return@map item.copy(quantity = quantity, subtotalCents = item.unitPriceCents * quantity)
+            val tax = computeLocalLineTax(product, quantity)
+            item.copy(quantity = quantity, unitPriceCents = tax.unitPriceCents, subtotalCents = tax.subtotalCents, taxCents = tax.taxCents)
         }
     }
 
-    /** Remove a line from the order. */
+    /** Remove a line from the order — purely local. */
     fun removeLine(lineItemId: String) {
-        if (isOfflineSale) {
-            _lineItems.value = _lineItems.value.filterNot { it.id == lineItemId }
-            if (_selectedLineItemId.value == lineItemId) _selectedLineItemId.value = null
-            return
-        }
-        val invoiceId = currentInvoiceId ?: return
-        _cartActionState.value = CartActionState.Loading
-        viewModelScope.launch {
-            runCatching { invoiceRepo.removeLineItem(invoiceId, lineItemId) }
-                .onSuccess {
-                    _lineItems.value = _lineItems.value.filterNot { it.id == lineItemId }
-                    if (_selectedLineItemId.value == lineItemId) _selectedLineItemId.value = null
-                    _cartActionState.value = CartActionState.Idle
-                }
-                .onFailure { e -> _cartActionState.value = CartActionState.Error(e.message ?: "Failed to remove item") }
-        }
+        _lineItems.value = _lineItems.value.filterNot { it.id == lineItemId }
+        if (_selectedLineItemId.value == lineItemId) _selectedLineItemId.value = null
     }
 
     fun resetCartActionState() { _cartActionState.value = CartActionState.Idle }
@@ -513,8 +479,9 @@ class SellViewModel @Inject constructor(
                 }
                 .onFailure { e ->
                     // Modifier prices aren't cached locally (see CatalogRepository.getProductModifiers'
-                    // doc), so a customisable item genuinely can't be rung up offline — a plain item
-                    // still can (addPlainLineItem's own offline fallback).
+                    // doc — a deliberately deferred follow-up, not part of this round's local-first
+                    // cart rework), so a customisable item genuinely can't be rung up offline; a
+                    // plain item always can now — see addLocalLine.
                     val message = if (e is IOException) {
                         "This item can't be customised while offline — try a plain item instead."
                     } else {
@@ -580,10 +547,14 @@ class SellViewModel @Inject constructor(
     /**
      * Per-unit price including selected modifiers and any selected comboed
      * (linked) options one level deep — mirrors modAddToOrder's live `unit`
-     * calc, extended for comboing since the mockup predates it.
+     * calc, extended for comboing since the mockup predates it. The base
+     * (pre-modifier) starting point uses [computeLocalLineTax]'s own
+     * unitPriceCents rather than product.basePriceCents directly, so a
+     * non-taxable product's preview here matches what it's actually charged
+     * once added — basePriceCents alone is the taxable price only.
      */
     fun modifierSheetUnitPriceCents(state: ModifierSheetState.Ready): Long {
-        var unit = state.product.basePriceCents
+        var unit = computeLocalLineTax(state.product, 1).unitPriceCents
         state.groups.forEach { gs ->
             gs.selected.forEach { idx ->
                 unit += gs.group.options.getOrNull(idx)?.priceDeltaCents ?: 0
@@ -611,52 +582,8 @@ class SellViewModel @Inject constructor(
      */
     fun confirmModifierSheet() {
         val state = _modifierSheetState.value as? ModifierSheetState.Ready ?: return
-        if (isOfflineSale) {
-            addOfflineLine(state.product.id, state.quantity, modifiers = state.groups)
-            _modifierSheetState.value = ModifierSheetState.Closed
-            return
-        }
-        _cartActionState.value = CartActionState.Loading
         _modifierSheetState.value = ModifierSheetState.Closed
-        viewModelScope.launch {
-            runCatching {
-                val invoiceId = currentInvoiceId
-                    ?: invoiceRepo.createInvoice().id.also { currentInvoiceId = it; issueTicketNumber() }
-                val item = invoiceRepo.addLineItem(invoiceId, state.product.id, state.quantity)
-
-                // Top-level attach rule (single-select always attached, multi-select
-                // only when priced) applies identically one level down to linked
-                // (comboed) selections — same reasoning, just nested.
-                val optionIds = state.groups.flatMap { gs ->
-                    gs.selected.flatMap { idx ->
-                        val option = gs.group.options.getOrNull(idx)
-                        val ownId = if (option != null && (gs.isSingleSelect || option.priceDeltaCents > 0)) listOf(option.id) else emptyList()
-                        val linkedIds = gs.linkedSelections[idx].orEmpty().flatMap { linked ->
-                            linked.selected.mapNotNull { linkedIdx ->
-                                val linkedOption = linked.group.options.getOrNull(linkedIdx) ?: return@mapNotNull null
-                                if (linked.isSingleSelect || linkedOption.priceDeltaCents > 0) linkedOption.id else null
-                            }
-                        }
-                        ownId + linkedIds
-                    }
-                }
-                optionIds.forEach { optionId -> invoiceRepo.addLineModifier(invoiceId, item.id, optionId) }
-
-                if (optionIds.isEmpty()) item else invoiceRepo.getLineItem(invoiceId, item.id)
-            }
-                .onSuccess { item ->
-                    _lineItems.value = _lineItems.value + item
-                    _cartActionState.value = CartActionState.Idle
-                }
-                .onFailure { e ->
-                    if (e is IOException && currentInvoiceId == null) {
-                        beginOfflineSale()
-                        addOfflineLine(state.product.id, state.quantity, modifiers = state.groups)
-                    } else {
-                        _cartActionState.value = CartActionState.Error(e.message ?: "Failed to add item")
-                    }
-                }
-        }
+        addLocalLine(state.product.id, state.quantity, modifiers = state.groups)
     }
 
     // ── Order pane presentation state (Register screen) ────────────────────
@@ -683,21 +610,38 @@ class SellViewModel @Inject constructor(
     }
 
     /**
-     * Clears the order pane back to empty — the design bundle's "clear order"
-     * ✕ and Hold action, and also what a completed payment's "New order"
-     * button resets to. The invoice itself (if any items were added) is NOT
-     * voided or deleted here; it's simply left open/uncollected on the
-     * backend when triggered by ✕/Hold. There's no "recall a held order"
-     * list yet to bring it back — that's a real gap Hold leaves open,
-     * flagged rather than silently dropped.
+     * Clears the order pane back to empty — the ✕ "clear order" action, and
+     * also what [holdOrder] and a completed payment's "New order" button
+     * reset to once their own work is done. Clearing on its own never
+     * touches the server or the sync queue — a plain ✕ discards a cart that
+     * was never created anywhere in the first place, since nothing is
+     * created until Hold or Pay (see the class doc).
      */
     fun clearOrder() {
-        currentInvoiceId = null
-        isOfflineSale = false
         _lineItems.value = emptyList()
         _ticketNumber.value = null
         _selectedLineItemId.value = null
         _paymentState.value = null
+    }
+
+    /**
+     * Hold — queues the cart as an unpaid sale (zero payment legs, see
+     * [OutboxRepository.enqueueSale]) and clears the order pane once it's
+     * queued. The resulting invoice is created and left OPEN on the server,
+     * same as before this round's rework, just via the sync queue instead
+     * of a live call — still no "recall a held order" list on this device
+     * (a manager can find it via the portal's invoice reports), a known,
+     * flagged gap rather than something this round silently drops.
+     */
+    fun holdOrder() {
+        if (_lineItems.value.isEmpty()) { clearOrder(); return }
+        val lines = buildOutboxLines()
+        val total = totalCents
+        viewModelScope.launch {
+            runCatching { outboxRepo.enqueueSale(lines = lines, payments = emptyList(), isPaid = false, totalCents = total) }
+                .onSuccess { clearOrder() }
+                .onFailure { e -> _cartActionState.value = CartActionState.Error(e.message ?: "Couldn't hold this order") }
+        }
     }
 
     // ── Payment ──────────────────────────────────────────────────────────────
@@ -730,9 +674,6 @@ class SellViewModel @Inject constructor(
 
     fun toggleSplitMode(enabled: Boolean) {
         val s = _paymentState.value ?: return
-        // A queued offline sale syncs as one bundle with exactly one payment
-        // call — see the class doc's "Offline write-queue scope" note.
-        if (isOfflineSale) return
         _paymentState.value = s.copy(splitMode = enabled, splitAmountCents = 0L, tendered = 0L, errorMessage = null)
     }
 
@@ -785,86 +726,54 @@ class SellViewModel @Inject constructor(
         submitPayment(method = "voucher", amountCents = amount, reference = s.voucherReference)
     }
 
+    /**
+     * Record one payment leg locally. A plain (non-split) sale's single leg
+     * always covers the full remaining amount, so this both accumulates the
+     * leg AND — once [PaymentUiState.legs] fully covers [totalCents] —
+     * enqueues the whole sale (lines + every leg so far) as one outbox
+     * bundle via [OutboxRepository.enqueueSale]. A split leg that doesn't
+     * yet cover the balance is recorded and the modal resets to a fresh
+     * Choosing state with the running total carried over, same as before
+     * this round's rework — the only change is that split payment now works
+     * regardless of connectivity, since nothing here depends on the network
+     * (the old restriction blocking split mode once offline is gone).
+     */
     private fun submitPayment(method: String, amountCents: Long, reference: String?) {
         val current = _paymentState.value ?: return
         if (amountCents <= 0) {
             _paymentState.value = current.copy(errorMessage = "Enter an amount")
             return
         }
-        if (isOfflineSale) {
-            submitOfflinePayment(method, amountCents, reference, current)
+        val leg = SyncPaymentLeg(method, amountCents, reference)
+        val updatedLegs = current.legs + leg
+        val updatedPaidCents = current.paidCents + amountCents
+        // Change is whatever this payment overshot the balance that was
+        // still due before it — 0 for card/voucher, and for a non-split
+        // cash tender this is exactly amountCents - remaining. Computable
+        // locally now (unlike before this round), since totalCents is
+        // itself always locally correct — see LocalTaxCalculator.
+        val dueBeforeThisPayment = totalCents - current.paidCents
+        val change = (amountCents - dueBeforeThisPayment).coerceAtLeast(0)
+
+        if (updatedPaidCents < totalCents) {
+            _paymentState.value = PaymentUiState(paidCents = updatedPaidCents, legs = updatedLegs)
             return
         }
-        val invoiceId = currentInvoiceId ?: return
-        _paymentState.value = current.copy(isSubmitting = true, errorMessage = null)
-        viewModelScope.launch {
-            runCatching { invoiceRepo.pay(invoiceId, method, amountCents, reference) }
-                .onSuccess { dto ->
-                    val before = _paymentState.value ?: return@onSuccess
-                    if (dto.status == "paid") {
-                        // Cash change is whatever this payment overshot the balance that
-                        // was still due before it — 0 for card/voucher, and for a
-                        // non-split cash tender this is exactly amountCents - remaining.
-                        val dueBeforeThisPayment = totalCents - before.paidCents
-                        val change = (amountCents - dueBeforeThisPayment).coerceAtLeast(0)
-                        _paymentState.value = before.copy(
-                            stage = PaymentStage.DONE,
-                            isSubmitting = false,
-                            paidCents = before.paidCents + amountCents,
-                            doneMethodLabel = method.replaceFirstChar { it.uppercase() },
-                            doneAmountCents = totalCents,
-                            doneChangeCents = if (method == "cash") change else 0L,
-                        )
-                    } else {
-                        // Split leg recorded but the balance isn't covered yet — reset to
-                        // a fresh Choosing state with the running paidCents carried over,
-                        // per "Add another payment" keeping the modal open.
-                        _paymentState.value = PaymentUiState(paidCents = before.paidCents + amountCents)
-                    }
-                }
-                .onFailure { e ->
-                    val before = _paymentState.value ?: return@onFailure
-                    _paymentState.value = before.copy(isSubmitting = false, errorMessage = e.message ?: "Payment failed")
-                }
-        }
-    }
 
-    /**
-     * Queue this whole sale as one outbox bundle instead of calling the
-     * network directly — see [OutboxRepository.enqueueSale] and the class
-     * doc's "Offline write-queue scope" note. Change can't be confirmed
-     * until the sale actually syncs (a cash tender's change depends on the
-     * server-computed total, unknown while offline), so the Done screen is
-     * told via [PaymentUiState.doneIsPendingSync] rather than shown a
-     * (potentially wrong) figure.
-     */
-    private fun submitOfflinePayment(method: String, amountCents: Long, reference: String?, current: PaymentUiState) {
+        val lines = buildOutboxLines()
+        val total = totalCents
         _paymentState.value = current.copy(isSubmitting = true, errorMessage = null)
         viewModelScope.launch {
-            runCatching {
-                outboxRepo.enqueueSale(
-                    lines = _lineItems.value.map { item ->
-                        OutboxSaleLine(
-                            productId = item.productId ?: error("Offline line item is missing its product id"),
-                            quantity = item.quantity,
-                            modifierOptionIds = item.modifiers.mapNotNull { it.modifierOptionId },
-                        )
-                    },
-                    method = method,
-                    amountCents = amountCents,
-                    reference = reference,
-                )
-            }
+            runCatching { outboxRepo.enqueueSale(lines = lines, payments = updatedLegs, isPaid = true, totalCents = total) }
                 .onSuccess {
-                    val before = _paymentState.value ?: return@onSuccess
-                    _paymentState.value = before.copy(
+                    _paymentState.value = current.copy(
                         stage = PaymentStage.DONE,
                         isSubmitting = false,
-                        paidCents = before.paidCents + amountCents,
+                        paidCents = updatedPaidCents,
+                        legs = updatedLegs,
                         doneMethodLabel = method.replaceFirstChar { it.uppercase() },
-                        doneAmountCents = totalCents,
-                        doneChangeCents = 0L,
-                        doneIsPendingSync = true,
+                        doneAmountCents = total,
+                        doneChangeCents = if (method == "cash") change else 0L,
                     )
                 }
                 .onFailure { e ->
@@ -967,11 +876,11 @@ data class PaymentUiState(
     val splitAmountCents: Long = 0L,
     val voucherReference: String = "",
     val paidCents: Long = 0L,
+    /** Every payment leg confirmed so far this sale — enqueued together, once, when they fully cover the total. See SellViewModel.submitPayment. */
+    val legs: List<SyncPaymentLeg> = emptyList(),
     val isSubmitting: Boolean = false,
     val errorMessage: String? = null,
     val doneMethodLabel: String = "",
     val doneAmountCents: Long = 0L,
     val doneChangeCents: Long = 0L,
-    /** True when this payment was queued to the offline outbox rather than confirmed by the server. */
-    val doneIsPendingSync: Boolean = false,
 )

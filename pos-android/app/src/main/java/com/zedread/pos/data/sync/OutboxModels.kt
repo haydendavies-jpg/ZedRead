@@ -8,13 +8,19 @@ import com.squareup.moshi.Moshi
  * What an [com.zedread.pos.data.local.entity.OutboxItemEntity] row does when drained.
  *
  * A whole sale is one [SYNC_SALE] row (not one row per API call) so the
- * worker can replay it as a single causally-ordered sequence — create,
- * then each line/modifier, then pay — within one `doWork()` pass, using
- * the real invoice id it just got back from `create` for every call after
- * it. That sidesteps needing a separate "local id -> server id" mapping
- * table for a not-yet-synced invoice, at the cost of the sync panel
- * showing one row per sale rather than one per tap — which reads better
- * to a cashier anyway ("Sale — pending" vs five rows per order).
+ * worker can replay it as a single causally-ordered sequence — create, then
+ * each line/modifier, then zero or more payment legs — within one
+ * `doWork()` pass, using the real invoice id it just got back from `create`
+ * for every call after it. That sidesteps needing a separate "local id ->
+ * server id" mapping table for a not-yet-synced invoice, at the cost of the
+ * sync panel showing one row per sale rather than one per tap — which reads
+ * better to a cashier anyway ("Sale — pending" vs five rows per order).
+ *
+ * This is now the ONLY path a sale is ever created through — not just an
+ * offline fallback. Every add-to-cart/Hold/Pay action builds the sale
+ * entirely on-device (see SellViewModel); the outbox row is what turns it
+ * into a real Invoice, whether that happens within milliseconds (online) or
+ * after connectivity returns.
  */
 enum class OutboxOperation {
     SYNC_SALE,
@@ -37,23 +43,41 @@ data class OutboxSaleLine(
 )
 
 /**
+ * One payment leg of a queued sale — a plain (non-split) sale has exactly
+ * one; a split sale has one per tender the cashier confirmed before the
+ * running total was fully covered (see SellViewModel.submitPayment, which
+ * accumulates legs locally in [com.zedread.pos.ui.viewmodel.PaymentUiState]
+ * and only enqueues the sale once `paidCents` reaches the total).
+ */
+@JsonClass(generateAdapter = true)
+data class SyncPaymentLeg(
+    val method: String,
+    @Json(name = "amount_cents") val amountCents: Long,
+    val reference: String?,
+)
+
+/**
  * Payload for a [OutboxOperation.SYNC_SALE] row.
  *
+ * [payments] is empty for a **held** order — lines only, no payment yet;
+ * the worker leaves the created invoice OPEN rather than calling `pay()` at
+ * all (see OutboxSyncWorker.syncSale and SellViewModel.holdOrder). One or
+ * more legs means a plain or split sale respectively.
+ *
  * No checksum field: `pay_invoice()`'s checksum covers the invoice's
- * server-computed subtotal/tax/total (tax rules — inclusive/exclusive/
- * compound — live entirely server-side, see app/utils/checksum.py's
- * `_build_invoice_checksum_payload`), which this device has no way to
- * reproduce byte-for-byte without duplicating the backend's tax engine.
- * `client_ref` alone (always sent) already makes a retried sync safe to
- * replay — the checksum field is optional and skipped server-side when
- * absent, which is exactly the intended escape hatch for a case like this.
+ * server-computed subtotal/tax/total — see app/utils/checksum.py's
+ * `_build_invoice_checksum_payload`. This device computes its own running
+ * total locally (see LocalTaxCalculator) to mirror the backend, but still
+ * doesn't send it as a checksum — a mismatch here must never block a sale
+ * from syncing, only be caught by other means (e.g. reconciliation
+ * reporting), so `client_ref` alone (always sent) is what makes a retried
+ * sync safe to replay; the checksum field is optional and skipped
+ * server-side when absent, which is exactly the intended escape hatch.
  */
 @JsonClass(generateAdapter = true)
 data class SyncSalePayload(
     val lines: List<OutboxSaleLine>,
-    val method: String,
-    @Json(name = "amount_cents") val amountCents: Long,
-    val reference: String?,
+    val payments: List<SyncPaymentLeg> = emptyList(),
 )
 
 /**

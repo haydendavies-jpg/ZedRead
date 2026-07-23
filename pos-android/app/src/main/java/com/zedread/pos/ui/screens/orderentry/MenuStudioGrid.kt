@@ -206,6 +206,13 @@ private fun MenuTile(
     }
 }
 
+/**
+ * A folder tile — same corner-badge language as a product tile's "+"
+ * (small translucent circle, top-right corner) instead of a large inline
+ * "📁" glyph competing with the tab name for space, per user-testing
+ * feedback asking for folders to read as "more in the style of the little +
+ * for modifiers".
+ */
 @Composable
 private fun FolderTile(button: PosMenuButtonDto, onClick: () -> Unit) {
     val colors = LocalZedReadColors.current
@@ -216,18 +223,33 @@ private fun FolderTile(button: PosMenuButtonDto, onClick: () -> Unit) {
             .fillMaxSize()
             .clip(RoundedCornerShape(14.dp))
             .background(fill)
-            .clickable(onClick = onClick)
-            .padding(12.dp),
+            .clickable(onClick = onClick),
     ) {
-        Column {
-            Text("📁", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(4.dp))
-            Text(button.childTabName ?: "Folder", color = textColor, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall, maxLines = 2)
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                button.childTabName ?: "Folder",
+                modifier = Modifier.padding(end = 28.dp),
+                color = textColor,
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 2,
+            )
             Text(
                 "${button.childTabButtonCount ?: 0} item${if (button.childTabButtonCount == 1) "" else "s"}",
                 color = textColor.copy(alpha = 0.75f),
                 style = MaterialTheme.typography.labelSmall,
             )
+        }
+        Box(
+            modifier = Modifier
+                .padding(8.dp)
+                .align(Alignment.TopEnd)
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("›", color = textColor, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
         }
     }
 }
@@ -284,6 +306,10 @@ private fun ProductMenuTile(button: PosMenuButtonDto, onClick: () -> Unit, onLon
         Column(modifier = Modifier.padding(10.dp)) {
             Text(
                 button.productName ?: "—",
+                // Reserve room for the "+" badge's top-right corner, same fix as
+                // ProductTile in the category grid — a wrapped name previously
+                // rendered under the badge, reading as if the "+" were part of it.
+                modifier = if (!isInactive && !isSoldOut) Modifier.padding(end = 28.dp) else Modifier,
                 color = textColor,
                 fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.titleSmall,

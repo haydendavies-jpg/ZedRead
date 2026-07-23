@@ -357,6 +357,30 @@ always lays out 6 fixed columns padded to at least 6 rows; and a new long-press 
 (`products.is_sold_out`, migration `0057`) that greys the tile out with "SOLD OUT" written over it
 and blocks adding it to an order until toggled off again.
 
+**Android POS — local-first cart rework (post-round-4, complete).** User feedback: stop polling the
+server on every product tap — build the cart entirely on-device with no loading spinner, and only
+create the invoice at Hold or at payment. See `ANDROID_POS_BUILD_PLAN.md`'s new "Standing
+architecture principle — offline-first, cloud-sync-on-reconnect" section (a durable rule for the
+whole app now, not a one-off) and `STAGE_STATUS.md`'s matching entry for full detail. Notables:
+`products.price_ex_cents`/`is_taxable` joined the ordinary Android catalog sync so a new
+`LocalTaxCalculator` (a Kotlin port of `invoice_service.add_line_item()`'s own formula — no separate
+tax-rate sync needed, both fields were already snapshotted per-product) can compute a correct
+running total on-device; `SellViewModel`'s cart-building is now 100% local with the old "try live,
+fall back to offline" branching removed entirely; `holdOrder()` (new) and the rewritten
+`submitPayment()` are the only two places that ever call `OutboxRepository.enqueueSale()` — extended
+to carry a list of payment legs (zero for Hold, one for a plain sale, several for a split sale,
+accumulated locally and enqueued together once they cover the total) — which also means split
+payment now works fully offline for the first time, the old restriction blocking it once a sale went
+offline no longer applies. No backend changes were needed. Also fixed while in the area: a folder
+tile's icon now matches the product tile's small "+" corner-badge style instead of a large inline
+"📁"; product/folder names reserve space for that badge so they no longer render underneath it
+(previously misread as if the "+" were part of the name); the unfiltered catalog fallback is now
+also gated behind `auto_menu_enabled` (closing a gap where a site with no active layout silently
+showed the full catalog regardless of the setting); and the top bar's fixed background changed again
+to `#332E29` (the portal's own dark-mode `--zr-sidebar`) with white content throughout. Deliberately
+not built this round, flagged rather than silently dropped: caching modifier definitions locally
+(the customise sheet still needs connectivity) and a "recall a held order" list on the device.
+
 ## Folder structure (backend)
 ```
 pos-backend/

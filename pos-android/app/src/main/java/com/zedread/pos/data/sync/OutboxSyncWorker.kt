@@ -77,7 +77,12 @@ class OutboxSyncWorker @AssistedInject constructor(
         return if (hadTransientFailure) Result.retry() else Result.success()
     }
 
-    /** Replays a queued sale: create -> each line (+ its modifiers) -> pay, all with the real invoice id from create. */
+    /**
+     * Replays a queued sale: create -> each line (+ its modifiers) -> each
+     * payment leg in order (zero for a held order, one for a plain sale,
+     * two-plus for a split payment), all with the real invoice id from
+     * create.
+     */
     private suspend fun syncSale(item: OutboxItemEntity) {
         val payload = OutboxPayloads.decodeSale(moshi, item.payloadJson)
         val invoice = invoiceRepo.createInvoice(item.clientRef)
@@ -87,18 +92,26 @@ class OutboxSyncWorker @AssistedInject constructor(
                 invoiceRepo.addLineModifier(invoice.id, lineItem.id, modifierOptionId)
             }
         }
-        val paid = invoiceRepo.pay(invoice.id, payload.method, payload.amountCents, payload.reference, item.clientRef)
+        // Each leg needs its own idempotency key — payments.client_ref is
+        // unique server-side, so reusing item.clientRef across legs of the
+        // same sale would collide on the second call. Deterministic (not
+        // freshly minted here) so a retried worker pass after a partial
+        // failure doesn't double-pay a leg that already landed.
+        var current = invoice
+        payload.payments.forEachIndexed { index, leg ->
+            current = invoiceRepo.pay(invoice.id, leg.method, leg.amountCents, leg.reference, "${item.clientRef}-$index")
+        }
 
         // Re-key the invoice-history cache from the client_ref placeholder to the real synced id.
         invoiceCacheDao.deleteById(item.clientRef)
         invoiceCacheDao.upsert(
             InvoiceCacheEntity(
-                id = paid.id,
-                ref = paid.ref,
-                status = paid.status,
-                totalCents = paid.totalCents,
+                id = current.id,
+                ref = current.ref,
+                status = current.status,
+                totalCents = current.totalCents,
                 createdAtMillis = System.currentTimeMillis(),
-                paymentMethod = payload.method,
+                paymentMethod = payload.payments.lastOrNull()?.method,
                 isSynced = true,
             )
         )

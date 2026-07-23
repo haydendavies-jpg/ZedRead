@@ -22,10 +22,11 @@ import com.zedread.pos.data.local.entity.ProductEntity
  */
 @Database(
     entities = [ProductEntity::class, CategoryEntity::class, OutboxItemEntity::class, InvoiceCacheEntity::class],
-    // + products.is_sold_out (long-press sold-out popup) — no explicit
-    // Migration needed, relies on fallbackToDestructiveMigration same as
-    // every other products/categories-only hop (see DatabaseModule).
-    version = 6,
+    // + products.price_ex_cents/is_taxable (on-device tax calculation for
+    // the local-first cart — see LocalTaxCalculator) — no explicit Migration
+    // needed, relies on fallbackToDestructiveMigration same as every other
+    // products/categories-only hop (see DatabaseModule).
+    version = 7,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

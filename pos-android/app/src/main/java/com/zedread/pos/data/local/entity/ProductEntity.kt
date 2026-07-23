@@ -14,6 +14,12 @@ data class ProductEntity(
     val name: String,
     val description: String?,
     @ColumnInfo(name = "base_price_cents") val basePriceCents: Long,
+    // Tax-exclusive price and taxability — cached so the Register can compute
+    // a line's tax on-device (see LocalTaxCalculator), mirroring
+    // invoice_service.add_line_item()'s own formula exactly, instead of
+    // needing a live add-line-item round trip to know the correct total.
+    @ColumnInfo(name = "price_ex_cents") val priceExCents: Long,
+    @ColumnInfo(name = "is_taxable") val isTaxable: Boolean,
     @ColumnInfo(name = "photo_url") val photoUrl: String?,
     @ColumnInfo(name = "display_order") val displayOrder: Int,
     @ColumnInfo(name = "is_active") val isActive: Boolean,

@@ -136,17 +136,20 @@ fun OrderEntryScreen(
                 pendingCount = pendingCount,
                 onSyncClick = { showSyncPanel = true },
             ) {
+                // Fixed white, not colors.muted — this row renders inside PosTopBar's
+                // own always-dark (#332E29) background, not the theme-aware surface
+                // these screens otherwise sit on.
                 IconButton(onClick = onInvoiceSearch) {
-                    Icon(Icons.Default.History, contentDescription = "Invoice search", tint = colors.muted)
+                    Icon(Icons.Default.History, contentDescription = "Invoice search", tint = Color.White)
                 }
                 IconButton(onClick = onSettings) {
-                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = colors.muted)
+                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
                 }
                 IconButton(onClick = onCashUp) {
-                    Icon(Icons.Default.AttachMoney, contentDescription = "Cash up", tint = colors.muted)
+                    Icon(Icons.Default.AttachMoney, contentDescription = "Cash up", tint = Color.White)
                 }
                 IconButton(onClick = onSwitchUser) {
-                    Icon(Icons.Default.Person, contentDescription = "Switch operator", tint = colors.muted)
+                    Icon(Icons.Default.Person, contentDescription = "Switch operator", tint = Color.White)
                 }
             }
 
@@ -159,6 +162,10 @@ fun OrderEntryScreen(
                         showAllItemsOption = isAutoMenuEnabled,
                         onSelect = viewModel::selectMenuLayout,
                     )
+                    // The unfiltered category rail/grid is itself the "all items" view —
+                    // gated behind Auto Menu same as the selector's dropdown option below,
+                    // so a site with no active/default layout can't silently fall back to
+                    // showing the whole catalog when Auto Menu is off (see NoMenuAvailable).
                     val layoutForRail = currentMenuLayout
                     if (layoutForRail != null) {
                         MenuTabRail(
@@ -167,13 +174,15 @@ fun OrderEntryScreen(
                             onSelectTab = viewModel::selectTab,
                             modifier = Modifier.weight(1f),
                         )
-                    } else {
+                    } else if (isAutoMenuEnabled) {
                         CategoryRail(
                             categories = categories,
                             selectedCatId = selectedCatId,
                             onSelect = viewModel::selectCategory,
                             modifier = Modifier.weight(1f),
                         )
+                    } else {
+                        Spacer(Modifier.weight(1f))
                     }
                 }
 
@@ -191,12 +200,14 @@ fun OrderEntryScreen(
                                 modifier = Modifier.weight(1f),
                             )
                         }
-                    } else {
+                    } else if (isAutoMenuEnabled) {
                         ProductGrid(
                             products = products,
                             onProductTap = viewModel::addToCart,
                             onProductLongPress = viewModel::openProductDetail,
                         )
+                    } else {
+                        NoMenuAvailable()
                     }
                     if (cartActionState is CartActionState.Loading) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -219,7 +230,7 @@ fun OrderEntryScreen(
                     taxCents = viewModel.taxCents,
                     totalCents = viewModel.totalCents,
                     onClearOrder = viewModel::clearOrder,
-                    onHold = viewModel::clearOrder,
+                    onHold = viewModel::holdOrder,
                     onPay = viewModel::openPayment,
                     errorMessage = (cartActionState as? CartActionState.Error)?.message,
                 )
@@ -245,6 +256,7 @@ fun OrderEntryScreen(
                 state = currentPaymentState,
                 totalCents = viewModel.totalCents,
                 remainingCents = viewModel.remainingCents(currentPaymentState),
+                isOnline = isOnline,
                 onClose = viewModel::closePayment,
                 onSelectMethod = viewModel::selectPaymentMethod,
                 onToggleSplit = viewModel::toggleSplitMode,
@@ -410,6 +422,32 @@ private fun Color.toHex(): String {
 }
 
 /**
+ * Shown instead of the unfiltered category rail/grid when Auto Menu is off
+ * and no menu layout is currently active for this site — per user-testing
+ * feedback, "the only menus visible should be the ones published from Menu
+ * Studio", so a site with nothing scheduled/published shouldn't silently
+ * fall back to the full catalog just because Auto Menu happens to be the
+ * only thing standing between "no active layout" and "sell everything".
+ */
+@Composable
+private fun NoMenuAvailable() {
+    val colors = LocalZedReadColors.current
+    Box(Modifier.fillMaxSize().background(colors.bg), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("No menu available", style = MaterialTheme.typography.titleMedium, color = colors.text)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Publish a menu layout in Menu Studio, or enable Auto Menu to browse the full catalog.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.muted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 32.dp),
+            )
+        }
+    }
+}
+
+/**
  * The "All items" / category browsing grid — per user-testing feedback,
  * always laid out as [MENU_GRID_COLUMNS] fixed columns (matching the Menu
  * Studio grid's own 6-column convention, not the previous responsive
@@ -478,6 +516,10 @@ private fun ProductTile(product: ProductEntity, onClick: () -> Unit, onLongPress
             Column(modifier = Modifier.padding(12.dp)) {
                 Text(
                     product.name,
+                    // Reserve room for the "+" badge's top-right corner (22.dp + 8.dp
+                    // padding either side) so a wrapped name never renders under it —
+                    // previously read as if the badge's "+" were part of the name.
+                    modifier = if (hasModifiers && !product.isSoldOut) Modifier.padding(end = 30.dp) else Modifier,
                     color = textColor,
                     fontWeight = FontWeight.SemiBold,
                     style = MaterialTheme.typography.titleSmall,

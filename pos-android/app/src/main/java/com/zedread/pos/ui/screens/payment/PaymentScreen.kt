@@ -63,6 +63,7 @@ fun PaymentModal(
     state: PaymentUiState,
     totalCents: Long,
     remainingCents: Long,
+    isOnline: Boolean,
     onClose: () -> Unit,
     onSelectMethod: (PaymentMethod) -> Unit,
     onToggleSplit: (Boolean) -> Unit,
@@ -90,7 +91,7 @@ fun PaymentModal(
                 .background(colors.surface),
         ) {
             if (state.stage == PaymentStage.DONE) {
-                PaymentDoneContent(state = state, onNewOrder = onNewOrder)
+                PaymentDoneContent(state = state, isOnline = isOnline, onNewOrder = onNewOrder)
             } else {
                 PaymentChoosingContent(
                     state = state,
@@ -475,7 +476,7 @@ private fun PrimaryActionButton(label: String, enabled: Boolean, isLoading: Bool
 }
 
 @Composable
-private fun PaymentDoneContent(state: PaymentUiState, onNewOrder: () -> Unit) {
+private fun PaymentDoneContent(state: PaymentUiState, isOnline: Boolean, onNewOrder: () -> Unit) {
     val colors = LocalZedReadColors.current
     Column(
         modifier = Modifier.padding(40.dp).fillMaxWidth(),
@@ -503,7 +504,11 @@ private fun PaymentDoneContent(state: PaymentUiState, onNewOrder: () -> Unit) {
             style = MaterialTheme.typography.bodyMedium,
             color = colors.muted,
         )
-        if (state.doneIsPendingSync) {
+        if (!isOnline) {
+            // Every sale is queued through the same sync mechanism now (see
+            // SellViewModel's class doc), so this is worth surfacing only
+            // when the device is genuinely offline right now — otherwise
+            // it's redundant with the persistent top-bar sync badge.
             Spacer(Modifier.height(4.dp))
             Text(
                 "Offline — queued, will sync automatically once back online",

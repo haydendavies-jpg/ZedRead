@@ -24,11 +24,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 // Fixed, theme-independent colours for this bar — per user-testing feedback
-// the top bar must always read #FFFFFF, in light AND dark mode, unlike every
-// other surface in the app which follows ZedReadColors' light/dark swap.
-private val TopBarBackground = Color.White
-private val TopBarText = Color(0xFF241F1A) // ZedReadColors' own light-mode --text, fixed here regardless of theme
-private val TopBarFaint = Color(0xFFA39A8C) // ZedReadColors' own light-mode --faint, fixed here regardless of theme
+// the top bar always reads #332E29 (the portal's own dark-mode --zr-sidebar,
+// pos-portal/src/index.css) with white content, in light AND dark app theme
+// alike, unlike every other surface in the app which follows ZedReadColors'
+// light/dark swap. Supersedes an earlier round's "always #FFFFFF" request.
+private val TopBarBackground = Color(0xFF332E29)
+private val TopBarText = Color.White
+private val TopBarFaint = Color(0xFFD9D4CE) // muted near-white for the subtitle/tagline — full white would out-compete the title
 
 /**
  * Persistent top navigation bar — per user-testing feedback, every screen
@@ -44,12 +46,13 @@ private val TopBarFaint = Color(0xFFA39A8C) // ZedReadColors' own light-mode --f
  * ZedRead wordmark pinned to the trailing edge on every screen — the sync
  * badge is no longer a floating overlay icon.
  *
- * The background is always [TopBarBackground] (#FFFFFF), never
- * ZedReadColors.surface — the design calls for a white top bar in both light
- * and dark mode, so its text/icon colours are pinned to fixed light-mode
- * equivalents rather than the theme-aware [LocalZedReadColors] the rest of
- * this bar's content would otherwise use, to stay legible against that fixed
- * white regardless of the app's own theme.
+ * The background is always [TopBarBackground] (#332E29), never
+ * ZedReadColors.surface — the design calls for this fixed dark bar in both
+ * light and dark app mode, so its text/icon colours are pinned to fixed
+ * white/near-white equivalents rather than the theme-aware
+ * [LocalZedReadColors] the rest of this bar's content would otherwise use,
+ * to stay legible against that fixed dark background regardless of the
+ * app's own theme.
  */
 @Composable
 fun PosTopBar(
@@ -65,7 +68,7 @@ fun PosTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(TopBarBackground)
-            .border(width = 1.dp, color = Color(0x14241F1A))
+            .border(width = 1.dp, color = Color(0x1FFFFFFF))
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
