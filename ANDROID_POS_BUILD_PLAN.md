@@ -27,6 +27,7 @@ here in a new session — read the Status section first, then the phase you're o
 | 2 | Android — Settings screen + denomination-grid cash-in/cash-up variant | ✅ Done — see below |
 | 2 | Android — offline write-queue, sync indicator, invoice search | ✅ Done — see below |
 | — | Android — local-first cart rework (on-device tax, Hold/Pay-triggered sync, offline split payment) | ✅ Done — see "Standing architecture principle" below |
+| — | Android — modifier default-select setting, local modifier cache, sync splash, cash popup restyle (PR #132) | ✅ Done — see below |
 | 3 | Menu Studio → POS integration depth (recurring scheduling, menu selector) | ✅ Done — see below |
 | 4 | Table maps & floor service | 🔲 Not started |
 
@@ -731,16 +732,82 @@ no loading indicator; sync silently in the background either way.
 - **No backend changes were needed.** `POST /invoices` / `.../line-items` / `.../pay` already support
   being called sequentially with a freshly-resolved invoice id and multiple payment legs — this was
   purely an Android-side and outbox-schema change.
-- **Known, deliberately deferred gap**: modifier group/option definitions (prices, linked "comboed"
-  groups) are still fetched live when the customise sheet opens — they are not yet part of the Room
-  catalog cache the way products/categories/tax fields are. A customisable item therefore still can't
-  be rung up while offline (a plain item always can). Bringing modifier definitions into the offline
-  cache is the natural next slice of this same architecture principle, not a separate concern —
-  flagged here rather than half-built under time pressure.
+- **Previously-deferred gap, now resolved**: modifier group/option definitions were fetched live on
+  every customise-sheet open with no local cache — flagged above as the natural next slice. Done in
+  the following round; see "Modifier default-select + local modifier cache + sync splash + cash popup
+  restyle" below.
 - **Also known, pre-existing gap, unchanged by this round**: Hold has no "recall a held order" list on
   the device — the held invoice is findable via the portal's invoice reports, but there's no
   in-app way to pull it back into an active sale. Not built this round since it wasn't asked for;
   flagged so it isn't mistaken for done.
+
+### Modifier default-select + local modifier cache + sync splash + cash popup restyle (post-local-first-cart, complete — PR #132)
+
+A further round of user-testing feedback against the local-first cart build, all shipped together.
+
+- **Modifier groups no longer pre-select their first option.** Every single-select modifier group
+  used to default to its first option the instant the customise sheet opened — user-testing feedback
+  that nothing should be pre-selected unless a manager explicitly wants that behaviour for a specific
+  group (e.g. a "Size" group where Medium is genuinely the default). New
+  `modifier_groups.is_first_option_default_selected` (migration `0058`, defaults `False` for every
+  existing group — a deliberate behaviour change), threaded through the group create/update/duplicate
+  schemas and both POS-facing and portal-facing detailed-listing endpoints (including the nested
+  "comboed" `LinkedGroupOut` shape, which has its own copy of the flag). Android:
+  `SellViewModel.openModifierSheet()`/`defaultLinkedSelection()` only seed a group's first option into
+  `selected` when this flag is true, instead of unconditionally for any `maxSelections <= 1` group.
+  Portal: `ModifiersPage.tsx` gained a "Default select" checkbox per group with a tooltip explaining
+  the behaviour.
+- **Modifier definitions are now cached locally**, resolving the gap flagged above. New Room
+  `product_modifier_cache` table (`AppDatabase` v7 → v8, destructive-fallback hop like every other
+  products/categories-only column add — see `DatabaseModule`) storing each product's modifier groups
+  as a JSON blob (Moshi `List<ProductModifierGroupDto>` adapter) rather than several join tables — the
+  nested groups → options → linked-groups shape doesn't fit a flat table without real normalization
+  work, and this cache is fully re-derivable from the server at any time.
+  `CatalogRepository.getProductModifiers()` is now stale-while-revalidate: a cache hit returns
+  immediately and kicks a fire-and-forget background refresh (a repository-owned
+  `CoroutineScope(SupervisorJob() + Dispatchers.IO)`, since this is a `@Singleton` outliving any one
+  screen's `viewModelScope`) to update the cache for next time; a cache miss (first-ever tap on a
+  given product on this device) still waits on the network, same as before. `SellViewModel` peeks the
+  cache (`peekCachedProductModifiers`) before deciding whether to show the sheet's `Loading` state at
+  all, so a cache hit never flashes a spinner. A customisable item still can't be rung up **the very
+  first time** it's tapped while offline (nothing cached yet) — every tap after that works offline,
+  same as a plain item always has.
+- **Post-login sync splash.** New `SyncSplashScreen`/`SyncSplashViewModel`, inserted into
+  `PosNavHost`'s auth flow between Login/SiteSelector and PIN-set/the register gate: syncs the
+  product catalog, menu layouts, and settings with a status line + progress bar before the register
+  ever renders. Each step is independently best-effort — a failed step (no connectivity) never blocks
+  entry, since the whole point of this app is that it still has to work offline; the final status line
+  just reads "Offline — continuing with cached data" instead of "Ready". This is a deliberate,
+  narrow exception to rule 2 of the "no spinner for a local operation" principle above — the *first*
+  screen after login is the one place a brief, visible sync makes sense, precisely so nothing later
+  in the app ever needs to.
+- **Cash-in/cash-up restyled as a popup**, matching the modifier sheet's rounded-card visual language
+  instead of a plain full-bleed form — new shared `RegisterPopupCard` component (title/subtitle/
+  optional close × / scrollable body / footer button, `colors.surface` card over the `colors.bg`
+  canvas) backs both `CashInScreen` and `CashUpScreen`'s per-state bodies.
+  `cash_in_mode`'s `default_value` changed from `"bulk"` to `"denomination"` (the full per-denomination
+  count) in the backend settings catalog, plus the two Android-side fallback defaults that mirrored
+  the old value (`RegisterSessionViewModel`'s initial `CashSettings`, `SettingsRepository.getCashSettings()`'s
+  error-path fallback) — a site can still opt back into bulk entry from the portal.
+- **Smaller fixes found in the same round**: a Moshi `JsonDataException` crash on the sold-out toggle
+  (`PATCH /products/{id}` returns a plain `ProductResponse`, not the `ProductListItem`-shaped
+  `ProductDto` the Retrofit method was typed for — new minimal `ProductUpdateResponse` fixes it);
+  `completePaymentAndStartNewOrder()` no longer resets the selected menu layout back to the schedule
+  default after a sale (previously could land on "All items" mid-shift even with Auto Menu off,
+  since the reset could resolve to no default layout) — the register now simply stays on whatever
+  menu the cashier was already viewing; the Settings screen shows an explanatory message when the
+  signed-in role can't push a "Save as default" change, instead of silently hiding the button; the
+  top bar wordmark moved to the leading edge, recoloured white, and enlarged.
+- **Verification**: new/extended backend integration tests for `is_first_option_default_selected`
+  (create-default, update+audit, duplicate-copies, presence on both detailed-listing endpoints
+  including the nested `LinkedGroupOut`) and the `cash_in_mode` default-value assertion updated; full
+  suite green on CI. Portal `npx tsc --noEmit` + `npm run build` both clean. **Not verified against a
+  real Gradle build** — same standing constraint as every prior Android slice; CI's `Android build`
+  job caught two real compile errors during this round (a `ColumnScope` import from the wrong package,
+  and a missing field on one of three `ModifierGroupDetail`/`LinkedGroupOut` construction sites) that
+  a plain read-through missed, both fixed in follow-up commits before merge — a concrete reminder that
+  the "re-read every changed file" verification step this project relies on is not a substitute for a
+  real compiler when one is reachable.
 
 ---
 
