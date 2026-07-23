@@ -1979,6 +1979,59 @@ matching write-up under "Standing architecture principle" for the full narrative
 
 ---
 
+## Android POS — testing feedback round 6
+
+Eight reported gaps against the running Android app (screenshots: the Cash In denomination grid
+scrolling, and the POS Layout menu selector overhanging the tab rail below it) plus one backend gap
+the invoice-table asks depended on.
+
+- [x] **Cash In/Cash Up no longer scrolls.** `CashDenominationGrid`'s 11-row list was tuned tighter
+      (34dp rows, 3dp gaps — was 42dp/6dp) and `RegisterPopupCard` now gives the denomination-grid
+      variant (`maxWidth > 480.dp`) a 0.96 height fraction instead of the flat 0.85 every variant
+      previously shared, so the full list fits without the card's own `verticalScroll` ever
+      engaging on a typical device.
+- [x] **Cash tender pinpad shown by default.** `PaymentScreen`'s `CashTabContent` (the non-split Cash
+      tab) gained the same `NumericKeypad` + $10/$20/$50/$100 quick-cash column the Split toggle's
+      screen already had, previously only reachable by turning Split on. Digit entry shifts
+      `state.tendered` left a decimal place per keypress (calculator-style) rather than a separate
+      text buffer, so a preset tile tap and a typed digit both read/write the same value with
+      neither going stale.
+- [x] **Settings: one push action, not one per row.** `SettingsViewModel.pushAllDefaults()` replaces
+      the old per-row `saveAsDefault(key)` — every outstanding local edit (already applied to this
+      device immediately, unchanged) is pushed to the backend in one tap from a bottom bar that only
+      renders for a Manager+ profile with something dirty, rather than a "Save as default" button on
+      each row.
+- [x] **Menu selector no longer overhangs the tab rail.** `MenuSelectorRow` was 226dp wide against
+      `MenuTabRail`/`CategoryRail`'s fixed 200dp column beneath it, so its right edge stuck out past
+      the rail into the product grid; now 200dp to match, with `maxLines`/ellipsis added to its two
+      text lines for the narrower width.
+- [x] **Invoice history is now a table.** `InvoiceSearchScreen` gained a fixed column-header row
+      (Invoice #/Payment/Date & status/Total), a per-row Refund action (paid, not-already-refunded
+      invoices only — full or partial-by-line-item via checkboxes, `POST /invoices/{id}/refund`,
+      already existed for the POS terminal and needed no backend change), tap-to-expand rows showing
+      line items (`GET /invoices/{id}/line-items`, fetched once and cached), and a totals row pinned
+      below the scrollable list (not one of its items) so it's always visible.
+- [x] **Backend: `GET /invoices` now reports payment methods.** `InvoiceResponse.payment_methods`
+      (new field, mirrors `invoice_report_service.InvoiceReportRow`'s own field for the portal) is
+      resolved by a new `get_payment_methods_by_invoice()` batch query and populated by
+      `list_site_invoices()`; `InvoiceRepository.refreshCacheFromServer()` now writes it into the
+      Android cache's `payment_method` column (comma-joined for a split sale) instead of always
+      `null` for a row backfilled from another device — closes the "payment method unknown for
+      backfilled sales" gap this file previously tracked. `InvoiceCacheEntity` also gained
+      `is_refunded` (schema v9 -> v10, falls through to `fallbackToDestructiveMigration` like every
+      other `invoice_cache`-only column add) so a refunded invoice's row reflects it without a
+      second round trip.
+- [x] **Verification**: `python3 -m py_compile` on every changed/added Python file (no local Postgres
+      in this sandbox); two new integration tests cover `payment_methods` (a split cash+card payment,
+      and an unpaid invoice's empty list). **Not verified against a real Gradle build** — same
+      standing constraint as every prior Android slice in this file; no Kotlin/Gradle toolchain is
+      reachable in this sandbox, so the Kotlin changes were reviewed by hand line-by-line instead
+      (matching existing patterns exactly — e.g. `Modifier.weight()`/`RowScope`/`ColumnScope`
+      receiver rules, Room migration conventions) rather than compiled. CI's `Android build` job is
+      the first real compile check these changes get.
+
+---
+
 ## Cross-Cutting — Always Active
 
 | Concern | Status |
@@ -2001,7 +2054,6 @@ matching write-up under "Standing architecture principle" for the full narrative
 | Circular combo reference: no DB constraint | `combo_service.py` graph traversal only | Low |
 | Photo size limit: no DB constraint | `product_service.py` check only | Low |
 | Invoice line `notes` column: not exposed in API | `invoice_line_items.notes` exists in model | Low |
-| Invoice search: payment method unknown for sales backfilled from other devices (`GET /invoices` has no per-payment breakdown) | `InvoiceRepository.refreshCacheFromServer()` | Low |
 | Line modifier price is a flat per-line addition, not scaled by quantity | `invoice_line_modifiers` has no quantity dimension — one row per (line, modifier); `add_line_modifier()`/`_recompute_invoice_totals()` add `price_delta_cents` once regardless of the line's `quantity` | Medium |
 | Tax compound edge cases (PST on GST): not validated | `tax_calculation_service.py` | Medium |
 | Accounting/journal integration for refunds | Not started | Future |

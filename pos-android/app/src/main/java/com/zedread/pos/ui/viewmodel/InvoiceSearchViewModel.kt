@@ -2,6 +2,7 @@ package com.zedread.pos.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.zedread.pos.data.api.LineItemDto
 import com.zedread.pos.data.local.entity.InvoiceCacheEntity
 import com.zedread.pos.data.repository.InvoiceRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -69,6 +70,83 @@ class InvoiceSearchViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { invoiceRepo.refreshCacheFromServer() }
             _isRefreshing.value = false
+        }
+    }
+
+    // ── Row expand (click-to-show-line-items) ──────────────────────────────
+
+    private val _expandedInvoiceId = MutableStateFlow<String?>(null)
+    val expandedInvoiceId: StateFlow<String?> = _expandedInvoiceId.asStateFlow()
+
+    /** invoiceId -> its line items, once fetched — cached for the lifetime of this ViewModel so re-collapsing/re-expanding a row doesn't re-fetch. */
+    private val _lineItemsByInvoice = MutableStateFlow<Map<String, List<LineItemDto>>>(emptyMap())
+    val lineItemsByInvoice: StateFlow<Map<String, List<LineItemDto>>> = _lineItemsByInvoice.asStateFlow()
+
+    private val _lineItemsLoading = MutableStateFlow<Set<String>>(emptySet())
+    val lineItemsLoading: StateFlow<Set<String>> = _lineItemsLoading.asStateFlow()
+
+    /** Tap a row: expands it (fetching its line items if not already cached), or collapses it if it's already the expanded one. */
+    fun toggleExpand(invoiceId: String) {
+        _expandedInvoiceId.value = if (_expandedInvoiceId.value == invoiceId) null else invoiceId
+        if (_expandedInvoiceId.value == invoiceId) loadLineItems(invoiceId)
+    }
+
+    private fun loadLineItems(invoiceId: String) {
+        if (invoiceId in _lineItemsByInvoice.value) return
+        _lineItemsLoading.value = _lineItemsLoading.value + invoiceId
+        viewModelScope.launch {
+            runCatching { invoiceRepo.getLineItems(invoiceId) }
+                .onSuccess { lines -> _lineItemsByInvoice.value = _lineItemsByInvoice.value + (invoiceId to lines) }
+            _lineItemsLoading.value = _lineItemsLoading.value - invoiceId
+        }
+    }
+
+    // ── Refund ───────────────────────────────────────────────────────────
+
+    private val _refundTarget = MutableStateFlow<InvoiceCacheEntity?>(null)
+    val refundTarget: StateFlow<InvoiceCacheEntity?> = _refundTarget.asStateFlow()
+
+    private val _isRefunding = MutableStateFlow(false)
+    val isRefunding: StateFlow<Boolean> = _isRefunding.asStateFlow()
+
+    private val _refundError = MutableStateFlow<String?>(null)
+    val refundError: StateFlow<String?> = _refundError.asStateFlow()
+
+    /** Opens the refund dialog for [invoice] — also fetches its line items (if not already cached) since the dialog's partial-refund mode needs them. */
+    fun openRefundDialog(invoice: InvoiceCacheEntity) {
+        _refundError.value = null
+        _refundTarget.value = invoice
+        loadLineItems(invoice.id)
+    }
+
+    fun dismissRefundDialog() {
+        _refundTarget.value = null
+        _refundError.value = null
+    }
+
+    /**
+     * Submit the refund for [InvoiceSearchViewModel.refundTarget].
+     * [lineItemIds] non-null and non-empty requests a partial refund of just
+     * those lines; null/empty refunds the entire invoice. On success,
+     * dismisses the dialog and re-syncs the cache so the row picks up
+     * is_refunded=true (and, for a full refund, the paid-invoice search list
+     * elsewhere already reflects the new refund invoice on its own next sync).
+     */
+    fun submitRefund(lineItemIds: List<String>?) {
+        val invoice = _refundTarget.value ?: return
+        _isRefunding.value = true
+        _refundError.value = null
+        viewModelScope.launch {
+            runCatching { invoiceRepo.refund(invoice.id, lineItemIds) }
+                .onSuccess {
+                    _isRefunding.value = false
+                    dismissRefundDialog()
+                    refreshFromServer()
+                }
+                .onFailure { e ->
+                    _isRefunding.value = false
+                    _refundError.value = e.message ?: "Could not process refund"
+                }
         }
     }
 

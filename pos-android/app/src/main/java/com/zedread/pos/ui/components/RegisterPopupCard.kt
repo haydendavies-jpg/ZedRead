@@ -70,14 +70,20 @@ fun RegisterPopupCard(
             modifier = Modifier
                 .widthIn(max = maxWidth)
                 .fillMaxWidth(0.92f)
-                .fillMaxHeight(0.85f)
+                // Denomination-grid variant gets nearly the full height budget —
+                // its 11-row list is the tallest content this card ever hosts, and
+                // the previous 0.85f cap forced it to scroll on anything short of
+                // a large tablet (user-testing feedback: cash-in/cash-up should
+                // never need to scroll). Bulk-total entry doesn't need the extra
+                // room but fitting it inside a taller card is harmless.
+                .fillMaxHeight(if (maxWidth > 480.dp) 0.96f else 0.85f)
                 .clip(RoundedCornerShape(18.dp))
                 .background(colors.surface),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 Column {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(20.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
@@ -113,12 +119,12 @@ fun RegisterPopupCard(
                         .fillMaxWidth()
                         .imePadding()
                         .verticalScroll(rememberScrollState())
-                        .padding(PaddingValues(horizontal = 22.dp, vertical = 18.dp)),
+                        .padding(PaddingValues(horizontal = 22.dp, vertical = 10.dp)),
                     content = content,
                 )
                 Column {
                     HorizontalDivider(color = colors.border)
-                    Box(modifier = Modifier.padding(16.dp)) { footer() }
+                    Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) { footer() }
                 }
             }
         }

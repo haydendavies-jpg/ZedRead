@@ -11,12 +11,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -27,7 +29,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,11 +52,13 @@ import com.zedread.pos.ui.viewmodel.TopBarViewModel
 
 /**
  * Searchable list of every setting resolved for this terminal's site.
- * Boolean and single-select settings are editable locally at the till; a
- * per-row "Save as default" pushes the edit back to become the site's
- * backend override (Manager+ access profile only — see
- * SettingsViewModel/SettingsRepository). Other setting types (datetime,
- * multi-select — neither has a real catalog entry yet) render read-only.
+ * Boolean and single-select settings are editable locally at the till and
+ * take effect immediately on this device without touching the backend at
+ * all; a single "Push changes" bar at the bottom (Manager+ access profile
+ * only — see SettingsViewModel/SettingsRepository) sends every outstanding
+ * local edit back to become the site's backend default in one action. Other
+ * setting types (datetime, multi-select — neither has a real catalog entry
+ * yet) render read-only.
  */
 @Composable
 fun SettingsScreen(
@@ -67,12 +70,21 @@ fun SettingsScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val search by viewModel.search.collectAsState()
-    val savingKeys by viewModel.savingKeys.collectAsState()
+    val localEdits by viewModel.localEdits.collectAsState()
+    val isPushing by viewModel.isPushing.collectAsState()
     val saveError by viewModel.saveError.collectAsState()
     val canPushDefaults by viewModel.canPushDefaults.collectAsState()
     val deviceName by topBarViewModel.deviceName.collectAsState()
     val isOnline by syncViewModel.isOnline.collectAsState()
     val pendingCount by syncViewModel.pendingCount.collectAsState()
+
+    // Only counts edits that actually differ from the last-loaded value —
+    // matches SettingsViewModel.isDirty's own per-row definition (reimplemented
+    // here against the *observed* localEdits state rather than calling into
+    // isDirty's own unobserved StateFlow snapshot, so this recomposes when an
+    // edit comes or goes rather than only on the next unrelated recomposition).
+    val readySettings = (state as? SettingsUiState.Ready)?.settings.orEmpty()
+    val dirtyCount = readySettings.count { s -> localEdits.containsKey(s.key) && localEdits[s.key] != s.effectiveValue }
 
     Column(modifier = Modifier.fillMaxSize()) {
         PosTopBar(
@@ -90,7 +102,7 @@ fun SettingsScreen(
                 Icon(Icons.Default.Refresh, contentDescription = "Refresh settings", tint = Color.White)
             }
         }
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
             OutlinedTextField(
                 value = search,
                 onValueChange = viewModel::setSearch,
@@ -138,15 +150,38 @@ fun SettingsScreen(
                                     setting = setting,
                                     value = viewModel.displayValue(setting),
                                     isDirty = viewModel.isDirty(setting),
-                                    isSaving = setting.key in savingKeys,
                                     canPushDefaults = canPushDefaults,
                                     onValueChange = { viewModel.setLocalValue(setting.key, it) },
-                                    onSaveAsDefault = { viewModel.saveAsDefault(setting.key) },
                                 )
                                 HorizontalDivider()
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // Single push action for every outstanding local edit at once —
+        // replaces a previous per-row "Save as default" button per
+        // user-testing feedback, so it's unambiguous that a change stays
+        // purely local until this is tapped. Only rendered for a role that
+        // can actually push (canPushDefaults) and only while something is
+        // dirty — other roles' edits still apply locally the moment
+        // they're toggled (see SettingRow's "Applied to this device" note).
+        if (canPushDefaults && dirtyCount > 0) {
+            HorizontalDivider()
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "$dirtyCount unsaved change${if (dirtyCount == 1) "" else "s"}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                Button(onClick = viewModel::pushAllDefaults, enabled = !isPushing) {
+                    Text(if (isPushing) "Pushing…" else "Push changes")
                 }
             }
         }
@@ -166,10 +201,8 @@ private fun SettingRow(
     setting: SettingDto,
     value: Any?,
     isDirty: Boolean,
-    isSaving: Boolean,
     canPushDefaults: Boolean,
     onValueChange: (Any?) -> Unit,
-    onSaveAsDefault: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Row(
@@ -188,30 +221,26 @@ private fun SettingRow(
             SettingValueEditor(setting = setting, value = value, onValueChange = onValueChange)
         }
         if (isDirty) {
-            if (canPushDefaults) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onSaveAsDefault, enabled = !isSaving) {
-                        Text(if (isSaving) "Saving…" else "Save as default")
-                    }
-                }
-            } else {
-                // The value already applies to THIS device the moment it's
-                // toggled (SettingsRepository.applyLocalOverride — every
-                // other reader of the settings cache, e.g. CashIn/CashUp's
-                // cash_in_mode, sees it immediately) regardless of role; only
-                // pushing it as every device's shared default is gated to
-                // the three system tiers allowed to write to the server
-                // (Master User/Admin/Manager — see app/routes/settings.py's
-                // _POS_SETTINGS_WRITE_PROFILE_NAMES). Previously this read as
-                // "I can't change POS settings" with no clarification that
-                // the change was, in fact, already in effect here.
-                Text(
-                    "Applied to this device. Ask a Manager or Admin to make it every device's default.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
+            // The value already applies to THIS device the moment it's
+            // toggled (SettingsRepository.applyLocalOverride — every other
+            // reader of the settings cache, e.g. CashIn/CashUp's
+            // cash_in_mode, sees it immediately) regardless of role.
+            // Pushing it as every device's shared default is a single
+            // explicit action covering every dirty row at once — see the
+            // "Push changes" bar at the bottom of the screen, gated to the
+            // three system tiers allowed to write to the server (Master
+            // User/Admin/Manager — see app/routes/settings.py's
+            // _POS_SETTINGS_WRITE_PROFILE_NAMES).
+            Text(
+                if (canPushDefaults) {
+                    "Applied to this device. Unsaved — use \"Push changes\" below to make it every device's default."
+                } else {
+                    "Applied to this device. Ask a Manager or Admin to make it every device's default."
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
     }
 }
@@ -229,7 +258,7 @@ private fun SettingValueEditor(setting: SettingDto, value: Any?, onValueChange: 
 /**
  * A single-select value control styled as an obvious dropdown (bordered
  * pill + a "▾" arrow, matching OrderEntryScreen's MenuSelectorRow
- * convention) — previously a bare [TextButton] with no border/affordance,
+ * convention) — previously a bare text button with no border/affordance,
  * user-testing feedback that it wasn't obvious this was tappable at all.
  * Option/value text is capitalized for display — the raw catalog values
  * (e.g. "denomination") are lowercase machine identifiers, not meant to be

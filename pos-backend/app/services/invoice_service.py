@@ -80,6 +80,15 @@ class InvoiceResponse(BaseModel):
     created_at: datetime
     client_ref: str | None = None
     checksum: str | None = None
+    # Distinct payment methods recorded against this invoice (e.g. ["cash",
+    # "card"] for a split payment) — powers the Register's invoice history
+    # list, which shows payment method(s) as a per-row column. Not populated
+    # by from_attributes (Invoice has no such ORM attribute); list_invoices()'s
+    # route caller fills this in via get_payment_methods_by_invoice() after
+    # the fact, same pattern as invoice_report_service.InvoiceReportRow's own
+    # payment_methods field. Defaults to empty for every other InvoiceResponse
+    # call site (create/pay/discount/void/refund), which don't need it.
+    payment_methods: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -337,6 +346,41 @@ async def list_invoices(
         query = query.where(Invoice.status == invoice_status)
     result = await db.execute(query.order_by(Invoice.created_at.desc()).offset(skip).limit(limit))
     return list(result.scalars().all())
+
+
+async def get_payment_methods_by_invoice(
+    db: AsyncSession, invoice_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[str]]:
+    """
+    Resolve each invoice's distinct payment methods (e.g. ["cash", "card"]
+    for a split payment) for a batch of invoices.
+
+    Powers the Register's invoice history list, which shows payment
+    method(s) as a per-row column (InvoiceResponse.payment_methods) —
+    mirrors invoice_report_service's own payment_methods resolution for the
+    management portal's Invoices table, but via a plain query rather than
+    that module's raw-SQL view (this module is ORM-only per CLAUDE.md rule 6).
+
+    Args:
+        db: Active database session.
+        invoice_ids: Invoice ids to resolve payment methods for.
+
+    Returns:
+        dict[uuid.UUID, list[str]]: invoice_id -> sorted distinct payment
+            methods actually recorded (an id with no payments, e.g. an
+            unpaid/held invoice, is simply absent from the dict).
+    """
+    if not invoice_ids:
+        return {}
+    result = await db.execute(
+        select(Payment.invoice_id, Payment.method)
+        .where(Payment.invoice_id.in_(invoice_ids))
+        .distinct()
+    )
+    methods_by_invoice: dict[uuid.UUID, list[str]] = defaultdict(list)
+    for invoice_id, method in result.all():
+        methods_by_invoice[invoice_id].append(method)
+    return {invoice_id: sorted(methods) for invoice_id, methods in methods_by_invoice.items()}
 
 
 async def list_line_items(

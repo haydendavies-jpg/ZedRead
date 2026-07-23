@@ -333,7 +333,7 @@ private fun CashTabContent(
                 presets.drop(3).forEach { preset -> TenderPresetTile(preset, state.tendered == preset, Modifier.weight(1f)) { onPickTender(preset) } }
             }
         }
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(16.dp))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -366,6 +366,25 @@ private fun CashTabContent(
                     color = if (state.tendered > 0 && state.tendered >= remainingCents) colors.green else colors.faint,
                 )
             }
+        }
+        Spacer(Modifier.height(14.dp))
+        // Pinpad for typing an exact tendered amount — previously only shown
+        // once Split was toggled on, per user-testing feedback it should be
+        // available by default so a cashier isn't limited to the preset
+        // tiles for an amount that doesn't match one. Digit-shift entry
+        // (each press shifts state.tendered left a decimal place and adds
+        // the digit, like a calculator) rather than a separate text buffer —
+        // that keeps a single source of truth so a preset tap and a typed
+        // digit both just read/write state.tendered, with neither able to
+        // go stale relative to the other.
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxWidth()) {
+            NumericKeypad(
+                showDecimal = false,
+                onDigit = { digit -> onPickTender(state.tendered * 10 + (digit - '0')) },
+                onBackspace = { onPickTender(state.tendered / 10) },
+                modifier = Modifier.weight(1f),
+            )
+            QuickCashColumn(onPick = { amount -> onPickTender(state.tendered + amount) }, modifier = Modifier.width(96.dp))
         }
         Spacer(Modifier.height(16.dp))
         PrimaryActionButton(

@@ -140,7 +140,8 @@ object DatabaseModule {
             // add, and the 7->8 hop (new product_modifier_cache table) is the same call again —
             // both re-derivable tables it touches refill themselves on the next sync/tap. The 8->9
             // hop (saved_printers) is a real migration above, NOT covered by this fallback — see
-            // MIGRATION_8_9's own doc for why.
+            // MIGRATION_8_9's own doc for why. The 9->10 hop (invoice_cache.is_refunded) falls
+            // through here again, same reasoning as 5->6/7->8.
             .fallbackToDestructiveMigration()
             .build()
 

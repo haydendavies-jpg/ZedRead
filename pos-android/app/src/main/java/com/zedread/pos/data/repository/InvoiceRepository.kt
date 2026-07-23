@@ -9,6 +9,7 @@ import com.zedread.pos.data.api.LineItemDto
 import com.zedread.pos.data.api.LineModifierDto
 import com.zedread.pos.data.api.PaymentRequest
 import com.zedread.pos.data.api.PosApiService
+import com.zedread.pos.data.api.RefundRequest
 import com.zedread.pos.data.api.UpdateLineItemQuantityRequest
 import com.zedread.pos.data.local.TokenStore
 import com.zedread.pos.data.local.dao.InvoiceCacheDao
@@ -88,6 +89,15 @@ class InvoiceRepository @Inject constructor(
     suspend fun applyDiscount(invoiceId: String, discountCents: Long, reason: String? = null): InvoiceDto =
         api.applyDiscount(requireBearer(), invoiceId, ApplyDiscountRequest(discountCents, reason))
 
+    /**
+     * Refund a paid invoice — full, or partial by line item. Invoice Search's
+     * Refund action; [lineItemIds] non-null and non-empty requests a partial
+     * refund of just those lines (see RefundRequest's doc), null/empty is a
+     * full refund.
+     */
+    suspend fun refund(invoiceId: String, lineItemIds: List<String>? = null, reason: String? = null): InvoiceDto =
+        api.refundInvoice(requireBearer(), invoiceId, RefundRequest(lineItemIds, reason))
+
     // ── Invoice search cache (Android POS Phase 2) ──────────────────────────
 
     /** Filtered, most-recent-first search over the local invoice-history cache — works fully offline. */
@@ -117,11 +127,9 @@ class InvoiceRepository @Inject constructor(
                     totalCents = dto.totalCents,
                     createdAtMillis = dto.createdAt?.let { OffsetDateTime.parse(it).toInstant().toEpochMilli() }
                         ?: System.currentTimeMillis(),
-                    // Payment method isn't returned by GET /invoices (per-invoice, not
-                    // per-payment) — only known for sales rung up on this device, see
-                    // InvoiceCacheEntity's doc.
-                    paymentMethod = null,
+                    paymentMethod = dto.paymentMethods.joinToString(", ").ifBlank { null },
                     isSynced = true,
+                    isRefunded = dto.isRefunded,
                 )
             }
         )

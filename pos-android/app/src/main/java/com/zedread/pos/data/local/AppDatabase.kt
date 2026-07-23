@@ -28,6 +28,10 @@ import com.zedread.pos.data.local.entity.SavedPrinterEntity
  * v9) is NOT re-derivable — a printer's pairing (and its MAC-keyed IP
  * recovery history) must survive an app update, so it goes through
  * [DatabaseModule]'s explicit `MIGRATION_8_9`, same as `outbox_items`.
+ * `invoice_cache.is_refunded` (added v10) touches only the re-derivable
+ * `invoice_cache` table, so it falls through to
+ * [DatabaseModule.provideDatabase]'s `fallbackToDestructiveMigration`, same
+ * as every other `invoice_cache`/products/categories-only column add.
  */
 @Database(
     entities = [
@@ -38,7 +42,7 @@ import com.zedread.pos.data.local.entity.SavedPrinterEntity
         ProductModifierCacheEntity::class,
         SavedPrinterEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -207,6 +207,18 @@ interface PosApiService {
         @Body body: ApplyDiscountRequest,
     ): InvoiceDto
 
+    /**
+     * POST /invoices/{id}/refund — create a refund invoice for a paid
+     * invoice, full or partial (see [RefundRequest]'s doc). Requires an open
+     * register session on this device, same as any other invoice write.
+     */
+    @POST("invoices/{id}/refund")
+    suspend fun refundInvoice(
+        @Header("Authorization") bearer: String,
+        @Path("id") invoiceId: String,
+        @Body body: RefundRequest,
+    ): InvoiceDto
+
     // ── Settings ────────────────────────────────────────────────────────────
 
     /** GET /pos/settings — every setting resolved for this terminal's own site, optionally search-filtered. */
