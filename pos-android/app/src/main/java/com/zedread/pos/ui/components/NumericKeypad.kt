@@ -146,3 +146,23 @@ fun keypadAppendCountDigit(current: String, digit: Char, maxDigits: Int = 4): St
 
 /** Removes the last character, or leaves an already-empty value untouched. */
 fun keypadBackspace(current: String): String = if (current.isEmpty()) current else current.dropLast(1)
+
+/**
+ * Round to the nearest 5 cents — Australian cash-rounding convention (no
+ * 1c/2c coins in circulation): amounts ending 1-2 round down, 3-4 round up
+ * to the next 5, 6-7 round down to the nearest 5, 8-9 round up to the next
+ * 10. Applies only to what's physically handed over/back in cash (a cash
+ * tender preset, a "change" figure) — never to the amount actually recorded
+ * against the invoice, which stays cent-accurate. Shared between
+ * PaymentScreen's live Cash tab and SellViewModel's own final change
+ * calculation (the receipt-only "Change due" figure), hence living here
+ * with the other money-entry primitives rather than in either call site.
+ */
+fun roundToNearest5Cents(cents: Long): Long = ((cents + 2) / 5) * 5
+
+/** Format a "$" amount string (dollars.cents, no leading '$') from integer cents — the inverse of the dollarsToCents helpers scattered per-screen. */
+fun centsToDollarsInputString(cents: Long): String {
+    val dollars = cents / 100
+    val remainder = cents % 100
+    return "$dollars.${remainder.toString().padStart(2, '0')}"
+}

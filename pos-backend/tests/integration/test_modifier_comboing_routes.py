@@ -88,6 +88,41 @@ async def test_detailed_listing_includes_linked_group(client, pos_auth_headers, 
     assert option["linked_groups"][0]["is_first_option_default_selected"] is False
 
 
+async def test_detailed_listing_nests_a_linked_group_linked_to_another_group(client, pos_auth_headers, test_brand):
+    """
+    A linked group's own option can itself link to a further group — the
+    chain has no fixed depth. GET /modifier-groups/detailed must recurse
+    through _resolve_linked_groups() to surface the whole chain, not just
+    one level: Deal (Make it a combo) -> Drinks Side (Cola) -> Cola Size (Large).
+    """
+    size_group_id, _ = await _create_group_with_option(client, pos_auth_headers, "Cola Size", "Large")
+    drinks_group_id, cola_option_id = await _create_group_with_option(client, pos_auth_headers, "Drinks Side", "Cola")
+    await client.post(
+        f"/modifier-options/{cola_option_id}/links", json={"linked_group_id": size_group_id}, headers=pos_auth_headers
+    )
+    parent_group_id, combo_option_id = await _create_group_with_option(client, pos_auth_headers, "Deal", "Make it a combo")
+    await client.post(
+        f"/modifier-options/{combo_option_id}/links", json={"linked_group_id": drinks_group_id}, headers=pos_auth_headers
+    )
+
+    response = await client.get(
+        "/modifier-groups/detailed", params={"brand_id": str(test_brand.id)}, headers=pos_auth_headers
+    )
+    assert response.status_code == 200
+    parent = next(g for g in response.json() if g["id"] == parent_group_id)
+    combo_option = next(o for o in parent["options"] if o["id"] == combo_option_id)
+    drinks_group = combo_option["linked_groups"][0]
+    assert drinks_group["id"] == drinks_group_id
+    cola_option = drinks_group["options"][0]
+    assert cola_option["name"] == "Cola"
+    # The second level of nesting — Cola's own linked_groups must carry the
+    # Cola Size group, not stop at the first level like before this test.
+    assert len(cola_option["linked_groups"]) == 1
+    size_group = cola_option["linked_groups"][0]
+    assert size_group["id"] == size_group_id
+    assert size_group["options"][0]["name"] == "Large"
+
+
 async def test_unlink_option_group_removes_link(client, pos_auth_headers, test_brand):
     """DELETE /modifier-options/{id}/links/{group_id} removes the comboing link."""
     combo_group_id, _ = await _create_group_with_option(client, pos_auth_headers, "Extras Side", "Nuggets")

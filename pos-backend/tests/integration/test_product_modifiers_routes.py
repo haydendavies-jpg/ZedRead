@@ -259,7 +259,7 @@ async def test_list_product_modifiers_detailed_returns_options(
 async def test_list_product_modifiers_detailed_includes_linked_groups(
     client, pos_auth_headers, test_product
 ):
-    """GET /products/{id}/modifiers/detailed nests an option's comboing links, one level deep."""
+    """GET /products/{id}/modifiers/detailed nests an option's comboing links."""
     group_id = await _create_group(client, pos_auth_headers, "Burger Type", max_selections=1)
     opt_resp = await client.post(
         f"/modifier-groups/{group_id}/options",
@@ -305,6 +305,61 @@ async def test_list_product_modifiers_detailed_includes_linked_groups(
     assert len(linked["options"]) == 1
     assert linked["options"][0]["id"] == side_option_id
     assert linked["is_first_option_default_selected"] is False
+
+
+async def test_list_product_modifiers_detailed_nests_linked_group_of_a_linked_group(
+    client, pos_auth_headers, test_product
+):
+    """A linked group's own option can link into a further group — GET .../modifiers/detailed recurses, not just one level."""
+    group_id = await _create_group(client, pos_auth_headers, "Burger Type 2", max_selections=1)
+    opt_resp = await client.post(
+        f"/modifier-groups/{group_id}/options",
+        json={"name": "Combo", "price_delta_cents": 300},
+        headers=pos_auth_headers,
+    )
+    option_id = opt_resp.json()["id"]
+
+    side_group_id = await _create_group(client, pos_auth_headers, "Choose a Drink", max_selections=1)
+    drink_opt_resp = await client.post(
+        f"/modifier-groups/{side_group_id}/options",
+        json={"name": "Cola", "price_delta_cents": 0},
+        headers=pos_auth_headers,
+    )
+    drink_option_id = drink_opt_resp.json()["id"]
+
+    size_group_id = await _create_group(client, pos_auth_headers, "Cola Size 2", max_selections=1)
+    size_opt_resp = await client.post(
+        f"/modifier-groups/{size_group_id}/options",
+        json={"name": "Large", "price_delta_cents": 50},
+        headers=pos_auth_headers,
+    )
+    assert size_opt_resp.status_code == 201
+
+    await client.post(
+        f"/modifier-options/{drink_option_id}/links",
+        json={"linked_group_id": size_group_id},
+        headers=pos_auth_headers,
+    )
+    await client.post(
+        f"/modifier-options/{option_id}/links",
+        json={"linked_group_id": side_group_id},
+        headers=pos_auth_headers,
+    )
+    await client.post(
+        f"/products/{test_product.id}/modifiers",
+        json={"modifier_group_id": group_id, "display_order": 0},
+        headers=pos_auth_headers,
+    )
+
+    resp = await client.get(f"/products/{test_product.id}/modifiers/detailed", headers=pos_auth_headers)
+    assert resp.status_code == 200
+    group = next(g for g in resp.json() if g["id"] == group_id)
+    option = next(o for o in group["options"] if o["id"] == option_id)
+    drink_option = option["linked_groups"][0]["options"][0]
+    assert drink_option["id"] == drink_option_id
+    assert len(drink_option["linked_groups"]) == 1
+    assert drink_option["linked_groups"][0]["id"] == size_group_id
+    assert drink_option["linked_groups"][0]["options"][0]["name"] == "Large"
 
 
 async def test_list_product_modifiers_detailed_excludes_unattached_groups(

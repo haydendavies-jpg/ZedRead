@@ -78,6 +78,12 @@ data class SyncPaymentLeg(
 data class SyncSalePayload(
     val lines: List<OutboxSaleLine>,
     val payments: List<SyncPaymentLeg> = emptyList(),
+    // A manual discount applied at the Register before Hold/Pay (see
+    // SellViewModel's Discount button) — applied server-side after the
+    // lines are added and before any payment leg, so the payment total the
+    // worker submits already reflects it.
+    @Json(name = "discount_cents") val discountCents: Long = 0,
+    @Json(name = "discount_reason") val discountReason: String? = null,
 )
 
 /**

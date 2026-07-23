@@ -381,6 +381,29 @@ to `#332E29` (the portal's own dark-mode `--zr-sidebar`) with white content thro
 not built this round, flagged rather than silently dropped: caching modifier definitions locally
 (the customise sheet still needs connectivity) and a "recall a held order" list on the device.
 
+**Android POS payment/cash/invoice — user-testing round 5 (complete).** Thirteen reported gaps
+against the Android app plus two portal Invoices-table gaps — see `STAGE_STATUS.md`'s matching entry
+for full detail. Notables: the Cash count screen is a single full-width denomination column with the
+pinpad beside it (not underneath) in a wider popup card, replacing the cramped two-column split;
+modifier "comboing" now recurses to unlimited depth on both backend (`_resolve_linked_groups()`) and
+Android (`ModifierPathStep`-addressed nested toggling) instead of the prior hard one-level cap; the
+split-payment pinpad prefills with the exact amount due and gained $10/$20/$50/$100 quick-cash
+buttons that add onto the current figure; a new Held Orders overlay lists a site's open invoices to
+recall onto the current cart (`GET /invoices?status=`/`GET /invoices/{id}/line-items` are new;
+recalling and its follow-up Hold/Pay are online-only, and only newly-added lines sync back — editing
+or removing an already-held line doesn't, a flagged gap); a Discount button above Hold/Pay applies a
+capped $ or % discount, threaded through the outbox payload; cash tender/change figures round to the
+nearest 5c (Australian cash-rounding) for display only, never the recorded ledger amount; the invoice
+list only flags a sale as "Pending sync" after 5 minutes unsynced instead of instantly, since a sale
+already syncs within milliseconds under normal conditions; `create_refund()` gained an optional
+partial-by-line-item mode plus a new portal-facing `POST /invoice-reports/{id}/refund` (the POS
+terminal's own refund route is unaffected), and `InvoicesPage.tsx` gained a payment-method column, a
+renamed "Invoice #" header, click-to-expand line items, a sticky page-total footer row, and a Refund
+action; and the real Settings bug — a locally-edited setting only ever changed the Settings screen's
+own display, never actually taking effect anywhere else in the app — is fixed by having
+`SettingsRepository.applyLocalOverride()` patch the shared settings cache immediately regardless of
+role, with pushing a change as every device's shared default remaining Manager+-gated as before.
+
 ## Folder structure (backend)
 ```
 pos-backend/

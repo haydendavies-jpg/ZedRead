@@ -190,20 +190,20 @@ private fun SettingRow(
                     }
                 }
             } else {
-                // Previously just silently omitted the Save button with no
-                // explanation — read by testers as "I can't change POS
-                // settings" with no indication why. The value still flips
-                // locally (SettingsViewModel.setLocalValue) so the control
-                // itself isn't broken; this account's access profile just
-                // isn't one of the three system tiers allowed to push a
-                // change back to the server (Master User/Admin/Manager —
-                // see app/routes/settings.py's
-                // _POS_SETTINGS_WRITE_PROFILE_NAMES) — Staff/Reporting Only
-                // and any custom profile can view but not save from here.
+                // The value already applies to THIS device the moment it's
+                // toggled (SettingsRepository.applyLocalOverride — every
+                // other reader of the settings cache, e.g. CashIn/CashUp's
+                // cash_in_mode, sees it immediately) regardless of role; only
+                // pushing it as every device's shared default is gated to
+                // the three system tiers allowed to write to the server
+                // (Master User/Admin/Manager — see app/routes/settings.py's
+                // _POS_SETTINGS_WRITE_PROFILE_NAMES). Previously this read as
+                // "I can't change POS settings" with no clarification that
+                // the change was, in fact, already in effect here.
                 Text(
-                    "Your role can't save settings changes — ask a Manager or Admin to update this.",
+                    "Applied to this device. Ask a Manager or Admin to make it every device's default.",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }

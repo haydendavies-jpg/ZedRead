@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.List as ListIcon
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -67,6 +68,7 @@ import com.zedread.pos.ui.theme.ZedReadColors
 import com.zedread.pos.ui.theme.contrastTextColor
 import com.zedread.pos.ui.theme.parseHexColor
 import com.zedread.pos.ui.viewmodel.CartActionState
+import com.zedread.pos.ui.viewmodel.HeldOrdersViewModel
 import com.zedread.pos.ui.viewmodel.ModifierSheetState
 import com.zedread.pos.ui.viewmodel.OrderType
 import com.zedread.pos.ui.viewmodel.SellViewModel
@@ -99,6 +101,7 @@ fun OrderEntryScreen(
     viewModel: SellViewModel = hiltViewModel(),
     syncViewModel: SyncViewModel = hiltViewModel(),
     topBarViewModel: TopBarViewModel = hiltViewModel(),
+    heldOrdersViewModel: HeldOrdersViewModel = hiltViewModel(),
 ) {
     val colors = LocalZedReadColors.current
     val deviceName by topBarViewModel.deviceName.collectAsState()
@@ -106,6 +109,7 @@ fun OrderEntryScreen(
     val products by viewModel.products.collectAsState()
     val selectedCatId by viewModel.selectedCategoryId.collectAsState()
     val lineItems by viewModel.lineItems.collectAsState()
+    val discountCents by viewModel.discountCents.collectAsState()
     val cartActionState by viewModel.cartActionState.collectAsState()
     val ticketNumber by viewModel.ticketNumber.collectAsState()
     val orderType by viewModel.orderType.collectAsState()
@@ -125,6 +129,8 @@ fun OrderEntryScreen(
     val pendingCount by syncViewModel.pendingCount.collectAsState()
     val syncItems by syncViewModel.items.collectAsState()
     var showSyncPanel by remember { mutableStateOf(false) }
+    var showDiscountDialog by remember { mutableStateOf(false) }
+    var showHeldOrders by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().background(colors.bg)) {
@@ -140,6 +146,9 @@ fun OrderEntryScreen(
                 // Fixed white, not colors.muted — this row renders inside PosTopBar's
                 // own always-dark (#332E29) background, not the theme-aware surface
                 // these screens otherwise sit on.
+                IconButton(onClick = { showHeldOrders = true; heldOrdersViewModel.refresh() }) {
+                    Icon(ListIcon, contentDescription = "Held orders", tint = Color.White)
+                }
                 IconButton(onClick = onInvoiceSearch) {
                     Icon(Icons.Default.History, contentDescription = "Invoice search", tint = Color.White)
                 }
@@ -229,8 +238,10 @@ fun OrderEntryScreen(
                     onQuantityChange = viewModel::setLineQuantity,
                     subtotalCents = viewModel.subtotalCents,
                     taxCents = viewModel.taxCents,
+                    discountCents = discountCents,
                     totalCents = viewModel.totalCents,
                     onClearOrder = viewModel::clearOrder,
+                    onDiscount = { showDiscountDialog = true },
                     onHold = viewModel::holdOrder,
                     onPay = viewModel::openPayment,
                     errorMessage = (cartActionState as? CartActionState.Error)?.message,
@@ -238,12 +249,33 @@ fun OrderEntryScreen(
             }
         }
 
+        if (showDiscountDialog) {
+            DiscountDialog(
+                baseCents = viewModel.subtotalCents + viewModel.taxCents,
+                currentDiscountCents = discountCents,
+                onDismiss = { showDiscountDialog = false },
+                onApply = { cents -> viewModel.setDiscount(cents); showDiscountDialog = false },
+                onRemove = { viewModel.clearDiscount(); showDiscountDialog = false },
+            )
+        }
+
+        if (showHeldOrders) {
+            HeldOrdersOverlay(
+                viewModel = heldOrdersViewModel,
+                onDismiss = { showHeldOrders = false },
+                onRecall = { invoiceId ->
+                    viewModel.recallHeldOrder(invoiceId)
+                    showHeldOrders = false
+                },
+            )
+        }
+
         if (modifierSheetState !is ModifierSheetState.Closed) {
             ModifierSheetOverlay(
                 state = modifierSheetState,
                 onDismiss = viewModel::closeModifierSheet,
                 onToggleChoice = viewModel::toggleModifierChoice,
-                onToggleLinkedChoice = viewModel::toggleLinkedChoice,
+                onToggleNested = viewModel::toggleNestedModifierChoice,
                 onQtyDec = { viewModel.changeModifierSheetQuantity(-1) },
                 onQtyInc = { viewModel.changeModifierSheetQuantity(1) },
                 onConfirm = viewModel::confirmModifierSheet,
@@ -583,8 +615,10 @@ private fun OrderPane(
     onQuantityChange: (String, Int) -> Unit,
     subtotalCents: Long,
     taxCents: Long,
+    discountCents: Long,
     totalCents: Long,
     onClearOrder: () -> Unit,
+    onDiscount: () -> Unit,
     onHold: () -> Unit,
     onPay: () -> Unit,
     errorMessage: String?,
@@ -694,13 +728,38 @@ private fun OrderPane(
         Column(modifier = Modifier.padding(16.dp)) {
             TotalsRow("Subtotal", subtotalCents, colors)
             TotalsRow("GST (incl. 10%)", taxCents, colors)
+            if (discountCents > 0) {
+                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Discount", color = colors.accent, style = MaterialTheme.typography.bodySmall)
+                    Text("−${formatCents(discountCents)}", color = colors.accent, style = MaterialTheme.typography.bodySmall)
+                }
+            }
             Spacer(Modifier.height(6.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Total", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = colors.text)
                 Text(formatCents(totalCents), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall, color = colors.text)
             }
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(40.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .border(width = 1.dp, color = colors.inputBorder, shape = RoundedCornerShape(9.dp))
+                    .clickable(enabled = lineItems.isNotEmpty(), onClick = onDiscount),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    if (discountCents > 0) "Edit discount" else "Discount",
+                    color = if (lineItems.isNotEmpty()) colors.text else colors.faint,
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 Box(

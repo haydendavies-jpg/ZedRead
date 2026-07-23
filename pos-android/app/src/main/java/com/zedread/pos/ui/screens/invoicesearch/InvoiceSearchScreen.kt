@@ -22,8 +22,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -39,6 +41,7 @@ import com.zedread.pos.ui.viewmodel.DateRangeFilter
 import com.zedread.pos.ui.viewmodel.InvoiceSearchViewModel
 import com.zedread.pos.ui.viewmodel.SyncViewModel
 import com.zedread.pos.ui.viewmodel.TopBarViewModel
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -121,15 +124,33 @@ fun InvoiceSearchScreen(
                 Text("No invoices match these filters.", color = colors.muted)
             }
         } else {
+            // A sale syncs within milliseconds under normal conditions (the
+            // outbox requests an immediate drain the moment it's queued —
+            // see OutboxRepository.enqueueSale) — a brand-new unsynced row
+            // is the ordinary in-flight case, not a problem, so it shouldn't
+            // read as one. "Pending sync" only appears once a row has stayed
+            // unsynced for PENDING_GRACE_MILLIS; [nowMillis] ticks on a timer
+            // so a row already on screen flips over on its own once that
+            // threshold passes, without needing a fresh DB emission.
+            var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+            LaunchedEffect(Unit) {
+                while (true) {
+                    delay(30_000)
+                    nowMillis = System.currentTimeMillis()
+                }
+            }
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 items(results, key = { it.id }) { invoice ->
-                    InvoiceRow(invoice)
+                    InvoiceRow(invoice, nowMillis)
                     HorizontalDivider(color = colors.border)
                 }
             }
         }
     }
 }
+
+/** How long an unsynced invoice is treated as "still syncing" before the list flags it as genuinely pending. */
+private const val PENDING_GRACE_MILLIS = 5 * 60 * 1000L
 
 /**
  * A labelled dropdown select — replaces the earlier horizontally-scrolling
@@ -177,7 +198,7 @@ private fun <T> FilterDropdown(
 }
 
 @Composable
-private fun InvoiceRow(invoice: InvoiceCacheEntity) {
+private fun InvoiceRow(invoice: InvoiceCacheEntity, nowMillis: Long) {
     val colors = LocalZedReadColors.current
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -203,11 +224,16 @@ private fun InvoiceRow(invoice: InvoiceCacheEntity) {
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(formatCentsDollars(invoice.totalCents), style = MaterialTheme.typography.bodyLarge, color = colors.text)
-            Text(
-                if (invoice.isSynced) "Synced" else "Pending sync",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (invoice.isSynced) colors.green else colors.accent,
-            )
+            // A fresh unsynced row (still within the grace window) is the
+            // ordinary in-flight case — see the LazyColumn's own doc — so it
+            // reads as "Syncing…", not an alarming "Pending sync"; that
+            // label is reserved for a row that's genuinely stuck.
+            val isStale = !invoice.isSynced && (nowMillis - invoice.createdAtMillis) >= PENDING_GRACE_MILLIS
+            when {
+                invoice.isSynced -> Text("Synced", style = MaterialTheme.typography.labelSmall, color = colors.green)
+                isStale -> Text("Pending sync", style = MaterialTheme.typography.labelSmall, color = colors.accent)
+                else -> Text("Syncing…", style = MaterialTheme.typography.labelSmall, color = colors.muted)
+            }
         }
     }
 }

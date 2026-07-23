@@ -40,6 +40,7 @@ import com.zedread.pos.ui.theme.ZedReadColors
 import com.zedread.pos.ui.theme.parseHexColor
 import com.zedread.pos.ui.viewmodel.LinkedGroupSelection
 import com.zedread.pos.ui.viewmodel.ModifierGroupSelection
+import com.zedread.pos.ui.viewmodel.ModifierPathStep
 import com.zedread.pos.ui.viewmodel.ModifierSheetState
 
 /**
@@ -64,7 +65,7 @@ fun ModifierSheetOverlay(
     state: ModifierSheetState,
     onDismiss: () -> Unit,
     onToggleChoice: (groupIndex: Int, optionIndex: Int) -> Unit,
-    onToggleLinkedChoice: (groupIndex: Int, optionIndex: Int, linkedGroupIndex: Int, linkedOptionIndex: Int) -> Unit,
+    onToggleNested: (groupIndex: Int, path: List<ModifierPathStep>, optionIndex: Int) -> Unit,
     onQtyDec: () -> Unit,
     onQtyInc: () -> Unit,
     onConfirm: () -> Unit,
@@ -114,7 +115,7 @@ fun ModifierSheetOverlay(
                                     groupIndex = groupIndex,
                                     gs = gs,
                                     onToggleChoice = onToggleChoice,
-                                    onToggleLinkedChoice = onToggleLinkedChoice,
+                                    onToggleNested = onToggleNested,
                                 )
                             }
                         }
@@ -181,7 +182,7 @@ private fun ModifierGroupBlock(
     groupIndex: Int,
     gs: ModifierGroupSelection,
     onToggleChoice: (Int, Int) -> Unit,
-    onToggleLinkedChoice: (Int, Int, Int, Int) -> Unit,
+    onToggleNested: (groupIndex: Int, path: List<ModifierPathStep>, optionIndex: Int) -> Unit,
 ) {
     val colors = LocalZedReadColors.current
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -208,14 +209,16 @@ private fun ModifierGroupBlock(
                 // Comboed groups nest directly beneath their owning option, only
                 // while it's selected — the inline-nested-cascade pattern the
                 // portal's own Modifiers page uses for the same "option 1" design.
+                // LinkedGroupBlock itself recurses further for a linked group
+                // whose own selected option carries yet another link — no fixed
+                // chain-depth limit, unlike the version this replaces.
                 if (selected) {
                     gs.linkedSelections[optionIndex]?.forEachIndexed { linkedGroupIndex, linked ->
                         LinkedGroupBlock(
                             linked = linked,
+                            path = listOf(ModifierPathStep(optionIndex, linkedGroupIndex)),
+                            onToggle = { path, targetOptionIndex -> onToggleNested(groupIndex, path, targetOptionIndex) },
                             modifier = Modifier.padding(start = 18.dp, top = 2.dp),
-                            onToggle = { linkedOptionIndex ->
-                                onToggleLinkedChoice(groupIndex, optionIndex, linkedGroupIndex, linkedOptionIndex)
-                            },
                         )
                     }
                 }
@@ -224,11 +227,20 @@ private fun ModifierGroupBlock(
     }
 }
 
+/**
+ * One linked ("combo") group's card, recursing into a further nested
+ * [LinkedGroupBlock] for any of its own options that are selected AND
+ * themselves carry further linked groups. [path] is this block's own
+ * address from the top-level group (see [ModifierPathStep]'s doc) — passed
+ * to [onToggle] verbatim when toggling one of THIS group's own options, and
+ * extended by one more step when recursing into a child.
+ */
 @Composable
 private fun LinkedGroupBlock(
     linked: LinkedGroupSelection,
+    path: List<ModifierPathStep>,
+    onToggle: (path: List<ModifierPathStep>, optionIndex: Int) -> Unit,
     modifier: Modifier = Modifier,
-    onToggle: (optionIndex: Int) -> Unit,
 ) {
     val colors = LocalZedReadColors.current
     Column(
@@ -250,13 +262,24 @@ private fun LinkedGroupBlock(
         Spacer(Modifier.height(8.dp))
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             linked.group.options.forEachIndexed { optionIndex, option ->
+                val optionSelected = linked.selected.contains(optionIndex)
                 ModifierChoiceRow(
                     label = option.name,
                     priceDeltaCents = option.priceDeltaCents,
-                    selected = linked.selected.contains(optionIndex),
+                    selected = optionSelected,
                     isSingleSelect = linked.isSingleSelect,
-                    onClick = { onToggle(optionIndex) },
+                    onClick = { onToggle(path, optionIndex) },
                 )
+                if (optionSelected) {
+                    linked.linkedSelections[optionIndex]?.forEachIndexed { nestedGroupIndex, nested ->
+                        LinkedGroupBlock(
+                            linked = nested,
+                            path = path + ModifierPathStep(optionIndex, nestedGroupIndex),
+                            onToggle = onToggle,
+                            modifier = Modifier.padding(start = 14.dp, top = 2.dp),
+                        )
+                    }
+                }
             }
         }
     }

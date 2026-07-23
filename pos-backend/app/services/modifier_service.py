@@ -113,15 +113,24 @@ class ModifierOptionLinkCreate(BaseModel):
 
 
 class LinkedGroupOptionOut(BaseModel):
-    """One option belonging to a linked (combo) group — flat, no further nesting."""
+    """
+    One option belonging to a linked (combo) group.
+
+    linked_groups lets THIS option itself expand into a further nested
+    group ("a linked modifier linked to a linked modifier") — the chain has
+    no fixed depth; a Register modifier sheet keeps expanding as long as an
+    option carries further links. Forward-referenced against LinkedGroupOut
+    below (mutual recursion) and resolved via model_rebuild() at module end.
+    """
 
     id: uuid.UUID
     name: str
     price_delta_cents: int
+    linked_groups: list["LinkedGroupOut"] = []
 
 
 class LinkedGroupOut(BaseModel):
-    """A modifier group linked from an option, with its own active options."""
+    """A modifier group linked from an option, with its own active options (each option may nest further — see LinkedGroupOptionOut)."""
 
     id: uuid.UUID
     name: str
@@ -129,6 +138,9 @@ class LinkedGroupOut(BaseModel):
     max_selections: int
     is_first_option_default_selected: bool
     options: list[LinkedGroupOptionOut]
+
+
+LinkedGroupOptionOut.model_rebuild()
 
 
 class ModifierOptionDetail(ModifierOptionResponse):
@@ -187,11 +199,12 @@ class ProductModifierOptionOut(BaseModel):
     """
     One active option belonging to a product's attached modifier group.
 
-    linked_groups carries this option's comboing links (one level deep, same
-    as list_modifier_groups_detailed) so the Register's modifier sheet can
-    expand a nested group inline when this option is selected — previously
-    omitted here as "not needed at the point of sale," reversed once POS
-    testing showed the sheet needs it to actually render a comboed option.
+    linked_groups carries this option's comboing links, arbitrarily deep
+    (see _resolve_linked_groups) so the Register's modifier sheet can expand
+    a nested group inline when this option is selected, and keep expanding
+    if THAT group's own options carry further links — previously omitted
+    here as "not needed at the point of sale," reversed once POS testing
+    showed the sheet needs it to actually render a comboed option.
     """
 
     id: uuid.UUID
@@ -735,16 +748,18 @@ async def list_product_modifiers_detailed(
 ) -> list[ProductModifierGroupDetailOut]:
     """
     Return a product's attached modifier groups, each with its full active
-    option list (including each option's one-level-deep comboing links) —
-    powers the POS Register's modifier customise sheet.
+    option list (including each option's comboing links, resolved to
+    unlimited depth via _resolve_linked_groups — a linked group's own
+    options may themselves link into further groups) — powers the POS
+    Register's modifier customise sheet.
 
     Unlike list_product_modifiers(), this never touches the brand's other
     (unattached) groups — the sheet only needs what a given product actually
     offers. Unlike list_modifier_groups_detailed(), it skips used_by_count
     (not needed at the point of sale) and is scoped to one product instead of
     every brand group; it does include comboing links, same batched-query
-    pattern as list_modifier_groups_detailed (a per-option loop of individual
-    queries would scale with catalog size).
+    pattern as list_modifier_groups_detailed (one query per nesting depth,
+    not per-option, so cost scales with how deep the chain actually goes).
 
     Args:
         db: Active database session.
@@ -782,19 +797,7 @@ async def list_product_modifiers_detailed(
     options_by_group = await _active_options_by_group(db, group_ids)
     option_ids = [o.id for options in options_by_group.values() for o in options]
 
-    links_by_option: dict[uuid.UUID, list[ModifierGroup]] = defaultdict(list)
-    if option_ids:
-        links_result = await db.execute(
-            select(ModifierOptionGroupLink.modifier_option_id, ModifierGroup)
-            .join(ModifierGroup, ModifierOptionGroupLink.linked_group_id == ModifierGroup.id)
-            .where(ModifierOptionGroupLink.modifier_option_id.in_(option_ids))
-            .order_by(ModifierOptionGroupLink.display_order)
-        )
-        for option_id, linked_group in links_result.all():
-            links_by_option[option_id].append(linked_group)
-
-    linked_group_ids = list({lg.id for groups_ in links_by_option.values() for lg in groups_})
-    linked_group_options = await _active_options_by_group(db, linked_group_ids)
+    linked_groups_by_option = await _resolve_linked_groups(db, option_ids)
 
     return [
         ProductModifierGroupDetailOut(
@@ -811,20 +814,7 @@ async def list_product_modifiers_detailed(
                     name=option.name,
                     price_delta_cents=option.price_delta_cents,
                     display_order=option.display_order,
-                    linked_groups=[
-                        LinkedGroupOut(
-                            id=lg.id,
-                            name=lg.name,
-                            min_selections=lg.min_selections,
-                            max_selections=lg.max_selections,
-                            is_first_option_default_selected=lg.is_first_option_default_selected,
-                            options=[
-                                LinkedGroupOptionOut(id=o.id, name=o.name, price_delta_cents=o.price_delta_cents)
-                                for o in linked_group_options.get(lg.id, [])
-                            ],
-                        )
-                        for lg in links_by_option.get(option.id, [])
-                    ],
+                    linked_groups=linked_groups_by_option.get(option.id, []),
                 )
                 for option in options_by_group.get(group.id, [])
             ],
@@ -1172,6 +1162,82 @@ async def _active_options_by_group(
     return by_group
 
 
+async def _resolve_linked_groups(
+    db: AsyncSession,
+    option_ids: list[uuid.UUID],
+    ancestor_group_ids: frozenset[uuid.UUID] = frozenset(),
+) -> dict[uuid.UUID, list[LinkedGroupOut]]:
+    """
+    Recursively resolve the modifier groups linked ("comboed") from a set of
+    options, to unlimited depth — a linked group's own options may
+    themselves link into further groups, and so on down the chain.
+
+    One query per depth level (not per option/group), so cost scales with
+    how many nesting levels actually exist in the data, not with catalog
+    size — same batched-query discipline as the rest of this "detailed"
+    listing. ancestor_group_ids excludes any group already seen earlier in
+    this traversal path, guarding against an infinite loop if a group ever
+    links back to one of its own ancestors — the schema doesn't forbid that
+    today.
+
+    Args:
+        db: Active database session.
+        option_ids: Options to resolve linked groups for at this level.
+        ancestor_group_ids: Group ids already visited on the path to here.
+
+    Returns:
+        dict[uuid.UUID, list[LinkedGroupOut]]: Each option id (from
+            option_ids) mapped to its linked groups, each fully nested.
+    """
+    if not option_ids:
+        return {}
+
+    links_result = await db.execute(
+        select(ModifierOptionGroupLink.modifier_option_id, ModifierGroup)
+        .join(ModifierGroup, ModifierOptionGroupLink.linked_group_id == ModifierGroup.id)
+        .where(
+            ModifierOptionGroupLink.modifier_option_id.in_(option_ids),
+            ModifierGroup.is_active == True,  # noqa: E712
+        )
+        .order_by(ModifierOptionGroupLink.display_order)
+    )
+    links_by_option: dict[uuid.UUID, list[ModifierGroup]] = defaultdict(list)
+    for option_id, linked_group in links_result.all():
+        if linked_group.id in ancestor_group_ids:
+            continue  # cycle guard — never re-enter a group already on this path
+        links_by_option[option_id].append(linked_group)
+    if not links_by_option:
+        return {}
+
+    linked_group_ids = list({lg.id for groups_ in links_by_option.values() for lg in groups_})
+    linked_group_options = await _active_options_by_group(db, linked_group_ids)
+    next_option_ids = [o.id for options in linked_group_options.values() for o in options]
+    nested = await _resolve_linked_groups(db, next_option_ids, ancestor_group_ids | set(linked_group_ids))
+
+    return {
+        option_id: [
+            LinkedGroupOut(
+                id=lg.id,
+                name=lg.name,
+                min_selections=lg.min_selections,
+                max_selections=lg.max_selections,
+                is_first_option_default_selected=lg.is_first_option_default_selected,
+                options=[
+                    LinkedGroupOptionOut(
+                        id=o.id,
+                        name=o.name,
+                        price_delta_cents=o.price_delta_cents,
+                        linked_groups=nested.get(o.id, []),
+                    )
+                    for o in linked_group_options.get(lg.id, [])
+                ],
+            )
+            for lg in groups_
+        ]
+        for option_id, groups_ in links_by_option.items()
+    }
+
+
 async def list_modifier_groups_detailed(
     db: AsyncSession,
     brand_id: uuid.UUID,
@@ -1215,38 +1281,13 @@ async def list_modifier_groups_detailed(
     options_by_group = await _active_options_by_group(db, group_ids)
     option_ids = [o.id for options in options_by_group.values() for o in options]
 
-    links_by_option: dict[uuid.UUID, list[ModifierGroup]] = defaultdict(list)
-    if option_ids:
-        links_result = await db.execute(
-            select(ModifierOptionGroupLink.modifier_option_id, ModifierGroup)
-            .join(ModifierGroup, ModifierOptionGroupLink.linked_group_id == ModifierGroup.id)
-            .where(ModifierOptionGroupLink.modifier_option_id.in_(option_ids))
-            .order_by(ModifierOptionGroupLink.display_order)
-        )
-        for option_id, linked_group in links_result.all():
-            links_by_option[option_id].append(linked_group)
-
-    linked_group_ids = list({lg.id for groups_ in links_by_option.values() for lg in groups_})
-    linked_group_options = await _active_options_by_group(db, linked_group_ids)
+    linked_groups_by_option = await _resolve_linked_groups(db, option_ids)
 
     detailed: list[ModifierGroupDetail] = []
     for group in groups:
         option_details = []
         for option in options_by_group.get(group.id, []):
-            linked_groups = [
-                LinkedGroupOut(
-                    id=lg.id,
-                    name=lg.name,
-                    min_selections=lg.min_selections,
-                    max_selections=lg.max_selections,
-                    is_first_option_default_selected=lg.is_first_option_default_selected,
-                    options=[
-                        LinkedGroupOptionOut(id=o.id, name=o.name, price_delta_cents=o.price_delta_cents)
-                        for o in linked_group_options.get(lg.id, [])
-                    ],
-                )
-                for lg in links_by_option.get(option.id, [])
-            ]
+            linked_groups = linked_groups_by_option.get(option.id, [])
             option_details.append(
                 ModifierOptionDetail(
                     id=option.id,

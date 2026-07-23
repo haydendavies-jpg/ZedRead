@@ -25,6 +25,7 @@ from app.services.invoice_service import (
     create_refund,
     get_line_item_detail,
     list_invoices,
+    list_line_items,
     pay_invoice,
     remove_line_item,
     update_line_item_quantity,
@@ -40,6 +41,7 @@ router = APIRouter(prefix="/invoices", tags=["invoices"])
 async def list_site_invoices(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=1000),
+    invoice_status: str | None = Query(None, alias="status", description="Optional status filter, e.g. 'open' for held orders"),
     access: POSAccess = Depends(resolve_access),
     db: AsyncSession = Depends(get_db),
 ) -> list[InvoiceResponse]:
@@ -49,14 +51,43 @@ async def list_site_invoices(
     Args:
         skip: Pagination offset.
         limit: Maximum invoices to return.
+        invoice_status: Optional status filter — the Register's Held Orders
+            tab passes status=open to list unpaid, line-item-bearing invoices.
         access: Resolved POS access.
         db: Active database session.
 
     Returns:
         list[InvoiceResponse]: Invoices for the site.
     """
-    invoices = await list_invoices(db, access.user.brand_id, access.site.id, skip, limit)
+    invoices = await list_invoices(db, access.user.brand_id, access.site.id, skip, limit, invoice_status)
     return [InvoiceResponse.model_validate(inv) for inv in invoices]
+
+
+@router.get(
+    "/{invoice_id}/line-items",
+    response_model=list[LineItemDetailResponse],
+    status_code=status.HTTP_200_OK,
+)
+async def list_invoice_line_items(
+    invoice_id: uuid.UUID,
+    access: POSAccess = Depends(resolve_access),
+    db: AsyncSession = Depends(get_db),
+) -> list[LineItemDetailResponse]:
+    """
+    Fetch every line item on an invoice, each with its attached modifiers.
+
+    Powers the Register's Held Orders recall — reconstructing an on-device
+    cart from a held (line items added, never paid) invoice.
+
+    Args:
+        invoice_id: UUID of the invoice.
+        access: Resolved POS access.
+        db: Active database session.
+
+    Returns:
+        list[LineItemDetailResponse]: The invoice's line items, in order.
+    """
+    return await list_line_items(db, access.user.brand_id, invoice_id)
 
 
 @router.post("", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)

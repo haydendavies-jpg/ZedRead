@@ -66,9 +66,11 @@ class OutboxRepository @Inject constructor(
         payments: List<SyncPaymentLeg>,
         isPaid: Boolean,
         totalCents: Long,
+        discountCents: Long = 0,
+        discountReason: String? = null,
     ): String {
         val clientRef = UUID.randomUUID().toString()
-        val payload = SyncSalePayload(lines, payments)
+        val payload = SyncSalePayload(lines, payments, discountCents, discountReason)
         outboxDao.insert(
             OutboxItemEntity(
                 operation = OutboxOperation.SYNC_SALE.name,
