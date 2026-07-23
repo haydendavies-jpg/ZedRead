@@ -100,8 +100,8 @@ fun PosTopBar(
     isOnline: Boolean,
     pendingCount: Int,
     onSyncClick: () -> Unit,
-    actions: @Composable RowScope.() -> Unit = {},
     permissionsViewModel: PermissionsViewModel = hiltViewModel(),
+    actions: @Composable RowScope.() -> Unit = {},
 ) {
     val context = LocalContext.current
     val missingPermissions by permissionsViewModel.missingPermissions.collectAsState()
