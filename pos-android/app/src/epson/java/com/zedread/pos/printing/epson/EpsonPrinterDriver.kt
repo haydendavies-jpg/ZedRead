@@ -24,12 +24,15 @@ import javax.inject.Singleton
  * [PrinterDriver] for Epson thermal printers via Epson's own ePOS2 Android
  * SDK (`com.epson.epos2.*`) — proprietary, not on Maven Central. This file
  * needs the real SDK AAR added to `app/libs/` to compile; see
- * `pos-android/PRINTER_SDK_SETUP.md`. Until then, `app/build.gradle.kts`
- * excludes this whole package (`printing/epson/**`, including
- * [EpsonPrinterModule]) from compilation entirely rather than letting it
- * fail the build — the rest of the app, including the other printer
- * drivers, builds and runs fine either way; dropping the AAR in flips it
- * back on with no other code changes.
+ * `pos-android/PRINTER_SDK_SETUP.md`. Deliberately lives under
+ * `app/src/epson/java/` rather than the default `app/src/main/java/` —
+ * `app/build.gradle.kts` only adds that directory as a source root (so
+ * neither Kotlin nor KSP/Hilt ever see this file, including
+ * [EpsonPrinterModule]) once the AAR is actually present, rather than
+ * letting an unresolvable import fail the whole module's build. The rest
+ * of the app, including the other printer drivers, builds and runs fine
+ * either way; dropping the AAR in flips it back on with no other code
+ * changes.
  *
  * Epson's `Printer` class is a command *builder* — it flushes its own
  * internal buffer via `sendData()` — so unlike the generic drivers, this

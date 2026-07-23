@@ -3,7 +3,8 @@
 The Android POS app's printer discovery/printing feature has a generic,
 brand-agnostic driver framework (`app/src/main/java/com/zedread/pos/printing/driver/`)
 with Epson receipt printers as the first concrete implementation
-(`app/src/main/java/com/zedread/pos/printing/epson/EpsonPrinterDriver.kt`).
+(`app/src/epson/java/com/zedread/pos/printing/epson/EpsonPrinterDriver.kt` — note
+this lives under `src/epson/`, not the usual `src/main/`, see below for why).
 
 That Epson driver is written against Epson's own **ePOS2 Android SDK**
 (`com.epson.epos2.*`) — a proprietary AAR distributed by Epson under their own
@@ -29,10 +30,14 @@ automatically; you need to add it yourself before the app will build.
 ## What happens without it (nothing breaks)
 
 `app/build.gradle.kts` detects whether any `.aar` file exists in `app/libs/`
-(`epsonSdkAvailable`). When it doesn't, the entire `printing/epson/` source
-directory (both `EpsonPrinterDriver.kt` and its Hilt binding,
-`EpsonPrinterModule.kt`) is excluded from compilation — Kotlin compiles a
-module as one unit, so leaving those files in with unresolved
+(`epsonSdkAvailable`). The Epson driver and its Hilt binding
+(`EpsonPrinterDriver.kt`/`EpsonPrinterModule.kt`) live under
+`app/src/epson/java/` instead of the default `app/src/main/java/` — a
+directory Gradle never scans on its own — and that directory is only added
+as a source root when `epsonSdkAvailable` is true. When the AAR is absent,
+neither Kotlin nor KSP (Hilt's annotation processor) ever sees those files at
+all, rather than leaving them in to fail the whole module's build — Kotlin
+compiles a module as one unit, so one file failing to resolve
 `com.epson.epos2.*` imports would fail every other file's compilation too,
 not just its own. With the AAR absent, the app builds and runs normally with
 just the generic Bluetooth/network drivers registered (see
