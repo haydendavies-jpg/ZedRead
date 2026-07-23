@@ -177,6 +177,10 @@ data class ProductDto(
     val name: String,
     val description: String?,
     @Json(name = "base_price_cents") val basePriceCents: Long,
+    // Cached so the Register can compute a line's tax on-device — see
+    // ProductEntity.priceExCents/isTaxable's own doc.
+    @Json(name = "price_ex_cents") val priceExCents: Long,
+    @Json(name = "is_taxable") val isTaxable: Boolean,
     @Json(name = "photo_url") val photoUrl: String?,
     @Json(name = "display_order") val displayOrder: Int,
     @Json(name = "is_active") val isActive: Boolean,

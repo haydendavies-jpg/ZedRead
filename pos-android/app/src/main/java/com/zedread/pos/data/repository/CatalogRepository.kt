@@ -48,6 +48,8 @@ class CatalogRepository @Inject constructor(
                 name = dto.name,
                 description = dto.description,
                 basePriceCents = dto.basePriceCents,
+                priceExCents = dto.priceExCents,
+                isTaxable = dto.isTaxable,
                 photoUrl = dto.photoUrl,
                 displayOrder = dto.displayOrder,
                 isActive = dto.isActive,

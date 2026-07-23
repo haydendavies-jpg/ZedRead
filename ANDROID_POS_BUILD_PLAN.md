@@ -26,6 +26,7 @@ here in a new session — read the Status section first, then the phase you're o
 | — | Portal — brand-scoped License & Billing page (seat editing for Admin/Master User, not just SuperAdmin) | ✅ Done — see below |
 | 2 | Android — Settings screen + denomination-grid cash-in/cash-up variant | ✅ Done — see below |
 | 2 | Android — offline write-queue, sync indicator, invoice search | ✅ Done — see below |
+| — | Android — local-first cart rework (on-device tax, Hold/Pay-triggered sync, offline split payment) | ✅ Done — see "Standing architecture principle" below |
 | 3 | Menu Studio → POS integration depth (recurring scheduling, menu selector) | ✅ Done — see below |
 | 4 | Table maps & floor service | 🔲 Not started |
 
@@ -649,9 +650,10 @@ and the guarantee that no sale is ever lost to a bad connection.
   immediately, not after the round trip. **Checksum deliberately omitted** on-device (both the sale
   and register-session-open payloads depend on values the client can't reproduce or was never given —
   see `STAGE_STATUS.md`'s "Android POS Phase 2 — Offline write-queue…" entry for the full reasoning);
-  `client_ref` alone already makes a retry safe. **Scope note**: a sale only falls back to offline
-  mode when it fails on its very first action (nothing exists server-side yet) — one that drops
-  offline mid-ring surfaces the existing error state instead, to avoid risking a duplicate invoice.
+  `client_ref` alone already makes a retry safe. **Superseded by "Local-first cart" below**: this
+  bullet originally described the write-queue as an offline *fallback* — a sale only dropped into it
+  when its first live call failed. Post-round-4 user feedback, the queue is now the only path a sale
+  is ever created through, online or not — see the dedicated section.
 - ✅ **Offline / pending-sync indicator**: persistent, unobtrusive status badge ("Offline · N pending" /
   "Synced") visible from Register at all times — never a blocking modal, staff keep selling while
   offline. Tapping it opens a **sync panel**: per-item status, a **plain-language** failure reason
@@ -660,6 +662,85 @@ and the guarantee that no sale is ever lost to a bad connection.
 - ✅ **Invoice search/history**: filterable (date range, status, payment method) list reading the local
   Room cache so it works offline; results show synced/pending state per item. Nav entry point
   alongside Cash Up/Settings (a History icon on the Register header).
+
+---
+
+## Standing architecture principle — offline-first, cloud-sync-on-reconnect
+
+**This applies to every present and future piece of the Android app, not just the sell loop.** The
+POS must be fully operable with zero connectivity for an entire shift, and reconcile itself against
+the cloud automatically the moment a connection re-appears, with no data loss and no action a
+cashier has to consciously repeat. Treat any new write-capable feature as broken if it can't satisfy
+this without being told to.
+
+**Rules for any new feature that writes data:**
+1. **Local state is authoritative for the UI.** A screen renders from what's on the device (Room, or
+   plain in-memory ViewModel state for a not-yet-committed draft like an in-progress sale) — never
+   from a pending network response. If a value the UI needs (a price, a tax total, a computed status)
+   can only be known by asking the server, that's a design smell: either cache the inputs needed to
+   compute it on-device (see "Local-first cart" below for the concrete precedent), or accept that the
+   value is provisional and label it as such — never block the UI on it.
+2. **No spinner for a local operation.** A loading indicator is reserved for things that are actually
+   waiting on the network (e.g. the very first catalog sync on login). Building a cart, holding an
+   order, or recording a payment must never show one — they're synchronous on-device operations by
+   construction, not network calls that happen to be fast.
+3. **The network boundary is the sync queue, not the feature's own call site.** A new write goes
+   through the same `OutboxRepository`/`OutboxSyncWorker` mechanism the sell loop uses (see below) —
+   don't add a second, parallel "try live, fall back to local" pattern. One write-then-sync path, used
+   uniformly, is what makes "works offline" a property of the architecture rather than something each
+   feature has to separately remember to handle.
+4. **Every queued write carries a client-generated idempotency key** (`client_ref`) and is safe to
+   replay — a retried sync must never double-create a record. This is already true for every write
+   the outbox drains today; keep it true for whatever's added next.
+5. **Nothing is ever silently lost.** A queued item that the server definitively rejects (a real
+   business-rule failure, not a transient network error) stays visible in the sync panel with a
+   plain-language reason — it is never expired, dropped, or hidden. A transient failure retries with
+   backoff, indefinitely.
+
+### Local-first cart (post-round-4 user feedback, complete)
+
+The concrete precedent for the rules above. Previously, every tap on a product tile made a live
+`POST /invoices` (first item only) and `POST .../line-items` call, showing a loading spinner and
+adding perceptible per-tap latency — the write-queue only activated as an offline *fallback* when
+one of those calls failed outright. User-testing feedback: don't poll the server to create the
+invoice at all until the order is Held or a payment is taken; build the cart entirely on-device with
+no loading indicator; sync silently in the background either way.
+
+- **Cart building is 100% local.** `SellViewModel.addToCart`/`confirmModifierSheet`/
+  `setLineQuantity`/`removeLine` never touch the network — every line item is synthesized in memory.
+- **Tax is computed on-device**, not server-fetched. The backend's actual per-line tax formula
+  (`invoice_service.add_line_item()`) turns out not to need the general TaxRate/TaxCategory engine at
+  all — each product already snapshots a tax-inclusive price (`base_price_cents`) and a derived
+  tax-exclusive price (`price_ex_cents`); `is_taxable` picks which is charged, and tax is just their
+  difference. Both are now part of the ordinary product catalog sync (`ProductEntity.priceExCents`/
+  `isTaxable`), so `LocalTaxCalculator.computeLocalLineTax()` reproduces the backend's number exactly
+  with no separate tax-rate sync needed. This is what lets the running total shown while building the
+  order be correct, not a placeholder.
+- **The sale is created at exactly two trigger points**: Hold (`SellViewModel.holdOrder` — lines only,
+  zero payment legs, the invoice is created and left open/unpaid) and a completed payment
+  (`submitPayment` — one leg for a plain sale, several accumulated legs for a split payment). Both
+  call `OutboxRepository.enqueueSale`, the same mechanism Phase 2's offline write-queue built — now
+  the *only* way an invoice is ever created, not a fallback. Whether the queued row drains in
+  milliseconds (online) or after connectivity returns (offline) is invisible to the cashier either
+  way, by construction.
+- **Split payments now work fully offline.** The old restriction ("split payment unsupported once a
+  sale has gone offline" — the queue only carried one payment leg) is gone: `SyncSalePayload.payments`
+  is a list, and `OutboxSyncWorker.syncSale` replays each leg in order against the real invoice id,
+  each with its own idempotency key (`"${clientRef}-$index"`, since `payments.client_ref` is unique
+  server-side and reusing one key across legs would collide).
+- **No backend changes were needed.** `POST /invoices` / `.../line-items` / `.../pay` already support
+  being called sequentially with a freshly-resolved invoice id and multiple payment legs — this was
+  purely an Android-side and outbox-schema change.
+- **Known, deliberately deferred gap**: modifier group/option definitions (prices, linked "comboed"
+  groups) are still fetched live when the customise sheet opens — they are not yet part of the Room
+  catalog cache the way products/categories/tax fields are. A customisable item therefore still can't
+  be rung up while offline (a plain item always can). Bringing modifier definitions into the offline
+  cache is the natural next slice of this same architecture principle, not a separate concern —
+  flagged here rather than half-built under time pressure.
+- **Also known, pre-existing gap, unchanged by this round**: Hold has no "recall a held order" list on
+  the device — the held invoice is findable via the portal's invoice reports, but there's no
+  in-app way to pull it back into an active sale. Not built this round since it wasn't asked for;
+  flagged so it isn't mistaken for done.
 
 ---
 

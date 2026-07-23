@@ -13,6 +13,7 @@ import com.zedread.pos.data.sync.OutboxPayloads
 import com.zedread.pos.data.sync.OutboxScheduler
 import com.zedread.pos.data.sync.OutboxSaleLine
 import com.zedread.pos.data.sync.OutboxStatus
+import com.zedread.pos.data.sync.SyncPaymentLeg
 import com.zedread.pos.data.sync.SyncSalePayload
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -21,11 +22,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * The offline write-queue's single entry point: enqueues sales and
- * register-session events a caller couldn't sync immediately, exposes the
- * queue for the sync-status badge/panel, and kicks an immediate drain
- * attempt (the periodic WorkManager job is the fallback, not the primary
- * trigger — see [OutboxScheduler]).
+ * The write-queue's single entry point: enqueues every sale (the only way
+ * one is ever created — see [enqueueSale]) plus register-session events a
+ * caller couldn't sync immediately, exposes the queue for the sync-status
+ * badge/panel, and kicks an immediate drain attempt (the periodic
+ * WorkManager job is the fallback, not the primary trigger — see
+ * [OutboxScheduler]). Whether a queued row drains in milliseconds (online)
+ * or minutes (offline) is invisible to the caller either way — this is what
+ * makes cart-building and Hold/Pay silent, with no per-item network wait.
  */
 @Singleton
 class OutboxRepository @Inject constructor(
@@ -41,22 +45,30 @@ class OutboxRepository @Inject constructor(
     fun observePendingCount(): Flow<Int> = outboxDao.observePendingCount()
 
     /**
-     * Queue a completed sale for background sync and reflect it in the local
+     * Queue a sale for background sync and reflect it in the local
      * invoice-history cache immediately (keyed by [clientRef] until the
      * worker re-keys it to the real invoice id) so it shows up in Invoice
      * Search as "pending" right away — not after the eventual round trip.
+     *
+     * This is the ONLY way a sale is ever created now (see
+     * [com.zedread.pos.data.sync.OutboxOperation]'s doc) — called both for
+     * a completed payment (one or more [payments] legs) and for Hold (empty
+     * [payments], the invoice is created and left open, unpaid).
+     * [totalCents] is this device's own locally-computed total (see
+     * LocalTaxCalculator), used only for the optimistic cache row — the
+     * server recomputes it authoritatively once the sale actually syncs.
      *
      * Returns the minted [clientRef] so the caller can show it to the user
      * if needed (e.g. a receipt reference for an unsynced sale).
      */
     suspend fun enqueueSale(
         lines: List<OutboxSaleLine>,
-        method: String,
-        amountCents: Long,
-        reference: String?,
+        payments: List<SyncPaymentLeg>,
+        isPaid: Boolean,
+        totalCents: Long,
     ): String {
         val clientRef = UUID.randomUUID().toString()
-        val payload = SyncSalePayload(lines, method, amountCents, reference)
+        val payload = SyncSalePayload(lines, payments)
         outboxDao.insert(
             OutboxItemEntity(
                 operation = OutboxOperation.SYNC_SALE.name,
@@ -69,14 +81,14 @@ class OutboxRepository @Inject constructor(
         invoiceCacheDao.upsert(
             InvoiceCacheEntity(
                 id = clientRef,
-                // No server-issued ref exists yet for a queued-offline sale — the
-                // sync worker re-keys this row with the real INV-000001 ref once
+                // No server-issued ref exists yet for a queued sale — the sync
+                // worker re-keys this row with the real INV-000001 ref once
                 // syncSale() confirms it (see OutboxSyncWorker.syncSale).
                 ref = "Pending sync",
-                status = "paid",
-                totalCents = amountCents,
+                status = if (isPaid) "paid" else "open",
+                totalCents = totalCents,
                 createdAtMillis = System.currentTimeMillis(),
-                paymentMethod = method,
+                paymentMethod = payments.lastOrNull()?.method,
                 isSynced = false,
             )
         )

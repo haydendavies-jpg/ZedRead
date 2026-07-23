@@ -1735,6 +1735,73 @@ Menu Studio, device-naming, and a new sold-out feature. See each item below for 
 
 ---
 
+### Android POS — local-first cart rework (post-round-4, complete)
+
+User feedback: don't poll the server to create the invoice on every product tap — build the cart
+entirely on-device, no loading spinner, and only touch the server at Hold or at payment. See
+`ANDROID_POS_BUILD_PLAN.md`'s new "Standing architecture principle — offline-first, cloud-sync-on-
+reconnect" section for the full write-up (this is now a durable architectural rule for the app, not
+a one-off fix) — summary here:
+
+- [x] **Also fixed some minor UI bugs found alongside**: a folder tile's large inline "📁" glyph
+      replaced with a small corner badge matching the product tile's "+" style
+      (`MenuStudioGrid.kt`'s `FolderTile`); product/folder tile names now reserve space for that
+      corner badge instead of wrapping underneath it (previously misread as if the "+" were part of
+      the product name, e.g. "Pepperoni + Pizza"); the "All items" catalog fallback (`CategoryRail`/
+      `ProductGrid`) is now itself gated behind the `auto_menu_enabled` setting, closing a gap where a
+      site with no active/default menu layout silently fell back to showing the full catalog even
+      with Auto Menu off — a new `NoMenuAvailable()` empty state renders instead; the persistent top
+      bar's fixed background changed again, from the prior round's `#FFFFFF` to `#332E29` (the
+      portal's own dark-mode `--zr-sidebar`) with white content throughout, including the action
+      icons passed in via each screen's `actions` slot (previously theme-aware `colors.muted`, now
+      illegible against the new dark fixed background).
+- [x] `products.price_ex_cents`/`is_taxable` are now part of the ordinary Android catalog sync
+      (`ProductDto`/`ProductEntity`/`CatalogRepository`, Room DB bumped `6 -> 7`) — no backend schema
+      change, both fields already existed on `ProductResponse`/`ProductListItem`, just weren't
+      threaded through to the Android cache before. New `LocalTaxCalculator.computeLocalLineTax()`
+      is a direct Kotlin port of `invoice_service.add_line_item()`'s own tax formula.
+- [x] `SellViewModel`'s cart-building (`addToCart`/`confirmModifierSheet`/`setLineQuantity`/
+      `removeLine`) is now 100% local — no network calls, no `CartActionState.Loading`. The old
+      "live call first, fall back to a local offline line on failure" branching (`isOfflineSale`/
+      `currentInvoiceId`/`addPlainLineItem`/`addOfflineLine`/`submitOfflinePayment`) is gone
+      entirely, replaced by `addLocalLine()` + `resolveModifierDtos()` — the latter now also handles
+      linked ("comboed") modifier selections, which the old offline-only fallback deliberately
+      dropped (acceptable for a rare fallback path, not for the everyday one).
+- [x] `SellViewModel.holdOrder()` (new) and the rewritten `submitPayment()` are the only two places
+      that ever call `OutboxRepository.enqueueSale()` — extended from `(lines, method, amountCents,
+      reference)` to `(lines, payments: List<SyncPaymentLeg>, isPaid, totalCents)`, so a call can
+      carry zero legs (Hold — invoice created and left open/unpaid), one leg (a plain sale), or
+      several (a split sale, accumulated locally in the new `PaymentUiState.legs` and enqueued
+      together once they cover the total). `OutboxSyncWorker.syncSale()` replays each leg in order
+      with a per-leg idempotency key (`"${clientRef}-$index"` — `payments.client_ref` is unique
+      server-side, so reusing the sale's own `clientRef` across legs would collide on the second
+      call). This is also what makes split payment work fully offline for the first time — the old
+      restriction blocking split mode once a sale had gone offline no longer applies, since every
+      sale (not just an offline one) now goes through this same queued-legs mechanism.
+- [x] No backend changes were needed — `POST /invoices`/`.../line-items`/`.../pay` already supported
+      being called sequentially against a freshly-resolved invoice id with multiple payment legs.
+      Purely an Android-side and outbox-payload-schema change.
+- [x] `PaymentUiState.doneIsPendingSync` (a boolean that used to distinguish "this sale went through
+      the rare offline fallback") is gone — every sale is queued now, so it was no longer a
+      meaningful distinction. The Payment Done screen's "queued, will sync automatically" note is
+      now driven directly by `SyncViewModel.isOnline` instead (only shown when the device is
+      genuinely offline at that moment), threaded through as a new `PaymentModal`/
+      `PaymentDoneContent` parameter.
+- [x] Deliberately **not** built this round (flagged, not silently dropped — see
+      `ANDROID_POS_BUILD_PLAN.md`'s write-up): caching modifier group/option definitions locally
+      (the customise sheet still needs connectivity to open) and a "recall a held order" list on the
+      device (Hold's invoice is findable via the portal's invoice reports, just not from the
+      terminal itself).
+- [x] **Not verified against a real build** — same standing constraint as every prior Android slice
+      in this sandbox (no `gradlew` wrapper checked in, no reachable Google Maven). Checked manually:
+      every new/changed file's braces/parens balance, every removed field's call sites re-grepped
+      for leftover references (`isCurrentSaleOffline`/`addOfflineLine`/`submitOfflinePayment`/
+      `doneIsPendingSync` — none remain), and the unused `InvoiceRepository` constructor param
+      removed from `SellViewModel` once nothing in it referenced it anymore. Relies on the repo's
+      `Android build` CI job for the real compile check.
+
+---
+
 ## Cross-Cutting — Always Active
 
 | Concern | Status |
@@ -1757,8 +1824,8 @@ Menu Studio, device-naming, and a new sold-out feature. See each item below for 
 | Circular combo reference: no DB constraint | `combo_service.py` graph traversal only | Low |
 | Photo size limit: no DB constraint | `product_service.py` check only | Low |
 | Invoice line `notes` column: not exposed in API | `invoice_line_items.notes` exists in model | Low |
-| Offline write-queue only covers a sale that fails on its *first* action (nothing synced yet); one that drops offline mid-ring surfaces an error instead of queuing, to avoid a duplicate invoice risk | `SellViewModel.kt` — see "Offline write-queue, sync indicator & invoice search" above | Medium |
-| Offline sale totals show `taxCents = 0` until synced — tax rules aren't reproducible on-device | `SellViewModel.addOfflineLine()` | Medium |
+| Modifier group/option definitions (prices, linked "comboed" groups) aren't cached locally — the customise sheet still needs connectivity to open, unlike the rest of the cart | `CatalogRepository.getProductModifiers()` — see "Local-first cart rework" below | Medium |
+| Hold has no "recall a held order" list on-device — findable via the portal's invoice reports, but not pullable back into an active sale on the terminal | `SellViewModel.holdOrder()` | Low |
 | Invoice search: payment method unknown for sales backfilled from other devices (`GET /invoices` has no per-payment breakdown) | `InvoiceRepository.refreshCacheFromServer()` | Low |
 | Line modifier price is a flat per-line addition, not scaled by quantity | `invoice_line_modifiers` has no quantity dimension — one row per (line, modifier); `add_line_modifier()`/`_recompute_invoice_totals()` add `price_delta_cents` once regardless of the line's `quantity` | Medium |
 | Tax compound edge cases (PST on GST): not validated | `tax_calculation_service.py` | Medium |
