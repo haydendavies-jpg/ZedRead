@@ -1267,6 +1267,7 @@ async def list_modifier_groups_detailed(
                 min_selections=group.min_selections,
                 max_selections=group.max_selections,
                 has_quantity=group.has_quantity,
+                is_first_option_default_selected=group.is_first_option_default_selected,
                 is_active=group.is_active,
                 options=option_details,
                 used_by_count=usage_by_group.get(group.id, 0),
