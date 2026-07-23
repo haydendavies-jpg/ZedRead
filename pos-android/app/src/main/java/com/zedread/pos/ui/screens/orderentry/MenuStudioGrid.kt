@@ -43,6 +43,7 @@ import com.zedread.pos.data.api.PosMenuButtonDto
 import com.zedread.pos.data.api.PosMenuLayoutDto
 import com.zedread.pos.data.api.PosMenuTabDto
 import com.zedread.pos.ui.theme.LocalZedReadColors
+import com.zedread.pos.ui.theme.SoldOutTileColor
 import com.zedread.pos.ui.theme.contrastTextColor
 import com.zedread.pos.ui.theme.parseHexColor
 
@@ -271,12 +272,12 @@ private fun ProductMenuTile(button: PosMenuButtonDto, onClick: () -> Unit, onLon
     val colors = LocalZedReadColors.current
     val isSoldOut = button.isSoldOut == true
     val fillColor = when {
-        isSoldOut -> colors.faint
+        isSoldOut -> SoldOutTileColor
         button.color != null -> parseHexColor(button.color)
         button.categoryColor != null -> parseHexColor(button.categoryColor)
         else -> colors.accent
     }
-    val textColor = if (isSoldOut) colors.surface else contrastTextColor(button.color ?: button.categoryColor ?: "#554C44")
+    val textColor = if (isSoldOut) Color.White else contrastTextColor(button.color ?: button.categoryColor ?: "#554C44")
     val isInactive = button.isActive == false
 
     Box(
@@ -309,7 +310,7 @@ private fun ProductMenuTile(button: PosMenuButtonDto, onClick: () -> Unit, onLon
                 // Reserve room for the "+" badge's top-right corner, same fix as
                 // ProductTile in the category grid — a wrapped name previously
                 // rendered under the badge, reading as if the "+" were part of it.
-                modifier = if (!isInactive && !isSoldOut) Modifier.padding(end = 28.dp) else Modifier,
+                modifier = if (!isInactive && !isSoldOut) Modifier.padding(end = 22.dp) else Modifier,
                 color = textColor,
                 fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.titleSmall,
@@ -321,14 +322,14 @@ private fun ProductMenuTile(button: PosMenuButtonDto, onClick: () -> Unit, onLon
         if (!isInactive && !isSoldOut) {
             Box(
                 modifier = Modifier
-                    .padding(8.dp)
+                    .padding(5.dp)
                     .align(Alignment.TopEnd)
-                    .size(22.dp)
+                    .size(18.dp)
                     .clip(CircleShape)
                     .background(Color.Black.copy(alpha = 0.18f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("+", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                Text("+", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
             }
         }
         if (isSoldOut) {

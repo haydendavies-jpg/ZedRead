@@ -15,11 +15,17 @@ import com.zedread.pos.data.local.entity.ProductModifierCacheEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** Caps how many modifier-detail fetches [CatalogRepository] runs at once during a prefetch — enough to warm the cache quickly without hammering the backend on a large catalog. */
+private const val MODIFIER_PREFETCH_CONCURRENCY = 6
 
 /** Manages catalog data: network fetch + Room cache with offline fallback. */
 @Singleton
@@ -91,6 +97,28 @@ class CatalogRepository @Inject constructor(
 
         productDao.replaceAll(products)
         categoryDao.replaceAll(categories)
+
+        // Warm the modifier cache for every product that has modifiers, so the
+        // customise sheet is a cache hit (see getProductModifiers) from the
+        // first tap of a shift, not just the second tap of a given product —
+        // user-testing feedback that a visible load on opening the sheet was
+        // still common in practice. Fire-and-forget: refresh() itself must not
+        // block on this, and a failed prefetch for one product just leaves it
+        // to fall back to the ordinary cache-miss network fetch on first tap.
+        val productIdsWithModifiers = products.filter { !it.modifierNames.isNullOrBlank() }.map { it.id }
+        if (productIdsWithModifiers.isNotEmpty()) {
+            backgroundScope.launch { prefetchModifierCaches(productIdsWithModifiers) }
+        }
+    }
+
+    /** Concurrently warms [ProductModifierCacheEntity] for each id — see [refresh]'s call site. */
+    private suspend fun prefetchModifierCaches(productIds: List<String>) {
+        val semaphore = Semaphore(MODIFIER_PREFETCH_CONCURRENCY)
+        coroutineScope {
+            productIds.forEach { id ->
+                launch { semaphore.withPermit { runCatching { refreshModifierCache(id) } } }
+            }
+        }
     }
 
     /** Wipe cached catalog on logout. */
@@ -123,10 +151,12 @@ class CatalogRepository @Inject constructor(
      * returns immediately with no network wait, while a background refresh
      * silently updates the cache for next time — user-testing feedback that
      * every tap on a modified product visibly loaded, even on a repeat tap of
-     * the same item. The very first tap for a given product (nothing cached
-     * yet) still waits on the network, same as before this change; every tap
-     * after that is instant. A failed background refresh is swallowed — the
-     * cashier already has the (still-valid) cached copy on screen.
+     * the same item. [refresh] also proactively warms this cache for every
+     * product with modifiers, so in practice this is a cache hit from the
+     * first tap of a shift onward; only a product added/modified since the
+     * last catalog sync still pays a first-tap network wait. A failed
+     * background refresh is swallowed — the cashier already has the
+     * (still-valid) cached copy on screen.
      */
     suspend fun getProductModifiers(productId: String): List<ProductModifierGroupDto> {
         val cached = peekCachedProductModifiers(productId)

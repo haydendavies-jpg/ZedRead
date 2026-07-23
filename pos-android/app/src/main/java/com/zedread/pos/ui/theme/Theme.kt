@@ -87,6 +87,17 @@ private val DarkZedReadColors = ZedReadColors(
 
 val LocalZedReadColors = staticCompositionLocalOf { LightZedReadColors }
 
+/**
+ * Fixed dark-grey fill for a sold-out product tile (Register grid and Menu
+ * Studio POS Layout grid alike) — deliberately not [ZedReadColors.faint],
+ * which is a light warm tan in light mode and reads as barely distinguishable
+ * from an ordinary category colour. User-testing feedback: sold-out needs to
+ * read unambiguously as "off" at a glance, in both app themes, so this is
+ * fixed like [com.zedread.pos.ui.components.PosTopBar]'s own background
+ * rather than swapping per theme.
+ */
+val SoldOutTileColor = Color(0xFF4A4A4A)
+
 private val LightMaterialColors = lightColorScheme(
     primary = LightZedReadColors.accent,
     onPrimary = Color.White,

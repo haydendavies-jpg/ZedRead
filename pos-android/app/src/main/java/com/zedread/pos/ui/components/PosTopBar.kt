@@ -92,9 +92,13 @@ fun PosTopBar(
                 }
             }
             ZedReadWordmark()
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(10.dp))
             Column {
-                Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = TopBarText)
+                // Sized down from titleLarge and set closer to the wordmark —
+                // user-testing feedback that this terminal-name block read as
+                // a second, competing logo rather than a small secondary
+                // label sitting inline beside the real one.
+                Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = TopBarText)
                 if (subtitle != null) {
                     Text(subtitle.uppercase(), style = MaterialTheme.typography.labelSmall, color = TopBarFaint)
                 }
