@@ -23,6 +23,12 @@ enum class PrinterType { BLUETOOTH, NETWORK }
 /**
  * Unified print service — delegates to [BluetoothPrintService] or [NetworkPrintService]
  * based on [PrinterConfig]. Failure does NOT affect the invoice.
+ *
+ * Predates the saved-printer/discovery feature and has no caller of its own
+ * today — new code sending a docket to a saved printer should go through
+ * [com.zedread.pos.data.repository.PrinterRepository] instead, which
+ * dispatches by brand (see [com.zedread.pos.printing.driver.PrinterDriver])
+ * rather than this class's fixed Bluetooth/Network split.
  */
 @Singleton
 class PrintService @Inject constructor(

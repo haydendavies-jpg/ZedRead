@@ -10,6 +10,7 @@ import com.zedread.pos.data.local.dao.InvoiceCacheDao
 import com.zedread.pos.data.local.dao.OutboxDao
 import com.zedread.pos.data.local.dao.ProductDao
 import com.zedread.pos.data.local.dao.ProductModifierCacheDao
+import com.zedread.pos.data.local.dao.SavedPrinterDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -86,6 +87,44 @@ private val MIGRATION_4_5 = object : Migration(4, 5) {
     }
 }
 
+/**
+ * Adds `saved_printers` (schema version 8 -> 9) — this terminal's paired
+ * printers. Like `outbox_items`, this is NOT a re-derivable cache (a
+ * printer's pairing/MAC must survive an app update, and there's nowhere to
+ * re-derive it from — it was never backend-synced in the first place), so
+ * this is a real migration rather than falling through to
+ * `fallbackToDestructiveMigration()`.
+ *
+ * `internal`, not `private` like the other MIGRATION_* vals above, so
+ * `SavedPrinterMigrationTest` (androidTest) can run it directly against a
+ * throwaway database — see that test's own doc for why it doesn't go
+ * through Room's MigrationTestHelper.
+ */
+internal val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS saved_printers (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                driver_id TEXT NOT NULL,
+                connection_type TEXT NOT NULL,
+                mac_address TEXT NOT NULL,
+                last_known_ip TEXT,
+                port INTEGER NOT NULL,
+                is_enabled INTEGER NOT NULL,
+                last_seen_at_millis INTEGER,
+                last_connected_at_millis INTEGER,
+                created_at_millis INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS index_saved_printers_mac_address ON saved_printers(mac_address)"
+        )
+    }
+}
+
 /** Provides the Room database and its DAOs. */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -95,11 +134,13 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "zedread_pos.db")
-            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_8_9)
             // last resort only for outbox_items/invoice_cache — the 5->6 hop (products.is_sold_out)
             // falls through here deliberately, same as every other products/categories-only column
             // add, and the 7->8 hop (new product_modifier_cache table) is the same call again —
-            // both re-derivable tables it touches refill themselves on the next sync/tap.
+            // both re-derivable tables it touches refill themselves on the next sync/tap. The 8->9
+            // hop (saved_printers) is a real migration above, NOT covered by this fallback — see
+            // MIGRATION_8_9's own doc for why.
             .fallbackToDestructiveMigration()
             .build()
 
@@ -117,4 +158,7 @@ object DatabaseModule {
 
     @Provides
     fun provideProductModifierCacheDao(db: AppDatabase): ProductModifierCacheDao = db.productModifierCacheDao()
+
+    @Provides
+    fun provideSavedPrinterDao(db: AppDatabase): SavedPrinterDao = db.savedPrinterDao()
 }

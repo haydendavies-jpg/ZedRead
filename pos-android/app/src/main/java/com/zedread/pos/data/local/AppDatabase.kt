@@ -7,11 +7,13 @@ import com.zedread.pos.data.local.dao.InvoiceCacheDao
 import com.zedread.pos.data.local.dao.OutboxDao
 import com.zedread.pos.data.local.dao.ProductDao
 import com.zedread.pos.data.local.dao.ProductModifierCacheDao
+import com.zedread.pos.data.local.dao.SavedPrinterDao
 import com.zedread.pos.data.local.entity.CategoryEntity
 import com.zedread.pos.data.local.entity.InvoiceCacheEntity
 import com.zedread.pos.data.local.entity.OutboxItemEntity
 import com.zedread.pos.data.local.entity.ProductEntity
 import com.zedread.pos.data.local.entity.ProductModifierCacheEntity
+import com.zedread.pos.data.local.entity.SavedPrinterEntity
 
 /**
  * Room database. `products`/`categories` are cache-only (destructive
@@ -22,7 +24,10 @@ import com.zedread.pos.data.local.entity.ProductModifierCacheEntity
  * update. `invoice_cache` is a re-derivable read cache like products, but
  * shares the same migration since both tables were added together.
  * `product_modifier_cache` (added v8) is likewise a re-derivable read
- * cache — see [ProductModifierCacheEntity]'s doc.
+ * cache — see [ProductModifierCacheEntity]'s doc. `saved_printers` (added
+ * v9) is NOT re-derivable — a printer's pairing (and its MAC-keyed IP
+ * recovery history) must survive an app update, so it goes through
+ * [DatabaseModule]'s explicit `MIGRATION_8_9`, same as `outbox_items`.
  */
 @Database(
     entities = [
@@ -31,8 +36,9 @@ import com.zedread.pos.data.local.entity.ProductModifierCacheEntity
         OutboxItemEntity::class,
         InvoiceCacheEntity::class,
         ProductModifierCacheEntity::class,
+        SavedPrinterEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -41,4 +47,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun outboxDao(): OutboxDao
     abstract fun invoiceCacheDao(): InvoiceCacheDao
     abstract fun productModifierCacheDao(): ProductModifierCacheDao
+    abstract fun savedPrinterDao(): SavedPrinterDao
 }

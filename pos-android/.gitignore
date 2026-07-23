@@ -9,3 +9,9 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Proprietary printer SDK — downloaded by the developer from Epson's developer
+# portal under their EULA, never committed. See PRINTER_SDK_SETUP.md.
+app/libs/*.jar
+app/libs/*.aar
+app/src/main/jniLibs/**/*.so

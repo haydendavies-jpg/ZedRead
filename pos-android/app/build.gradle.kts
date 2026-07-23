@@ -6,6 +6,21 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// Epson ePOS2 SDK — proprietary, NOT on Maven Central (Epson gates it behind their own
+// developer-portal EULA, so it can't be resolved from a repository or bundled in this
+// repo — see pos-android/PRINTER_SDK_SETUP.md). It ships as a plain ePOS2.jar (not an
+// AAR) plus per-ABI native .so libraries. CI never has any of this either, so the
+// Epson-specific source (EpsonPrinterDriver.kt/EpsonPrinterModule.kt, which import
+// com.epson.epos2.*) lives in src/epson/java/ instead of the default src/main/java/ —
+// a directory Gradle never scans on its own — and is only added as a source root below
+// when the jar is present. Kotlin (and KSP, for the Hilt binding) never sees those
+// files at all otherwise, rather than being left to fail the whole module's build —
+// Kotlin compiles a module as one unit, so one file failing to resolve its imports
+// fails every other file's compilation too, not just its own. Once a developer adds
+// ePOS2.jar to app/libs/, this flips to true automatically and the Epson driver is
+// included with no other code changes needed.
+val epsonSdkAvailable = fileTree("libs") { include("*.jar", "*.aar") }.files.isNotEmpty()
+
 android {
     namespace = "com.zedread.pos"
     compileSdk = 35
@@ -43,6 +58,14 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    sourceSets {
+        getByName("main") {
+            if (epsonSdkAvailable) {
+                java.srcDir("src/epson/java")
+            }
+        }
     }
 }
 
@@ -92,7 +115,17 @@ dependencies {
     implementation(libs.hilt.work)
     ksp(libs.hilt.work.compiler)
 
+    // Epson ePOS2 SDK — see the epsonSdkAvailable comment above. fileTree reads the
+    // local filesystem directly, so this does NOT need a repository entry in
+    // settings.gradle.kts. Only added when ePOS2.jar is actually present.
+    if (epsonSdkAvailable) {
+        implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
+    }
+
     // Test
     testImplementation(libs.junit)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.mockito.core)
     androidTestImplementation(libs.androidx.test.ext)
+    androidTestImplementation(libs.room.testing)
 }
