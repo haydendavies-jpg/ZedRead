@@ -1,8 +1,5 @@
 package com.zedread.pos.ui.screens.printers
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -28,23 +25,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.zedread.pos.printing.driver.DiscoveredPrinter
 import com.zedread.pos.ui.viewmodel.DiscoveryUiState
+import com.zedread.pos.ui.viewmodel.PermissionsViewModel
 import com.zedread.pos.ui.viewmodel.PrintersViewModel
 
 /**
- * Live-updating discovery scan — first runtime permission request in this
- * app. On API 31+ (Android 12+), `BLUETOOTH_SCAN` and `BLUETOOTH_CONNECT`
- * are both runtime-dangerous permissions regardless of the `neverForLocation`
- * manifest flag — [GenericBluetoothPrinterDriver.discover] calls
- * `adapter.startDiscovery()` (needs SCAN) and reads `adapter.bondedDevices`
- * (needs CONNECT), and Epson's own SDK makes the same OS-level calls
- * internally. Below API 31, `ACCESS_FINE_LOCATION` is what classic Bluetooth
- * discovery (and Epson's SDK on those levels) needs instead; see
- * AndroidManifest.xml and PRINTER_SDK_SETUP.md for the full rationale.
+ * Live-updating discovery scan — requires the same runtime permissions
+ * [com.zedread.pos.ui.components.PosTopBar]'s warning badge already tracks
+ * (see [PermissionsViewModel]/[com.zedread.pos.data.repository.PermissionsRepository]
+ * for the full per-API-level rationale: `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT`
+ * on API 31+, `ACCESS_FINE_LOCATION` below). The app already asks for these
+ * once on launch (see [com.zedread.pos.ui.PosNavHost]'s doc) — this is the
+ * contextual fallback for a cashier who denied that, or whose grant was
+ * later revoked, without making them go find the top-bar badge first.
  * Starts the scan once permission is settled, and always stops it
  * ([PrintersViewModel.stopDiscovery]) when the dialog leaves composition —
  * a discovery scan left running in the background would drain battery/radio
@@ -54,27 +50,19 @@ import com.zedread.pos.ui.viewmodel.PrintersViewModel
 fun DiscoverPrintersDialog(
     viewModel: PrintersViewModel,
     onDismiss: () -> Unit,
+    permissionsViewModel: PermissionsViewModel = hiltViewModel(),
 ) {
-    val context = LocalContext.current
     val discoveryState by viewModel.discoveryState.collectAsState()
     var permissionDenied by remember { mutableStateOf(false) }
 
-    val requiredPermissions = remember {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
-        } else {
-            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
-    }
-
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+        permissionsViewModel.refresh()
         if (granted.values.all { it }) viewModel.startDiscovery() else permissionDenied = true
     }
 
     LaunchedEffect(Unit) {
-        val missing = requiredPermissions.filter {
-            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-        }
+        permissionsViewModel.refresh()
+        val missing = permissionsViewModel.missingPermissions.value
         if (missing.isNotEmpty()) {
             permissionLauncher.launch(missing.toTypedArray())
         } else {
