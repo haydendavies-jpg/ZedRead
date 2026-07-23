@@ -6,6 +6,18 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// Epson ePOS2 SDK — proprietary AAR, NOT on Maven Central (Epson gates it behind their
+// own developer-portal EULA, so it can't be resolved from a repository or bundled in
+// this repo — see pos-android/PRINTER_SDK_SETUP.md). CI never has this AAR either, so
+// the Epson-specific source (printing/epson/**, which imports com.epson.epos2.*) is
+// excluded from compilation entirely when it's absent, rather than being left to fail
+// the whole module's build — Kotlin compiles a module as one unit, so one file failing
+// to resolve its imports fails every other file's compilation too, not just its own.
+// Once a developer adds the real AAR to app/libs/, this flips to true automatically and
+// the Epson driver (and its Hilt binding, in printing/epson/EpsonPrinterModule.kt) is
+// included with no other code changes needed.
+val epsonSdkAvailable = fileTree("libs") { include("*.aar") }.files.isNotEmpty()
+
 android {
     namespace = "com.zedread.pos"
     compileSdk = 35
@@ -43,6 +55,14 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    sourceSets {
+        getByName("main") {
+            if (!epsonSdkAvailable) {
+                java.exclude("**/printing/epson/**")
+            }
+        }
     }
 }
 
@@ -92,15 +112,14 @@ dependencies {
     implementation(libs.hilt.work)
     ksp(libs.hilt.work.compiler)
 
-    // Epson ePOS2 SDK — proprietary AAR, NOT on Maven Central (Epson gates it behind
-    // their own developer-portal EULA, so it can't be resolved from a repository).
-    // Download it from Epson's developer site and place the AAR(s) in app/libs/ —
-    // see pos-android/PRINTER_SDK_SETUP.md. fileTree reads the local filesystem
-    // directly, so this does NOT need a repository entry in settings.gradle.kts.
-    // Until the AAR is present, printing/epson/EpsonPrinterDriver.kt (and only that
-    // file) will fail to compile with unresolved com.epson.epos2.* imports —
-    // expected, not a bug.
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+    // Epson ePOS2 SDK — see the epsonSdkAvailable comment above. fileTree reads the
+    // local filesystem directly, so this does NOT need a repository entry in
+    // settings.gradle.kts. Only added when the AAR is actually present — an
+    // unconditional fileTree() dependency here would resolve to nothing but still
+    // needs epsonSdkAvailable to gate the source exclusion above regardless.
+    if (epsonSdkAvailable) {
+        implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+    }
 
     // Test
     testImplementation(libs.junit)

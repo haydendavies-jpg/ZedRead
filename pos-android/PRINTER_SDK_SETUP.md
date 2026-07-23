@@ -26,14 +26,20 @@ automatically; you need to add it yourself before the app will build.
    committed to this repository. Every developer/CI machine that needs to
    build the app needs its own copy placed the same way.
 
-## What breaks without it (expected, not a bug)
+## What happens without it (nothing breaks)
 
-Until the AAR is present, exactly one file fails to compile:
-`printing/epson/EpsonPrinterDriver.kt`, with unresolved `com.epson.epos2.*`
-imports. Every other file in the printer feature (Room storage, the driver
-abstraction, the generic Bluetooth/network drivers, the Printers screen, the
-payment "Print receipt" wiring) has no dependency on the Epson SDK and builds
-fine on its own.
+`app/build.gradle.kts` detects whether any `.aar` file exists in `app/libs/`
+(`epsonSdkAvailable`). When it doesn't, the entire `printing/epson/` source
+directory (both `EpsonPrinterDriver.kt` and its Hilt binding,
+`EpsonPrinterModule.kt`) is excluded from compilation — Kotlin compiles a
+module as one unit, so leaving those files in with unresolved
+`com.epson.epos2.*` imports would fail every other file's compilation too,
+not just its own. With the AAR absent, the app builds and runs normally with
+just the generic Bluetooth/network drivers registered (see
+`GenericNetworkPrinterDriver`/`GenericBluetoothPrinterDriver`); dropping the
+real AAR into `app/libs/` and rebuilding flips `epsonSdkAvailable` to `true`
+automatically, compiling in the Epson driver with no other code changes
+needed.
 
 ## Permission decisions already made
 
