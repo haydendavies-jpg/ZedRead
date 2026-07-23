@@ -7,7 +7,22 @@
     <!-- Stage 16: printing permissions -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <!--
+      neverForLocation: this app only ever reads a scanned Bluetooth device's
+      identity/address to offer it as a printer to pair with — it never derives
+      physical location from scan results — so BLUETOOTH_SCAN can waive the
+      API 31+ location-permission requirement instead of also requesting it on
+      modern devices. ACCESS_FINE_LOCATION below still covers API < 31, where
+      classic Bluetooth discovery (and Epson's own documented SDK requirement
+      on those levels) needs it regardless of this flag.
+    -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="s" />
+    <uses-permission
+        android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="30" />
 
     <application
         android:name=".PosApplication"

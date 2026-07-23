@@ -20,6 +20,7 @@ import com.zedread.pos.ui.screens.auth.PinSetScreen
 import com.zedread.pos.ui.screens.auth.SiteSelectorScreen
 import com.zedread.pos.ui.screens.invoicesearch.InvoiceSearchScreen
 import com.zedread.pos.ui.screens.orderentry.OrderEntryScreen
+import com.zedread.pos.ui.screens.printers.PrintersScreen
 import com.zedread.pos.ui.screens.register.CashInScreen
 import com.zedread.pos.ui.screens.register.CashUpScreen
 import com.zedread.pos.ui.screens.register.RegisterGateScreen
@@ -165,6 +166,13 @@ fun PosNavHost() {
         composable(Screen.Settings.route) {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
+                onPrinters = { navController.navigate(Screen.Printers.route) },
+            )
+        }
+
+        composable(Screen.Printers.route) {
+            PrintersScreen(
+                onBack = { navController.popBackStack() },
             )
         }
 
@@ -217,5 +225,6 @@ sealed class Screen(val route: String) {
     object OrderEntry : Screen("order_entry")
     object SwitchUser : Screen("switch_user")
     object Settings : Screen("settings")
+    object Printers : Screen("printers")
     object InvoiceSearch : Screen("invoice_search")
 }

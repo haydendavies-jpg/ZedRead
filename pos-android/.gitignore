@@ -9,3 +9,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Proprietary printer SDK AAR(s) — downloaded by the developer from Epson's
+# developer portal under their EULA, never committed. See PRINTER_SDK_SETUP.md.
+app/libs/*.aar

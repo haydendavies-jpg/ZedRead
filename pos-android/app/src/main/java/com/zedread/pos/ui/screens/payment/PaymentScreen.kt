@@ -76,6 +76,7 @@ fun PaymentModal(
     onConfirmCash: () -> Unit,
     onConfirmVoucher: () -> Unit,
     onNewOrder: () -> Unit,
+    onPrintReceipt: () -> Unit,
 ) {
     val colors = LocalZedReadColors.current
     Box(
@@ -93,7 +94,7 @@ fun PaymentModal(
                 .background(colors.surface),
         ) {
             if (state.stage == PaymentStage.DONE) {
-                PaymentDoneContent(state = state, isOnline = isOnline, onNewOrder = onNewOrder)
+                PaymentDoneContent(state = state, isOnline = isOnline, onNewOrder = onNewOrder, onPrintReceipt = onPrintReceipt)
             } else {
                 PaymentChoosingContent(
                     state = state,
@@ -484,7 +485,12 @@ private fun PrimaryActionButton(label: String, enabled: Boolean, isLoading: Bool
 }
 
 @Composable
-private fun PaymentDoneContent(state: PaymentUiState, isOnline: Boolean, onNewOrder: () -> Unit) {
+private fun PaymentDoneContent(
+    state: PaymentUiState,
+    isOnline: Boolean,
+    onNewOrder: () -> Unit,
+    onPrintReceipt: () -> Unit,
+) {
     val colors = LocalZedReadColors.current
     Column(
         modifier = Modifier.padding(40.dp).fillMaxWidth(),
@@ -543,6 +549,18 @@ private fun PaymentDoneContent(state: PaymentUiState, isOnline: Boolean, onNewOr
             }
         }
         Spacer(Modifier.height(26.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .border(width = 1.5.dp, color = colors.inputBorder, shape = RoundedCornerShape(12.dp))
+                .clickable(onClick = onPrintReceipt),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Print receipt", color = colors.text, fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(Modifier.height(12.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()

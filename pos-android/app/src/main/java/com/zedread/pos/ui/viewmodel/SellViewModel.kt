@@ -7,15 +7,18 @@ import com.zedread.pos.data.api.LineModifierDto
 import com.zedread.pos.data.api.LinkedGroupDto
 import com.zedread.pos.data.api.PosMenuLayoutDto
 import com.zedread.pos.data.api.ProductModifierGroupDto
+import com.zedread.pos.data.local.TokenStore
 import com.zedread.pos.data.local.entity.CategoryEntity
 import com.zedread.pos.data.local.entity.ProductEntity
 import com.zedread.pos.data.repository.CatalogRepository
 import com.zedread.pos.data.repository.MenuLayoutRepository
 import com.zedread.pos.data.repository.OutboxRepository
+import com.zedread.pos.data.repository.PrinterRepository
 import com.zedread.pos.data.repository.SettingKeys
 import com.zedread.pos.data.repository.SettingsRepository
 import com.zedread.pos.data.sync.OutboxSaleLine
 import com.zedread.pos.data.sync.SyncPaymentLeg
+import com.zedread.pos.printing.Docket
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +26,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -75,6 +79,8 @@ class SellViewModel @Inject constructor(
     private val outboxRepo: OutboxRepository,
     private val menuLayoutRepo: MenuLayoutRepository,
     private val settingsRepo: SettingsRepository,
+    private val printerRepo: PrinterRepository,
+    private val tokenStore: TokenStore,
 ) : ViewModel() {
 
     // ── Category / product browsing ─────────────────────────────────────────
@@ -700,6 +706,9 @@ class SellViewModel @Inject constructor(
     private val _paymentState = MutableStateFlow<PaymentUiState?>(null)
     val paymentState: StateFlow<PaymentUiState?> = _paymentState.asStateFlow()
 
+    /** This sale's client-generated ref, captured in [submitPayment]'s onSuccess — [printReceipt]'s Docket.invoiceId. */
+    private var lastCompletedClientRef: String? = null
+
     /** Amount still owed on this sale — the full total until a split leg has been paid. */
     fun remainingCents(state: PaymentUiState): Long = (totalCents - state.paidCents).coerceAtLeast(0)
 
@@ -809,7 +818,12 @@ class SellViewModel @Inject constructor(
         _paymentState.value = current.copy(isSubmitting = true, errorMessage = null)
         viewModelScope.launch {
             runCatching { outboxRepo.enqueueSale(lines = lines, payments = updatedLegs, isPaid = true, totalCents = total) }
-                .onSuccess {
+                .onSuccess { clientRef ->
+                    // Captured for printReceipt() — the sync worker re-keys this row with the
+                    // real server-issued ref once it confirms (see enqueueSale's own doc); the
+                    // client ref is all that's available at Done-time, same value the receipt
+                    // would otherwise be printed with while offline anyway.
+                    lastCompletedClientRef = clientRef
                     _paymentState.value = current.copy(
                         stage = PaymentStage.DONE,
                         isSubmitting = false,
@@ -824,6 +838,29 @@ class SellViewModel @Inject constructor(
                     val before = _paymentState.value ?: return@onFailure
                     _paymentState.value = before.copy(isSubmitting = false, errorMessage = e.message ?: "Couldn't queue this sale")
                 }
+        }
+    }
+
+    /**
+     * "Print receipt" on the Done screen — sends this sale's docket to every
+     * currently-enabled saved printer ([PrinterRepository.sendToAllEnabled]).
+     * Best-effort: a printer failure is never surfaced as a payment error
+     * here, since the sale itself already completed — see
+     * [com.zedread.pos.printing.PrintService]'s own "failure does NOT
+     * affect the invoice" doc, which this mirrors.
+     */
+    fun printReceipt() {
+        val state = _paymentState.value ?: return
+        val clientRef = lastCompletedClientRef ?: return
+        viewModelScope.launch {
+            val docket = Docket(
+                invoiceId = clientRef,
+                siteName = tokenStore.siteName.firstOrNull() ?: "ZedRead",
+                lineItems = _lineItems.value,
+                totalCents = state.doneAmountCents,
+                paymentMethod = state.doneMethodLabel,
+            )
+            printerRepo.sendToAllEnabled(docket)
         }
     }
 

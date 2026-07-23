@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -59,6 +60,7 @@ import com.zedread.pos.ui.viewmodel.TopBarViewModel
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onPrinters: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
     syncViewModel: SyncViewModel = hiltViewModel(),
     topBarViewModel: TopBarViewModel = hiltViewModel(),
@@ -81,6 +83,9 @@ fun SettingsScreen(
             pendingCount = pendingCount,
             onSyncClick = {},
         ) {
+            IconButton(onClick = onPrinters) {
+                Icon(Icons.Default.Print, contentDescription = "Printers", tint = Color.White)
+            }
             IconButton(onClick = { viewModel.load(forceRefresh = true) }) {
                 Icon(Icons.Default.Refresh, contentDescription = "Refresh settings", tint = Color.White)
             }

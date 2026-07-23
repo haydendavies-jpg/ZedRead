@@ -268,6 +268,7 @@ fun OrderEntryScreen(
                 onConfirmCash = viewModel::confirmCashPayment,
                 onConfirmVoucher = viewModel::confirmVoucherPayment,
                 onNewOrder = viewModel::completePaymentAndStartNewOrder,
+                onPrintReceipt = viewModel::printReceipt,
             )
         }
 

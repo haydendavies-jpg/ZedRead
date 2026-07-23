@@ -92,7 +92,20 @@ dependencies {
     implementation(libs.hilt.work)
     ksp(libs.hilt.work.compiler)
 
+    // Epson ePOS2 SDK — proprietary AAR, NOT on Maven Central (Epson gates it behind
+    // their own developer-portal EULA, so it can't be resolved from a repository).
+    // Download it from Epson's developer site and place the AAR(s) in app/libs/ —
+    // see pos-android/PRINTER_SDK_SETUP.md. fileTree reads the local filesystem
+    // directly, so this does NOT need a repository entry in settings.gradle.kts.
+    // Until the AAR is present, printing/epson/EpsonPrinterDriver.kt (and only that
+    // file) will fail to compile with unresolved com.epson.epos2.* imports —
+    // expected, not a bug.
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+
     // Test
     testImplementation(libs.junit)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.mockito.core)
     androidTestImplementation(libs.androidx.test.ext)
+    androidTestImplementation(libs.room.testing)
 }
