@@ -37,9 +37,14 @@ import com.zedread.pos.ui.viewmodel.PrintersViewModel
 
 /**
  * Live-updating discovery scan — first runtime permission request in this
- * app (`ACCESS_FINE_LOCATION`, required pre-Android-12 for Bluetooth
- * discovery and by Epson's own SDK on those API levels; see
- * AndroidManifest.xml and PRINTER_SDK_SETUP.md for the full rationale).
+ * app. On API 31+ (Android 12+), `BLUETOOTH_SCAN` and `BLUETOOTH_CONNECT`
+ * are both runtime-dangerous permissions regardless of the `neverForLocation`
+ * manifest flag — [GenericBluetoothPrinterDriver.discover] calls
+ * `adapter.startDiscovery()` (needs SCAN) and reads `adapter.bondedDevices`
+ * (needs CONNECT), and Epson's own SDK makes the same OS-level calls
+ * internally. Below API 31, `ACCESS_FINE_LOCATION` is what classic Bluetooth
+ * discovery (and Epson's SDK on those levels) needs instead; see
+ * AndroidManifest.xml and PRINTER_SDK_SETUP.md for the full rationale.
  * Starts the scan once permission is settled, and always stops it
  * ([PrintersViewModel.stopDiscovery]) when the dialog leaves composition —
  * a discovery scan left running in the background would drain battery/radio
@@ -54,15 +59,24 @@ fun DiscoverPrintersDialog(
     val discoveryState by viewModel.discoveryState.collectAsState()
     var permissionDenied by remember { mutableStateOf(false) }
 
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) viewModel.startDiscovery() else permissionDenied = true
+    val requiredPermissions = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+        } else {
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+        if (granted.values.all { it }) viewModel.startDiscovery() else permissionDenied = true
     }
 
     LaunchedEffect(Unit) {
-        val needsLocation = Build.VERSION.SDK_INT < Build.VERSION_CODES.S &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
-        if (needsLocation) {
-            permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+        val missing = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            permissionLauncher.launch(missing.toTypedArray())
         } else {
             viewModel.startDiscovery()
         }
@@ -78,7 +92,7 @@ fun DiscoverPrintersDialog(
         text = {
             when {
                 permissionDenied -> Text(
-                    "Location permission is needed to scan for Bluetooth printers on this Android version. " +
+                    "Bluetooth permission is needed to scan for printers on this device. " +
                         "You can still add network printers once permission is granted.",
                 )
                 else -> {
