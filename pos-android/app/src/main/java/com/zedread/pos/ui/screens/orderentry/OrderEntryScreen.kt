@@ -27,9 +27,9 @@ import androidx.compose.foundation.lazy.items as columnItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.List as ListIcon
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -147,7 +147,7 @@ fun OrderEntryScreen(
                 // own always-dark (#332E29) background, not the theme-aware surface
                 // these screens otherwise sit on.
                 IconButton(onClick = { showHeldOrders = true; heldOrdersViewModel.refresh() }) {
-                    Icon(ListIcon, contentDescription = "Held orders", tint = Color.White)
+                    Icon(Icons.Default.Assignment, contentDescription = "Held orders", tint = Color.White)
                 }
                 IconButton(onClick = onInvoiceSearch) {
                     Icon(Icons.Default.History, contentDescription = "Invoice search", tint = Color.White)
