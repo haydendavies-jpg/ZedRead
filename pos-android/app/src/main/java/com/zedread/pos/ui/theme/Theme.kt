@@ -17,6 +17,16 @@ import androidx.compose.ui.graphics.Color
  * than forced into ill-fitting MaterialTheme roles. Font swap (Public Sans /
  * IBM Plex Sans / IBM Plex Mono via the downloadable-fonts API) is a
  * separate, still-unbuilt follow-up — see ANDROID_POS_BUILD_PLAN.md.
+ *
+ * [accent]/[accentText]/[accentSoft]/[accentSoft2] were originally the
+ * design_handoff_zedread mockup's own crimson (#A82040) — a Claude-authored
+ * reference doc, explicitly "not necessarily final real branding" per its
+ * own README. Per repeated user-testing feedback that the app's colours are
+ * wrong, they're now the portal's own real, documented brand taupe
+ * (pos-portal/CLAUDE.md's "single source of truth" for brand — `--zr-accent`
+ * / `--zr-accent-text` / `--zr-accent-soft(2)` in pos-portal/src/index.css),
+ * the same colour LoginScreen.kt already special-cased for exactly this
+ * reason before this fix made it the app-wide default too.
  */
 data class ZedReadColors(
     val bg: Color,
@@ -48,10 +58,10 @@ private val LightZedReadColors = ZedReadColors(
     text = Color(0xFF241F1A),
     muted = Color(0xFF6B6259),
     faint = Color(0xFFA39A8C),
-    accent = Color(0xFFA82040),
-    accentText = Color(0xFFA82040),
-    accentSoft = Color(0x1AA82040),
-    accentSoft2 = Color(0x29A82040),
+    accent = Color(0xFF554C44),
+    accentText = Color(0xFF403933),
+    accentSoft = Color(0x1A554C44),
+    accentSoft2 = Color(0x29554C44),
     green = Color(0xFF2F4034),
     greenSoft = Color(0x242F4034),
 )
@@ -67,10 +77,10 @@ private val DarkZedReadColors = ZedReadColors(
     text = Color(0xFFEFE9E0),
     muted = Color(0xFFA89F92),
     faint = Color(0xFF6F685E),
-    accent = Color(0xFFA82040),
-    accentText = Color(0xFFE58BA0),
-    accentSoft = Color(0x33A82040),
-    accentSoft2 = Color(0x4DA82040),
+    accent = Color(0xFF554C44),
+    accentText = Color(0xFFC2B6A8),
+    accentSoft = Color(0x2E554C44),
+    accentSoft2 = Color(0x42554C44),
     green = Color(0xFF8FBF9C),
     greenSoft = Color(0x298FBF9C),
 )

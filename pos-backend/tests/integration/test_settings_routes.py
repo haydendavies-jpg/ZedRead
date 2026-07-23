@@ -89,11 +89,15 @@ async def test_list_settings_with_permission_returns_catalog(
     keys = {s["key"] for s in body}
     assert "cash_in_mode" in keys
     assert "hide_variance_on_close" in keys
+    assert "auto_menu_enabled" in keys
     cash_in = next(s for s in body if s["key"] == "cash_in_mode")
     assert cash_in["effective_value"] == "bulk"
     assert cash_in["brand_value"] is None
     hide_variance = next(s for s in body if s["key"] == "hide_variance_on_close")
     assert hide_variance["effective_value"] is False
+    auto_menu = next(s for s in body if s["key"] == "auto_menu_enabled")
+    assert auto_menu["effective_value"] is False
+    assert auto_menu["category"] == "Menu Studio"
 
 
 async def test_list_settings_search_filters_by_label(client, db, mgmt_auth_headers, test_manager_profile):

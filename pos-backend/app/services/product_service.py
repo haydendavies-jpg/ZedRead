@@ -452,8 +452,12 @@ async def update_product(
         )
     if payload.display_order is not None:
         product.display_order = payload.display_order
+    if payload.is_sold_out is not None:
+        product.is_sold_out = payload.is_sold_out
 
     after_state: dict = {"name": product.name, "base_price_cents": product.base_price_cents}
+    if payload.is_sold_out is not None:
+        after_state["is_sold_out"] = product.is_sold_out
     if import_id is not None:
         after_state["import_id"] = str(import_id)
 

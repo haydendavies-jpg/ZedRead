@@ -2,6 +2,7 @@ package com.zedread.pos.data.repository
 
 import com.zedread.pos.data.api.PosApiService
 import com.zedread.pos.data.api.ProductModifierGroupDto
+import com.zedread.pos.data.api.ProductUpdateRequest
 import com.zedread.pos.data.local.TokenStore
 import com.zedread.pos.data.local.dao.CategoryDao
 import com.zedread.pos.data.local.dao.ProductDao
@@ -50,6 +51,7 @@ class CatalogRepository @Inject constructor(
                 photoUrl = dto.photoUrl,
                 displayOrder = dto.displayOrder,
                 isActive = dto.isActive,
+                isSoldOut = dto.isSoldOut,
                 categoryColor = dto.categoryColor,
                 modifierNames = dto.modifierNames,
             )
@@ -71,6 +73,21 @@ class CatalogRepository @Inject constructor(
     suspend fun clearCache() {
         productDao.clearAll()
         categoryDao.clearAll()
+    }
+
+    /**
+     * Push the long-press popup's sold-out toggle to the backend, then patch
+     * the local cache from the confirmed response — mirrors
+     * SettingsRepository.saveAsDefault's "patch from the response, don't
+     * refetch" convention. Throws on network error; the caller (SellViewModel)
+     * leaves the cached/displayed state untouched when that happens, since a
+     * failed write must not silently look like it took effect.
+     */
+    suspend fun setSoldOut(productId: String, isSoldOut: Boolean) {
+        val token = tokenStore.accessToken.firstOrNull()
+            ?: error("No access token — cannot update product")
+        val updated = api.updateProduct("Bearer $token", productId, ProductUpdateRequest(isSoldOut = isSoldOut))
+        productDao.setSoldOut(productId, updated.isSoldOut)
     }
 
     /**

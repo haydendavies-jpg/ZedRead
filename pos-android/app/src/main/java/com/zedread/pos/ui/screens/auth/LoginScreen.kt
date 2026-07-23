@@ -2,7 +2,6 @@ package com.zedread.pos.ui.screens.auth
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -43,23 +43,13 @@ import com.zedread.pos.ui.theme.LocalZedReadColors
 import com.zedread.pos.ui.viewmodel.AuthViewModel
 import com.zedread.pos.ui.viewmodel.LoginUiState
 
-// The portal's own brand accent (pos-portal/src/index.css --zr-accent), a
-// warm taupe — deliberately distinct from ZedReadColors.accent (the crimson
-// from the Register screen's own design_handoff_zedread reference). Per
-// user-testing feedback this login screen should read as "the same product
-// as the portal's own sign-in page" rather than the POS Register's colour
-// scheme, so it borrows the portal's palette for this screen only.
-private val PortalAccent = Color(0xFF554C44)
-private val PortalAccentTextLight = Color(0xFF403933)
-private val PortalAccentTextDark = Color(0xFFC2B6A8)
-
 /**
  * Email + password login — POST /auth/pos/login against this terminal's
- * paired device. Styled to match the portal's own sign-in card
- * (cream/near-black canvas, centered white/dark card, serif wordmark +
- * tagline, taupe accent) rather than a full-bleed generic Material form —
- * see PortalAccent's doc for why the accent colour differs from the rest of
- * this app's Register screens.
+ * paired device. Styled to match the portal's own sign-in card (cream/
+ * near-black canvas, centered white/dark card, serif wordmark + tagline) —
+ * ZedReadColors.accent/accentText now equal the portal's own brand taupe
+ * app-wide (see Theme.kt's doc), so this screen just uses the shared theme
+ * colours directly rather than a page-local duplicate palette.
  */
 @Composable
 fun LoginScreen(
@@ -68,7 +58,7 @@ fun LoginScreen(
     viewModel: AuthViewModel = hiltViewModel(),
 ) {
     val colors = LocalZedReadColors.current
-    val accentText = if (isSystemInDarkTheme()) PortalAccentTextDark else PortalAccentTextLight
+    val accentText = colors.accentText
     val uiState by viewModel.loginUiState.collectAsState()
 
     var email by remember { mutableStateOf("") }
@@ -101,6 +91,7 @@ fun LoginScreen(
         ) {
             Text(
                 "ZedRead",
+                fontFamily = FontFamily.Serif,
                 fontWeight = FontWeight.Bold,
                 fontSize = 30.sp,
                 color = accentText,
@@ -129,8 +120,8 @@ fun LoginScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PortalAccent,
-                    focusedLabelColor = PortalAccent,
+                    focusedBorderColor = colors.accent,
+                    focusedLabelColor = colors.accent,
                     unfocusedBorderColor = colors.inputBorder,
                 ),
                 modifier = Modifier.fillMaxWidth(),
@@ -146,8 +137,8 @@ fun LoginScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PortalAccent,
-                    focusedLabelColor = PortalAccent,
+                    focusedBorderColor = colors.accent,
+                    focusedLabelColor = colors.accent,
                     unfocusedBorderColor = colors.inputBorder,
                 ),
                 modifier = Modifier.fillMaxWidth(),
@@ -167,7 +158,7 @@ fun LoginScreen(
             Button(
                 onClick = { viewModel.login(email.trim(), password) },
                 enabled = email.isNotBlank() && password.isNotBlank() && uiState !is LoginUiState.Loading,
-                colors = ButtonDefaults.buttonColors(containerColor = PortalAccent, contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.accent, contentColor = Color.White),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (uiState is LoginUiState.Loading) {

@@ -12,12 +12,15 @@ class MenuButtonOut(BaseModel):
     """
     A resolved menu button — the stored row plus a live preview.
 
-    For kind='product': product_name/price_cents/is_active/category_color/
-    product_photo_url are resolved live against the brand's catalog by
-    product_ref (None when the ref no longer resolves — category_color powers
-    the inspector's "Category default" colour reset and the tile's fallback
-    fill when color is unset; product_photo_url renders as the tile's
-    background image when the linked product has one).
+    For kind='product': product_name/price_cents/is_active/is_sold_out/
+    category_color/product_photo_url are resolved live against the brand's
+    catalog by product_ref (None when the ref no longer resolves —
+    category_color powers the inspector's "Category default" colour reset
+    and the tile's fallback fill when color is unset; product_photo_url
+    renders as the tile's background image when the linked product has one).
+    is_sold_out greys the POS tile out and blocks adding it to an order —
+    set/cleared from the Register's own long-press product popup, not from
+    Menu Studio.
     For kind='folder': child_tab_name/child_tab_button_count preview the
     nested tab this button opens.
 
@@ -41,6 +44,7 @@ class MenuButtonOut(BaseModel):
     product_name: str | None = None
     price_cents: int | None = None
     is_active: bool | None = None
+    is_sold_out: bool | None = None
     category_color: str | None = None
     product_photo_url: str | None = None
     child_tab_name: str | None = None

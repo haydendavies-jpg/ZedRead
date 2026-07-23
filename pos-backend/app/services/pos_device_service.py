@@ -85,6 +85,29 @@ async def count_active_devices_for_license(db: AsyncSession, license_id: uuid.UU
     return result.scalar_one()
 
 
+async def count_devices_for_site(db: AsyncSession, site_id: uuid.UUID) -> int:
+    """
+    Count every PosDevice row ever claimed at a site, active or not.
+
+    Used by pos_auth_service to auto-name a brand-new device claim ("POS #N")
+    when the terminal submits no device_name of its own. Counts inactive/
+    deregistered devices too — not just active ones like
+    count_active_devices_for_license — so the numbering is monotonic and
+    never reuses a number a deregistered device already had.
+
+    Args:
+        db: Active database session.
+        site_id: The site to count devices at.
+
+    Returns:
+        int: Number of devices ever claimed at this site.
+    """
+    result = await db.execute(
+        select(func.count()).select_from(PosDevice).where(PosDevice.site_id == site_id)
+    )
+    return result.scalar_one()
+
+
 async def list_devices_for_brand(
     db: AsyncSession,
     brand_id: uuid.UUID,

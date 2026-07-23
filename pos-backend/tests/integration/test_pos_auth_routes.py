@@ -164,6 +164,37 @@ async def test_pos_login_no_existing_device_claims_new_device(
     assert device.device_name == "Brand New Terminal"
 
 
+async def test_pos_login_auto_names_device_counting_up_per_site(
+    client, db, test_user, test_site, test_access_grant, test_license
+):
+    """
+    Omitting device_name auto-assigns "POS #N", counting up per site — per
+    user-testing feedback, not the terminal's own app/model name.
+    """
+    test_license.max_devices = 2
+    await db.flush()
+
+    first = await client.post(
+        "/auth/pos/login",
+        json={"email": "posuser@test.com", "password": "POSPassword123!"},
+    )
+    assert first.status_code == 200
+    first_result = await db.execute(
+        select(PosDevice).where(PosDevice.device_token == first.json()["device_token"])
+    )
+    assert first_result.scalar_one().device_name == "POS #1"
+
+    second = await client.post(
+        "/auth/pos/login",
+        json={"email": "posuser@test.com", "password": "POSPassword123!"},
+    )
+    assert second.status_code == 200
+    second_result = await db.execute(
+        select(PosDevice).where(PosDevice.device_token == second.json()["device_token"])
+    )
+    assert second_result.scalar_one().device_name == "POS #2"
+
+
 async def test_pos_login_new_device_writes_device_registered_audit_log(
     client, db, test_user, test_site, test_access_grant, test_license
 ):
@@ -1107,14 +1138,20 @@ async def test_pin_verify_by_site_collision_returns_403(
 # ── Login missing fields ──────────────────────────────────────────────────────
 
 
-async def test_pos_login_missing_device_name_returns_422(client, test_user):
-    """Missing device_name returns 422 — device_token is now optional, device_name is not."""
+async def test_pos_login_missing_device_name_does_not_422(
+    client, test_user, test_site, test_access_grant, test_license
+):
+    """
+    Omitted device_name is accepted (not a 422) — the backend now
+    auto-assigns "POS #N" for a brand-new device claim rather than requiring
+    the terminal to submit its own name, per user-testing feedback.
+    """
     response = await client.post(
         "/auth/pos/login",
         json={"email": "posuser@test.com", "password": "POSPassword123!"},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 200
 
 
 async def test_pos_login_omitted_device_token_defaults_to_claim(

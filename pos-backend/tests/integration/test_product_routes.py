@@ -211,6 +211,54 @@ async def test_update_product_writes_audit_log(
     assert row.actor_id == test_user.id
 
 
+async def test_get_product_defaults_is_sold_out_false(client, pos_auth_headers, test_product):
+    """A freshly-created product is not sold out by default."""
+    response = await client.get(f"/products/{test_product.id}", headers=pos_auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["is_sold_out"] is False
+
+
+async def test_update_product_sets_is_sold_out(client, pos_auth_headers, test_product):
+    """PATCH /products/{id} sets is_sold_out — the Android Register's long-press popup toggle."""
+    response = await client.patch(
+        f"/products/{test_product.id}",
+        json={"is_sold_out": True},
+        headers=pos_auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["is_sold_out"] is True
+
+    reset = await client.patch(
+        f"/products/{test_product.id}",
+        json={"is_sold_out": False},
+        headers=pos_auth_headers,
+    )
+    assert reset.json()["is_sold_out"] is False
+
+
+async def test_update_product_sold_out_writes_audit_log(
+    client, db, pos_auth_headers, test_product, test_user
+):
+    """Toggling is_sold_out writes a PRODUCT_UPDATED audit row carrying the new value."""
+    await client.patch(
+        f"/products/{test_product.id}",
+        json={"is_sold_out": True},
+        headers=pos_auth_headers,
+    )
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.action == PRODUCT_UPDATED,
+            AuditLog.entity_id == str(test_product.id),
+        )
+    )
+    row = result.scalar_one()
+    assert row.actor_id == test_user.id
+    assert row.after_state["is_sold_out"] is True
+
+
 async def test_deactivate_product_returns_200(client, pos_auth_headers, test_product):
     """DELETE /products/{id} soft-deletes and returns 200."""
     response = await client.delete(

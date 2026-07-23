@@ -317,7 +317,7 @@ async def _resolve_or_claim_device(
     user: User,
     site_id: uuid.UUID,
     license_row: License,
-    device_name: str,
+    device_name: str | None,
     device_token: str | None,
     hardware_id: str | None = None,
 ) -> PosDevice | None:
@@ -343,7 +343,8 @@ async def _resolve_or_claim_device(
         user: The authenticated POS user, for audit attribution.
         site_id: The site being logged into.
         license_row: The target site's active License.
-        device_name: Human-readable name to give a newly claimed device.
+        device_name: Human-readable name to give a newly claimed device, or
+            None/blank to auto-assign "POS #N" (counting up per site).
         device_token: The terminal's own previously-claimed token, if any.
         hardware_id: The terminal's stable hardware identifier, if any.
 
@@ -399,11 +400,21 @@ async def _resolve_or_claim_device(
         )
         return existing
 
+    resolved_device_name = device_name.strip() if device_name and device_name.strip() else None
+    if resolved_device_name is None:
+        # No client-supplied name (or blank) — auto-assign "POS #N", counting
+        # up per site rather than defaulting to the terminal's own app/model
+        # name (per user-testing feedback). Counts every device ever claimed
+        # at this site (see count_devices_for_site's own doc), so the number
+        # is monotonic and never reused by a later claim.
+        existing_count = await pos_device_service.count_devices_for_site(db, site_id)
+        resolved_device_name = f"POS #{existing_count + 1}"
+
     device = PosDevice(
         id=uuid.uuid4(),
         site_id=site_id,
         license_id=license_row.id,
-        device_name=device_name,
+        device_name=resolved_device_name,
         device_token=str(uuid.uuid4()),
         hardware_id=hardware_id,
         is_active=True,
@@ -422,7 +433,7 @@ async def _resolve_or_claim_device(
         after_state={
             "site_id": str(site_id),
             "license_id": str(license_row.id),
-            "device_name": device_name,
+            "device_name": resolved_device_name,
         },
     )
     return device
@@ -433,7 +444,7 @@ async def _finalize_login(
     *,
     user: User,
     site_id: uuid.UUID,
-    device_name: str,
+    device_name: str | None,
     device_token: str | None,
     hardware_id: str | None = None,
 ) -> POSLoginResponse:
@@ -449,7 +460,8 @@ async def _finalize_login(
         db: Active database session.
         user: The already-credential-verified user.
         site_id: The site being logged into.
-        device_name: Human-readable name to give a newly claimed device.
+        device_name: Human-readable name to give a newly claimed device, or
+            None/blank to auto-assign "POS #N" (counting up per site).
         device_token: The terminal's own previously-claimed token, if any.
         hardware_id: The terminal's stable hardware identifier, if any.
 

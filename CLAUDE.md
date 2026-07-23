@@ -339,6 +339,24 @@ folded into the existing `USER_UPDATED` audit row rather than a new audit action
 portal's Users edit modal (`pages/UsersPage.tsx`) gained a checkbox for it in the User Details
 section. See `STAGE_STATUS.md` "Users edit page — POS - Site Assignment toggle".
 
+**Android POS — testing feedback round 4 (post-Users-edit-page, complete).** Eight user-reported
+gaps against the running Android app — see `STAGE_STATUS.md` "Android POS — testing feedback round
+4" for full detail. Notables: a real bug fix (`SellViewModel.allProducts` was built with
+`SharingStarted.WhileSubscribed` but nothing ever collected it, so its upstream Room flow never
+started and every product tap silently no-opped — "buttons are not selectable"); the app's accent
+colour swapped from the `design_handoff_zedread` mockup's crimson to the portal's own documented
+brand taupe (`pos-portal/CLAUDE.md`'s single source of truth), resolving the colour complaints on
+every screen including the top bar, which is now also pinned to a fixed `#FFFFFF` background with a
+serif "ZedRead" wordmark matching the portal login page, replacing the small "Z" badge; a new
+`auto_menu_enabled` setting (settings framework, toggled from Menu Studio's POS Layout tab) gates
+the Register's "All items" menu option, hidden by default so only published Menu Studio layouts are
+selectable; device claiming now auto-assigns "POS #N" (counting up per site) instead of the
+terminal's own app/model name when no `device_name` is submitted; the category-browsing grid now
+always lays out 6 fixed columns padded to at least 6 rows; and a new long-press product popup
+(`ProductDetailDialog.kt`) shows a product's description and a sold-out toggle
+(`products.is_sold_out`, migration `0057`) that greys the tile out with "SOLD OUT" written over it
+and blocks adding it to an order until toggled off again.
+
 ## Folder structure (backend)
 ```
 pos-backend/

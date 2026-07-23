@@ -1,9 +1,11 @@
 package com.zedread.pos.ui.screens.orderentry
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -142,6 +144,7 @@ fun MenuTileGrid(
     layout: PosMenuLayoutDto,
     tabId: String?,
     onProductTap: (productRef: String) -> Unit,
+    onProductLongPress: (productRef: String) -> Unit,
     onFolderTap: (childTabId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -176,6 +179,7 @@ fun MenuTileGrid(
                     MenuTile(
                         button = p.button,
                         onProductTap = onProductTap,
+                        onProductLongPress = onProductLongPress,
                         onFolderTap = onFolderTap,
                     )
                 }
@@ -188,12 +192,17 @@ fun MenuTileGrid(
 private fun MenuTile(
     button: PosMenuButtonDto,
     onProductTap: (String) -> Unit,
+    onProductLongPress: (String) -> Unit,
     onFolderTap: (String) -> Unit,
 ) {
     if (button.kind == "folder") {
         FolderTile(button = button, onClick = { button.childTabId?.let(onFolderTap) })
     } else {
-        ProductMenuTile(button = button, onClick = { button.productRef?.let(onProductTap) })
+        ProductMenuTile(
+            button = button,
+            onClick = { button.productRef?.let(onProductTap) },
+            onLongPress = { button.productRef?.let(onProductLongPress) },
+        )
     }
 }
 
@@ -229,14 +238,23 @@ private fun FolderTile(button: PosMenuButtonDto, onClick: () -> Unit) {
  * mockup's own bolder/larger price treatment was deliberately not adopted
  * per user-testing feedback preferring the existing build), a full-bleed
  * photo background when the linked product has one, falling back to its
- * colour otherwise, and a decorative round "+" badge.
+ * colour otherwise, and a decorative round "+" badge. A sold-out product
+ * greys the tile out (no photo, no "+" badge) with "SOLD OUT" written over
+ * it and blocks the short-tap add-to-cart; press-and-hold still opens the
+ * detail popup either way, so staff can clear it again — see [onLongPress].
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ProductMenuTile(button: PosMenuButtonDto, onClick: () -> Unit) {
-    val fillColor = button.color?.let { parseHexColor(it) }
-        ?: button.categoryColor?.let { parseHexColor(it) }
-        ?: LocalZedReadColors.current.accent
-    val textColor = contrastTextColor(button.color ?: button.categoryColor ?: "#554C44")
+private fun ProductMenuTile(button: PosMenuButtonDto, onClick: () -> Unit, onLongPress: () -> Unit) {
+    val colors = LocalZedReadColors.current
+    val isSoldOut = button.isSoldOut == true
+    val fillColor = when {
+        isSoldOut -> colors.faint
+        button.color != null -> parseHexColor(button.color)
+        button.categoryColor != null -> parseHexColor(button.categoryColor)
+        else -> colors.accent
+    }
+    val textColor = if (isSoldOut) colors.surface else contrastTextColor(button.color ?: button.categoryColor ?: "#554C44")
     val isInactive = button.isActive == false
 
     Box(
@@ -244,9 +262,16 @@ private fun ProductMenuTile(button: PosMenuButtonDto, onClick: () -> Unit) {
             .fillMaxSize()
             .clip(RoundedCornerShape(12.dp))
             .background(fillColor)
-            .clickable(enabled = !isInactive, onClick = onClick),
+            // enabled only gates isInactive (a POS-layout-disabled button) —
+            // NOT isSoldOut. combinedClickable's enabled flag disables both
+            // onClick and onLongClick together, and long-press must always
+            // register even while sold out (that's how staff reopen this
+            // popup to toggle it back on); the short-tap add-to-cart is
+            // instead a no-op for a sold-out product at the ViewModel level
+            // (SellViewModel.addToCart), not disabled here.
+            .combinedClickable(enabled = !isInactive, onClick = onClick, onLongClick = onLongPress),
     ) {
-        if (button.productPhotoUrl != null) {
+        if (button.productPhotoUrl != null && !isSoldOut) {
             AsyncImage(
                 model = button.productPhotoUrl,
                 contentDescription = button.productName,
@@ -267,7 +292,7 @@ private fun ProductMenuTile(button: PosMenuButtonDto, onClick: () -> Unit) {
             Spacer(Modifier.height(4.dp))
             Text(formatMenuTileCents(button.priceCents ?: 0L), color = textColor, style = MaterialTheme.typography.bodyMedium)
         }
-        if (!isInactive) {
+        if (!isInactive && !isSoldOut) {
             Box(
                 modifier = Modifier
                     .padding(8.dp)
@@ -278,6 +303,11 @@ private fun ProductMenuTile(button: PosMenuButtonDto, onClick: () -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 Text("+", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+        if (isSoldOut) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("SOLD OUT", color = textColor, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
             }
         }
     }
