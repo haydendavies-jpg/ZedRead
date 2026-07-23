@@ -77,6 +77,25 @@ class SettingsRepository @Inject constructor(
         return updated
     }
 
+    /**
+     * Apply an edit to THIS device only, immediately — patches the
+     * in-memory cache's effectiveValue without touching the backend at all.
+     *
+     * Previously a setting edited from the Settings screen only ever
+     * affected that screen's own display: [setLocalValue]-style edits lived
+     * entirely in SettingsViewModel's local state, so a Staff-tier operator
+     * (who can't [saveAsDefault] — see canPushDefaults) had no way to
+     * actually change how the till behaved this shift, even though the
+     * toggle visibly flipped. Every other reader of [getSettings] (this
+     * cache) — CashIn/CashUp's cash_in_mode, the Register's auto_menu_enabled
+     * check — now sees this change immediately, same as a pushed default
+     * would look locally, just without persisting past this session/until
+     * overwritten by the next non-forced [getSettings] call after a real sync.
+     */
+    fun applyLocalOverride(key: String, value: Any?) {
+        cachedSettings = cachedSettings?.map { if (it.key == key) it.copy(effectiveValue = value) else it }
+    }
+
     /** True if the signed-in operator's POS access profile may push settings back to the backend. */
     suspend fun canPushDefaults(): Boolean =
         tokenStore.accessProfileName.firstOrNull() in POS_SETTINGS_WRITE_PROFILES

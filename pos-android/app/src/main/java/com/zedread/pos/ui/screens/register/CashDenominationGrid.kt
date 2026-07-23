@@ -50,36 +50,35 @@ private val AUD_DENOMINATIONS = listOf(
     Denomination(5, "5c"),
 )
 
-// Column widths shared between the header row and every data row within one
-// half of the two-column split below, so everything lines up. "Denomination"
-// (12 characters) needs more room than any actual label ("$100"/"50c") ever
-// does — previously the header wrapped to two lines because it shared the
-// data rows' narrower 72.dp width; kept the header and label columns
-// separately sized here instead of forcing them to match.
-private val LABEL_COLUMN_WIDTH = 78.dp
-private val COUNT_COLUMN_WIDTH = 72.dp
-private val SUBTOTAL_COLUMN_WIDTH = 64.dp
+// Column widths for the single-column denomination list — sized generously
+// (not the previous two-column split's cramped widths) now that the popup
+// card hosting this is wide enough to give every column room without
+// truncating any label.
+private val LABEL_COLUMN_WIDTH = 92.dp
+private val COUNT_COLUMN_WIDTH = 96.dp
+private val SUBTOTAL_COLUMN_WIDTH = 100.dp
 
 /**
- * Per-denomination count entry grid — the "denomination" cash_in_mode
- * variant, an alternative to a single bulk-total field. Each row starts
- * blank (not zero) so an untouched row doesn't imply a counted-and-confirmed
- * zero. Reports the running total in cents via [onTotalChanged] on every
+ * Per-denomination count entry — the "denomination" cash_in_mode variant, an
+ * alternative to a single bulk-total field. Each row starts blank (not
+ * zero) so an untouched row doesn't imply a counted-and-confirmed zero.
+ * Reports the running total in cents via [onTotalChanged] on every
  * keystroke, so the caller's submit button stays wired to a single Long
  * exactly like the bulk-entry field's dollarsToCents() result.
  *
- * Laid out as two side-by-side columns (6 notes, 5 coins) rather than one
- * long list of 11 rows — user-testing feedback that the single-column
- * version forced scrolling to reach the smaller coin denominations inside
- * the popup card's fixed height. Each half gets its own compact header.
+ * Laid out as ONE full-width column of all 11 rows with the [NumericKeypad]
+ * to its right (not below) — per user-testing feedback that the earlier
+ * two-column notes/coins split, with the keypad underneath, made the popup
+ * feel cramped and forced truncated labels; the popup card hosting this is
+ * now wide enough (see RegisterPopupCard's `maxWidth`) that a single column
+ * plus a side-by-side keypad fits without ever needing to scroll.
  *
  * Count entry is tap-to-select-then-type rather than 11 individually
  * focusable text fields: tapping a row makes it the active one (highlighted
- * border), and a single persistent [NumericKeypad] below both columns —
- * shared across every row — types into whichever row is currently active.
- * User-testing feedback that cash entry should never open the Android soft
- * keyboard; the first (largest) denomination starts active so the keypad is
- * immediately usable without an extra tap.
+ * border), and the persistent [NumericKeypad] types into whichever row is
+ * currently active. User-testing feedback that cash entry should never open
+ * the Android soft keyboard; the first (largest) denomination starts active
+ * so the keypad is immediately usable without an extra tap.
  */
 @Composable
 fun DenominationGrid(
@@ -94,16 +93,14 @@ fun DenominationGrid(
         onTotalChanged(total)
     }
 
-    val half = (AUD_DENOMINATIONS.size + 1) / 2
-    val notes = AUD_DENOMINATIONS.subList(0, half)
-    val coins = AUD_DENOMINATIONS.subList(half, AUD_DENOMINATIONS.size)
-
-    Column(modifier = modifier) {
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            DenominationColumn(notes, counts, activeCents, onSelect = { activeCents = it }, modifier = Modifier.weight(1f))
-            DenominationColumn(coins, counts, activeCents, onSelect = { activeCents = it }, modifier = Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(14.dp))
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        DenominationColumn(
+            denominations = AUD_DENOMINATIONS,
+            counts = counts,
+            activeCents = activeCents,
+            onSelect = { activeCents = it },
+            modifier = Modifier.weight(1f),
+        )
         NumericKeypad(
             showDecimal = false,
             onDigit = { digit ->
@@ -114,7 +111,7 @@ fun DenominationGrid(
                 counts[activeCents] = keypadBackspace(counts[activeCents] ?: "")
                 reportTotal()
             },
-            modifier = Modifier.widthIn(max = 280.dp),
+            modifier = Modifier.widthIn(max = 260.dp),
         )
     }
 }
@@ -128,7 +125,7 @@ private fun DenominationColumn(
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalZedReadColors.current
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
                 "Denomination",
@@ -147,11 +144,17 @@ private fun DenominationColumn(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(d.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.width(LABEL_COLUMN_WIDTH))
+                Text(
+                    d.label,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Visible,
+                    modifier = Modifier.width(LABEL_COLUMN_WIDTH),
+                )
                 Box(
                     modifier = Modifier
                         .width(COUNT_COLUMN_WIDTH)
-                        .height(44.dp)
+                        .height(42.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(if (isActive) colors.accentSoft else colors.bg)
                         .border(
@@ -167,6 +170,8 @@ private fun DenominationColumn(
                 Text(
                     formatCentsCompact((counts[d.cents]?.toLongOrNull() ?: 0L) * d.cents),
                     style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Visible,
                     modifier = Modifier.width(SUBTOTAL_COLUMN_WIDTH),
                 )
             }

@@ -66,9 +66,15 @@ class SettingsViewModel @Inject constructor(
         _search.value = value
     }
 
-    /** Edit a setting's value locally — does not touch the backend until [saveAsDefault]. */
+    /**
+     * Edit a setting's value — takes effect on this device immediately (see
+     * [SettingsRepository.applyLocalOverride]) regardless of the operator's
+     * role; does not touch the backend/other devices until [saveAsDefault],
+     * which remains role-gated.
+     */
     fun setLocalValue(key: String, value: Any?) {
         _localEdits.value = _localEdits.value + (key to value)
+        repo.applyLocalOverride(key, value)
     }
 
     /** The value to display for [setting] — the local edit if one exists, else its resolved effective value. */

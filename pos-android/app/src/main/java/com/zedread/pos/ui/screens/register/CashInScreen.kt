@@ -82,6 +82,8 @@ fun CashInScreen(
         RegisterPopupCard(
             title = "Start of Day",
             subtitle = "Count the cash in the till and enter the total to begin your shift.",
+            // Wider for the denomination grid — see RegisterPopupCard's doc.
+            maxWidth = if (isDenominationMode) 760.dp else 480.dp,
             footer = {
                 Button(
                     onClick = {

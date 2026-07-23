@@ -109,6 +109,8 @@ fun CashUpScreen(
             title = title,
             subtitle = subtitle,
             onClose = if (canCancel) onCancel else null,
+            // Wider for the denomination grid — see RegisterPopupCard's doc.
+            maxWidth = if (isDenominationMode) 760.dp else 480.dp,
             footer = {
                 when (val current = state) {
                     is CashUpState.Ready -> Button(
