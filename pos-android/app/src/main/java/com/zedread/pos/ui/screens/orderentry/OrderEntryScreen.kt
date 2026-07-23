@@ -432,6 +432,13 @@ private fun ProductGrid(
     }
     val minCells = 6 * MENU_GRID_COLUMNS
     val paddedCount = maxOf(minCells, ((products.size + MENU_GRID_COLUMNS - 1) / MENU_GRID_COLUMNS) * MENU_GRID_COLUMNS)
+    // A List<ProductEntity?>, not the items(count: Int) overload — this
+    // project's pinned Compose Foundation version only resolves
+    // LazyGridScope.items' Array/List overloads under the `items as
+    // gridItems` import used elsewhere in this file, so the count-based
+    // overload fails to compile ("None of the following candidates is
+    // applicable"). A null entry renders as an empty placeholder cell.
+    val paddedItems: List<ProductEntity?> = List(paddedCount) { products.getOrNull(it) }
     LazyVerticalGrid(
         columns = GridCells.Fixed(MENU_GRID_COLUMNS),
         modifier = Modifier.fillMaxSize().background(colors.bg),
@@ -439,8 +446,7 @@ private fun ProductGrid(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        gridItems(paddedCount) { index ->
-            val product = products.getOrNull(index)
+        gridItems(paddedItems) { product ->
             if (product != null) {
                 ProductTile(
                     product = product,
