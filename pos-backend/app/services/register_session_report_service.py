@@ -16,9 +16,11 @@ import uuid
 from datetime import date, datetime
 
 from pydantic import BaseModel
-from sqlalchemy import Date, cast, select
+from sqlalchemy import Date, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.invoice import Invoice
+from app.models.payment import Payment
 from app.models.pos_device import PosDevice
 from app.models.register_session import RegisterSession
 from app.models.site import Site
@@ -125,3 +127,27 @@ async def list_register_session_reports(
             )
         )
     return rows
+
+
+async def get_payment_breakdown_for_session(db: AsyncSession, session_id: uuid.UUID) -> dict[str, int]:
+    """
+    Sum payment amounts by method for every invoice raised under one register session.
+
+    Backs the register_summary print template's PAYMENT_METHOD_BREAKDOWN
+    field — Payment has no direct register_session_id column, so this joins
+    through Invoice.register_session_id instead.
+
+    Args:
+        db: Active database session.
+        session_id: The register session to summarise.
+
+    Returns:
+        dict[str, int]: {payment_method: total_amount_cents}, only methods with at least one payment.
+    """
+    result = await db.execute(
+        select(Payment.method, func.sum(Payment.amount_cents))
+        .join(Invoice, Payment.invoice_id == Invoice.id)
+        .where(Invoice.register_session_id == session_id)
+        .group_by(Payment.method)
+    )
+    return {method: int(total) for method, total in result.all()}

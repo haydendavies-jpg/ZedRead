@@ -21,6 +21,9 @@ from app.models.modifier_option import ModifierOption
 from app.models.modifier_option_group_link import ModifierOptionGroupLink
 from app.models.payment import Payment
 from app.models.pos_device import PosDevice
+from app.models.print_template import PrintTemplate
+from app.models.print_template_element import PrintTemplateElement
+from app.models.printer_location import PrinterLocation
 from app.models.user import User
 from app.models.product import Product
 from app.models.product_attribute_type import ProductAttributeType
@@ -65,6 +68,9 @@ __all__ = [
     "ModifierOptionGroupLink",
     "Payment",
     "PosDevice",
+    "PrintTemplate",
+    "PrintTemplateElement",
+    "PrinterLocation",
     "User",
     "Product",
     "ProductAttributeType",

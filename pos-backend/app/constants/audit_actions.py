@@ -198,3 +198,10 @@ REGISTER_SESSION_CLOSED = "register_session.closed"
 # ── Android POS Phase 2 — settings framework ─────────────────────────────────
 SETTING_UPDATED = "setting.updated"  # A brand- or site-level override was created/changed
 SETTING_RESET = "setting.reset"      # An override was cleared, reverting to the fallback
+
+# ── Printing Management ──────────────────────────────────────────────────────
+PRINTER_LOCATION_CREATED = "printer_location.created"
+PRINTER_LOCATION_UPDATED = "printer_location.updated"
+PRINTER_LOCATION_DEACTIVATED = "printer_location.deactivated"
+PRINT_TEMPLATE_UPDATED = "print_template.updated"  # Rename
+PRINT_TEMPLATE_ELEMENTS_UPDATED = "print_template.elements_updated"  # Whole-list replace

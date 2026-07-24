@@ -61,5 +61,13 @@ class RegisterSessionOut(BaseModel):
     client_ref: str | None = Field(None, description="Idempotency key supplied at open, if any")
     close_client_ref: str | None = Field(None, description="Idempotency key supplied at close, if any")
     checksum: str | None = Field(None, description="Server-computed checksum of the session's current state")
+    payment_breakdown_cents: dict[str, int] | None = Field(
+        None,
+        description=(
+            "{payment_method: total_amount_cents} for every invoice raised under this "
+            "session — only populated on the close response, for the register_summary "
+            "print template's PAYMENT_METHOD_BREAKDOWN field."
+        ),
+    )
 
     model_config = {"from_attributes": True}

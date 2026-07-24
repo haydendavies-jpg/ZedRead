@@ -52,7 +52,7 @@ async def list_products(
     Returns:
         list[ProductListItem]: Products ordered by display_order then name, each
             carrying its joined category_name/category_color, reporting_group_id,
-            reporting_group_name, and comma-joined modifier_names.
+            reporting_group_name, comma-joined modifier_names, and printer_location_name.
     """
     rows = await product_service.list_products(
         db, access.effective_brand_id(brand_id), category_id, skip, limit, include_inactive
@@ -65,8 +65,9 @@ async def list_products(
             reporting_group_id=reporting_group_id,
             reporting_group_name=reporting_group_name,
             modifier_names=modifier_names,
+            printer_location_name=printer_location_name,
         )
-        for product, category_name, category_color, reporting_group_id, reporting_group_name, modifier_names in rows
+        for product, category_name, category_color, reporting_group_id, reporting_group_name, modifier_names, printer_location_name in rows
     ]
 
 

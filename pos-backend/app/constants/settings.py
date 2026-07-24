@@ -73,6 +73,28 @@ SETTING_CATALOG: list[SettingDefinition] = [
             "actually published from Menu Studio."
         ),
     ),
+    SettingDefinition(
+        key="auto_print_docket_on_hold",
+        label="Auto-print docket on Hold",
+        category="Printing",
+        type=SettingType.BOOLEAN,
+        default_value=True,
+        description=(
+            "When enabled, order dockets print automatically to each item's printer "
+            "location as soon as an order is held (sent to the kitchen before payment)."
+        ),
+    ),
+    SettingDefinition(
+        key="auto_print_docket_on_pay",
+        label="Auto-print docket on Pay",
+        category="Printing",
+        type=SettingType.BOOLEAN,
+        default_value=True,
+        description=(
+            "When enabled, order dockets print automatically to each item's printer "
+            "location when a sale is paid directly, without ever being held first."
+        ),
+    ),
 ]
 
 SETTING_KEYS: frozenset[str] = frozenset(s.key for s in SETTING_CATALOG)

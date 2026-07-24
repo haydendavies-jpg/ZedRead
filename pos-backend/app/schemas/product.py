@@ -15,6 +15,7 @@ class ProductCreate(BaseModel):
 
     category_id: uuid.UUID
     tax_category_id: uuid.UUID | None = None
+    printer_location_id: uuid.UUID | None = Field(None, description="Order-docket print station this product groups under")
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
     print_name: str | None = Field(None, max_length=255, description="Docket name — falls back to name when unset")
@@ -29,6 +30,15 @@ class ProductUpdate(BaseModel):
 
     category_id: uuid.UUID | None = None
     tax_category_id: uuid.UUID | None = None
+    printer_location_id: uuid.UUID | None = Field(
+        None,
+        description=(
+            "Order-docket print station this product groups under. Checked via "
+            "model_fields_set (not `is not None`) so an explicit {'printer_location_id': "
+            "null} clears it back to 'prints on no docket' — same idiom as "
+            "menu_builder_service.update_menu_button's color."
+        ),
+    )
     name: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
     print_name: str | None = Field(None, max_length=255)
@@ -49,6 +59,7 @@ class ProductResponse(BaseModel):
     brand_id: uuid.UUID
     category_id: uuid.UUID
     tax_category_id: uuid.UUID | None
+    printer_location_id: uuid.UUID | None
     name: str
     description: str | None
     print_name: str | None
@@ -77,6 +88,7 @@ class ProductListItem(ProductResponse):
     reporting_group_id: uuid.UUID
     reporting_group_name: str
     modifier_names: str | None = None
+    printer_location_name: str | None = None
 
 
 class ProductBulkUpdate(BaseModel):

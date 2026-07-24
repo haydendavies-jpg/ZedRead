@@ -34,6 +34,7 @@ from app.models.menu_button import MenuButton
 from app.models.menu_layout import MenuLayout
 from app.models.menu_tab import MenuTab
 from app.models.modifier_group import ModifierGroup
+from app.models.printer_location import PrinterLocation
 from app.models.product_modifier_group_link import ProductModifierGroupLink
 from app.models.reporting_group import ReportingGroup
 from app.models.tax_category import TaxCategory
@@ -172,6 +173,32 @@ async def _validate_category(
         )
 
 
+async def _validate_printer_location(
+    db: AsyncSession, brand_id: uuid.UUID, printer_location_id: uuid.UUID
+) -> None:
+    """
+    Raise HTTP 400/404 if the printer location does not belong to the given brand.
+
+    Args:
+        db: Active database session.
+        brand_id: Expected brand owner of the printer location.
+        printer_location_id: UUID of the printer location to validate.
+
+    Raises:
+        HTTPException: 404 if the printer location does not exist.
+        HTTPException: 400 if it belongs to a different brand.
+    """
+    result = await db.execute(select(PrinterLocation).where(PrinterLocation.id == printer_location_id))
+    location = result.scalar_one_or_none()
+    if location is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Printer location not found")
+    if location.brand_id != brand_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Printer location belongs to a different brand",
+        )
+
+
 async def _validate_tax_category(
     db: AsyncSession, brand_id: uuid.UUID, tax_category_id: uuid.UUID
 ) -> None:
@@ -235,7 +262,7 @@ async def list_products(
     skip: int = 0,
     limit: int = 50,
     include_inactive: bool = False,
-) -> list[tuple[Product, str, str, uuid.UUID, str, str | None]]:
+) -> list[tuple[Product, str, str, uuid.UUID, str, str | None, str | None]]:
     """
     Return a paginated list of products for a brand, joined to their Category and Reporting Group.
 
@@ -244,7 +271,9 @@ async def list_products(
     modifier_names is a comma-joined list of this product's active linked
     modifier group names (Menu Studio redesign), resolved via a correlated
     scalar subquery rather than a GROUP BY so the base product/category/
-    reporting-group join stays row-per-product.
+    reporting-group join stays row-per-product. printer_location_name is
+    resolved via a plain LEFT JOIN (not a subquery — a product has at most
+    one printer_location_id, unlike the many-to-many modifier link).
 
     Args:
         db: Active database session.
@@ -256,9 +285,10 @@ async def list_products(
             view filters active/inactive client-side rather than via a repeat API call).
 
     Returns:
-        list[tuple[Product, str, str, uuid.UUID, str, str | None]]: Each tuple is
-            (product, category_name, category_color, reporting_group_id,
-            reporting_group_name, modifier_names), ordered by display_order then name.
+        list[tuple[Product, str, str, uuid.UUID, str, str | None, str | None]]: Each
+            tuple is (product, category_name, category_color, reporting_group_id,
+            reporting_group_name, modifier_names, printer_location_name), ordered by
+            display_order then name.
     """
     modifier_names_subq = (
         select(func.string_agg(ModifierGroup.name, ", "))
@@ -279,9 +309,11 @@ async def list_products(
             Category.reporting_group_id,
             ReportingGroup.name,
             modifier_names_subq,
+            PrinterLocation.name,
         )
         .join(Category, Product.category_id == Category.id)
         .join(ReportingGroup, Category.reporting_group_id == ReportingGroup.id)
+        .outerjoin(PrinterLocation, Product.printer_location_id == PrinterLocation.id)
         .where(Product.brand_id == brand_id)
         .order_by(Product.display_order, Product.name)
         .offset(skip)
@@ -345,6 +377,8 @@ async def create_product(
         HTTPException: 404 if the category does not exist.
     """
     await _validate_category(db, brand_id, payload.category_id)
+    if payload.printer_location_id is not None:
+        await _validate_printer_location(db, brand_id, payload.printer_location_id)
 
     price_ex_cents = await _compute_price_ex_cents(
         db, brand_id, payload.base_price_cents, payload.is_taxable
@@ -355,6 +389,7 @@ async def create_product(
         brand_id=brand_id,
         category_id=payload.category_id,
         tax_category_id=payload.tax_category_id,
+        printer_location_id=payload.printer_location_id,
         name=payload.name,
         description=payload.description,
         print_name=payload.print_name,
@@ -428,6 +463,14 @@ async def update_product(
 
     before = {"name": product.name, "base_price_cents": product.base_price_cents}
 
+    # model_fields_set (not `is not None`) so an explicit {"printer_location_id":
+    # null} clears the product back to "prints on no docket" — see the schema doc.
+    if "printer_location_id" in payload.model_fields_set:
+        if payload.printer_location_id is not None:
+            await _validate_printer_location(db, brand_id, payload.printer_location_id)
+        before["printer_location_id"] = str(product.printer_location_id) if product.printer_location_id else None
+        product.printer_location_id = payload.printer_location_id
+
     if payload.tax_category_id is not None:
         product.tax_category_id = payload.tax_category_id
     if payload.name is not None:
@@ -458,6 +501,8 @@ async def update_product(
     after_state: dict = {"name": product.name, "base_price_cents": product.base_price_cents}
     if payload.is_sold_out is not None:
         after_state["is_sold_out"] = product.is_sold_out
+    if "printer_location_id" in payload.model_fields_set:
+        after_state["printer_location_id"] = str(product.printer_location_id) if product.printer_location_id else None
     if import_id is not None:
         after_state["import_id"] = str(import_id)
 

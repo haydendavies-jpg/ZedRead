@@ -113,3 +113,8 @@ class Site(Base):
         nullable=False,
         comment="Postal/zip code of this site.",
     )
+    phone_number: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+        comment="Site's own phone number — Company Profile field, printable on receipts/dockets.",
+    )

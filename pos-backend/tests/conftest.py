@@ -387,6 +387,7 @@ async def test_brand(db: AsyncSession, test_group: Group) -> Brand:
         Brand: A saved, active Brand instance.
     """
     from app.services.access_profile_service import seed_system_profiles
+    from app.services.print_template_service import seed_default_templates
 
     brand = Brand(
         id=uuid.uuid4(),
@@ -405,6 +406,9 @@ async def test_brand(db: AsyncSession, test_group: Group) -> Brand:
     # system access profiles seeded, including Master User (needed by
     # site_service.create_site() when tests POST /sites/).
     await seed_system_profiles(db, brand.id)
+    # Mirrors create_brand()'s other real-world invariant: every brand has its
+    # 3 singleton print templates (invoice/register_summary/cash_in_slip) seeded.
+    await seed_default_templates(db, brand.id)
     await db.flush()
     return brand
 

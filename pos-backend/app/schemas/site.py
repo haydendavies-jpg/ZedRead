@@ -29,6 +29,7 @@ class SiteCreate(BaseModel):
     address_city: str = Field(default="", max_length=100)
     address_state: str = Field(default="", max_length=100)
     address_postcode: str = Field(default="", max_length=20)
+    phone_number: str | None = Field(default=None, max_length=30)
     master_email: EmailStr = Field(..., description="Login email for the auto-created Site master user")
     master_password: str = Field(..., min_length=8, description="Password for the auto-created Site master user")
 
@@ -46,6 +47,7 @@ class SiteUpdate(BaseModel):
     address_city: str | None = Field(default=None, max_length=100)
     address_state: str | None = Field(default=None, max_length=100)
     address_postcode: str | None = Field(default=None, max_length=20)
+    phone_number: str | None = Field(default=None, max_length=30)
 
 
 class SiteResponse(BaseModel):
@@ -68,5 +70,6 @@ class SiteResponse(BaseModel):
     address_city: str
     address_state: str
     address_postcode: str
+    phone_number: str | None
     created_at: datetime
     updated_at: datetime

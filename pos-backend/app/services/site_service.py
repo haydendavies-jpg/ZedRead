@@ -374,6 +374,7 @@ async def create_site(
         address_street=payload.address_street,
         address_state=payload.address_state,
         address_postcode=payload.address_postcode,
+        phone_number=payload.phone_number,
     )
     db.add(site)
     await db.flush()
@@ -444,6 +445,7 @@ async def update_site(
         "address_street": site.address_street,
         "address_state": site.address_state,
         "address_postcode": site.address_postcode,
+        "phone_number": site.phone_number,
     }
     if payload.name is not None:
         site.name = payload.name
@@ -463,6 +465,8 @@ async def update_site(
         site.address_state = payload.address_state
     if payload.address_postcode is not None:
         site.address_postcode = payload.address_postcode
+    if payload.phone_number is not None:
+        site.phone_number = payload.phone_number
     after = {
         "name": site.name,
         "timezone": site.timezone,
@@ -473,6 +477,7 @@ async def update_site(
         "address_street": site.address_street,
         "address_state": site.address_state,
         "address_postcode": site.address_postcode,
+        "phone_number": site.phone_number,
     }
 
     await log_action(

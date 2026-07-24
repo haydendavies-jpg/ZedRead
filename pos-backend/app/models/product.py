@@ -63,6 +63,12 @@ class Product(Base):
         nullable=True,
         comment="Product-level tax override; falls back to category's tax_category_id if NULL",
     )
+    printer_location_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("printer_locations.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Which order-docket print station this product groups under; NULL prints on no docket",
+    )
     name: Mapped[str] = mapped_column(
         String(255),
         nullable=False,

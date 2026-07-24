@@ -35,6 +35,7 @@ from app.schemas.brand import BrandCreate, BrandUpdate
 from app.services import branding_service
 from app.services.access_profile_service import seed_system_profiles
 from app.services.audit_service import log_action
+from app.services.print_template_service import seed_default_templates
 from app.services.branding_service import ResolvedValue
 from app.utils.dependencies import ManagementAccess, _actor_from_mgmt
 from app.utils.security import hash_password
@@ -407,6 +408,9 @@ async def create_brand(
     # location; these categories only mark products as taxed or tax-free.
     db.add(TaxCategory(id=uuid.uuid4(), brand_id=brand.id, name="Standard", is_active=True, is_system=True, is_tax_free=False))
     db.add(TaxCategory(id=uuid.uuid4(), brand_id=brand.id, name="Tax Free", is_active=True, is_system=True, is_tax_free=True))
+
+    # Seed the three brand-wide singleton print templates (invoice/register_summary/cash_in_slip)
+    await seed_default_templates(db, brand.id)
 
     # Seed the 5 system access profiles (Admin, Reporting Only, Manager, Staff, Master User)
     await seed_system_profiles(db, brand.id)

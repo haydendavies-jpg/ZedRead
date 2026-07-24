@@ -11,7 +11,7 @@ from app.schemas.register_session import (
     RegisterSessionOpenRequest,
     RegisterSessionOut,
 )
-from app.services import register_session_service
+from app.services import register_session_report_service, register_session_service
 from app.utils.dependencies import POSAccess, resolve_access
 
 router = APIRouter(prefix="/register-sessions", tags=["register-sessions"])
@@ -92,7 +92,8 @@ async def close_session(
         db: Active database session.
 
     Returns:
-        RegisterSessionOut: The closed session, including computed variance.
+        RegisterSessionOut: The closed session, including computed variance and
+            the payment-method breakdown for the register_summary print template.
 
     Raises:
         HTTPException: 404 if the session doesn't exist; 400 if already closed.
@@ -100,4 +101,5 @@ async def close_session(
     session = await register_session_service.close_register_session(
         db, session_id, payload, access.user
     )
-    return RegisterSessionOut.model_validate(session)
+    breakdown = await register_session_report_service.get_payment_breakdown_for_session(db, session.id)
+    return RegisterSessionOut.model_validate(session).model_copy(update={"payment_breakdown_cents": breakdown})

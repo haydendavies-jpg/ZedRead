@@ -15,7 +15,7 @@ from app.database import engine
 from app.logging_config import configure_logging
 from app.middleware.logging import RequestLoggingMiddleware
 from app.utils.security import validate_secret_key
-from app.routes import access_grants, admin_impersonation, admin_tax_templates, brands, categories, combos, email_templates, groups, invoice_reports, invoices, license_invoices, licenses, menu_layouts, modifiers, portal_auth, reference_data, register_session_reports, register_sessions, reporting_groups, pos_auth, pos_devices, settings, users, products, reports, sites, tax, user_invites, variants
+from app.routes import access_grants, admin_impersonation, admin_tax_templates, brands, categories, combos, email_templates, groups, invoice_reports, invoices, license_invoices, licenses, menu_layouts, modifiers, portal_auth, print_templates, printer_locations, reference_data, register_session_reports, register_sessions, reporting_groups, pos_auth, pos_devices, settings, users, products, reports, sites, tax, user_invites, variants
 from app.routes.access_grants import profiles_router
 
 # Configure structlog before the app starts accepting requests
@@ -117,6 +117,9 @@ app.include_router(reference_data.router)
 app.include_router(email_templates.router)
 app.include_router(settings.router)
 app.include_router(settings.pos_router)
+app.include_router(printer_locations.router)
+app.include_router(print_templates.router)
+app.include_router(print_templates.pos_router)
 
 
 # ── Global exception handlers ─────────────────────────────────────────────────
