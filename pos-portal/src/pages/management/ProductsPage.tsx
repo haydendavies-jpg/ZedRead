@@ -24,7 +24,7 @@ import { EditableText, EditableSelect } from '../../components/EditableCell'
 import { FilterBar, type FilterConfig } from '../../components/FilterBar'
 import { ModifierPickerModal } from '../../components/ModifierPickerModal'
 import { apiErrorMessage } from '../../utils/apiError'
-import type { Product, ProductListItem, Category, ReportingGroup, TaxCategory, ModifierGroup } from '../../types'
+import type { Product, ProductListItem, Category, ReportingGroup, TaxCategory, ModifierGroup, PrinterLocation } from '../../types'
 
 function centsToDisplay(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
@@ -70,6 +70,12 @@ export function ProductsPage() {
   const { data: modifierGroups = [] } = useQuery<ModifierGroup[]>({
     queryKey: ['modifier-groups', brandId],
     queryFn: () => fetchAll<ModifierGroup>('/modifier-groups', params),
+    enabled: !!brandId,
+  })
+
+  const { data: printerLocations = [] } = useQuery<PrinterLocation[]>({
+    queryKey: ['printer-locations', brandId],
+    queryFn: () => fetchAll<PrinterLocation>('/printer-locations', params),
     enabled: !!brandId,
   })
 
@@ -189,6 +195,10 @@ export function ProductsPage() {
   }
 
   const categoryOptions = categories.map((c) => ({ value: c.id, label: c.name }))
+  const printerLocationOptions = [
+    { value: '', label: '— None —' },
+    ...printerLocations.map((loc) => ({ value: loc.id, label: loc.name })),
+  ]
 
   const filtered = products.filter((p) => {
     if (search && !p.name.toLowerCase().includes(search.toLowerCase()) && !p.ref.toLowerCase().includes(search.toLowerCase())) return false
@@ -405,6 +415,7 @@ export function ProductsPage() {
                   <th>ID</th>
                   <th>Name</th>
                   <th>Category</th>
+                  <th>Printer Location</th>
                   <th>Price (inc.)</th>
                   <th>Price (ex.)</th>
                   <th>Tax</th>
@@ -441,6 +452,15 @@ export function ProductsPage() {
                           onSave={async (v) => { await patch.mutateAsync({ id: p.id, body: { category_id: v } }) }}
                         />
                       </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                      <EditableSelect
+                        value={p.printer_location_id ?? ''}
+                        options={printerLocationOptions}
+                        onSave={async (v) => {
+                          await patch.mutateAsync({ id: p.id, body: { printer_location_id: v || null } })
+                        }}
+                      />
                     </td>
                     <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                       <EditableText
@@ -497,7 +517,7 @@ export function ProductsPage() {
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="px-4 py-8 text-center text-gray-400">
+                    <td colSpan={12} className="px-4 py-8 text-center text-gray-400">
                       {products.length === 0 ? 'No products yet.' : 'No products match the current filters.'}
                     </td>
                   </tr>

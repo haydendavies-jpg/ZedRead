@@ -51,6 +51,7 @@ export function CompanyProfileForm({ entityType, entity, inherited, invalidateKe
     address_city: siteEntity?.address_city ?? '',
     address_state: siteEntity?.address_state ?? '',
     address_postcode: siteEntity?.address_postcode ?? '',
+    phone_number: siteEntity?.phone_number ?? '',
   })
   const [formError, setFormError] = useState<string | null>(null)
   const [billingInfoMessage, setBillingInfoMessage] = useState<string | null>(null)
@@ -177,7 +178,7 @@ export function CompanyProfileForm({ entityType, entity, inherited, invalidateKe
                     <li
                       key={i}
                       onMouseDown={() => {
-                        setAddress({ address_street: s.road, address_city: s.city, address_state: s.state, address_postcode: s.postcode })
+                        setAddress({ ...address, address_street: s.road, address_city: s.city, address_state: s.state, address_postcode: s.postcode })
                         setShowSuggestions(false)
                       }}
                       className="px-3 py-2 hover:bg-brand-50 cursor-pointer text-gray-700 dark:text-gray-300 truncate"
@@ -214,6 +215,16 @@ export function CompanyProfileForm({ entityType, entity, inherited, invalidateKe
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone (optional)</label>
+              <input
+                value={address.phone_number}
+                onChange={(e) => setAddress({ ...address, phone_number: e.target.value })}
+                placeholder="(02) 5550 1234"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Printed on receipts and dockets.</p>
             </div>
           </>
         )}

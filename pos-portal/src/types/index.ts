@@ -128,6 +128,7 @@ export interface Site {
   address_city: string
   address_state: string
   address_postcode: string
+  phone_number: string | null
   created_at: string
   updated_at: string
 }
@@ -287,6 +288,7 @@ export interface Product {
   brand_id: string
   category_id: string
   tax_category_id: string | null
+  printer_location_id: string | null
   name: string
   description: string | null
   print_name: string | null
@@ -308,6 +310,51 @@ export interface ProductListItem extends Product {
   reporting_group_name: string
   /** Comma-joined names of this product's active linked modifier groups, or null if none. */
   modifier_names: string | null
+  printer_location_name: string | null
+}
+
+// ── Printing management ─────────────────────────────────────────────────────
+
+export interface PrinterLocation {
+  id: string
+  ref: string
+  brand_id: string
+  name: string
+  copy_count: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type PrintTemplateType = 'invoice' | 'docket' | 'register_summary' | 'cash_in_slip'
+export type PrintFieldSection = 'header' | 'items' | 'footer'
+export type PrintFieldAlignment = 'left' | 'center' | 'right' | 'justify'
+export type PrintFieldSize = 'small' | 'normal' | 'large' | 'xlarge'
+
+export interface PrintTemplateElement {
+  id: string
+  section: PrintFieldSection
+  display_order: number
+  field_key: string
+  free_text_value: string | null
+  font_size: PrintFieldSize
+  alignment: PrintFieldAlignment
+  is_bold: boolean
+  is_italic: boolean
+}
+
+export interface PrintTemplate {
+  id: string
+  brand_id: string
+  printer_location_id: string | null
+  template_type: PrintTemplateType
+  name: string
+  created_at: string
+  updated_at: string
+}
+
+export interface PrintTemplateDetail extends PrintTemplate {
+  elements: PrintTemplateElement[]
 }
 
 // ── Modifiers & comboing (Menu Studio redesign) ─────────────────────────────────
