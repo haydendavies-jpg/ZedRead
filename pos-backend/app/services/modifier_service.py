@@ -13,6 +13,7 @@ from app.constants.audit_actions import (
     MODIFIER_GROUP_DEACTIVATED,
     MODIFIER_GROUP_DUPLICATED,
     MODIFIER_GROUP_UPDATED,
+    MODIFIER_GROUPS_REORDERED,
     MODIFIER_OPTION_CREATED,
     MODIFIER_OPTION_DEACTIVATED,
     MODIFIER_OPTION_GROUP_LINKED,
@@ -71,17 +72,36 @@ class ModifierGroupResponse(BaseModel):
     max_selections: int
     has_quantity: bool
     is_first_option_default_selected: bool
+    display_order: int
     is_active: bool
 
     model_config = {"from_attributes": True}
 
 
+class ModifierGroupsReorderRequest(BaseModel):
+    """
+    Payload for PATCH /modifier-groups/reorder.
+
+    modifier_group_ids is the full set of a brand's active group ids, in the
+    desired POS display order — every id's display_order is set to its index
+    here, mirroring menu_builder_service.reorder_menu_tabs()'s whole-list
+    resequence.
+    """
+
+    modifier_group_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
 class ModifierOptionCreate(BaseModel):
-    """Payload for creating a modifier option."""
+    """
+    Payload for creating a modifier option.
+
+    display_order is intentionally not accepted here — a new option is
+    always appended to the bottom of its group (see create_modifier_option),
+    so the operator's existing manual order is never disturbed.
+    """
 
     name: str = Field(..., min_length=1, max_length=100)
     price_delta_cents: int = Field(0)
-    display_order: int = Field(0, ge=0)
 
 
 class ModifierOptionUpdate(BaseModel):
@@ -291,15 +311,39 @@ async def list_modifier_groups(
     skip: int = 0,
     limit: int = 50,
 ) -> list[ModifierGroup]:
-    """Return active modifier groups for a brand."""
+    """
+    Return active modifier groups for a brand, in the order they appear on
+    the POS — display_order, with created_at as a stable tie-break that
+    never shifts on a rename (see list_modifier_options' identical rationale).
+    """
     result = await db.execute(
         select(ModifierGroup)
         .where(ModifierGroup.brand_id == brand_id, ModifierGroup.is_active == True)  # noqa: E712
-        .order_by(ModifierGroup.name)
+        .order_by(ModifierGroup.display_order, ModifierGroup.created_at)
         .offset(skip)
         .limit(limit)
     )
     return list(result.scalars().all())
+
+
+async def _next_group_display_order(db: AsyncSession, brand_id: uuid.UUID) -> int:
+    """
+    Return the display_order to append a new modifier group to the bottom of
+    the brand's list — one more than the current max among ALL of the
+    brand's groups (active or soft-deleted).
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+
+    Returns:
+        int: The next display_order value (0 for the brand's first group).
+    """
+    result = await db.execute(
+        select(func.max(ModifierGroup.display_order)).where(ModifierGroup.brand_id == brand_id)
+    )
+    current_max = result.scalar_one_or_none()
+    return 0 if current_max is None else current_max + 1
 
 
 async def create_modifier_group(
@@ -308,7 +352,8 @@ async def create_modifier_group(
     payload: ModifierGroupCreate,
     actor: User,
 ) -> ModifierGroup:
-    """Create a modifier group for a brand and write an audit row."""
+    """Create a modifier group for a brand, appended to the bottom of the POS order, and write an audit row."""
+    display_order = await _next_group_display_order(db, brand_id)
     group = ModifierGroup(
         id=uuid.uuid4(),
         brand_id=brand_id,
@@ -317,6 +362,7 @@ async def create_modifier_group(
         max_selections=payload.max_selections,
         has_quantity=payload.has_quantity,
         is_first_option_default_selected=payload.is_first_option_default_selected,
+        display_order=display_order,
         is_active=True,
     )
     db.add(group)
@@ -390,6 +436,68 @@ async def update_modifier_group(
     return group
 
 
+async def reorder_modifier_groups(
+    db: AsyncSession,
+    brand_id: uuid.UUID,
+    modifier_group_ids: list[uuid.UUID],
+    actor: User,
+) -> list[ModifierGroup]:
+    """
+    Reorder a brand's active modifier groups — each id in modifier_group_ids
+    gets display_order = its list index, mirroring
+    menu_builder_service.reorder_menu_tabs()'s whole-list resequence.
+
+    This is the order groups are presented in on the POS and the Modifiers
+    tab; a product that has reordered its own attached groups (Stage 23's
+    product_modifier_group_links.display_order, set via
+    PATCH /products/{id}/modifiers/reorder) keeps that override for itself —
+    this only changes the brand-wide default every other product still uses.
+
+    Args:
+        db: Active database session.
+        brand_id: Brand scope.
+        modifier_group_ids: Every active group's id, in the desired order.
+        actor: The authenticated user performing the action.
+
+    Returns:
+        list[ModifierGroup]: The reordered groups, in their new order.
+
+    Raises:
+        HTTPException: 400 if modifier_group_ids does not exactly match the
+            brand's current active group set.
+    """
+    existing_result = await db.execute(
+        select(ModifierGroup).where(
+            ModifierGroup.brand_id == brand_id, ModifierGroup.is_active == True  # noqa: E712
+        )
+    )
+    existing_by_id = {g.id: g for g in existing_result.scalars().all()}
+
+    if set(modifier_group_ids) != set(existing_by_id.keys()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="modifier_group_ids must contain exactly the brand's active modifier groups",
+        )
+
+    for index, group_id in enumerate(modifier_group_ids):
+        existing_by_id[group_id].display_order = index
+
+    await log_action(
+        db=db,
+        action=MODIFIER_GROUPS_REORDERED,
+        entity_type="brand",
+        entity_id=str(brand_id),
+        actor_type=ActorType.USER,
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        after_state={"reordered_modifier_group_ids": [str(i) for i in modifier_group_ids]},
+    )
+
+    await db.commit()
+    return [existing_by_id[group_id] for group_id in modifier_group_ids]
+
+
 # ── Modifier option operations ────────────────────────────────────────────────
 
 
@@ -400,7 +508,16 @@ async def list_modifier_options(
     skip: int = 0,
     limit: int = 50,
 ) -> list[ModifierOption]:
-    """Return active options for a modifier group."""
+    """
+    Return active options for a modifier group, in the operator's own order.
+
+    Ordered strictly by display_order (then created_at as a stable
+    tie-breaker that never changes when an option is renamed) — no name
+    tie-break, since sorting by name whenever two options share a
+    display_order is what caused the list to visibly re-sort itself on every
+    add/rename (the order is meaningful to the cashier and must stay exactly
+    as the operator left it).
+    """
     await _get_group_or_404(db, brand_id, group_id)
 
     result = await db.execute(
@@ -409,11 +526,35 @@ async def list_modifier_options(
             ModifierOption.modifier_group_id == group_id,
             ModifierOption.is_active == True,  # noqa: E712
         )
-        .order_by(ModifierOption.display_order, ModifierOption.name)
+        .order_by(ModifierOption.display_order, ModifierOption.created_at)
         .offset(skip)
         .limit(limit)
     )
     return list(result.scalars().all())
+
+
+async def _next_option_display_order(db: AsyncSession, group_id: uuid.UUID) -> int:
+    """
+    Return the display_order to append a new option to the bottom of a group.
+
+    One more than the current max among ALL options (active or soft-deleted)
+    so a re-created/duplicated name never lands back at a lower position than
+    options added after it was removed.
+
+    Args:
+        db: Active database session.
+        group_id: The modifier group the new option belongs to.
+
+    Returns:
+        int: The next display_order value (0 for the group's first option).
+    """
+    result = await db.execute(
+        select(func.max(ModifierOption.display_order)).where(
+            ModifierOption.modifier_group_id == group_id
+        )
+    )
+    current_max = result.scalar_one_or_none()
+    return 0 if current_max is None else current_max + 1
 
 
 async def create_modifier_option(
@@ -423,15 +564,16 @@ async def create_modifier_option(
     payload: ModifierOptionCreate,
     actor: User,
 ) -> ModifierOption:
-    """Create a modifier option and write an audit row."""
+    """Create a modifier option, appended to the bottom of the group, and write an audit row."""
     await _get_group_or_404(db, brand_id, group_id)
+    display_order = await _next_option_display_order(db, group_id)
 
     option = ModifierOption(
         id=uuid.uuid4(),
         modifier_group_id=group_id,
         name=payload.name,
         price_delta_cents=payload.price_delta_cents,
-        display_order=payload.display_order,
+        display_order=display_order,
         is_active=True,
     )
     db.add(option)
@@ -991,8 +1133,9 @@ async def duplicate_modifier_group(
     options_result = await db.execute(
         select(ModifierOption)
         .where(ModifierOption.modifier_group_id == group_id, ModifierOption.is_active == True)  # noqa: E712
-        .order_by(ModifierOption.display_order, ModifierOption.name)
+        .order_by(ModifierOption.display_order, ModifierOption.created_at)
     )
+    display_order = await _next_group_display_order(db, brand_id)
 
     new_group = ModifierGroup(
         id=uuid.uuid4(),
@@ -1002,6 +1145,7 @@ async def duplicate_modifier_group(
         max_selections=source.max_selections,
         has_quantity=source.has_quantity,
         is_first_option_default_selected=source.is_first_option_default_selected,
+        display_order=display_order,
         is_active=True,
     )
     db.add(new_group)
@@ -1154,7 +1298,7 @@ async def _active_options_by_group(
     result = await db.execute(
         select(ModifierOption)
         .where(ModifierOption.modifier_group_id.in_(group_ids), ModifierOption.is_active == True)  # noqa: E712
-        .order_by(ModifierOption.display_order, ModifierOption.name)
+        .order_by(ModifierOption.display_order, ModifierOption.created_at)
     )
     by_group: dict[uuid.UUID, list[ModifierOption]] = defaultdict(list)
     for option in result.scalars().all():
@@ -1319,6 +1463,7 @@ async def list_modifier_groups_detailed(
                 max_selections=group.max_selections,
                 has_quantity=group.has_quantity,
                 is_first_option_default_selected=group.is_first_option_default_selected,
+                display_order=group.display_order,
                 is_active=group.is_active,
                 options=option_details,
                 used_by_count=usage_by_group.get(group.id, 0),

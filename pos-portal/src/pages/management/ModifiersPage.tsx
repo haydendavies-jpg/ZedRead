@@ -46,6 +46,45 @@ export function ModifiersPage() {
 
   const showError = (e: unknown, fallback: string) => setFormError(apiErrorMessage(e, fallback))
 
+  // Drag-to-reorder state for the group cards — dragIndex is the index (within
+  // `groups`, already server-ordered by display_order) of the card being dragged.
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+
+  const reorderGroups = useMutation({
+    mutationFn: (groupIds: string[]) =>
+      api.patch('/modifier-groups/reorder', { modifier_group_ids: groupIds }, { params }),
+    // Optimistic, same convention as patchGroup/patchOption above — the drop
+    // should feel instant rather than waiting for the round trip.
+    onMutate: async (groupIds) => {
+      await qc.cancelQueries({ queryKey: ['modifier-groups-detailed', brandId] })
+      const previous = qc.getQueryData<ModifierGroupDetail[]>(['modifier-groups-detailed', brandId])
+      qc.setQueryData<ModifierGroupDetail[]>(['modifier-groups-detailed', brandId], (old) => {
+        if (!old) return old
+        const byId = new Map(old.map((g) => [g.id, g]))
+        return groupIds.map((id) => byId.get(id)).filter((g): g is ModifierGroupDetail => !!g)
+      })
+      return { previous }
+    },
+    onSuccess: invalidate,
+    onError: (e: unknown, _vars, ctx) => {
+      if (ctx?.previous) qc.setQueryData(['modifier-groups-detailed', brandId], ctx.previous)
+      invalidate()
+      showError(e, 'Failed to reorder modifiers.')
+    },
+  })
+
+  const handleDropGroup = (targetIndex: number) => {
+    if (dragIndex === null || dragIndex === targetIndex) {
+      setDragIndex(null)
+      return
+    }
+    const ids = groups.map((g) => g.id)
+    const [moved] = ids.splice(dragIndex, 1)
+    ids.splice(targetIndex, 0, moved)
+    setDragIndex(null)
+    reorderGroups.mutate(ids)
+  }
+
   const createGroup = useMutation({
     mutationFn: () => api.post('/modifier-groups', { name: 'New modifier', min_selections: 0, max_selections: 1 }, { params }),
     // Append the created group to the cache straight from the POST response —
@@ -169,7 +208,15 @@ export function ModifiersPage() {
   return (
     <div className="p-4 sm:p-6" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Modifiers</h1>
+        <div className="flex items-center gap-1.5">
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Modifiers</h1>
+          <span
+            className="flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold text-gray-400 dark:text-gray-500 border border-gray-300 dark:border-gray-600 cursor-help select-none"
+            title="Drag a card by its ⠿ handle to reorder modifier groups — this is the order they appear in on the POS. If a product has reordered its own attached modifier sets (via its Modifiers cell on the Products tab), that order overrides this one for that product only."
+          >
+            i
+          </span>
+        </div>
       </div>
       {formError && (
         <p className="text-sm text-red-600 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2 mb-4">
@@ -180,10 +227,24 @@ export function ModifiersPage() {
         <p className="text-sm text-gray-400">Loading…</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {groups.map((g) => (
-            <div key={g.id} className="flex flex-col bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+          {groups.map((g, index) => (
+            <div
+              key={g.id}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => handleDropGroup(index)}
+              className={`flex flex-col bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden ${dragIndex === index ? 'opacity-50' : ''}`}
+            >
               <div className="px-4 pt-4 pb-1">
                 <div className="flex items-start justify-between gap-2">
+                  <span
+                    draggable
+                    onDragStart={() => setDragIndex(index)}
+                    onDragEnd={() => setDragIndex(null)}
+                    title="Drag to reorder — this is the order modifier groups appear in on the POS"
+                    className="text-gray-300 dark:text-gray-600 cursor-move select-none pt-1 shrink-0"
+                  >
+                    ⠿
+                  </span>
                   <BufferedInput
                     value={g.name}
                     onCommit={(v) => { if (v.trim()) patchGroup.mutate({ id: g.id, body: { name: v.trim() } }) }}

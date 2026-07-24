@@ -2032,6 +2032,79 @@ the invoice-table asks depended on.
 
 ---
 
+## Management Portal tweaks (post-round-6, complete)
+
+Six user-reported portal gaps, backend + portal frontend only (no Android changes).
+
+- [x] **Devices: rename.** `PATCH /pos-devices/{id}` (new `PosDeviceRename` schema,
+      `pos_device_service.rename_device()`, `DEVICE_RENAMED` audit action) reuses the existing
+      release-permission check (renamed `_assert_management_action_permitted` — was
+      `_assert_release_permitted`, now shared by both actions): portal admin always permitted, a
+      management caller needs the "devices" page permission and site/brand scope, a raw POS
+      terminal session never. `DevicesPage.tsx`'s Device column is now an `EditableText` click-to-edit
+      cell (existing shared component — no new UI pattern).
+- [x] **Modifier options no longer auto-sort.** The bug: `list_modifier_options` ordered by
+      `(display_order, name)`, and every new option was created with `display_order=0` (the
+      portal's "+ Add option" never sent one) — so any two options sharing that default fell back to
+      alphabetical, which visibly re-sorted the list on every add or rename. Fixed at the source:
+      `ModifierOptionCreate` no longer accepts `display_order` at all — `create_modifier_option()`
+      now computes it server-side as `max(existing display_order) + 1` (append to the bottom,
+      mirroring `menu_builder_service`'s reorder conventions), and every option-list query
+      (`list_modifier_options`, `_active_options_by_group`, `duplicate_modifier_group`) dropped the
+      `name` tie-break in favour of `created_at` — stable, and never shifts on a rename.
+- [x] **Modifier groups: reorderable, POS-order tooltip, per-product override note.** New
+      `modifier_groups.display_order` column (migration `0059`, hand-written — autogenerate picked
+      up unrelated pre-existing schema drift as noise and was discarded in favour of a clean,
+      targeted migration). `list_modifier_groups` now orders by `display_order` (was alphabetical by
+      name); `create_modifier_group`/`duplicate_modifier_group` append to the bottom the same way
+      options do. New `PATCH /modifier-groups/reorder` (`ModifierGroupsReorderRequest`,
+      `reorder_modifier_groups()`, `MODIFIER_GROUPS_REORDERED` audit action) resequences the full
+      active set in one call — registered in the route file *ahead of* `PATCH
+      /modifier-groups/{group_id}` since Starlette matches routes in registration order and
+      "reorder" would otherwise be swallowed as an invalid `group_id` by the dynamic route first (a
+      real footgun the codebase's other `/reorder` routes avoid only because they sit one path
+      segment deeper than their sibling `{id}` route, e.g. `/products/{id}/modifiers/reorder` —
+      this one collides at the same depth as `/modifier-groups/{group_id}`). Portal:
+      `ModifiersPage.tsx`'s group cards gained a `⠿` drag handle (native HTML5 drag-and-drop,
+      same convention as `ModifierPickerModal.tsx`'s attached-list reorder) with optimistic
+      cache-patch on drop, plus an "ⓘ" tooltip next to the page title explaining the order is the
+      POS display order and that a product's own reordered modifier sets (via its Products-tab
+      Modifiers cell) override this for that product only.
+- [x] **Reporting groups: click-to-edit name.** `PATCH /reporting-groups/{id}` already existed
+      (Stage 16, 403s on the system default group) with no portal control wired to it —
+      `CategoriesPage.tsx`'s group-card header name is now an `EditableText` cell (disabled for
+      `is_system` groups) backed by a new `patchGroup` mutation; purely a frontend gap, no backend
+      change needed.
+- [x] **Product photo: 500KB cap (was 1MB) + a portal upload control that didn't exist yet.** The
+      500x500-minimum/any-aspect-ratio-above-that dimension check already matched the request
+      exactly (Stage 24) and needed no change; `_MAX_PHOTO_BYTES` dropped from 1 MB back to 500 KB
+      (the size CLAUDE.md's error-message table already documented — the code had drifted to 1 MB
+      at some point without the docs catching up). More substantially: no portal page had ever
+      exposed `POST /products/{id}/photo` — `ProductsPage.tsx`'s edit modal gained a Photo section
+      (preview thumbnail, "Upload/Replace photo" button, hidden file input, backend-error surface)
+      mirroring `CompanyProfileForm.tsx`'s existing Group/Brand/Site logo-upload pattern exactly
+      (`FormData` + `POST .../photo`), create-only omitted since the route needs an existing
+      `product_id`.
+- [x] **Products table: Tax column shows the actual tax name, not "Taxed"/"Tax free" text.** New
+      `tax_resolution_service.country_inclusive_rate_names()` (mirrors the existing
+      `country_inclusive_rate()` used to derive `price_ex_cents` — same country-level-only
+      TaxTemplate/TaxTemplateRate filter, so the displayed name always matches the rate that actually
+      split the product's price) resolved once per `list_products()` call, not per row. A taxable
+      product shows the resolved rate name(s) (e.g. "GST", or "GST + Levy" if more than one
+      inclusive rate is configured); a brand with no inclusive template configured falls back to
+      "Taxed" (distinct from "Tax free", since the product genuinely is sold tax-inclusive — it just
+      has no named rate yet); a non-taxable product always shows "Tax free" regardless of any
+      configured template. New `ProductListItem.tax_name` field; `ProductsPage.tsx`'s Tax column
+      reads it directly instead of a hardcoded "Taxed"/"Tax free" string.
+- [x] **Verification**: full backend suite (951 tests, including new coverage for every change
+      above) run against a local PostgreSQL 16 instance (Docker unavailable in this sandbox — the
+      existing `TEST_DATABASE_URL` override documented in `tests/CLAUDE.md` pointed it at port 5432
+      instead of 5433); portal `tsc -b` and `eslint` clean on every changed file (two pre-existing
+      `react-hooks/refs` lint errors in `ProductsPage.tsx`/`UsersPage.tsx` predate this round and are
+      unrelated to it — confirmed via `git show HEAD:...`).
+
+---
+
 ## Cross-Cutting — Always Active
 
 | Concern | Status |

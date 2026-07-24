@@ -421,6 +421,23 @@ portal's `/invoice-reports`) gained a `payment_methods` field mirroring
 `invoice_report_service.InvoiceReportRow`'s own, closing the "payment method unknown for a sale
 backfilled from another device" gap `STAGE_STATUS.md` had tracked since round 5.
 
+**Management Portal tweaks (post-round-6, complete).** Six user-reported portal gaps, backend +
+portal frontend only — see `STAGE_STATUS.md`'s matching entry for full detail. Notables: Devices
+gained a rename control (`PATCH /pos-devices/{id}`, reusing the existing release action's
+permission check); modifier options no longer auto-sort — new options append to the bottom
+(server-computed `display_order`, client no longer sends one) instead of defaulting to 0 and
+falling back to an alphabetical tie-break that visibly re-sorted the list on every add/rename;
+modifier groups themselves gained a `display_order` column (migration `0059`) and a
+`PATCH /modifier-groups/reorder` route, with `ModifiersPage.tsx` drag-reorderable via the same
+native-HTML5-DnD convention as `ModifierPickerModal.tsx`'s per-product modifier reorder, plus a
+tooltip noting a product's own reordered modifiers override this group order for that product only;
+reporting groups gained a click-to-edit name on `CategoriesPage.tsx` (the backend route already
+existed, unused by the portal); product photo upload's size cap moved back to 500 KB (had drifted
+to 1 MB, out of sync with CLAUDE.md's own documented error-message convention) and `ProductsPage.tsx`
+gained the upload control itself (no portal page had ever exposed the existing
+`POST /products/{id}/photo` route before this); and the Products table's Tax column now shows the
+brand's actual resolved tax rate name (e.g. "GST") instead of a generic "Taxed"/"Tax free" label.
+
 ## Folder structure (backend)
 ```
 pos-backend/

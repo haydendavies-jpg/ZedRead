@@ -21,9 +21,9 @@ def _png_bytes(width: int, height: int) -> bytes:
     return buffer.getvalue()
 
 
-def test_max_photo_bytes_is_1mb():
-    """Stage 24 raises the photo size cap from 500 KB to 1 MB."""
-    assert _MAX_PHOTO_BYTES == 1 * 1024 * 1024
+def test_max_photo_bytes_is_500kb():
+    """Management Portal tweaks: photo size cap is 500 KB (previously raised to 1 MB at Stage 24)."""
+    assert _MAX_PHOTO_BYTES == 500 * 1024
 
 
 def test_validate_photo_dimensions_accepts_minimum_size():

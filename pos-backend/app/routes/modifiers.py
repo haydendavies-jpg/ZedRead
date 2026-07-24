@@ -11,6 +11,7 @@ from app.services.modifier_service import (
     ModifierGroupDetail,
     ModifierGroupProductItem,
     ModifierGroupResponse,
+    ModifierGroupsReorderRequest,
     ModifierGroupUpdate,
     ModifierOptionCreate,
     ModifierOptionLinkCreate,
@@ -32,6 +33,7 @@ from app.services.modifier_service import (
     list_product_modifiers,
     list_product_modifiers_detailed,
     list_products_for_modifier_group,
+    reorder_modifier_groups,
     sync_product_modifier_groups,
     unlink_modifier_group,
     unlink_option_group,
@@ -98,6 +100,44 @@ async def create_brand_modifier_group(
     """
     group = await create_modifier_group(db, access.effective_brand_id(brand_id), payload, access.actor_user)
     return ModifierGroupResponse.model_validate(group)
+
+
+@router.patch(
+    "/modifier-groups/reorder",
+    response_model=list[ModifierGroupResponse],
+    status_code=status.HTTP_200_OK,
+)
+async def reorder_brand_modifier_groups(
+    payload: ModifierGroupsReorderRequest,
+    brand_id: uuid.UUID | None = Query(None, description="Required for portal admin or group-scope access"),
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> list[ModifierGroupResponse]:
+    """
+    Reorder a brand's active modifier groups — the order they appear in on
+    the POS and the Modifiers tab.
+
+    Registered ahead of PATCH /modifier-groups/{group_id} below — Starlette
+    matches routes in registration order, and "reorder" would otherwise be
+    swallowed as a (invalid) group_id by that dynamic route first.
+
+    A product that has reordered its own attached groups (PATCH
+    /products/{id}/modifiers/reorder) keeps that override for itself; this
+    only changes the brand-wide default order.
+
+    Args:
+        payload: Every active modifier group id, in the desired order.
+        brand_id: Required for portal admin or group-scope access.
+        access: Resolved catalog access (POS, management, or portal).
+        db: Active database session.
+
+    Returns:
+        list[ModifierGroupResponse]: The reordered groups, in their new order.
+    """
+    groups = await reorder_modifier_groups(
+        db, access.effective_brand_id(brand_id), payload.modifier_group_ids, access.actor_user
+    )
+    return [ModifierGroupResponse.model_validate(g) for g in groups]
 
 
 @router.patch(

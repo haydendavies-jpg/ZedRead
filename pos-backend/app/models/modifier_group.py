@@ -68,6 +68,15 @@ class ModifierGroup(Base):
         comment="True — the POS pre-selects this group's first option when the customise sheet opens. "
         "False (the default) leaves every group unselected until the cashier actually picks something.",
     )
+    display_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="Order groups appear in on the POS and the Modifiers tab — lower values first. A "
+        "product's own product_modifier_group_links.display_order (Stage 23's per-product "
+        "reorder) overrides this for that product only.",
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

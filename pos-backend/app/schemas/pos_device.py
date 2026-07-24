@@ -18,6 +18,12 @@ class PosDeviceRegister(BaseModel):
     )
 
 
+class PosDeviceRename(BaseModel):
+    """Payload for PATCH /pos-devices/{id} — rename a device."""
+
+    device_name: str = Field(..., min_length=1, max_length=255)
+
+
 class PosDeviceResponse(BaseModel):
     """Serialised PosDevice returned by all /pos-devices routes."""
 
