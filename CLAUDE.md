@@ -421,6 +421,23 @@ portal's `/invoice-reports`) gained a `payment_methods` field mirroring
 `invoice_report_service.InvoiceReportRow`'s own, closing the "payment method unknown for a sale
 backfilled from another device" gap `STAGE_STATUS.md` had tracked since round 5.
 
+**Printing Management (post-round-6, complete).** Full printing configuration and POS-side
+printing built from a standalone spec (printer locations, customisable templates, product-to-
+location assignment, Android pairing/auto-print/cash-drawer) — see `STAGE_STATUS.md`'s "Printing
+Management" entry under Stage 26 for full detail. Backend: `printer_locations`/`print_templates`/
+`print_template_elements` (migration `0059`), `products.printer_location_id`,
+`sites.phone_number`, and `GET /pos/print-config`. Portal: a new "Printing" nav entry with a
+reorderable-field template editor (not a freeform canvas — ESC/POS thermal printers render
+fixed-width text line-by-line) whose live preview shares its alignment/padding logic 1:1 with
+Android's on-device renderer. Android: `PrintConfigRepository` syncs printer config on sync only
+(never polled); `TemplateDocketRenderer` replaces `DocketFormatter`'s hardcoded layout for every
+real print; order dockets auto-print per printer location on Hold/Pay (two new gated settings);
+cash drawer opens on every cash payment leg, not just the completing one. Flagged, not silently
+dropped: template `LOGO` fields don't render (no raster-image support yet) and `ORDER_NOTES`/
+`ITEM_NOTES` render nothing (no POS cart UI to enter them, a pre-existing gap). The Android side is
+unverified by any build — this dev environment has no Android SDK or reachable path to Google's
+Maven repo — see `STAGE_STATUS.md`'s "Known Gaps" table.
+
 ## Folder structure (backend)
 ```
 pos-backend/

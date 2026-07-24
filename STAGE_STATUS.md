@@ -1316,7 +1316,8 @@ first when picking this phase back up.
       to the design bundle's Choosing/Done modal, plus the flagged Voucher tab and Split toggle
       (running remaining-due, "Add another payment"). Backend `pay_invoice()` split-payment bug fixed —
       see `ANDROID_POS_BUILD_PLAN.md`.
-- [ ] Docket/receipt printing (`printing/` module scaffolded)
+- [x] Docket/receipt printing — see "Printing Management" below for the full feature (backend
+      config + portal template editor + Android sync/rendering/auto-print/cash-drawer)
 - [x] Switch user flow (PIN-only re-entry without full logout)
 - [x] End-of-day cash-up screen (`CashUpScreen.kt`) — closes the register session, shows the
       computed Expected/Counted/Variance summary, then returns to the register gate for the next
@@ -1329,6 +1330,78 @@ first when picking this phase back up.
 - [ ] Invoice history screen
 - [ ] Error handling + offline sync reconciliation
 - [ ] APK build + signing configuration — CI produces an unsigned debug APK; release signing not set up
+
+### Printing Management (backend + portal + Android, complete)
+
+Full printing configuration + POS-side printing, built end-to-end from a user spec covering
+printer locations, customisable templates, product-to-location assignment, and Android printer
+pairing/auto-print/cash-drawer behaviour.
+
+- **Backend**: new `printer_locations`/`print_templates`/`print_template_elements` tables
+  (migration `0059`). `template_type` is `invoice` | `docket` | `register_summary` | `cash_in_slip`
+  — the first three are brand-wide singletons (partial unique index on `(brand_id, template_type)`),
+  auto-seeded on brand creation (`print_template_service.seed_default_templates`, alongside the
+  existing "Uncategorised" category auto-seed in `brand_service.create_brand`); `docket` templates
+  are one-per-`PrinterLocation`, auto-created with their location
+  (`printer_location_service.create_printer_location` → `create_docket_template`). Elements render
+  top-to-bottom in `section` order (`header`/`items`/`footer`) then `display_order`, each with a
+  `field_key` from a new code catalog (`app/constants/print_fields.py`, validated server-side —
+  422 on save for a field not valid for that template's type/section) plus `font_size`/`alignment`/
+  `is_bold`/`is_italic`. `products.printer_location_id` (nullable FK, `SET NULL` on delete) groups
+  products into their order docket; `sites.phone_number` is a new Company Profile field ("Store
+  Phone" — no phone field existed anywhere in the hierarchy before this). New
+  `GET /pos/print-config?site_id=` (mirrors `GET /pos/menu-layout`'s mgmt/POS route split) returns
+  every printer location, every template with its elements, and resolved company-profile fields
+  (logo/brand name/store name/address/phone/ABN) in one fetch-on-sync call. Two new POS settings,
+  `auto_print_docket_on_hold`/`auto_print_docket_on_pay` (category "Printing"), gate the Android
+  auto-print behaviour below. `register_session_report_service.get_payment_breakdown_for_session()`
+  (joins `Payment` via `Invoice.register_session_id`) backs the register-summary template's payment
+  breakdown, surfaced on `RegisterSessionOut.payment_breakdown_cents` (close response only).
+- **Portal**: new "Printing" nav entry (`PrintingPage.tsx`) with "Printer Locations" (simple CRUD
+  list, same pattern as Categories) and "Printer Templates" (Invoice/Register Summary/Cash-in Slip
+  singleton rows + one Order Docket row per location) tabs. The template editor
+  (`PrintTemplateEditor.tsx`) is a reorderable field list — native HTML5 drag-to-reorder, same
+  technique as `MenuBuilderPage.tsx` — not a freeform canvas, since ESC/POS thermal printers render
+  fixed-width monospace text line-by-line with no addressable pixel grid. The live preview renders
+  at the printer's real fixed character width using the exact same alignment/padding function
+  (`src/utils/printTemplateLayout.ts`, ported 1:1 into Android's `PrintLineLayout.kt`) the on-device
+  renderer applies, so what a manager designs is what the printer actually produces. Products
+  gained an inline-editable "Printer Location" column (`EditableSelect`, same wiring as the existing
+  Category cell); Company Profile gained a "Phone" field on the site-only address block.
+- **Android**: `PrintConfigRepository` fetches `GET /pos/print-config` on sync only (never polled,
+  per the explicit requirement) into three new Room caches — `printer_locations`/`print_templates`
+  (elements stored as a JSON blob, same convention as `product_modifier_cache`)/
+  `company_profile_cache` — schema version 10 → 11 via a real migration (`MIGRATION_10_11`, not the
+  destructive fallback, since the same version bump also adds `saved_printer_locations`, which must
+  survive an app update like `saved_printers` itself). `TemplateDocketRenderer` walks a template's
+  elements into a driver-neutral `RenderedLine` list (same alignment logic as the portal preview),
+  which both the generic ESC/POS drivers (`renderedLinesToEscPosBytes`) and the Epson driver (its
+  own `addText`/`addTextStyle` calls) render from — replacing `DocketFormatter`'s single hardcoded
+  layout, which is now only the fallback for `PrintersViewModel`'s "Test print" action (no template
+  context to render from). Order dockets auto-print per printer location — grouped from each cart
+  line's product `printer_location_id`, captured at add-to-cart time — on `holdOrder()` (gated by
+  `auto_print_docket_on_hold`) and on a direct pay-without-hold `submitPayment()` completion (gated
+  by `auto_print_docket_on_pay`; a recalled/held order's dockets aren't reprinted at Pay, since they
+  already printed at Hold). The manual "Print receipt" button now renders via the customisable
+  `invoice` template instead of `DocketFormatter`, still sent unsplit to every enabled printer. Cash
+  drawer opens via a new `PrinterDriver.openCashDrawer` (ESC/POS `ESC p` kick command for the generic
+  drivers, Epson's own `addPulse`) on **every** cash payment leg, not just the one that completes the
+  sale — a split sale's cash leg needs the drawer open immediately, not deferred. `PrintersScreen`
+  gained per-printer location-assignment chips (`saved_printer_locations`, local-only — printer
+  pairing has never been backend-synced, same as `saved_printers` itself); `CashInScreen`/
+  `CashUpScreen` gained manual "Print Slip"/"Print Summary" actions against the `cash_in_slip`/
+  `register_summary` templates.
+- **Not verified by a build**: this environment has no Android SDK and no reachable path to
+  Google's Maven repo (`com.android.application` plugin resolution fails immediately, online or
+  offline), so none of the Android changes above have been compiled — verification was careful
+  manual review only (constructor/call-site consistency, no stray control bytes in the raw
+  ESC/POS byte-building code, every `PrinterDriver` implementor updated for the new interface
+  method, every direct-construction test site updated for the new constructor params). Flagged
+  gaps, not silently dropped: `LOGO` renders nothing on the raw ESC/POS text path (no raster-image/
+  bitmap support); `ORDER_NOTES`/`ITEM_NOTES` render nothing since the POS cart has no UI to enter
+  either yet (pre-existing gap, not new); no Room migration test exists for `MIGRATION_10_11`
+  (the one precedent, `SavedPrinterMigrationTest`, is an instrumented `androidTest` that needs a
+  device/emulator neither this environment nor CI's unit-test job provides).
 
 ### Android POS Phase 2 — Settings, Idempotency & Checksum Verification (backend + portal) ✅
 
@@ -2061,3 +2134,7 @@ the invoice-table asks depended on.
 | Recalled held order: editing the quantity of, or removing, a line that already existed on the server as of recall doesn't sync back — only adding new items to a recalled order does | `SellViewModel.recallHeldOrder`/`newLinesSinceRecall` | Medium |
 | Held Orders recall and its Hold-again/Pay require connectivity — no offline path (recalling itself needs the invoice's current server state) | `SellViewModel.recallHeldOrder` | Low |
 | Partial refund has no per-line refunded-amount tracking — a second refund against an already-refunded invoice is blocked entirely, even for a disjoint set of items, rather than allowed incrementally | `invoice_service.create_refund` | Medium |
+| Print templates: `LOGO` field renders nothing on the raw ESC/POS text path — no raster-image/bitmap support (would need downloading + dithering the logo, then `GS v 0` commands) | `TemplateDocketRenderer` (Android) | Low |
+| Print templates: `ORDER_NOTES`/`ITEM_NOTES` fields render nothing — the POS cart has no UI to enter either yet (pre-existing gap, not introduced by printing) | `TemplateDocketRenderer` (Android), `SellViewModel` cart model | Low |
+| No Room migration test for `MIGRATION_10_11` (printing tables + `saved_printer_locations`) — the one precedent (`SavedPrinterMigrationTest`) is an instrumented `androidTest` needing a device/emulator | `pos-android` `androidTest` | Low |
+| Printing management (Android side) is unverified by any build — this dev environment has no Android SDK and no reachable path to Google's Maven repo; changes were reviewed manually only, not compiled | `pos-android` | Medium |
