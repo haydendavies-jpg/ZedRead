@@ -381,6 +381,23 @@ data class InvoiceDto(
     // Only populated by GET /invoices (invoice history / search) — the
     // create/pay responses don't need it and older call sites ignore it.
     @Json(name = "created_at") val createdAt: String? = null,
+    // Distinct payment methods recorded against this invoice (e.g. ["cash",
+    // "card"] for a split payment) — only populated by GET /invoices, same
+    // as [createdAt]; every other InvoiceDto-returning call defaults to
+    // empty since none of them need it.
+    @Json(name = "payment_methods") val paymentMethods: List<String> = emptyList(),
+)
+
+/**
+ * POST /invoices/{id}/refund request. [lineItemIds], when supplied and
+ * non-empty, requests a partial refund of only those line items; omitted or
+ * empty refunds the entire invoice — mirrors RefundRequest in
+ * app/services/invoice_service.py exactly.
+ */
+@JsonClass(generateAdapter = true)
+data class RefundRequest(
+    @Json(name = "line_item_ids") val lineItemIds: List<String>? = null,
+    val reason: String? = null,
 )
 
 /**

@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
@@ -385,18 +386,22 @@ private fun MenuSelectorRow(
     var expanded by remember { mutableStateOf(false) }
     val selected = layouts.firstOrNull { it.id == selectedId }
 
-    Box(modifier = Modifier.width(226.dp)) {
+    // Matches MenuTabRail/CategoryRail's own 200.dp fixed width — previously
+    // 226.dp, wider than the rail column beneath it, so this row's right
+    // edge overhung past the rail's edge into the product grid. Text below
+    // gets maxLines/ellipsis since the narrower width leaves less room.
+    Box(modifier = Modifier.width(200.dp)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(colors.surface)
                 .border(width = 1.dp, color = colors.border)
                 .clickable { expanded = true }
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                 Box(
                     modifier = Modifier
                         .size(10.dp)
@@ -404,8 +409,14 @@ private fun MenuSelectorRow(
                         .background(selected?.color?.let { parseHexColor(it) } ?: colors.accent),
                 )
                 Spacer(Modifier.width(8.dp))
-                Column {
-                    Text(selected?.name ?: "All items", style = MaterialTheme.typography.labelLarge, color = colors.text)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        selected?.name ?: "All items",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = colors.text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Text(
                         // Spelled out rather than a bare "MANUAL"/"SCHEDULED" —
                         // user-testing feedback that the single-word chip
@@ -413,9 +424,12 @@ private fun MenuSelectorRow(
                         if (isManualOverride) "Manually selected" else if (selected != null) "Scheduled default" else "",
                         style = MaterialTheme.typography.labelSmall,
                         color = if (isManualOverride) colors.accent else colors.faint,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
+            Spacer(Modifier.width(4.dp))
             Text("▾", color = colors.muted)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {

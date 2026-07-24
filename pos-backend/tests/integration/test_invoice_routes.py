@@ -821,6 +821,47 @@ async def test_list_invoices_filters_by_status(
 
 
 @pytest.mark.asyncio
+async def test_list_invoices_includes_distinct_payment_methods(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    test_product,
+) -> None:
+    """GET /invoices reports each invoice's distinct payment methods, e.g. both legs of a split payment."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+    await _add_line_item(client, pos_auth_headers, invoice_id, str(test_product.id))  # total 1500
+
+    await client.post(
+        f"/invoices/{invoice_id}/pay",
+        json={"method": "cash", "amount_cents": 500},
+        headers=pos_auth_headers,
+    )
+    await client.post(
+        f"/invoices/{invoice_id}/pay",
+        json={"method": "card", "amount_cents": 1000},
+        headers=pos_auth_headers,
+    )
+
+    resp = await client.get("/invoices", headers=pos_auth_headers)
+    assert resp.status_code == 200
+    row = next(inv for inv in resp.json() if inv["id"] == invoice_id)
+    assert row["payment_methods"] == ["card", "cash"]
+
+
+@pytest.mark.asyncio
+async def test_list_invoices_unpaid_invoice_has_no_payment_methods(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+) -> None:
+    """GET /invoices reports an empty payment_methods list for an invoice with no recorded payments."""
+    invoice_id = await _create_invoice(client, pos_auth_headers)
+
+    resp = await client.get("/invoices", headers=pos_auth_headers)
+    assert resp.status_code == 200
+    row = next(inv for inv in resp.json() if inv["id"] == invoice_id)
+    assert row["payment_methods"] == []
+
+
+@pytest.mark.asyncio
 async def test_list_invoice_line_items_returns_all_lines(
     client: AsyncClient,
     pos_auth_headers: dict,

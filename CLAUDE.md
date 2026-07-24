@@ -404,6 +404,23 @@ own display, never actually taking effect anywhere else in the app — is fixed 
 `SettingsRepository.applyLocalOverride()` patch the shared settings cache immediately regardless of
 role, with pushing a change as every device's shared default remaining Manager+-gated as before.
 
+**Android POS — testing feedback round 6 (post-round-5, complete).** Eight more reported gaps
+against the Android app — see `STAGE_STATUS.md`'s matching entry for full detail. Notables: the Cash
+In/Cash Up denomination grid no longer needs to scroll (tighter row spacing, and `RegisterPopupCard`
+now gives that variant a 0.96 height fraction instead of 0.85); the Cash payment tab's numeric
+pinpad — previously only shown once Split was toggled on — is now shown by default so a cashier can
+type an exact tendered amount without needing a preset tile; the Settings screen replaced its
+per-row "Save as default" button with a single "Push changes" bar that pushes every outstanding
+local edit at once; the POS Layout menu selector no longer overhangs the tab rail beneath it (it was
+226dp against the rail's fixed 200dp); and the Android invoice history screen is now a table — column
+headers (incl. "Invoice #"), a payment-method column, tap-to-expand rows showing line items, a Refund
+action (full or partial-by-line-item via checkboxes, reusing the POS terminal's existing
+`POST /invoices/{id}/refund`), and a totals row pinned below the scrollable list. The one backend
+change this round needed: `GET /invoices` (the POS terminal's own list route, distinct from the
+portal's `/invoice-reports`) gained a `payment_methods` field mirroring
+`invoice_report_service.InvoiceReportRow`'s own, closing the "payment method unknown for a sale
+backfilled from another device" gap `STAGE_STATUS.md` had tracked since round 5.
+
 ## Folder structure (backend)
 ```
 pos-backend/

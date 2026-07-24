@@ -58,6 +58,13 @@ private val LABEL_COLUMN_WIDTH = 92.dp
 private val COUNT_COLUMN_WIDTH = 96.dp
 private val SUBTOTAL_COLUMN_WIDTH = 100.dp
 
+// Row height/gap for the 11-row denomination list — tight enough that the
+// full list fits within RegisterPopupCard's content area without scrolling
+// (user-testing feedback) on anything down to a compact phone screen; still
+// tall enough to stay comfortably tappable.
+private val ROW_HEIGHT = 34.dp
+private val ROW_GAP = 3.dp
+
 /**
  * Per-denomination count entry — the "denomination" cash_in_mode variant, an
  * alternative to a single bulk-total field. Each row starts blank (not
@@ -125,7 +132,7 @@ private fun DenominationColumn(
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalZedReadColors.current
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(ROW_GAP)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
                 "Denomination",
@@ -154,7 +161,7 @@ private fun DenominationColumn(
                 Box(
                     modifier = Modifier
                         .width(COUNT_COLUMN_WIDTH)
-                        .height(42.dp)
+                        .height(ROW_HEIGHT)
                         .clip(RoundedCornerShape(8.dp))
                         .background(if (isActive) colors.accentSoft else colors.bg)
                         .border(

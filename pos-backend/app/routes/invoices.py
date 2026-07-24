@@ -24,6 +24,7 @@ from app.services.invoice_service import (
     create_invoice,
     create_refund,
     get_line_item_detail,
+    get_payment_methods_by_invoice,
     list_invoices,
     list_line_items,
     pay_invoice,
@@ -57,10 +58,17 @@ async def list_site_invoices(
         db: Active database session.
 
     Returns:
-        list[InvoiceResponse]: Invoices for the site.
+        list[InvoiceResponse]: Invoices for the site, each with its
+            payment_methods resolved (see get_payment_methods_by_invoice()).
     """
     invoices = await list_invoices(db, access.user.brand_id, access.site.id, skip, limit, invoice_status)
-    return [InvoiceResponse.model_validate(inv) for inv in invoices]
+    methods_by_invoice = await get_payment_methods_by_invoice(db, [inv.id for inv in invoices])
+    return [
+        InvoiceResponse.model_validate(inv).model_copy(
+            update={"payment_methods": methods_by_invoice.get(inv.id, [])}
+        )
+        for inv in invoices
+    ]
 
 
 @router.get(
