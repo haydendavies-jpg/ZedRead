@@ -77,6 +77,7 @@ class ProductListItem(ProductResponse):
     reporting_group_id: uuid.UUID
     reporting_group_name: str
     modifier_names: str | None = None
+    tax_name: str = Field(..., description="Resolved tax name shown in the Tax column, e.g. 'GST' or 'Tax free'")
 
 
 class ProductBulkUpdate(BaseModel):

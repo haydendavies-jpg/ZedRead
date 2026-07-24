@@ -16,6 +16,7 @@ import { api, fetchAll } from '../../api/axios'
 import { useAuth, isMgmtUser } from '../../context/AuthContext'
 import { useMgmtBrandId } from '../../hooks/useMgmtBrandId'
 import { StatusBadge } from '../../components/StatusBadge'
+import { EditableText } from '../../components/EditableCell'
 import type { PosDevice, Site } from '../../types'
 
 export function DevicesPage() {
@@ -62,6 +63,21 @@ export function DevicesPage() {
       qc.invalidateQueries({ queryKey: ['management-devices'] })
       const msg = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
       setActionError(msg ?? 'Failed to release device.')
+    },
+  })
+
+  const renameMutation = useMutation({
+    mutationFn: ({ id, device_name }: { id: string; device_name: string }) =>
+      api.patch(`/pos-devices/${id}`, { device_name }),
+    onSuccess: () => {
+      setActionError(null)
+      qc.invalidateQueries({ queryKey: ['management-devices'] })
+    },
+    onError: () => {
+      // Re-fetch so any DB-written rename still appears even if response
+      // serialization failed — same "invalidate on error too" rule as every
+      // other write mutation in this portal.
+      qc.invalidateQueries({ queryKey: ['management-devices'] })
     },
   })
 
@@ -153,7 +169,12 @@ export function DevicesPage() {
             <tbody>
               {filtered.map((d) => (
                 <tr key={d.id}>
-                  <td className="font-medium">{d.device_name}</td>
+                  <td className="font-medium">
+                    <EditableText
+                      value={d.device_name}
+                      onSave={async (v) => { await renameMutation.mutateAsync({ id: d.id, device_name: v }) }}
+                    />
+                  </td>
                   {!fixedSiteId && <td className="text-[var(--zr-muted)]">{siteName(d.site_id)}</td>}
                   <td className="font-mono text-xs text-[var(--zr-muted)]" title={d.hardware_id ?? undefined}>
                     {d.hardware_id ? `${d.hardware_id.slice(0, 12)}…` : '—'}

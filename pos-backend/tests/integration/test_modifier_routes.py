@@ -229,13 +229,195 @@ async def test_create_modifier_option_happy_path(
 
     opt_resp = await client.post(
         f"/modifier-groups/{group_id}/options",
-        json={"name": "Extra Cheese", "price_delta_cents": 50, "display_order": 0},
+        json={"name": "Extra Cheese", "price_delta_cents": 50},
         headers=pos_auth_headers,
     )
     assert opt_resp.status_code == 201
     data = opt_resp.json()
     assert data["name"] == "Extra Cheese"
     assert data["price_delta_cents"] == 50
+    assert data["display_order"] == 0
+
+
+@pytest.mark.asyncio
+async def test_create_modifier_option_appends_to_bottom(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+) -> None:
+    """A new option always lands after every existing option, regardless of name."""
+    create_resp = await client.post(
+        "/modifier-groups",
+        json={"name": "Extras", "min_selections": 0, "max_selections": 3},
+        headers=pos_auth_headers,
+    )
+    group_id = create_resp.json()["id"]
+
+    # "Zucchini" would sort before "Apple" alphabetically — appended order
+    # must still win, since the operator controls the sequence, not the name.
+    first = await client.post(
+        f"/modifier-groups/{group_id}/options",
+        json={"name": "Zucchini", "price_delta_cents": 0},
+        headers=pos_auth_headers,
+    )
+    second = await client.post(
+        f"/modifier-groups/{group_id}/options",
+        json={"name": "Apple", "price_delta_cents": 0},
+        headers=pos_auth_headers,
+    )
+    assert first.json()["display_order"] == 0
+    assert second.json()["display_order"] == 1
+
+    listing = await client.get(f"/modifier-groups/{group_id}/options", headers=pos_auth_headers)
+    names = [o["name"] for o in listing.json()]
+    assert names == ["Zucchini", "Apple"]
+
+
+@pytest.mark.asyncio
+async def test_rename_modifier_option_does_not_change_order(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+) -> None:
+    """Renaming an option must never re-sort the group's option list."""
+    create_resp = await client.post(
+        "/modifier-groups",
+        json={"name": "Extras", "min_selections": 0, "max_selections": 3},
+        headers=pos_auth_headers,
+    )
+    group_id = create_resp.json()["id"]
+
+    first = await client.post(
+        f"/modifier-groups/{group_id}/options",
+        json={"name": "Zucchini", "price_delta_cents": 0},
+        headers=pos_auth_headers,
+    )
+    second = await client.post(
+        f"/modifier-groups/{group_id}/options",
+        json={"name": "Banana", "price_delta_cents": 0},
+        headers=pos_auth_headers,
+    )
+
+    # Renaming "Zucchini" to something alphabetically after "Banana" must not
+    # move it below "Banana" in the listing — order is display_order-only.
+    await client.patch(
+        f"/modifier-options/{first.json()['id']}",
+        json={"name": "AAA renamed"},
+        headers=pos_auth_headers,
+    )
+
+    listing = await client.get(f"/modifier-groups/{group_id}/options", headers=pos_auth_headers)
+    names = [o["name"] for o in listing.json()]
+    assert names == ["AAA renamed", "Banana"]
+    assert second.json()["name"] == "Banana"
+
+
+@pytest.mark.asyncio
+async def test_create_modifier_group_appends_to_bottom(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+) -> None:
+    """A new modifier group always lands after every existing group, regardless of name."""
+    # "Zucchini" would sort before "Apple" alphabetically — appended order
+    # must still win, since POS display order is operator-controlled.
+    first = await client.post(
+        "/modifier-groups",
+        json={"name": "Zucchini Sauces", "min_selections": 0, "max_selections": 1},
+        headers=pos_auth_headers,
+    )
+    second = await client.post(
+        "/modifier-groups",
+        json={"name": "Apple Sauces", "min_selections": 0, "max_selections": 1},
+        headers=pos_auth_headers,
+    )
+    assert first.json()["display_order"] == 0
+    assert second.json()["display_order"] == 1
+
+    listing = await client.get("/modifier-groups", headers=pos_auth_headers)
+    names = [g["name"] for g in listing.json() if g["id"] in {first.json()["id"], second.json()["id"]}]
+    assert names == ["Zucchini Sauces", "Apple Sauces"]
+
+
+@pytest.mark.asyncio
+async def test_reorder_modifier_groups_happy_path(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+) -> None:
+    """PATCH /modifier-groups/reorder resequences display_order to match the given list."""
+    a = await client.post(
+        "/modifier-groups", json={"name": "Group A", "min_selections": 0, "max_selections": 1}, headers=pos_auth_headers
+    )
+    b = await client.post(
+        "/modifier-groups", json={"name": "Group B", "min_selections": 0, "max_selections": 1}, headers=pos_auth_headers
+    )
+    a_id, b_id = a.json()["id"], b.json()["id"]
+
+    resp = await client.patch(
+        "/modifier-groups/reorder",
+        json={"modifier_group_ids": [b_id, a_id]},
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert [g["id"] for g in data] == [b_id, a_id]
+    assert data[0]["display_order"] == 0
+    assert data[1]["display_order"] == 1
+
+    listing = await client.get("/modifier-groups", headers=pos_auth_headers)
+    ids = [g["id"] for g in listing.json() if g["id"] in {a_id, b_id}]
+    assert ids == [b_id, a_id]
+
+
+@pytest.mark.asyncio
+async def test_reorder_modifier_groups_missing_id_returns_400(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+) -> None:
+    """Omitting an active group from the reorder set is rejected."""
+    a = await client.post(
+        "/modifier-groups", json={"name": "Group A", "min_selections": 0, "max_selections": 1}, headers=pos_auth_headers
+    )
+    await client.post(
+        "/modifier-groups", json={"name": "Group B", "min_selections": 0, "max_selections": 1}, headers=pos_auth_headers
+    )
+
+    resp = await client.patch(
+        "/modifier-groups/reorder",
+        json={"modifier_group_ids": [a.json()["id"]]},
+        headers=pos_auth_headers,
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_reorder_modifier_groups_writes_audit_log(
+    client: AsyncClient,
+    pos_auth_headers: dict,
+    db: AsyncSession,
+    test_brand,
+) -> None:
+    """Reordering modifier groups writes a 'modifier_groups.reordered' audit row."""
+    from app.constants.audit_actions import MODIFIER_GROUPS_REORDERED
+
+    a = await client.post(
+        "/modifier-groups", json={"name": "Group A", "min_selections": 0, "max_selections": 1}, headers=pos_auth_headers
+    )
+    b = await client.post(
+        "/modifier-groups", json={"name": "Group B", "min_selections": 0, "max_selections": 1}, headers=pos_auth_headers
+    )
+
+    await client.patch(
+        "/modifier-groups/reorder",
+        json={"modifier_group_ids": [b.json()["id"], a.json()["id"]]},
+        headers=pos_auth_headers,
+    )
+
+    await db.invalidate()
+    audit = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_id == str(test_brand.id),
+            AuditLog.action == MODIFIER_GROUPS_REORDERED,
+        )
+    )
+    assert audit.scalar_one() is not None
 
 
 @pytest.mark.asyncio

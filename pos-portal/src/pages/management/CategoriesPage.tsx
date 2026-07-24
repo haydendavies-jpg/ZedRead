@@ -55,6 +55,13 @@ export function CategoriesPage() {
     onError: invalidateList,
   })
 
+  const patchGroup = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
+      api.patch(`/reporting-groups/${id}`, body, { params }),
+    onSuccess: invalidateGroups,
+    onError: invalidateGroups,
+  })
+
   const createCategory = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post('/categories', body, { params }),
     // Append the created row to the cache straight from the POST response so
@@ -212,7 +219,13 @@ export function CategoriesPage() {
                     >
                       {rows.length > 0 && rows.every((r) => selected.has(r.id)) && '✓'}
                     </button>
-                    <span className="font-serif font-bold text-[15px] text-gray-900 dark:text-gray-100">{group.name}</span>
+                    <div className="font-serif font-bold text-[15px] text-gray-900 dark:text-gray-100">
+                      <EditableText
+                        value={group.name}
+                        disabled={group.is_system}
+                        onSave={async (v) => { await patchGroup.mutateAsync({ id: group.id, body: { name: v } }) }}
+                      />
+                    </div>
                     <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">reporting group</span>
                     <span className="ml-auto text-xs text-gray-400 dark:text-gray-500">{rows.length} {rows.length === 1 ? 'category' : 'categories'}</span>
                   </div>

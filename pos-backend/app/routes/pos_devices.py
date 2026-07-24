@@ -9,25 +9,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.site import Site
 from app.models.user import User
-from app.schemas.pos_device import PosDeviceRegister, PosDeviceResponse
+from app.schemas.pos_device import PosDeviceRegister, PosDeviceRename, PosDeviceResponse
 from app.services import access_profile_service, pos_device_service
 from app.utils.dependencies import CatalogAccess, get_current_superadmin, resolve_catalog_access
 
 router = APIRouter(prefix="/pos-devices", tags=["pos-devices"])
 
 
-async def _assert_release_permitted(
+async def _assert_management_action_permitted(
     db: AsyncSession, access: CatalogAccess, device_site_id: uuid.UUID
 ) -> None:
     """
-    Authorize a management-portal seat release.
+    Authorize a management-portal device action (rename, release seat).
 
-    A portal admin (portal_access) may always release any device, mirroring
+    A portal admin (portal_access) may always act on any device, mirroring
     the existing superadmin-only /deregister escape hatch. A management
     caller (mgmt_access) must hold the "devices" page permission on their
     access profile and be scoped to the device's own site/brand. A raw POS
-    terminal session (pos_access) may never release a seat — this is a
-    management/admin action, not something the terminal can do to itself.
+    terminal session (pos_access) may never rename or release a seat — this
+    is a management/admin action, not something the terminal can do to itself.
 
     Args:
         db: Active database session.
@@ -138,6 +138,25 @@ async def register_device(
     return await pos_device_service.register_device(db, payload, actor)
 
 
+@router.patch("/{device_id}", response_model=PosDeviceResponse)
+async def rename_device(
+    device_id: uuid.UUID,
+    payload: PosDeviceRename,
+    access: CatalogAccess = Depends(resolve_catalog_access),
+    db: AsyncSession = Depends(get_db),
+) -> PosDeviceResponse:
+    """
+    Rename a POS device via the management portal.
+
+    Restricted to callers whose access profile is granted the "devices"
+    page permission and scoped to the device's own site/brand; a portal
+    admin may rename any device.
+    """
+    device = await pos_device_service.get_device(db, device_id)
+    await _assert_management_action_permitted(db, access, device.site_id)
+    return await pos_device_service.rename_device(db, device_id, payload, access.actor_user)
+
+
 @router.post("/{device_id}/deregister", response_model=PosDeviceResponse)
 async def deregister_device(
     device_id: uuid.UUID,
@@ -163,5 +182,5 @@ async def release_device(
     admin may release any device.
     """
     device = await pos_device_service.get_device(db, device_id)
-    await _assert_release_permitted(db, access, device.site_id)
+    await _assert_management_action_permitted(db, access, device.site_id)
     return await pos_device_service.deregister_device(db, device_id, access.actor_user)

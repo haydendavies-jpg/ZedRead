@@ -1,8 +1,10 @@
 """Business logic for Product CRUD and photo upload.
 
 Photo upload is handled via the upload_photo() helper which:
-  - Enforces the 1 MB size limit (raises HTTP 413 if exceeded)
-  - Enforces a 500x500 minimum resolution (raises HTTP 422 if too small)
+  - Enforces the 500 KB size limit (raises HTTP 413 if exceeded)
+  - Enforces a 500x500 minimum resolution (raises HTTP 422 if too small) —
+    any aspect ratio at or above that minimum is accepted; 500x500 (square)
+    is only a recommendation surfaced in the portal upload UI, not enforced
   - Uploads to Supabase Storage and returns the public URL
   - Called separately from create/update so the product route can accept
     a multipart form with a JSON body + file part
@@ -29,6 +31,7 @@ from app.constants.audit_actions import (
     PRODUCT_UPDATED,
 )
 from app.constants.statuses import ActorType
+from app.models.brand import Brand
 from app.models.category import Category
 from app.models.menu_button import MenuButton
 from app.models.menu_layout import MenuLayout
@@ -41,13 +44,13 @@ from app.models.user import User
 from app.models.product import Product
 from app.schemas.product import ProductBulkUpdate, ProductBulkUpdateResult, ProductCreate, ProductUpdate
 from app.services.audit_service import log_action
-from app.services.tax_resolution_service import derive_ex_price_cents
+from app.services.tax_resolution_service import country_inclusive_rate_names, derive_ex_price_cents
 from app.utils.storage import extension_for_content_type, upload_image
 
 log = structlog.get_logger(__name__)
 
 # Maximum photo size enforced before attempting Supabase upload
-_MAX_PHOTO_BYTES = 1 * 1024 * 1024  # 1 MB
+_MAX_PHOTO_BYTES = 500 * 1024  # 500 KB
 _ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
 # Minimum resolution — a 1:1 ratio is recommended in the portal upload UI but
 # not enforced here, since the requester called it a recommendation, not a rule.
@@ -235,7 +238,7 @@ async def list_products(
     skip: int = 0,
     limit: int = 50,
     include_inactive: bool = False,
-) -> list[tuple[Product, str, str, uuid.UUID, str, str | None]]:
+) -> list[tuple[Product, str, str, uuid.UUID, str, str | None, str]]:
     """
     Return a paginated list of products for a brand, joined to their Category and Reporting Group.
 
@@ -244,7 +247,11 @@ async def list_products(
     modifier_names is a comma-joined list of this product's active linked
     modifier group names (Menu Studio redesign), resolved via a correlated
     scalar subquery rather than a GROUP BY so the base product/category/
-    reporting-group join stays row-per-product.
+    reporting-group join stays row-per-product. tax_name is the brand's
+    country tax rate name(s) (e.g. "GST") for a taxable product, or "Tax
+    free" — the same rate(s) country_inclusive_rate_names/derive_ex_price_cents
+    already use to split base_price_cents, resolved once per call rather than
+    per row since it only varies by the brand's country, not by product.
 
     Args:
         db: Active database session.
@@ -256,9 +263,9 @@ async def list_products(
             view filters active/inactive client-side rather than via a repeat API call).
 
     Returns:
-        list[tuple[Product, str, str, uuid.UUID, str, str | None]]: Each tuple is
+        list[tuple[Product, str, str, uuid.UUID, str, str | None, str]]: Each tuple is
             (product, category_name, category_color, reporting_group_id,
-            reporting_group_name, modifier_names), ordered by display_order then name.
+            reporting_group_name, modifier_names, tax_name), ordered by display_order then name.
     """
     modifier_names_subq = (
         select(func.string_agg(ModifierGroup.name, ", "))
@@ -293,7 +300,24 @@ async def list_products(
         query = query.where(Product.category_id == category_id)
 
     result = await db.execute(query)
-    return [tuple(row) for row in result.all()]
+    rows = [tuple(row) for row in result.all()]
+
+    # Fallback for a taxable product whose brand has no inclusive tax
+    # template configured — distinct from "Tax free" (is_taxable=False),
+    # since the product IS charged tax-inclusive, its rate just has no name yet.
+    taxed_name = "Taxed"
+    if rows:
+        brand_result = await db.execute(select(Brand.country).where(Brand.id == brand_id))
+        country = brand_result.scalar_one_or_none()
+        if country is not None:
+            rate_names = await country_inclusive_rate_names(db, country)
+            if rate_names:
+                taxed_name = " + ".join(rate_names)
+
+    return [
+        (product, category_name, category_color, reporting_group_id, reporting_group_name, modifier_names, taxed_name if product.is_taxable else "Tax free")
+        for product, category_name, category_color, reporting_group_id, reporting_group_name, modifier_names in rows
+    ]
 
 
 async def get_product(
@@ -600,10 +624,11 @@ async def upload_photo(
     """
     Upload a product photo to Supabase Storage and save the URL on the product.
 
-    Enforces a 1 MB limit before attempting the upload. Raises HTTP 413 if
+    Enforces a 500 KB limit before attempting the upload. Raises HTTP 413 if
     the file exceeds the limit. Raises HTTP 415 if the content type is not an
     accepted image type. Raises HTTP 422 if the image is smaller than the
-    500x500 minimum recommended resolution.
+    500x500 minimum — any aspect ratio at or above that minimum is accepted;
+    a square (1:1) image is only a recommendation, not enforced.
 
     Args:
         db: Active database session.
@@ -617,7 +642,7 @@ async def upload_photo(
 
     Raises:
         HTTPException: 404 if the product is not found.
-        HTTPException: 413 if the file exceeds 1 MB.
+        HTTPException: 413 if the file exceeds 500 KB.
         HTTPException: 415 if the content type is not an accepted image type.
         HTTPException: 422 if the image is smaller than 500x500px.
     """

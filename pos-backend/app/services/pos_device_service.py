@@ -7,13 +7,13 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.audit_actions import DEVICE_DEREGISTERED, DEVICE_REGISTERED
+from app.constants.audit_actions import DEVICE_DEREGISTERED, DEVICE_REGISTERED, DEVICE_RENAMED
 from app.constants.statuses import LicenseStatus
 from app.models.license import License
 from app.models.user import User
 from app.models.pos_device import PosDevice
 from app.models.site import Site
-from app.schemas.pos_device import PosDeviceRegister
+from app.schemas.pos_device import PosDeviceRegister, PosDeviceRename
 from app.services.audit_service import log_action
 
 log = structlog.get_logger(__name__)
@@ -244,6 +244,48 @@ async def register_device(
     await db.commit()
     await db.refresh(device)
     log.info("device.registered", device_id=str(device.id))
+    return device
+
+
+async def rename_device(
+    db: AsyncSession,
+    device_id: uuid.UUID,
+    payload: PosDeviceRename,
+    actor: User,
+) -> PosDevice:
+    """
+    Rename a registered POS device and write an audit log row.
+
+    Args:
+        db: Active database session.
+        device_id: UUID of the device to rename.
+        payload: The new device_name.
+        actor: The authenticated portal user performing the rename.
+
+    Returns:
+        PosDevice: The updated device.
+
+    Raises:
+        HTTPException: 404 if not found.
+    """
+    device = await _get_or_404(db, device_id)
+    before_name = device.device_name
+    device.device_name = payload.device_name
+
+    await log_action(
+        db=db,
+        action=DEVICE_RENAMED,
+        entity_type="pos_device",
+        entity_id=str(device.id),
+        actor_id=actor.id,
+        actor_email=actor.email,
+        actor_name=actor.name,
+        before_state={"device_name": before_name},
+        after_state={"device_name": device.device_name},
+    )
+
+    await db.commit()
+    await db.refresh(device)
     return device
 
 

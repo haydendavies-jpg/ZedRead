@@ -377,6 +377,41 @@ async def test_list_products_includes_joined_category_and_reporting_group(
     assert row["reporting_group_name"] == test_reporting_group.name
 
 
+async def test_list_products_tax_name_reflects_country_rate(client, db, pos_auth_headers, test_product):
+    """A taxable product's tax_name is the brand's configured inclusive rate name(s), e.g. 'GST'."""
+    await _seed_au_inclusive_template(db)  # test_product's brand.country == "AU"
+
+    response = await client.get("/products", headers=pos_auth_headers)
+
+    assert response.status_code == 200
+    row = next(p for p in response.json() if p["id"] == str(test_product.id))
+    assert row["is_taxable"] is True
+    assert row["tax_name"] == "GST"
+
+
+async def test_list_products_tax_name_no_template_shows_taxed(client, pos_auth_headers, test_product):
+    """A taxable product with no configured country tax template falls back to 'Taxed'."""
+    response = await client.get("/products", headers=pos_auth_headers)
+
+    assert response.status_code == 200
+    row = next(p for p in response.json() if p["id"] == str(test_product.id))
+    assert row["tax_name"] == "Taxed"
+
+
+async def test_list_products_tax_name_tax_free_product(client, db, pos_auth_headers, test_product):
+    """A non-taxable product's tax_name is 'Tax free', regardless of any configured template."""
+    await _seed_au_inclusive_template(db)
+    await client.patch(
+        f"/products/{test_product.id}", json={"is_taxable": False}, headers=pos_auth_headers
+    )
+
+    response = await client.get("/products", headers=pos_auth_headers)
+
+    assert response.status_code == 200
+    row = next(p for p in response.json() if p["id"] == str(test_product.id))
+    assert row["tax_name"] == "Tax free"
+
+
 async def test_list_products_excludes_inactive_by_default(client, pos_auth_headers, test_product):
     """GET /products omits soft-deleted products unless include_inactive=true."""
     await client.delete(f"/products/{test_product.id}", headers=pos_auth_headers)

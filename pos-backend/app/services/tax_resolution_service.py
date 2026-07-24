@@ -139,6 +139,40 @@ async def country_inclusive_rate(db: AsyncSession, country: str) -> Decimal:
     return Decimal(str(result.scalar_one()))
 
 
+async def country_inclusive_rate_names(db: AsyncSession, country: str) -> list[str]:
+    """
+    Return the display names of a country's national inclusive tax rates.
+
+    Same country-level-only filter as country_inclusive_rate() (no state/
+    county/city set) — the two stay consistent: whatever rate(s) split a
+    product's price also supply the name shown for it, e.g. "GST" for AU.
+
+    Args:
+        db: Active database session.
+        country: ISO 3166-1 alpha-2 country code.
+
+    Returns:
+        list[str]: Rate names in template display order (empty if the
+            country has no inclusive template configured).
+    """
+    result = await db.execute(
+        select(TaxTemplateRate.name)
+        .select_from(TaxTemplate)
+        .join(TaxTemplateRate, TaxTemplateRate.tax_template_id == TaxTemplate.id)
+        .where(
+            TaxTemplate.is_active == True,  # noqa: E712
+            func.lower(TaxTemplate.country) == country.strip().lower(),
+            TaxTemplate.state.is_(None),
+            TaxTemplate.county.is_(None),
+            TaxTemplate.city.is_(None),
+            TaxTemplateRate.is_active == True,  # noqa: E712
+            TaxTemplateRate.tax_model == "inclusive",
+        )
+        .order_by(TaxTemplateRate.display_order, TaxTemplateRate.created_at)
+    )
+    return [row[0] for row in result.all()]
+
+
 async def derive_ex_price_cents(db: AsyncSession, brand_id: uuid.UUID, inc_cents: int) -> int:
     """
     Derive the tax-exclusive price from a tax-inclusive price for a brand.

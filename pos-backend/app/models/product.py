@@ -102,7 +102,7 @@ class Product(Base):
     photo_url: Mapped[str | None] = mapped_column(
         String(1024),
         nullable=True,
-        comment="Supabase Storage URL for the product photo (max 1 MB enforced in service)",
+        comment="Supabase Storage URL for the product photo (max 500 KB enforced in service)",
     )
     is_open_item: Mapped[bool] = mapped_column(
         Boolean,

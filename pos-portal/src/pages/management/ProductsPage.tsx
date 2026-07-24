@@ -457,9 +457,9 @@ export function ProductsPage() {
                     <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{centsToDisplay(p.price_ex_cents)}</td>
                     <td className="px-4 py-3">
                       {p.is_taxable ? (
-                        <span className="text-xs text-gray-700 dark:text-gray-300">Taxed</span>
+                        <span className="text-xs text-gray-700 dark:text-gray-300">{p.tax_name}</span>
                       ) : (
-                        <span className="text-xs text-emerald-700 dark:text-emerald-400">Tax free</span>
+                        <span className="text-xs text-emerald-700 dark:text-emerald-400">{p.tax_name}</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -550,6 +550,35 @@ function effectivePriceCents(product: Product, taxable: boolean): number {
 }
 
 function ProductFormModal({ product, brandId, categories, onClose, onSaved }: ProductFormProps) {
+  const qc = useQueryClient()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [photoUrl, setPhotoUrl] = useState(product?.photo_url ?? null)
+  const [photoError, setPhotoError] = useState<string | null>(null)
+
+  const photoMutation = useMutation({
+    mutationFn: (file: File) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      const qParams = brandId ? { brand_id: brandId } : {}
+      return api.post(`/products/${product?.id}/photo`, formData, { params: qParams })
+    },
+    onSuccess: (resp) => {
+      setPhotoUrl(resp.data.photo_url)
+      setPhotoError(null)
+      qc.invalidateQueries({ queryKey: ['products', brandId] })
+    },
+    onError: (e: unknown) => {
+      qc.invalidateQueries({ queryKey: ['products', brandId] })
+      setPhotoError(apiErrorMessage(e, 'Failed to upload photo.'))
+    },
+  })
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) photoMutation.mutate(file)
+    e.target.value = ''
+  }
+
   const [name, setName] = useState(product?.name ?? '')
   const [description, setDescription] = useState(product?.description ?? '')
   // Taxability is a plain product flag. When taxed, the field holds the
@@ -613,6 +642,43 @@ function ProductFormModal({ product, brandId, categories, onClose, onSaved }: Pr
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
+
+        {product && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Photo</label>
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex items-center justify-center overflow-hidden shrink-0">
+                {photoUrl ? (
+                  <img src={photoUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-gray-300 text-xs">No photo</span>
+                )}
+              </div>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={photoMutation.isPending}
+                  className="text-brand-600 hover:underline text-xs disabled:opacity-50"
+                >
+                  {photoMutation.isPending ? 'Uploading…' : photoUrl ? 'Replace photo' : 'Upload photo'}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={handlePhotoChange}
+                />
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  Minimum 500×500px, any aspect ratio at or above that is fine (square recommended) — under 500KB.
+                </p>
+                <p className="text-xs text-gray-400 dark:text-gray-500">Shown on the POS and Menu Studio tiles.</p>
+                {photoError && <p className="text-xs text-red-600 mt-1">{photoError}</p>}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">

@@ -308,6 +308,8 @@ export interface ProductListItem extends Product {
   reporting_group_name: string
   /** Comma-joined names of this product's active linked modifier groups, or null if none. */
   modifier_names: string | null
+  /** Resolved tax name shown in the Tax column, e.g. "GST" or "Tax free". */
+  tax_name: string
 }
 
 // ── Modifiers & comboing (Menu Studio redesign) ─────────────────────────────────
@@ -322,6 +324,8 @@ export interface ModifierGroup {
   has_quantity: boolean
   /** True — the POS pre-selects this group's first option when the customise sheet opens. False (default) leaves it unselected until the cashier picks something. */
   is_first_option_default_selected: boolean
+  /** Order groups appear in on the POS — lower first. A product's own reordered modifiers (ModifierPickerModal) overrides this for that product only. */
+  display_order: number
   is_active: boolean
 }
 
