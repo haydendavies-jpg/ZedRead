@@ -12,6 +12,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.merge
@@ -46,10 +47,20 @@ class PrinterRepository @Inject constructor(
      * Scan for printers. Merges every registered driver's own discovery
      * flow, or just [driverId]'s if given (e.g. "Add another Epson printer"
      * without re-scanning Bluetooth too).
+     *
+     * Each driver's flow is individually wrapped in [catch] — a permission
+     * denial, a missing native library, or any other driver-specific failure
+     * (e.g. Epson's SDK or a raw `BluetoothAdapter` call throwing a
+     * `SecurityException`) must not silently take down every other driver's
+     * scan by cancelling the shared [merge]d flow, and must never propagate
+     * as an uncaught exception out of [PrintersViewModel]'s collecting
+     * coroutine — that's a hard app crash, not a graceful "printer not
+     * found." A driver that fails this way simply contributes nothing to
+     * this scan.
      */
     fun discover(driverId: String? = null): Flow<DiscoveredPrinter> {
         val drivers = driverId?.let { id -> listOfNotNull(driverRegistry.get(id)) } ?: driverRegistry.all()
-        return drivers.map { it.discover(context) }.merge()
+        return drivers.map { driver -> driver.discover(context).catch { } }.merge()
     }
 
     /**

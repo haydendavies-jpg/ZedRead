@@ -47,12 +47,18 @@ class PrintersViewModel @Inject constructor(
         discoveryJob?.cancel()
         _discoveryState.value = DiscoveryUiState.Scanning(emptyList())
         discoveryJob = viewModelScope.launch {
-            printerRepo.discover().collect { found ->
-                val current = _discoveryState.value as? DiscoveryUiState.Scanning ?: return@collect
-                if (current.found.none { it.macAddress.equals(found.macAddress, ignoreCase = true) }) {
-                    _discoveryState.value = current.copy(found = current.found + found)
+            // Individual drivers already swallow their own failures (see
+            // PrinterRepository.discover's doc) — this is a last-resort
+            // backstop so a scan can never crash the app outright, only
+            // ever end early with nothing further found.
+            runCatching {
+                printerRepo.discover().collect { found ->
+                    val current = _discoveryState.value as? DiscoveryUiState.Scanning ?: return@collect
+                    if (current.found.none { it.macAddress.equals(found.macAddress, ignoreCase = true) }) {
+                        _discoveryState.value = current.copy(found = current.found + found)
+                    }
                 }
-            }
+            }.onFailure { e -> _actionResult.tryEmit("Discovery stopped: ${e.message ?: "unknown error"}") }
         }
     }
 

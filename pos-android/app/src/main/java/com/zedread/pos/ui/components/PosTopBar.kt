@@ -1,5 +1,10 @@
 package com.zedread.pos.ui.components
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -17,13 +22,25 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.zedread.pos.ui.viewmodel.PermissionsViewModel
 
 // Fixed, theme-independent colours for this bar — per user-testing feedback
 // the top bar always reads #332E29 (the portal's own dark-mode --zr-sidebar,
@@ -65,6 +82,15 @@ private val TopBarFaint = Color(0xFFD9D4CE) // muted near-white for the subtitle
  * category is currently active (e.g. "TEST" is a Menu Studio tab named
  * "Test", not a build/debug label — see OrderEntryScreen's own subtitle
  * wiring), elsewhere it's a plain screen name like "Settings".
+ *
+ * Also carries the [PermissionsWarningBadge]/[PermissionsPanel] pair — baked
+ * in here rather than left to each of the six screens rendering this bar to
+ * wire up individually, so a missing runtime permission (see
+ * [com.zedread.pos.ui.viewmodel.PermissionsViewModel]) is visible everywhere
+ * for free. Re-checks grant status on every `ON_RESUME` (the user may have
+ * just come back from this app's system Settings page after granting it
+ * there) in addition to right after the in-app "Grant permissions" request
+ * result.
  */
 @Composable
 fun PosTopBar(
@@ -74,8 +100,26 @@ fun PosTopBar(
     isOnline: Boolean,
     pendingCount: Int,
     onSyncClick: () -> Unit,
+    permissionsViewModel: PermissionsViewModel = hiltViewModel(),
     actions: @Composable RowScope.() -> Unit = {},
 ) {
+    val context = LocalContext.current
+    val missingPermissions by permissionsViewModel.missingPermissions.collectAsState()
+    var showPermissionsPanel by remember { mutableStateOf(false) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        permissionsViewModel.refresh()
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) permissionsViewModel.refresh()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -107,8 +151,26 @@ fun PosTopBar(
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             actions()
+            if (missingPermissions.isNotEmpty()) {
+                PermissionsWarningBadge(onClick = { showPermissionsPanel = true })
+            }
             SyncStatusBadge(isOnline = isOnline, pendingCount = pendingCount, onClick = onSyncClick)
         }
+    }
+
+    if (showPermissionsPanel) {
+        PermissionsPanel(
+            missingPermissions = missingPermissions,
+            onRequestAgain = { permissionLauncher.launch(missingPermissions.toTypedArray()) },
+            onOpenSettings = {
+                showPermissionsPanel = false
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", context.packageName, null)
+                }
+                context.startActivity(intent)
+            },
+            onDismiss = { showPermissionsPanel = false },
+        )
     }
 }
 

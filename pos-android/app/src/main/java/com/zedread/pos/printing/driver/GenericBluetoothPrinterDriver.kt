@@ -8,6 +8,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import androidx.core.content.ContextCompat
 import com.zedread.pos.data.local.entity.SavedPrinterEntity
 import com.zedread.pos.printing.BluetoothPrintService
 import com.zedread.pos.printing.Docket
@@ -57,7 +58,11 @@ class GenericBluetoothPrinterDriver @Inject constructor(
                 trySend(device.toDiscoveredPrinter())
             }
         }
-        context.registerReceiver(receiver, IntentFilter(BluetoothDevice.ACTION_FOUND))
+        // ContextCompat.registerReceiver (not the plain 2-arg Context.registerReceiver) —
+        // API 33+ requires RECEIVER_EXPORTED/RECEIVER_NOT_EXPORTED to be specified or
+        // registration itself throws a SecurityException; this compat call handles that
+        // (and is a no-op flag pre-33) so this driver works across the whole minSdk range.
+        ContextCompat.registerReceiver(context, receiver, IntentFilter(BluetoothDevice.ACTION_FOUND), ContextCompat.RECEIVER_NOT_EXPORTED)
         adapter.startDiscovery()
 
         awaitClose {

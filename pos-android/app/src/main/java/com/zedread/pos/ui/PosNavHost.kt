@@ -1,9 +1,12 @@
 package com.zedread.pos.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -28,6 +31,7 @@ import com.zedread.pos.ui.screens.settings.SettingsScreen
 import com.zedread.pos.ui.screens.switchuser.SwitchUserScreen
 import com.zedread.pos.ui.screens.sync.SyncSplashScreen
 import com.zedread.pos.ui.viewmodel.AppEntryViewModel
+import com.zedread.pos.ui.viewmodel.PermissionsViewModel
 import com.zedread.pos.ui.viewmodel.StartDestination
 
 /**
@@ -37,11 +41,29 @@ import com.zedread.pos.ui.viewmodel.StartDestination
  * (login, or straight past it into the register gate) before composing the
  * graph — Compose Navigation doesn't support changing startDestination
  * after the NavHost is first created.
+ *
+ * Also requests every permission [PermissionsViewModel.requiredPermissions]
+ * needs exactly once per process, on this composable's very first
+ * composition — the earliest possible "app open" moment, ahead of even the
+ * loading spinner below. A cashier who denies (or is later revoked) still
+ * sees the persistent warning badge [com.zedread.pos.ui.components.PosTopBar]
+ * bakes in, and can retry contextually from [DiscoverPrintersDialog] when
+ * actually using a printer — this app-open ask is a proactive courtesy, not
+ * the only chance to grant it.
  */
 @Composable
 fun PosNavHost() {
     val entryViewModel: AppEntryViewModel = hiltViewModel()
     val startDestination by entryViewModel.startDestination.collectAsState()
+
+    val permissionsViewModel: PermissionsViewModel = hiltViewModel()
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        permissionsViewModel.refresh()
+    }
+    LaunchedEffect(Unit) {
+        val missing = permissionsViewModel.missingPermissions.value
+        if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray())
+    }
 
     val resolved = startDestination
     if (resolved == null) {
