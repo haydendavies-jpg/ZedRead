@@ -13,6 +13,8 @@ object SettingKeys {
     const val CASH_IN_MODE = "cash_in_mode"
     const val HIDE_VARIANCE_ON_CLOSE = "hide_variance_on_close"
     const val AUTO_MENU_ENABLED = "auto_menu_enabled"
+    const val AUTO_PRINT_DOCKET_ON_HOLD = "auto_print_docket_on_hold"
+    const val AUTO_PRINT_DOCKET_ON_PAY = "auto_print_docket_on_pay"
 }
 
 /**

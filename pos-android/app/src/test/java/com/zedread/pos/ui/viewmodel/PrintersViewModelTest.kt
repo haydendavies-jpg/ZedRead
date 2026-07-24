@@ -1,7 +1,10 @@
 package com.zedread.pos.ui.viewmodel
 
 import android.content.Context
+import com.zedread.pos.data.local.dao.FakePrinterLocationDao
 import com.zedread.pos.data.local.dao.FakeSavedPrinterDao
+import com.zedread.pos.data.local.dao.FakeSavedPrinterLocationDao
+import com.zedread.pos.data.repository.PrintConfigRepository
 import com.zedread.pos.data.repository.PrinterRepository
 import com.zedread.pos.printing.driver.DiscoveredPrinter
 import com.zedread.pos.printing.driver.FakePrinterDriver
@@ -19,6 +22,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
+import org.mockito.Mockito
 import org.mockito.Mockito.mock
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -38,6 +42,13 @@ class PrintersViewModelTest {
 
     private fun fakeContext(): Context = mock(Context::class.java)
 
+    /** Only observePrinterLocations() is ever called by PrintersViewModel — stub just that. */
+    private fun fakePrintConfigRepo(): PrintConfigRepository {
+        val repo = mock(PrintConfigRepository::class.java)
+        Mockito.`when`(repo.observePrinterLocations()).thenReturn(flowOf(emptyList()))
+        return repo
+    }
+
     @Test
     fun `discovery results dedupe by MAC as they stream in`() = runTest(dispatcher) {
         val discoverFlow = flowOf(
@@ -47,8 +58,8 @@ class PrintersViewModelTest {
             DiscoveredPrinter("11:22:33:44:55:66", "2.2.2.2", null, "Printer B", "fake"),
         )
         val driver = FakePrinterDriver(driverId = "fake", discoverFlow = discoverFlow)
-        val repo = PrinterRepository(FakeSavedPrinterDao(), PrinterDriverRegistry(setOf(driver)), fakeContext())
-        val viewModel = PrintersViewModel(repo)
+        val repo = PrinterRepository(FakeSavedPrinterDao(), FakePrinterLocationDao(), FakeSavedPrinterLocationDao(), PrinterDriverRegistry(setOf(driver)), fakeContext())
+        val viewModel = PrintersViewModel(repo, fakePrintConfigRepo())
 
         viewModel.startDiscovery()
         advanceUntilIdle()
@@ -61,8 +72,8 @@ class PrintersViewModelTest {
     @Test
     fun `addDiscovered saves the printer via the repository`() = runTest(dispatcher) {
         val dao = FakeSavedPrinterDao()
-        val repo = PrinterRepository(dao, PrinterDriverRegistry(setOf(FakePrinterDriver())), fakeContext())
-        val viewModel = PrintersViewModel(repo)
+        val repo = PrinterRepository(dao, FakePrinterLocationDao(), FakeSavedPrinterLocationDao(), PrinterDriverRegistry(setOf(FakePrinterDriver())), fakeContext())
+        val viewModel = PrintersViewModel(repo, fakePrintConfigRepo())
         val discovered = DiscoveredPrinter("AA:BB:CC:DD:EE:FF", "1.1.1.1", null, "Printer A", "fake")
 
         viewModel.addDiscovered(discovered)

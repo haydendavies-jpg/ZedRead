@@ -11,9 +11,11 @@ import android.content.IntentFilter
 import androidx.core.content.ContextCompat
 import com.zedread.pos.data.local.entity.SavedPrinterEntity
 import com.zedread.pos.printing.BluetoothPrintService
+import com.zedread.pos.printing.CASH_DRAWER_KICK_BYTES
 import com.zedread.pos.printing.Docket
 import com.zedread.pos.printing.DocketFormatter
 import com.zedread.pos.printing.PrintResult
+import com.zedread.pos.printing.renderedLinesToEscPosBytes
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -72,9 +74,13 @@ class GenericBluetoothPrinterDriver @Inject constructor(
     }
 
     override suspend fun sendDocket(target: SavedPrinterEntity, docket: Docket): PrintResult {
-        val bytes = DocketFormatter.format(docket.invoiceId, docket.siteName, docket.lineItems, docket.totalCents, docket.paymentMethod)
+        val bytes = docket.renderedLines?.let { renderedLinesToEscPosBytes(it) }
+            ?: DocketFormatter.format(docket.invoiceId, docket.siteName, docket.lineItems, docket.totalCents, docket.paymentMethod)
         return bluetoothPrint.print(target.macAddress, bytes)
     }
+
+    override suspend fun openCashDrawer(target: SavedPrinterEntity): PrintResult =
+        bluetoothPrint.print(target.macAddress, CASH_DRAWER_KICK_BYTES)
 }
 
 @SuppressLint("MissingPermission")

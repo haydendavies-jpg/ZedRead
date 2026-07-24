@@ -71,11 +71,13 @@ fun CashUpScreen(
     val pendingCount by syncViewModel.pendingCount.collectAsState()
     var amount by remember { mutableStateOf("") }
     var denominationTotalCents by remember { mutableStateOf(0L) }
+    var printMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.loadForCashUp()
         viewModel.loadCashSettings()
     }
+    LaunchedEffect(Unit) { viewModel.printResult.collect { message -> printMessage = message } }
 
     val isDenominationMode = cashSettings.cashInMode == CASH_IN_MODE_DENOMINATION
     val enteredCents = if (isDenominationMode) denominationTotalCents else dollarsToCents(amount)
@@ -131,7 +133,16 @@ fun CashUpScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Close Till") }
 
-                    is CashUpState.ClosedPendingSync, is CashUpState.Closed ->
+                    is CashUpState.Closed -> Column {
+                        Button(
+                            onClick = { viewModel.printRegisterSummary(current.session) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Print Summary") }
+                        Spacer(Modifier.height(8.dp))
+                        Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("Done") }
+                    }
+
+                    is CashUpState.ClosedPendingSync ->
                         Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("Done") }
 
                     is CashUpState.Error ->
@@ -201,6 +212,10 @@ fun CashUpScreen(
                         CashUpSummaryRow("Counted cash", current.session.closingCashCents)
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                         CashUpSummaryRow("Variance", current.session.varianceCents, emphasize = true)
+                    }
+                    printMessage?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
 

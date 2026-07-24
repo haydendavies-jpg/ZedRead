@@ -9,6 +9,7 @@ import com.epson.epos2.printer.Printer
 import com.zedread.pos.data.local.entity.SavedPrinterEntity
 import com.zedread.pos.printing.Docket
 import com.zedread.pos.printing.PrintResult
+import com.zedread.pos.printing.RenderedLine
 import com.zedread.pos.printing.driver.DiscoveredPrinter
 import com.zedread.pos.printing.driver.PrinterDriver
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -90,16 +91,28 @@ class EpsonPrinterDriver @Inject constructor(
                 val p = Printer(Printer.TM_M30, Printer.MODEL_ANK, context)
                 printer = p
                 p.connect("TCP:$ip", Printer.PARAM_DEFAULT)
-                p.addTextAlign(Printer.ALIGN_CENTER)
-                p.addText("${docket.siteName}\n")
-                p.addText("RECEIPT\n")
-                p.addTextAlign(Printer.ALIGN_LEFT)
-                docket.lineItems.forEach { item ->
-                    p.addText("${item.quantity}x ${item.productName} — ${formatCents(item.subtotalCents)}\n")
+                val renderedLines = docket.renderedLines
+                if (renderedLines != null) {
+                    // Template-driven path (see TemplateDocketRenderer) — every
+                    // line already carries its own alignment baked in as
+                    // padding (see PrintLineLayout.alignText's own doc), so
+                    // this SDK's own alignment stays fixed at LEFT throughout;
+                    // only bold (addTextStyle's `em` flag) varies per line.
+                    p.addTextAlign(Printer.ALIGN_LEFT)
+                    addRenderedLines(p, renderedLines)
+                } else {
+                    // No template context (PrintersViewModel's "Test print") — the old fixed layout.
+                    p.addTextAlign(Printer.ALIGN_CENTER)
+                    p.addText("${docket.siteName}\n")
+                    p.addText("RECEIPT\n")
+                    p.addTextAlign(Printer.ALIGN_LEFT)
+                    docket.lineItems.forEach { item ->
+                        p.addText("${item.quantity}x ${item.productName} — ${formatCents(item.subtotalCents)}\n")
+                    }
+                    p.addTextAlign(Printer.ALIGN_RIGHT)
+                    p.addText("TOTAL: ${formatCents(docket.totalCents)}\n")
+                    p.addText("PAID (${docket.paymentMethod.uppercase()})\n")
                 }
-                p.addTextAlign(Printer.ALIGN_RIGHT)
-                p.addText("TOTAL: ${formatCents(docket.totalCents)}\n")
-                p.addText("PAID (${docket.paymentMethod.uppercase()})\n")
                 p.addFeedLine(3)
                 p.addCut(Printer.CUT_FEED)
                 p.sendData(Printer.PARAM_DEFAULT)
@@ -111,6 +124,34 @@ class EpsonPrinterDriver @Inject constructor(
                 printer?.clearCommandBuffer()
             }
         }
+
+    override suspend fun openCashDrawer(target: SavedPrinterEntity): PrintResult =
+        withContext(Dispatchers.IO) {
+            val ip = target.lastKnownIp ?: return@withContext PrintResult.Failure("No known IP address for this printer")
+            var printer: Printer? = null
+            try {
+                val p = Printer(Printer.TM_M30, Printer.MODEL_ANK, context)
+                printer = p
+                p.connect("TCP:$ip", Printer.PARAM_DEFAULT)
+                p.addPulse(Printer.PARAM_DEFAULT, Printer.PARAM_DEFAULT)
+                p.sendData(Printer.PARAM_DEFAULT)
+                PrintResult.Success
+            } catch (e: Epos2Exception) {
+                PrintResult.Failure("Epson error ${e.errorStatus}")
+            } finally {
+                runCatching { printer?.disconnect() }
+                printer?.clearCommandBuffer()
+            }
+        }
+
+    /** Write each pre-aligned [RenderedLine] into the builder, toggling bold (`em`) per line — never reverse/underline. */
+    private fun addRenderedLines(p: Printer, lines: List<RenderedLine>) {
+        lines.forEach { line ->
+            p.addTextStyle(Printer.FALSE, Printer.FALSE, if (line.isBold) Printer.TRUE else Printer.FALSE, Printer.PARAM_DEFAULT)
+            p.addText("${line.text}\n")
+        }
+        p.addTextStyle(Printer.FALSE, Printer.FALSE, Printer.FALSE, Printer.PARAM_DEFAULT)
+    }
 }
 
 private fun formatCents(cents: Long): String {

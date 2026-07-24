@@ -14,12 +14,15 @@ import com.zedread.pos.data.repository.CatalogRepository
 import com.zedread.pos.data.repository.InvoiceRepository
 import com.zedread.pos.data.repository.MenuLayoutRepository
 import com.zedread.pos.data.repository.OutboxRepository
+import com.zedread.pos.data.repository.PrintConfigRepository
 import com.zedread.pos.data.repository.PrinterRepository
 import com.zedread.pos.data.repository.SettingKeys
 import com.zedread.pos.data.repository.SettingsRepository
 import com.zedread.pos.data.sync.OutboxSaleLine
 import com.zedread.pos.data.sync.SyncPaymentLeg
 import com.zedread.pos.printing.Docket
+import com.zedread.pos.printing.DocketRenderContext
+import com.zedread.pos.printing.TemplateDocketRenderer
 import com.zedread.pos.ui.components.roundToNearest5Cents
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.Flow
@@ -33,6 +36,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.IOException
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import javax.inject.Inject
 
@@ -84,6 +89,8 @@ class SellViewModel @Inject constructor(
     private val menuLayoutRepo: MenuLayoutRepository,
     private val settingsRepo: SettingsRepository,
     private val printerRepo: PrinterRepository,
+    private val printConfigRepo: PrintConfigRepository,
+    private val templateRenderer: TemplateDocketRenderer,
     private val tokenStore: TokenStore,
 ) : ViewModel() {
 
@@ -256,7 +263,20 @@ class SellViewModel @Inject constructor(
         }
     }
 
-    init { refresh(); refreshMenuLayouts(); refreshAutoMenuSetting() }
+    /**
+     * Fetch fresh printer locations/templates/company-profile from the
+     * network and update the Room cache — "add all backend printing
+     * requirements into sync and store locally, do not poll" (see
+     * PrintConfigRepository's own doc). Failure is silent, same as
+     * [refreshMenuLayouts]/[refreshAutoMenuSetting]: a stale or empty print
+     * cache just means the docket-auto-print coordinator finds no template
+     * for a location and skips it, never blocking a sale.
+     */
+    private fun refreshPrintConfig() {
+        viewModelScope.launch { runCatching { printConfigRepo.refresh() } }
+    }
+
+    init { refresh(); refreshMenuLayouts(); refreshAutoMenuSetting(); refreshPrintConfig() }
 
     // ── Product detail popup (long-press) ────────────────────────────────────
     //
@@ -430,6 +450,7 @@ class SellViewModel @Inject constructor(
             subtotalCents = tax.subtotalCents,
             taxCents = tax.taxCents,
             modifiers = resolveModifierDtos(lineId, modifiers),
+            printerLocationId = product.printerLocationId,
         )
         _lineItems.value = _lineItems.value + item
     }
@@ -810,11 +831,15 @@ class SellViewModel @Inject constructor(
         val lines = buildOutboxLines()
         val total = totalCents
         val discount = _discountCents.value
+        val itemsForDocket = _lineItems.value
         viewModelScope.launch {
             runCatching {
                 outboxRepo.enqueueSale(lines = lines, payments = emptyList(), isPaid = false, totalCents = total, discountCents = discount)
             }
-                .onSuccess { clearOrder() }
+                .onSuccess { clientRef ->
+                    maybeAutoPrintDockets(itemsForDocket, clientRef, SettingKeys.AUTO_PRINT_DOCKET_ON_HOLD)
+                    clearOrder()
+                }
                 .onFailure { e -> _cartActionState.value = CartActionState.Error(e.message ?: "Couldn't hold this order") }
         }
     }
@@ -923,6 +948,14 @@ class SellViewModel @Inject constructor(
             return
         }
         val leg = SyncPaymentLeg(method, amountCents, reference)
+        // Fired for every cash leg, not just the one that completes the sale
+        // — a split sale's cash leg needs the drawer open to give change/take
+        // cash the moment that leg is taken, not deferred until a later
+        // card/voucher leg finishes the sale. Fire-and-forget, same
+        // "must never affect the sale" convention as printReceipt().
+        if (method == "cash") {
+            viewModelScope.launch { runCatching { printerRepo.kickDrawerOnAllEnabled() } }
+        }
         val updatedLegs = current.legs + leg
         val updatedPaidCents = current.paidCents + amountCents
         // Change is whatever this payment overshot the balance that was
@@ -979,6 +1012,12 @@ class SellViewModel @Inject constructor(
             }
             result
                 .onSuccess {
+                    // A recalled/held order already auto-printed its dockets at
+                    // Hold time (if that setting was on) — only a direct
+                    // pay-without-hold sale prints here.
+                    if (recalledId == null) {
+                        maybeAutoPrintDockets(_lineItems.value, completedRef ?: "", SettingKeys.AUTO_PRINT_DOCKET_ON_PAY)
+                    }
                     lastCompletedClientRef = completedRef
                     _paymentState.value = current.copy(
                         stage = PaymentStage.DONE,
@@ -999,24 +1038,85 @@ class SellViewModel @Inject constructor(
 
     /**
      * "Print receipt" on the Done screen — sends this sale's docket to every
-     * currently-enabled saved printer ([PrinterRepository.sendToAllEnabled]).
-     * Best-effort: a printer failure is never surfaced as a payment error
-     * here, since the sale itself already completed — see
-     * [com.zedread.pos.printing.PrintService]'s own "failure does NOT
-     * affect the invoice" doc, which this mirrors.
+     * currently-enabled saved printer ([PrinterRepository.sendToAllEnabled]),
+     * unsplit by printer location (matches "invoices... print the whole
+     * order invoice" — no per-location grouping, unlike the automatic
+     * per-location order dockets). Rendered via the customisable 'invoice'
+     * template ([TemplateDocketRenderer]) instead of the old hardcoded
+     * [com.zedread.pos.printing.DocketFormatter] layout; still manual, still
+     * fire-and-forget — a printer failure is never surfaced as a payment
+     * error here, since the sale itself already completed.
      */
     fun printReceipt() {
         val state = _paymentState.value ?: return
         val clientRef = lastCompletedClientRef ?: return
         viewModelScope.launch {
+            val ctx = DocketRenderContext(
+                companyProfile = printConfigRepo.getCompanyProfile(),
+                lineItems = _lineItems.value,
+                servedBy = tokenStore.userName.firstOrNull() ?: "",
+                invoiceRef = clientRef,
+                dateTime = printDateTimeNow(),
+            )
             val docket = Docket(
                 invoiceId = clientRef,
                 siteName = tokenStore.siteName.firstOrNull() ?: "ZedRead",
                 lineItems = _lineItems.value,
                 totalCents = state.doneAmountCents,
                 paymentMethod = state.doneMethodLabel,
+                renderedLines = templateRenderer.renderByType("invoice", ctx),
             )
             printerRepo.sendToAllEnabled(docket)
+        }
+    }
+
+    // ── Order docket auto-print (per-location, template-driven) ─────────────
+    //
+    // Groups a completed/held order's lines by their product's
+    // printerLocationId (captured per-line at add-to-cart time — see
+    // addLocalLine), renders each location's own docket template
+    // (TemplateDocketRenderer), and sends it to every enabled printer
+    // assigned to that location (PrinterRepository.sendToLocation). Gated
+    // per-event by the matching auto_print_docket_on_hold/on_pay setting.
+    // Fire-and-forget — a printing failure must never affect the sale
+    // itself, same convention as printReceipt().
+
+    private fun maybeAutoPrintDockets(lineItems: List<LineItemDto>, invoiceRef: String, settingKey: String) {
+        viewModelScope.launch {
+            runCatching {
+                val enabled = settingsRepo.getSettings()
+                    .firstOrNull { it.key == settingKey }
+                    ?.effectiveValue as? Boolean ?: true
+                if (enabled) autoPrintDockets(lineItems, invoiceRef)
+            }
+        }
+    }
+
+    private suspend fun autoPrintDockets(lineItems: List<LineItemDto>, invoiceRef: String) {
+        val groups = lineItems.filter { it.printerLocationId != null }.groupBy { it.printerLocationId!! }
+        if (groups.isEmpty()) return
+        val companyProfile = printConfigRepo.getCompanyProfile()
+        val servedBy = tokenStore.userName.firstOrNull() ?: ""
+        val siteName = tokenStore.siteName.firstOrNull() ?: ""
+        val dateTime = printDateTimeNow()
+        groups.forEach { (locationId, items) ->
+            val ctx = DocketRenderContext(
+                companyProfile = companyProfile,
+                lineItems = items,
+                servedBy = servedBy,
+                invoiceRef = invoiceRef,
+                dateTime = dateTime,
+            )
+            val renderedLines = templateRenderer.renderDocketForLocation(locationId, ctx) ?: return@forEach
+            val docket = Docket(
+                invoiceId = invoiceRef,
+                siteName = siteName,
+                lineItems = items,
+                totalCents = items.sumOf { it.subtotalCents + it.modifiers.sumOf { m -> m.priceDeltaCents } },
+                paymentMethod = "",
+                renderedLines = renderedLines,
+            )
+            printerRepo.sendToLocation(locationId, docket)
         }
     }
 
@@ -1037,6 +1137,9 @@ class SellViewModel @Inject constructor(
         clearOrder()
     }
 }
+
+/** Device-local date/time formatted for a print template's DATE_TIME field — mirrors DocketRenderContext.dateTime's expected shape. */
+private fun printDateTimeNow(): String = DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a").format(LocalDateTime.now())
 
 /** Order pane segmented control — visual/local only, see the ticket/order-type note above. */
 enum class OrderType(val label: String) {

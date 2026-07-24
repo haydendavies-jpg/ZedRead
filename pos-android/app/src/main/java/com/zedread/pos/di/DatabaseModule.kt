@@ -6,11 +6,15 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.zedread.pos.data.local.AppDatabase
 import com.zedread.pos.data.local.dao.CategoryDao
+import com.zedread.pos.data.local.dao.CompanyProfileDao
 import com.zedread.pos.data.local.dao.InvoiceCacheDao
 import com.zedread.pos.data.local.dao.OutboxDao
+import com.zedread.pos.data.local.dao.PrintTemplateDao
+import com.zedread.pos.data.local.dao.PrinterLocationDao
 import com.zedread.pos.data.local.dao.ProductDao
 import com.zedread.pos.data.local.dao.ProductModifierCacheDao
 import com.zedread.pos.data.local.dao.SavedPrinterDao
+import com.zedread.pos.data.local.dao.SavedPrinterLocationDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -125,6 +129,73 @@ internal val MIGRATION_8_9 = object : Migration(8, 9) {
     }
 }
 
+/**
+ * Adds `printer_locations`/`print_templates`/`company_profile_cache`
+ * (re-derivable print-config caches) and `saved_printer_locations` (NOT
+ * re-derivable — a printer's location pairing must survive an app update,
+ * same as `saved_printers` itself) plus `products.printer_location_id`
+ * (schema version 10 -> 11). A real migration for the same reason
+ * [MIGRATION_8_9] is one: `fallbackToDestructiveMigration()` on this hop
+ * would wipe `outbox_items`/`saved_printers` too. Every schema change in this
+ * version bump must be listed here — Room uses only this migration for the
+ * 10->11 hop once it's registered, not a partial fallback.
+ */
+private val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE products ADD COLUMN printer_location_id TEXT")
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS printer_locations (
+                id TEXT PRIMARY KEY NOT NULL,
+                ref TEXT NOT NULL,
+                name TEXT NOT NULL,
+                copy_count INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS print_templates (
+                id TEXT PRIMARY KEY NOT NULL,
+                template_type TEXT NOT NULL,
+                printer_location_id TEXT,
+                name TEXT NOT NULL,
+                elements_json TEXT NOT NULL
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS company_profile_cache (
+                id INTEGER PRIMARY KEY NOT NULL,
+                logo_url TEXT,
+                brand_name TEXT NOT NULL,
+                store_name TEXT NOT NULL,
+                address TEXT NOT NULL,
+                phone TEXT,
+                abn TEXT
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS saved_printer_locations (
+                printer_id TEXT NOT NULL,
+                printer_location_id TEXT NOT NULL,
+                PRIMARY KEY(printer_id, printer_location_id),
+                FOREIGN KEY(printer_id) REFERENCES saved_printers(id) ON DELETE CASCADE
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_saved_printer_locations_printer_id ON saved_printer_locations(printer_id)"
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_saved_printer_locations_printer_location_id ON saved_printer_locations(printer_location_id)"
+        )
+    }
+}
+
 /** Provides the Room database and its DAOs. */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -134,14 +205,15 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "zedread_pos.db")
-            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_8_9)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_8_9, MIGRATION_10_11)
             // last resort only for outbox_items/invoice_cache — the 5->6 hop (products.is_sold_out)
             // falls through here deliberately, same as every other products/categories-only column
             // add, and the 7->8 hop (new product_modifier_cache table) is the same call again —
             // both re-derivable tables it touches refill themselves on the next sync/tap. The 8->9
             // hop (saved_printers) is a real migration above, NOT covered by this fallback — see
             // MIGRATION_8_9's own doc for why. The 9->10 hop (invoice_cache.is_refunded) falls
-            // through here again, same reasoning as 5->6/7->8.
+            // through here again, same reasoning as 5->6/7->8. The 10->11 hop (printing tables +
+            // saved_printer_locations) is a real migration above too — see MIGRATION_10_11's own doc.
             .fallbackToDestructiveMigration()
             .build()
 
@@ -162,4 +234,16 @@ object DatabaseModule {
 
     @Provides
     fun provideSavedPrinterDao(db: AppDatabase): SavedPrinterDao = db.savedPrinterDao()
+
+    @Provides
+    fun providePrinterLocationDao(db: AppDatabase): PrinterLocationDao = db.printerLocationDao()
+
+    @Provides
+    fun providePrintTemplateDao(db: AppDatabase): PrintTemplateDao = db.printTemplateDao()
+
+    @Provides
+    fun provideCompanyProfileDao(db: AppDatabase): CompanyProfileDao = db.companyProfileDao()
+
+    @Provides
+    fun provideSavedPrinterLocationDao(db: AppDatabase): SavedPrinterLocationDao = db.savedPrinterLocationDao()
 }

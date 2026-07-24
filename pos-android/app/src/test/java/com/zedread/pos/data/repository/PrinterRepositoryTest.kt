@@ -1,7 +1,9 @@
 package com.zedread.pos.data.repository
 
 import android.content.Context
+import com.zedread.pos.data.local.dao.FakePrinterLocationDao
 import com.zedread.pos.data.local.dao.FakeSavedPrinterDao
+import com.zedread.pos.data.local.dao.FakeSavedPrinterLocationDao
 import com.zedread.pos.data.local.entity.SavedPrinterEntity
 import com.zedread.pos.printing.Docket
 import com.zedread.pos.printing.PrintResult
@@ -51,7 +53,7 @@ class PrinterRepositoryTest {
     @Test
     fun `savePrinter upserts by MAC instead of duplicating`() = runTest {
         val dao = FakeSavedPrinterDao()
-        val repo = PrinterRepository(dao, PrinterDriverRegistry(setOf(FakePrinterDriver())), fakeContext())
+        val repo = PrinterRepository(dao, FakePrinterLocationDao(), FakeSavedPrinterLocationDao(), PrinterDriverRegistry(setOf(FakePrinterDriver())), fakeContext())
         val discovered = DiscoveredPrinter(
             macAddress = "AA:BB:CC:DD:EE:FF", ipAddress = "1.1.1.1", bluetoothAddress = null, name = "Printer A", driverId = "fake",
         )
@@ -75,14 +77,14 @@ class PrinterRepositoryTest {
             driverId = "fake",
             discoverFlow = flowOf(DiscoveredPrinter("11:22:33:44:55:66", "9.9.9.9", null, "Other", "fake")),
         )
-        val unchanged = PrinterRepository(dao, PrinterDriverRegistry(setOf(noMatch)), fakeContext()).rediscoverByMac(printer)
+        val unchanged = PrinterRepository(dao, FakePrinterLocationDao(), FakeSavedPrinterLocationDao(), PrinterDriverRegistry(setOf(noMatch)), fakeContext()).rediscoverByMac(printer)
         assertEquals("1.1.1.1", unchanged.lastKnownIp)
 
         val match = FakePrinterDriver(
             driverId = "fake",
             discoverFlow = flowOf(DiscoveredPrinter(printer.macAddress, "2.2.2.2", null, printer.name, "fake")),
         )
-        val updated = PrinterRepository(dao, PrinterDriverRegistry(setOf(match)), fakeContext()).rediscoverByMac(printer)
+        val updated = PrinterRepository(dao, FakePrinterLocationDao(), FakeSavedPrinterLocationDao(), PrinterDriverRegistry(setOf(match)), fakeContext()).rediscoverByMac(printer)
         assertEquals("2.2.2.2", updated.lastKnownIp)
     }
 
@@ -97,7 +99,7 @@ class PrinterRepositoryTest {
             discoverFlow = flowOf(DiscoveredPrinter(printer.macAddress, "2.2.2.2", null, printer.name, "fake")),
             sendResults = listOf(PrintResult.Failure("offline"), PrintResult.Success),
         )
-        val repo = PrinterRepository(dao, PrinterDriverRegistry(setOf(driver)), fakeContext())
+        val repo = PrinterRepository(dao, FakePrinterLocationDao(), FakeSavedPrinterLocationDao(), PrinterDriverRegistry(setOf(driver)), fakeContext())
 
         val result = repo.sendToPrinter(printer, testDocket())
 
@@ -113,7 +115,7 @@ class PrinterRepositoryTest {
         dao.upsert(printer)
 
         val driver = FakePrinterDriver(driverId = "fake", sendResults = listOf(PrintResult.Failure("out of range")))
-        val repo = PrinterRepository(dao, PrinterDriverRegistry(setOf(driver)), fakeContext())
+        val repo = PrinterRepository(dao, FakePrinterLocationDao(), FakeSavedPrinterLocationDao(), PrinterDriverRegistry(setOf(driver)), fakeContext())
 
         val result = repo.sendToPrinter(printer, testDocket())
 
@@ -131,7 +133,7 @@ class PrinterRepositoryTest {
         dao.upsert(disabled)
 
         val driver = FakePrinterDriver(driverId = "fake", sendResults = listOf(PrintResult.Success))
-        val repo = PrinterRepository(dao, PrinterDriverRegistry(setOf(driver)), fakeContext())
+        val repo = PrinterRepository(dao, FakePrinterLocationDao(), FakeSavedPrinterLocationDao(), PrinterDriverRegistry(setOf(driver)), fakeContext())
 
         val results = repo.sendToAllEnabled(testDocket())
 

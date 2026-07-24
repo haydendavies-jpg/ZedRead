@@ -101,6 +101,13 @@ interface PosApiService {
         @Query("site_id") siteId: String,
     ): List<PosMenuLayoutDto>
 
+    /** GET /pos/print-config?site_id= — printer locations, every print template (with elements), and resolved company-profile fields. Fetched on sync only, never polled. */
+    @GET("pos/print-config")
+    suspend fun getPrintConfig(
+        @Header("Authorization") bearer: String,
+        @Query("site_id") siteId: String,
+    ): PosPrintConfigDto
+
     /** PATCH /products/{id} — the Register app only ever uses this for the long-press sold-out toggle. */
     @PATCH("products/{id}")
     suspend fun updateProduct(

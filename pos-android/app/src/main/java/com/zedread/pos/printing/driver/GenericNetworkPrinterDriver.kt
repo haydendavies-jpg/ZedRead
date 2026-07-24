@@ -2,10 +2,12 @@ package com.zedread.pos.printing.driver
 
 import android.content.Context
 import com.zedread.pos.data.local.entity.SavedPrinterEntity
+import com.zedread.pos.printing.CASH_DRAWER_KICK_BYTES
 import com.zedread.pos.printing.Docket
 import com.zedread.pos.printing.DocketFormatter
 import com.zedread.pos.printing.NetworkPrintService
 import com.zedread.pos.printing.PrintResult
+import com.zedread.pos.printing.renderedLinesToEscPosBytes
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import javax.inject.Inject
@@ -36,7 +38,16 @@ class GenericNetworkPrinterDriver @Inject constructor(
 
     override suspend fun sendDocket(target: SavedPrinterEntity, docket: Docket): PrintResult {
         val ip = target.lastKnownIp ?: return PrintResult.Failure("No known IP address for this printer")
-        val bytes = DocketFormatter.format(docket.invoiceId, docket.siteName, docket.lineItems, docket.totalCents, docket.paymentMethod)
+        // renderedLines (from TemplateDocketRenderer) is the template-driven
+        // path every real print goes through; a null falls back to
+        // DocketFormatter's fixed layout, used only by the "Test print" action.
+        val bytes = docket.renderedLines?.let { renderedLinesToEscPosBytes(it) }
+            ?: DocketFormatter.format(docket.invoiceId, docket.siteName, docket.lineItems, docket.totalCents, docket.paymentMethod)
         return networkPrint.print(ip, target.port, bytes)
+    }
+
+    override suspend fun openCashDrawer(target: SavedPrinterEntity): PrintResult {
+        val ip = target.lastKnownIp ?: return PrintResult.Failure("No known IP address for this printer")
+        return networkPrint.print(ip, target.port, CASH_DRAWER_KICK_BYTES)
     }
 }

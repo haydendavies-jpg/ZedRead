@@ -161,6 +161,10 @@ data class RegisterSessionDto(
     @Json(name = "expected_cash_cents") val expectedCashCents: Long?,
     @Json(name = "variance_cents") val varianceCents: Long?,
     @Json(name = "closed_by_name") val closedByName: String?,
+    // Only populated on the close response — {payment_method: total_amount_cents}
+    // for every invoice raised under this session, for the register_summary
+    // print template's PAYMENT_METHOD_BREAKDOWN field.
+    @Json(name = "payment_breakdown_cents") val paymentBreakdownCents: Map<String, Long>? = null,
 )
 
 // ── Catalog ───────────────────────────────────────────────────────────────
@@ -192,6 +196,7 @@ data class ProductDto(
     // null/blank means the product has none).
     @Json(name = "category_color") val categoryColor: String,
     @Json(name = "modifier_names") val modifierNames: String?,
+    @Json(name = "printer_location_id") val printerLocationId: String?,
 )
 
 /**
@@ -464,6 +469,13 @@ data class LineItemDto(
     @Json(name = "subtotal_cents") val subtotalCents: Long,
     @Json(name = "tax_cents") val taxCents: Long,
     val modifiers: List<LineModifierDto> = emptyList(),
+    // Copied from ProductEntity.printerLocationId at add-to-cart time
+    // (SellViewModel.addLocalLine) — lets the docket auto-print coordinator
+    // group a cart's lines by location without a separate product lookup at
+    // print time. Absent (defaults null) for a line recalled from a held
+    // order via GET .../line-items, which doesn't round-trip this field —
+    // harmless, since a recalled order already printed its dockets at Hold.
+    @Json(name = "printer_location_id") val printerLocationId: String? = null,
 )
 
 /**
@@ -515,4 +527,57 @@ data class SettingDto(
 data class SettingUpdateRequest(
     val value: Any?,
     @Json(name = "site_id") val siteId: String?,
+)
+
+// ── Printing (GET /pos/print-config) ─────────────────────────────────────────
+//
+// Mirrors PosPrintConfigResponse/PrinterLocationOut/PrintTemplateDetail/
+// PrintTemplateElementOut/PosCompanyProfileOut in
+// app/schemas/print_template.py & app/schemas/printer_location.py.
+
+@JsonClass(generateAdapter = true)
+data class PosPrinterLocationDto(
+    val id: String,
+    val ref: String,
+    val name: String,
+    @Json(name = "copy_count") val copyCount: Int,
+)
+
+@JsonClass(generateAdapter = true)
+data class PosPrintTemplateElementDto(
+    val id: String,
+    val section: String,
+    @Json(name = "display_order") val displayOrder: Int,
+    @Json(name = "field_key") val fieldKey: String,
+    @Json(name = "free_text_value") val freeTextValue: String?,
+    @Json(name = "font_size") val fontSize: String,
+    val alignment: String,
+    @Json(name = "is_bold") val isBold: Boolean,
+    @Json(name = "is_italic") val isItalic: Boolean,
+)
+
+@JsonClass(generateAdapter = true)
+data class PosPrintTemplateDto(
+    val id: String,
+    @Json(name = "printer_location_id") val printerLocationId: String?,
+    @Json(name = "template_type") val templateType: String,
+    val name: String,
+    val elements: List<PosPrintTemplateElementDto>,
+)
+
+@JsonClass(generateAdapter = true)
+data class PosCompanyProfileDto(
+    @Json(name = "logo_url") val logoUrl: String?,
+    @Json(name = "brand_name") val brandName: String,
+    @Json(name = "store_name") val storeName: String,
+    val address: String,
+    val phone: String?,
+    val abn: String?,
+)
+
+@JsonClass(generateAdapter = true)
+data class PosPrintConfigDto(
+    @Json(name = "printer_locations") val printerLocations: List<PosPrinterLocationDto>,
+    val templates: List<PosPrintTemplateDto>,
+    @Json(name = "company_profile") val companyProfile: PosCompanyProfileDto,
 )

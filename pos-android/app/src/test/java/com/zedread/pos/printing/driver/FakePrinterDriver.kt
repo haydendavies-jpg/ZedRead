@@ -36,4 +36,12 @@ class FakePrinterDriver(
         sendCallCount++
         return if (pendingResults.size > 1) pendingResults.removeFirst() else pendingResults.first()
     }
+
+    var cashDrawerCallCount: Int = 0
+        private set
+
+    override suspend fun openCashDrawer(target: SavedPrinterEntity): PrintResult {
+        cashDrawerCallCount++
+        return PrintResult.Success
+    }
 }

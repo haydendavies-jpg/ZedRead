@@ -28,4 +28,9 @@ data class ProductEntity(
     @ColumnInfo(name = "is_sold_out") val isSoldOut: Boolean,
     @ColumnInfo(name = "category_color") val categoryColor: String,
     @ColumnInfo(name = "modifier_names") val modifierNames: String?,
+    // Which order-docket print station this product groups under — null means
+    // it prints on no docket. Carried onto LineItemDto at add-to-cart time so
+    // SellViewModel's docket coordinator can group a cart by location without
+    // a separate lookup — see LineItemDto.printerLocationId's own doc.
+    @ColumnInfo(name = "printer_location_id") val printerLocationId: String?,
 )

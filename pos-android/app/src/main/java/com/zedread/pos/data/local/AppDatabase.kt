@@ -3,17 +3,25 @@ package com.zedread.pos.data.local
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import com.zedread.pos.data.local.dao.CategoryDao
+import com.zedread.pos.data.local.dao.CompanyProfileDao
 import com.zedread.pos.data.local.dao.InvoiceCacheDao
 import com.zedread.pos.data.local.dao.OutboxDao
+import com.zedread.pos.data.local.dao.PrintTemplateDao
+import com.zedread.pos.data.local.dao.PrinterLocationDao
 import com.zedread.pos.data.local.dao.ProductDao
 import com.zedread.pos.data.local.dao.ProductModifierCacheDao
 import com.zedread.pos.data.local.dao.SavedPrinterDao
+import com.zedread.pos.data.local.dao.SavedPrinterLocationDao
 import com.zedread.pos.data.local.entity.CategoryEntity
+import com.zedread.pos.data.local.entity.CompanyProfileCacheEntity
 import com.zedread.pos.data.local.entity.InvoiceCacheEntity
 import com.zedread.pos.data.local.entity.OutboxItemEntity
+import com.zedread.pos.data.local.entity.PrintTemplateEntity
+import com.zedread.pos.data.local.entity.PrinterLocationEntity
 import com.zedread.pos.data.local.entity.ProductEntity
 import com.zedread.pos.data.local.entity.ProductModifierCacheEntity
 import com.zedread.pos.data.local.entity.SavedPrinterEntity
+import com.zedread.pos.data.local.entity.SavedPrinterLocationEntity
 
 /**
  * Room database. `products`/`categories` are cache-only (destructive
@@ -32,6 +40,13 @@ import com.zedread.pos.data.local.entity.SavedPrinterEntity
  * `invoice_cache` table, so it falls through to
  * [DatabaseModule.provideDatabase]'s `fallbackToDestructiveMigration`, same
  * as every other `invoice_cache`/products/categories-only column add.
+ * `printer_locations`/`print_templates`/`company_profile_cache` (added v11)
+ * are re-derivable caches like products/categories; `saved_printer_locations`
+ * (added the same version bump) is NOT — a printer's location pairing must
+ * survive an app update, same as `saved_printers` itself — so this hop goes
+ * through `DatabaseModule`'s explicit `MIGRATION_10_11` rather than falling
+ * through to the destructive fallback, which would otherwise wipe
+ * `outbox_items`/`saved_printers` too.
  */
 @Database(
     entities = [
@@ -41,8 +56,12 @@ import com.zedread.pos.data.local.entity.SavedPrinterEntity
         InvoiceCacheEntity::class,
         ProductModifierCacheEntity::class,
         SavedPrinterEntity::class,
+        PrinterLocationEntity::class,
+        PrintTemplateEntity::class,
+        CompanyProfileCacheEntity::class,
+        SavedPrinterLocationEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -52,4 +71,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun invoiceCacheDao(): InvoiceCacheDao
     abstract fun productModifierCacheDao(): ProductModifierCacheDao
     abstract fun savedPrinterDao(): SavedPrinterDao
+    abstract fun printerLocationDao(): PrinterLocationDao
+    abstract fun printTemplateDao(): PrintTemplateDao
+    abstract fun companyProfileDao(): CompanyProfileDao
+    abstract fun savedPrinterLocationDao(): SavedPrinterLocationDao
 }

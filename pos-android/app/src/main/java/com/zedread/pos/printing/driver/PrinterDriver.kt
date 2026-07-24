@@ -34,4 +34,14 @@ interface PrinterDriver {
 
     /** Send [docket] to [target] using this brand's own printing protocol. */
     suspend fun sendDocket(target: SavedPrinterEntity, docket: Docket): PrintResult
+
+    /**
+     * Fire the cash-drawer "kick" pulse on [target] — printer-attached
+     * drawers accept this over the same connection a docket is sent on, no
+     * separate hardware path. Never affects a completed sale either way
+     * (same "failure must never affect the invoice" convention as
+     * [sendDocket]) — the caller (SellViewModel, on a cash payment) fires
+     * this best-effort and ignores the result besides logging.
+     */
+    suspend fun openCashDrawer(target: SavedPrinterEntity): PrintResult
 }

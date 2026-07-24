@@ -3,7 +3,9 @@ package com.zedread.pos.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zedread.pos.data.api.LineItemDto
+import com.zedread.pos.data.local.entity.PrinterLocationEntity
 import com.zedread.pos.data.local.entity.SavedPrinterEntity
+import com.zedread.pos.data.repository.PrintConfigRepository
 import com.zedread.pos.data.repository.PrinterRepository
 import com.zedread.pos.printing.Docket
 import com.zedread.pos.printing.PrintResult
@@ -30,10 +32,26 @@ sealed class DiscoveryUiState {
 @HiltViewModel
 class PrintersViewModel @Inject constructor(
     private val printerRepo: PrinterRepository,
+    private val printConfigRepo: PrintConfigRepository,
 ) : ViewModel() {
 
     val savedPrinters: StateFlow<List<SavedPrinterEntity>> =
         printerRepo.observeSavedPrinters().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Every printer location synced from GET /pos/print-config — the chip options each saved printer can be assigned to. */
+    val printerLocations: StateFlow<List<PrinterLocationEntity>> =
+        printConfigRepo.observePrinterLocations().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Which printer location ids [printerId] is currently assigned to — for the row's chip toggles. */
+    fun locationIdsForPrinter(printerId: String): StateFlow<List<String>> =
+        printerRepo.observeLocationIdsForPrinter(printerId)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Toggle [locationId] on/off for [printerId] — the chip row's tap handler. */
+    fun toggleLocationForPrinter(printerId: String, locationId: String, currentIds: List<String>) {
+        val next = if (locationId in currentIds) currentIds - locationId else currentIds + locationId
+        viewModelScope.launch { printerRepo.setPrinterLocations(printerId, next) }
+    }
 
     private val _discoveryState = MutableStateFlow<DiscoveryUiState>(DiscoveryUiState.Idle)
     val discoveryState: StateFlow<DiscoveryUiState> = _discoveryState.asStateFlow()

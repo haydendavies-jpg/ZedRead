@@ -57,14 +57,18 @@ fun CashInScreen(
     val pendingCount by syncViewModel.pendingCount.collectAsState()
     var amount by remember { mutableStateOf("") }
     var denominationTotalCents by remember { mutableStateOf(0L) }
+    var printMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) { viewModel.loadCashSettings() }
+    LaunchedEffect(Unit) { viewModel.printResult.collect { message -> printMessage = message } }
 
     LaunchedEffect(state) {
         // DoneOffline means the open was queued to the outbox rather than
-        // confirmed by the server — still proceeds to Register so staff
-        // aren't blocked from selling while offline (see RegisterSessionViewModel).
-        if (state is CashInState.Done || state is CashInState.DoneOffline) onOpened()
+        // confirmed by the server — no session to offer a print for, so this
+        // still proceeds straight to Register (staff aren't blocked from
+        // selling while offline — see RegisterSessionViewModel). Done stops
+        // here instead, showing a "Print slip"/"Continue" step below.
+        if (state is CashInState.DoneOffline) onOpened()
     }
 
     val isDenominationMode = cashSettings.cashInMode == CASH_IN_MODE_DENOMINATION
@@ -80,28 +84,49 @@ fun CashInScreen(
             onSyncClick = {},
         )
         RegisterPopupCard(
-            title = "Start of Day",
-            subtitle = "Count the cash in the till and enter the total to begin your shift.",
+            title = if (state is CashInState.Done) "Till Opened" else "Start of Day",
+            subtitle = if (state !is CashInState.Done) "Count the cash in the till and enter the total to begin your shift." else null,
             // Wider for the denomination grid — see RegisterPopupCard's doc.
             maxWidth = if (isDenominationMode) 760.dp else 480.dp,
             footer = {
-                Button(
-                    onClick = {
-                        val cents = enteredCents
-                        if (cents != null) viewModel.openSession(cents)
-                    },
-                    enabled = hasEntry && state !is CashInState.Loading,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    if (state is CashInState.Loading) {
-                        CircularProgressIndicator(modifier = Modifier.height(20.dp))
-                    } else {
-                        Text("Start Shift")
+                val doneState = state as? CashInState.Done
+                if (doneState != null) {
+                    Column {
+                        Button(
+                            onClick = { viewModel.printCashInSlip(doneState.session) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Print Slip") }
+                        Spacer(Modifier.height(8.dp))
+                        Button(onClick = onOpened, modifier = Modifier.fillMaxWidth()) { Text("Continue") }
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            val cents = enteredCents
+                            if (cents != null) viewModel.openSession(cents)
+                        },
+                        enabled = hasEntry && state !is CashInState.Loading,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        if (state is CashInState.Loading) {
+                            CircularProgressIndicator(modifier = Modifier.height(20.dp))
+                        } else {
+                            Text("Start Shift")
+                        }
                     }
                 }
             },
         ) {
-            if (isDenominationMode) {
+            if (state is CashInState.Done) {
+                Text(
+                    "Opening cash counted: ${formatCentsCashIn(state.session.openingCashCents)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                printMessage?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else if (isDenominationMode) {
                 DenominationGrid(
                     modifier = Modifier.fillMaxWidth(),
                     onTotalChanged = { denominationTotalCents = it },
@@ -126,6 +151,12 @@ fun CashInScreen(
             }
         }
     }
+}
+
+private fun formatCentsCashIn(cents: Long): String {
+    val dollars = cents / 100
+    val remainder = cents % 100
+    return "$${dollars}.${remainder.toString().padStart(2, '0')}"
 }
 
 /** Parse a "$" input field into integer cents — never float arithmetic on money. */

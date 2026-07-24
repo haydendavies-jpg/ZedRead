@@ -84,6 +84,7 @@ class CatalogRepository @Inject constructor(
                 isSoldOut = dto.isSoldOut,
                 categoryColor = dto.categoryColor,
                 modifierNames = dto.modifierNames,
+                printerLocationId = dto.printerLocationId,
             )
         }
         val categories = api.getCategories(bearer, siteId).map { dto ->

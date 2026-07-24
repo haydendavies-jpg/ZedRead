@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -15,6 +16,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.zedread.pos.data.local.entity.PrinterLocationEntity
 import com.zedread.pos.data.local.entity.SavedPrinterEntity
 import com.zedread.pos.ui.components.PosTopBar
 import com.zedread.pos.ui.theme.LocalZedReadColors
@@ -56,6 +59,7 @@ fun PrintersScreen(
     topBarViewModel: TopBarViewModel = hiltViewModel(),
 ) {
     val printers by viewModel.savedPrinters.collectAsState()
+    val printerLocations by viewModel.printerLocations.collectAsState()
     val deviceName by topBarViewModel.deviceName.collectAsState()
     val isOnline by syncViewModel.isOnline.collectAsState()
     val pendingCount by syncViewModel.pendingCount.collectAsState()
@@ -102,12 +106,17 @@ fun PrintersScreen(
         } else {
             LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
                 items(printers, key = { it.id }) { printer ->
+                    val assignedLocationIds by remember(printer.id) { viewModel.locationIdsForPrinter(printer.id) }
+                        .collectAsState()
                     PrinterRow(
                         printer = printer,
+                        printerLocations = printerLocations,
+                        assignedLocationIds = assignedLocationIds,
                         onToggle = { enabled -> viewModel.setEnabled(printer.id, enabled) },
                         onReconnect = { viewModel.reconnect(printer) },
                         onTestPrint = { viewModel.testPrint(printer) },
                         onRemove = { pendingRemoval = printer },
+                        onToggleLocation = { locationId -> viewModel.toggleLocationForPrinter(printer.id, locationId, assignedLocationIds) },
                     )
                     HorizontalDivider()
                 }
@@ -143,10 +152,13 @@ fun PrintersScreen(
 @Composable
 private fun PrinterRow(
     printer: SavedPrinterEntity,
+    printerLocations: List<PrinterLocationEntity>,
+    assignedLocationIds: List<String>,
     onToggle: (Boolean) -> Unit,
     onReconnect: () -> Unit,
     onTestPrint: () -> Unit,
     onRemove: () -> Unit,
+    onToggleLocation: (String) -> Unit,
 ) {
     val colors = LocalZedReadColors.current
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -176,6 +188,24 @@ private fun PrinterRow(
             }
             IconButton(onClick = onRemove) {
                 Icon(Icons.Default.Delete, contentDescription = "Remove printer")
+            }
+        }
+        if (printerLocations.isNotEmpty()) {
+            Text(
+                "Prints for",
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.muted,
+                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(printerLocations, key = { it.id }) { location ->
+                    val assigned = location.id in assignedLocationIds
+                    FilterChip(
+                        selected = assigned,
+                        onClick = { onToggleLocation(location.id) },
+                        label = { Text(location.name) },
+                    )
+                }
             }
         }
     }

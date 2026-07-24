@@ -3,20 +3,31 @@ package com.zedread.pos.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zedread.pos.data.api.RegisterSessionDto
+import com.zedread.pos.data.local.TokenStore
 import com.zedread.pos.data.repository.AuthRepository
 import com.zedread.pos.data.repository.CASH_IN_MODE_DENOMINATION
 import com.zedread.pos.data.repository.CashSettings
 import com.zedread.pos.data.repository.OutboxRepository
+import com.zedread.pos.data.repository.PrintConfigRepository
+import com.zedread.pos.data.repository.PrinterRepository
 import com.zedread.pos.data.repository.RegisterSessionRepository
 import com.zedread.pos.data.repository.SettingsRepository
+import com.zedread.pos.printing.Docket
+import com.zedread.pos.printing.DocketRenderContext
+import com.zedread.pos.printing.RenderedLine
+import com.zedread.pos.printing.TemplateDocketRenderer
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 import java.io.IOException
 import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
 /**
@@ -40,7 +51,72 @@ class RegisterSessionViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val settingsRepository: SettingsRepository,
     private val outboxRepo: OutboxRepository,
+    private val printerRepo: PrinterRepository,
+    private val printConfigRepo: PrintConfigRepository,
+    private val templateRenderer: TemplateDocketRenderer,
+    private val tokenStore: TokenStore,
 ) : ViewModel() {
+
+    // One-shot print-result events for a snackbar — same pattern as PrintersViewModel.actionResult.
+    private val _printResult = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val printResult: SharedFlow<String> = _printResult
+
+    /**
+     * Print the start-of-day cash-in slip ('cash_in_slip' template) to every
+     * enabled saved printer — manual action, staff-initiated shift boundary,
+     * matching "Print receipt"'s own manual/unsplit convention rather than
+     * the order-docket auto-print's per-location behaviour.
+     */
+    fun printCashInSlip(session: RegisterSessionDto) {
+        viewModelScope.launch {
+            val ctx = DocketRenderContext(
+                companyProfile = printConfigRepo.getCompanyProfile(),
+                openingCashCents = session.openingCashCents,
+                countedBy = session.openedByName,
+                dateTime = registerPrintDateTimeNow(),
+            )
+            val renderedLines = templateRenderer.renderByType("cash_in_slip", ctx)
+            if (renderedLines == null) {
+                _printResult.tryEmit("No cash-in slip template found")
+                return@launch
+            }
+            sendRegisterDocketToAllEnabled(renderedLines)
+        }
+    }
+
+    /** Print the end-of-day register summary ('register_summary' template) to every enabled saved printer. */
+    fun printRegisterSummary(session: RegisterSessionDto) {
+        viewModelScope.launch {
+            val ctx = DocketRenderContext(
+                companyProfile = printConfigRepo.getCompanyProfile(),
+                openingCashCents = session.openingCashCents,
+                closingCashCents = session.closingCashCents,
+                varianceCents = session.varianceCents,
+                paymentBreakdownCents = session.paymentBreakdownCents ?: emptyMap(),
+                countedBy = session.closedByName ?: "",
+                dateTime = registerPrintDateTimeNow(),
+            )
+            val renderedLines = templateRenderer.renderByType("register_summary", ctx)
+            if (renderedLines == null) {
+                _printResult.tryEmit("No register summary template found")
+                return@launch
+            }
+            sendRegisterDocketToAllEnabled(renderedLines)
+        }
+    }
+
+    private suspend fun sendRegisterDocketToAllEnabled(renderedLines: List<RenderedLine>) {
+        val docket = Docket(
+            invoiceId = "",
+            siteName = tokenStore.siteName.firstOrNull() ?: "",
+            lineItems = emptyList(),
+            totalCents = 0,
+            paymentMethod = "",
+            renderedLines = renderedLines,
+        )
+        val results = printerRepo.sendToAllEnabled(docket)
+        _printResult.tryEmit(if (results.isEmpty()) "No enabled printers" else "Printed to ${results.size} printer(s)")
+    }
 
     private val _gateState = MutableStateFlow<RegisterGateState>(RegisterGateState.Checking)
     val gateState: StateFlow<RegisterGateState> = _gateState.asStateFlow()
@@ -104,7 +180,7 @@ class RegisterSessionViewModel @Inject constructor(
         val openedAtIso = OffsetDateTime.now().toString()
         viewModelScope.launch {
             runCatching { repo.openSession(openedAtIso, openingCashCents, clientRef = null) }
-                .onSuccess { _cashInState.value = CashInState.Done }
+                .onSuccess { session -> _cashInState.value = CashInState.Done(session) }
                 .onFailure { e ->
                     if (e is IOException) {
                         outboxRepo.enqueueOpenSession(openedAtIso, openingCashCents)
@@ -189,6 +265,10 @@ class RegisterSessionViewModel @Inject constructor(
 /** Prefix marking a [RegisterGateState.Open.sessionId] as a not-yet-synced offline open's client_ref, not a real server id. */
 const val OFFLINE_SESSION_ID_PREFIX = "offline:"
 
+/** Device-local date/time formatted for a print template's DATE_TIME field — mirrors SellViewModel's own printDateTimeNow(). */
+private fun registerPrintDateTimeNow(): String =
+    DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a").format(java.time.LocalDateTime.now())
+
 sealed class RegisterGateState {
     object Checking : RegisterGateState()
     object NeedsCashIn : RegisterGateState()
@@ -201,8 +281,9 @@ sealed class RegisterGateState {
 sealed class CashInState {
     object Idle : CashInState()
     object Loading : CashInState()
-    object Done : CashInState()
-    /** Opened successfully, but only locally — queued to the outbox because the device is offline. */
+    /** Opened successfully — carries the session so the screen can offer a "Print slip" action before continuing to Register. */
+    data class Done(val session: RegisterSessionDto) : CashInState()
+    /** Opened successfully, but only locally — queued to the outbox because the device is offline, so there's no session to print from. */
     object DoneOffline : CashInState()
     data class Error(val message: String) : CashInState()
 }

@@ -18,4 +18,11 @@ data class Docket(
     val lineItems: List<LineItemDto>,
     val totalCents: Long,
     val paymentMethod: String,
+    // Pre-rendered from a customisable print template (see
+    // TemplateDocketRenderer) -- the driver-neutral shape both the generic
+    // ESC/POS drivers (via renderedLinesToEscPosBytes) and the Epson driver
+    // (iterated into its own addText/addTextStyle calls) consume. Null only
+    // for PrintersViewModel's own "Test print" action, which has no template
+    // context to render from and falls back to DocketFormatter's fixed layout.
+    val renderedLines: List<RenderedLine>? = null,
 )

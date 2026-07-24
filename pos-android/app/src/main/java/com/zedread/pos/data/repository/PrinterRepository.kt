@@ -1,7 +1,9 @@
 package com.zedread.pos.data.repository
 
 import android.content.Context
+import com.zedread.pos.data.local.dao.PrinterLocationDao
 import com.zedread.pos.data.local.dao.SavedPrinterDao
+import com.zedread.pos.data.local.dao.SavedPrinterLocationDao
 import com.zedread.pos.data.local.entity.SavedPrinterEntity
 import com.zedread.pos.printing.Docket
 import com.zedread.pos.printing.PrintResult
@@ -36,6 +38,8 @@ private const val REDISCOVER_TIMEOUT_MS = 8_000L
 @Singleton
 class PrinterRepository @Inject constructor(
     private val dao: SavedPrinterDao,
+    private val locationDao: PrinterLocationDao,
+    private val printerLocationDao: SavedPrinterLocationDao,
     private val driverRegistry: PrinterDriverRegistry,
     @ApplicationContext private val context: Context,
 ) {
@@ -141,6 +145,47 @@ class PrinterRepository @Inject constructor(
     suspend fun sendToAllEnabled(docket: Docket): Map<SavedPrinterEntity, PrintResult> = coroutineScope {
         dao.observeEnabled().first()
             .map { printer -> async { printer to sendToPrinter(printer, docket) } }
+            .awaitAll()
+            .toMap()
+    }
+
+    // ── Printer-to-location assignment (local-only — see SavedPrinterLocationEntity's own doc) ──
+
+    fun observeLocationIdsForPrinter(printerId: String): Flow<List<String>> =
+        printerLocationDao.observeLocationIdsForPrinter(printerId)
+
+    /** Replace [printerId]'s complete set of assigned printer locations — the Printers screen's chip-toggle save action. */
+    suspend fun setPrinterLocations(printerId: String, locationIds: List<String>) =
+        printerLocationDao.setForPrinter(printerId, locationIds)
+
+    /**
+     * Send [docket] to every enabled printer assigned to [printerLocationId],
+     * [copyCount][com.zedread.pos.data.local.entity.PrinterLocationEntity.copyCount]
+     * times each — the order-docket auto-print coordinator's fan-out target
+     * (see SellViewModel), reusing [sendToPrinter]'s own retry/rediscover path
+     * for every copy.
+     */
+    suspend fun sendToLocation(printerLocationId: String, docket: Docket): Map<SavedPrinterEntity, List<PrintResult>> = coroutineScope {
+        val copyCount = locationDao.getAll().firstOrNull { it.id == printerLocationId }?.copyCount ?: 1
+        printerLocationDao.getEnabledPrintersForLocation(printerLocationId)
+            .map { printer ->
+                async {
+                    printer to (1..copyCount).map { sendToPrinter(printer, docket) }
+                }
+            }
+            .awaitAll()
+            .toMap()
+    }
+
+    /** Fire the cash-drawer kick pulse on every currently-enabled saved printer, concurrently — see PrinterDriver.openCashDrawer's own doc. */
+    suspend fun kickDrawerOnAllEnabled(): Map<SavedPrinterEntity, PrintResult> = coroutineScope {
+        dao.observeEnabled().first()
+            .map { printer ->
+                async {
+                    val driver = driverRegistry.get(printer.driverId)
+                    printer to (driver?.openCashDrawer(printer) ?: PrintResult.Failure("Unknown printer driver: ${printer.driverId}"))
+                }
+            }
             .awaitAll()
             .toMap()
     }
